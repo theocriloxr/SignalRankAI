@@ -1,8 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -10,8 +11,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libpq-dev redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.lock ./
-RUN python -m pip install --upgrade pip setuptools wheel \
+COPY requirements.lock requirements-build-tools.txt ./
+RUN python -m pip install --requirement requirements-build-tools.txt \
     && pip install --no-deps -r requirements.lock \
     && pip check
 

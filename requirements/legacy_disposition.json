@@ -374,56 +374,56 @@
       "line_count": null,
       "path": "Dockerfile.cleanroom",
       "reason": "production/build source",
-      "sha256": "6cdb8cd8a57fd08d56ca7abf0a65d705080bad277c9fbc7cd89474c7aa78179c",
-      "size_bytes": 642
+      "sha256": "c52fd0f92becb405effccea83b11ae71e0a99d7fc74050e41f0a87847faa743d",
+      "size_bytes": 778
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.frontend.cleanroom",
       "reason": "production/build source",
-      "sha256": "d9fbc60352686d5dd783ccbbe73a98d1e72dda6c540d9a6938c17ee137e0ea94",
-      "size_bytes": 522
+      "sha256": "bf818326b3511fced02cabad7522233101e71b4a079c65bc267d490e51b19e01",
+      "size_bytes": 594
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.hadolint.cleanroom",
       "reason": "production/build source",
-      "sha256": "525ad08143437dd9854212cc2b5c5807df8b246a3a6329298b0a7d08ef971192",
-      "size_bytes": 217
+      "sha256": "00e103b5dea18684e34ea44f0eb144ee55c009f306c4fe6f173c625c8740fe67",
+      "size_bytes": 289
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.mobile.cleanroom",
       "reason": "production/build source",
-      "sha256": "f891318a3505886c0cf857d52a010e285957fbb5f14cdcde62717e79252bd319",
-      "size_bytes": 592
+      "sha256": "a0c07927a1505904355cfa938d8356f511ec8b17964173a9ac924c0f434f8bc3",
+      "size_bytes": 664
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "a48762c82bfec01c872a539a7f20978cba61284bd961b81ab93eb6f7bee0eb87",
-      "size_bytes": 1317
+      "sha256": "f5d09c8171cf05d55c2b00373e6000b4c1c232aaabe9ce38bcc3f0f4f650d267",
+      "size_bytes": 1756
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.restore-drill",
       "reason": "production/build source",
-      "sha256": "527c63b26d82f8660d70506224eb5c8862e2d7b7c619d9cdd14eede629db1f97",
-      "size_bytes": 251
+      "sha256": "e96c734ae4deadae353b92083e513c925e8d67f61c8a7e22b6a0f8340e099d62",
+      "size_bytes": 323
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "Dockerfile.static.cleanroom",
       "reason": "production/build source",
-      "sha256": "f58a1f5ecf262cb92dc5b5129696a1ea8ebac2fa76f6479ecca09a84ca68dd50",
-      "size_bytes": 968
+      "sha256": "f98bb6680840c43f6bfcd7cd21628e7dbdd814416f1e2735472ac34011dfb374",
+      "size_bytes": 1132
     },
     {
       "disposition": "DOCUMENTATION_ONLY",

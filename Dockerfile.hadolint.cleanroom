@@ -1,4 +1,4 @@
-FROM hadolint/hadolint:v2.12.0-debian
+FROM hadolint/hadolint:v2.12.0-debian@sha256:27173fe25e062448490a32de410c08491c626a0bef360aa2ce5d5bdd9384b50d
 WORKDIR /workspace
 COPY Dockerfile /workspace/Dockerfile
 RUN hadolint --failure-threshold warning /workspace/Dockerfile
