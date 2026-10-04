@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import importlib
 import json
+import math
 from pathlib import Path
 import sys
 import time
@@ -101,14 +102,18 @@ def _freshness_validation(
         last_value = float(last)
     except (TypeError, ValueError):
         return False, None, None, "invalid_last_timestamp"
+    if not math.isfinite(last_value) or last_value <= 0:
+        return False, None, None, "invalid_last_timestamp"
     while last_value > 10_000_000_000:
         last_value /= 1000.0
-    age = max(0.0, time.time() - last_value)
+    age = time.time() - last_value
     interval = float(_TIMEFRAME_SECONDS.get(str(spec.sample_timeframe).lower(), 3600))
     limit = max(180.0, interval * 2.5)
+    if age < -30.0:
+        return False, age, limit, "future_last_timestamp"
     if age > limit:
         return False, age, limit, f"stale_live_sample:{age:.0f}s>{limit:.0f}s"
-    return True, age, limit, None
+    return True, max(0.0, age), limit, None
 
 
 def _provider_certification_hint(module: Any) -> dict[str, str] | None:
@@ -341,7 +346,15 @@ def _markdown(results: list[ProviderCertification]) -> str:
 
 async def _run(args: argparse.Namespace) -> int:
     requested = {item.strip().lower() for item in (args.providers or "").split(",") if item.strip()}
-    specs = [spec for spec in list_provider_specs() if not requested or spec.key in requested]
+    available = list_provider_specs()
+    unknown = requested - {spec.key for spec in available}
+    if unknown:
+        raise RuntimeError("unknown_providers:" + ",".join(sorted(unknown)))
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        raise RuntimeError("provider_certification_requires_positive_finite_timeout")
+    if args.limit < 2:
+        raise RuntimeError("provider_certification_requires_at_least_two_candles")
+    specs = [spec for spec in available if not requested or spec.key in requested]
     results = [await certify_one(spec, live=args.live, timeout=args.timeout, limit=args.limit) for spec in specs]
 
     output_dir = Path(args.output_dir)

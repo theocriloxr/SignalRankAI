@@ -55,6 +55,8 @@ def _latest_age(validation: dict[str, Any]) -> float | None:
         value = float(raw)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(value) or value <= 0:
+        return None
     while value > 10_000_000_000:
         value /= 1000.0
     return time.time() - value if math.isfinite(value) else None
@@ -149,8 +151,14 @@ async def _run(args: argparse.Namespace) -> int:
         if item.strip()
     ]
     unknown = [item for item in required if item not in CLASS_SAMPLES]
+    if not required:
+        raise RuntimeError("market_class_certification_requires_nonempty_asset_classes")
     if unknown:
         raise RuntimeError("unknown_asset_classes:" + ",".join(sorted(unknown)))
+    if len(required) != len(set(required)):
+        raise RuntimeError("market_class_certification_duplicate_asset_classes")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        raise RuntimeError("market_class_certification_requires_positive_finite_timeout")
 
     results = []
     for asset_class in required:
@@ -162,12 +170,17 @@ async def _run(args: argparse.Namespace) -> int:
         "environment": env,
         "required_asset_classes": required,
         "results": results,
-        "all_required_classes_execution_eligible": all(
-            bool(row.get("execution_eligible")) for row in results
+        "all_required_classes_execution_eligible": bool(results) and all(
+            row.get("execution_eligible") is True for row in results
         ),
+        "all_supported_classes_included": set(required) == set(CLASS_SAMPLES),
         "synthetic_data_used": False,
         "yfinance_execution_truth_allowed": False,
     }
+    report["all_supported_classes_execution_eligible"] = bool(
+        report["all_supported_classes_included"]
+        and report["all_required_classes_execution_eligible"]
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

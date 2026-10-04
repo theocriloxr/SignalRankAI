@@ -1,5 +1,5 @@
 {
-  "file_count": 1942,
+  "file_count": 1947,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2811,11 +2811,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 208,
+      "line_count": 213,
       "path": "core/asset_certification.py",
       "reason": "production/build source",
-      "sha256": "1a61896a4d6b9d77d83bf0b1a295b1aaf50d1d3fdd177850142744d7b70f1b77",
-      "size_bytes": 8587
+      "sha256": "834d30515b018c25e0be249d0236c13699e45bfadd123736a732078cad3fd5aa",
+      "size_bytes": 8823
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3683,11 +3683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1559,
+      "line_count": 1561,
       "path": "data/market_data.py",
       "reason": "production/build source",
-      "sha256": "b51df64c20c4943553b0b8815c4da84746564b3b1a39a3cc7f96eb05bd914c42",
-      "size_bytes": 62223
+      "sha256": "63f1e7c770f6e030d783a5da5335ae8e08a8572daabdf84522f61a0b4752644d",
+      "size_bytes": 62292
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4792,6 +4792,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "2d26aa035c2e827b448526d3bd3f57814249d7e60caebea7b3aa8903292d3599",
       "size_bytes": 4104
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 53,
+      "path": "docs/CERTIFICATION_BOUNDARIES_AND_SOAK_20261004.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "561e4655a4604a10c5352207688ecf7d0bbc2cef8bc199cc5188c1896ccda0ab",
+      "size_bytes": 3117
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9259,11 +9267,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 42,
+      "line_count": 44,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3be09352faf9c97f1a2df5ce3ff223cb4d27ef4e91286fe6c7ddfce659dd8266",
-      "size_bytes": 1299
+      "sha256": "043c2effae6d8722a5ec4a3d88ec14f21c5023453d84057bef6780f7851231b1",
+      "size_bytes": 1370
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9406,7 +9414,7 @@
       "line_count": 16122,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "a4ae91e6d72d46000d8b3db59e9b29eb1a83327dce5b5ca502c6892f256eb017",
+      "sha256": "8b0466dacb932c883be51ca302c321c7d475c0947bc43fb0d42f7f42a3f62d91",
       "size_bytes": 472988
     },
     {
@@ -9739,19 +9747,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 194,
+      "line_count": 207,
       "path": "scripts/certify_market_classes.py",
       "reason": "production/build source",
-      "sha256": "10757a8ad51b4e9fb34772e239d93e9287d54e095a032da4a457848f7623876e",
-      "size_bytes": 6960
+      "sha256": "d379bf0050f9b0bbcbaba478f1ec442c4e11d51f169950970ced6f91cfcf6c49",
+      "size_bytes": 7692
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 437,
+      "line_count": 450,
       "path": "scripts/certify_providers.py",
       "reason": "production/build source",
-      "sha256": "55c7d16b45d9e4da56ce8e18da56751fcfc6a42e8af858ec586d9b67cec27a54",
-      "size_bytes": 17183
+      "sha256": "bd296799341224b94faea2bb270f7e7349d166b55104b7cd01d57a71503a65b4",
+      "size_bytes": 17820
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9771,11 +9779,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 313,
+      "line_count": 315,
       "path": "scripts/cleanroom_verification_server.py",
       "reason": "production/build source",
-      "sha256": "d84c37625ebf3bd12acb7a7b4bd00782a98aaa8f60846c83ee6c8350dbdeab30",
-      "size_bytes": 10359
+      "sha256": "9f88cec0e5d875bf1a77e449c77efb0bbf1eed470e0e14c2016c2b16e453cbca",
+      "size_bytes": 10464
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9984,6 +9992,14 @@
       "reason": "production/build source",
       "sha256": "992bd2ffd581e1a93ec790c3b42a3d2b6f4938ea14921ec33087318d7c6e67e7",
       "size_bytes": 10343
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 184,
+      "path": "scripts/production_soak_monitor.py",
+      "reason": "production/build source",
+      "sha256": "1b5099720d9b6cea505f92ccb0bdd86ed6a35f0122e83c7f3c8e8af8e19cf66a",
+      "size_bytes": 10642
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12667,6 +12683,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 37,
+      "path": "tests/test_asset_certification_evidence.py",
+      "reason": "automated test evidence",
+      "sha256": "47640bb3b9d55fbcaf0d2627906a4cdb6aa639ce32d3bfccd5e50b334f6fc60c",
+      "size_bytes": 2018
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 69,
       "path": "tests/test_asset_repeat_policy.py",
       "reason": "automated test evidence",
@@ -13331,11 +13355,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 125,
+      "line_count": 167,
       "path": "tests/test_market_class_certification.py",
       "reason": "automated test evidence",
-      "sha256": "64839d7f86d36613dd568bba37429e02ce7b136ad06c28b6fcd143b0379eabee",
-      "size_bytes": 4396
+      "sha256": "203f4df2cdeb37510b2b8aaa6f562b63955e47af1f799da1678d0d28a6d2db09",
+      "size_bytes": 6790
     },
     {
       "disposition": "TEST_ONLY",
@@ -14019,6 +14043,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 69,
+      "path": "tests/test_production_soak_monitor.py",
+      "reason": "automated test evidence",
+      "sha256": "764a16af66cfe41bb363de8e66b77e81bd73b9bf20c849a456dfced994a38eb8",
+      "size_bytes": 4118
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 164,
       "path": "tests/test_provider_and_asset_registry_hardening.py",
       "reason": "automated test evidence",
@@ -14040,6 +14072,14 @@
       "reason": "automated test evidence",
       "sha256": "4d19950bc8fbd21f55b724b9ef6c9ccfb9c8b05883c8a3648014f1fff72be7b0",
       "size_bytes": 3760
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 53,
+      "path": "tests/test_provider_certification_boundaries.py",
+      "reason": "automated test evidence",
+      "sha256": "644281e753b127b336cf29ca18268bc16949d484ea7042ba5bbd76d0d02f9344",
+      "size_bytes": 2675
     },
     {
       "disposition": "TEST_ONLY",
@@ -15550,8 +15590,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 447,
-    "PRESERVE_BEHAVIOUR": 1163,
-    "TEST_ONLY": 331
+    "DOCUMENTATION_ONLY": 448,
+    "PRESERVE_BEHAVIOUR": 1164,
+    "TEST_ONLY": 334
   }
 }

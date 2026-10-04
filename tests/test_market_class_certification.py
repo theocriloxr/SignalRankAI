@@ -2,9 +2,51 @@ from __future__ import annotations
 
 import asyncio
 import time
+import argparse
+import json
 import pytest
 
 from scripts import certify_market_classes as certification
+
+
+@pytest.mark.parametrize("classes,timeout", [("", 1), (", ,", 1), ("crypto_spot,crypto_spot", 1), ("crypto_spot", 0), ("crypto_spot", -1), ("crypto_spot", float("nan")), ("crypto_spot", float("inf"))])
+def test_invalid_certification_scope_cannot_report_success(monkeypatch, tmp_path, classes, timeout):
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "production")
+    output = tmp_path / "certificate.json"
+    args = argparse.Namespace(asset_classes=classes, timeout=timeout, output=str(output), allow_non_release_environment=False)
+    with pytest.raises(RuntimeError):
+        asyncio.run(certification._run(args))
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("eligible", ["false", "true", 1, False, None])
+def test_non_boolean_provider_result_cannot_become_certified(monkeypatch, tmp_path, eligible):
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "production")
+    async def certify(*args):
+        return {"execution_eligible": eligible}
+    monkeypatch.setattr(certification, "_certify", certify)
+    output = tmp_path / "certificate.json"
+    args = argparse.Namespace(asset_classes="crypto_spot", timeout=1, output=str(output), allow_non_release_environment=False)
+    assert asyncio.run(certification._run(args)) == 4
+    report = json.loads(output.read_text())
+    assert report["all_required_classes_execution_eligible"] is False
+    assert report["all_supported_classes_execution_eligible"] is False
+
+
+def test_subset_pass_is_distinct_from_all_supported_classes_pass(monkeypatch, tmp_path):
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "production")
+    async def certify(*args):
+        return {"execution_eligible": True}
+    monkeypatch.setattr(certification, "_certify", certify)
+    output = tmp_path / "certificate.json"
+    args = argparse.Namespace(asset_classes="crypto_spot", timeout=1, output=str(output), allow_non_release_environment=False)
+    assert asyncio.run(certification._run(args)) == 0
+    report = json.loads(output.read_text())
+    assert report["all_required_classes_execution_eligible"] is True
+    assert report["all_supported_classes_execution_eligible"] is False
+    args.asset_classes = ",".join(certification.CLASS_SAMPLES)
+    assert asyncio.run(certification._run(args)) == 0
+    assert json.loads(output.read_text())["all_supported_classes_execution_eligible"] is True
 
 
 def _fresh_rows(count: int = 30, step: int = 300) -> list[dict]:

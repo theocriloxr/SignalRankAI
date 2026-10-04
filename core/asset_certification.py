@@ -84,8 +84,8 @@ CONTEXTUAL_ONLY: frozenset[str] = frozenset({"macro", "volatility", "rates"})
 def _evidence_ok(evidence: Mapping[str, Any], step: str) -> bool:
     value = evidence.get(step)
     if isinstance(value, Mapping):
-        return bool(value.get("ok"))
-    return bool(value)
+        return value.get("ok") is True
+    return value is True
 
 
 def _evidence_detail(evidence: Mapping[str, Any], step: str) -> str:
@@ -168,15 +168,20 @@ def evaluate_certification(
             else ReadinessState.CONFIGURED
         )
         return CertificationResult(cls, state, ready, missing, notes=tuple(notes))
+    if not (_ANALYSIS_STEPS <= ready_set):
+        return CertificationResult(
+            cls, ReadinessState.MARKET_DATA_PARTIAL, ready, missing,
+            notes=("analysis_chain_incomplete",),
+        )
     if not (_DELIVERY_STEPS & ready_set) or not (_DELIVERY_STEPS <= ready_set):
         return CertificationResult(cls, ReadinessState.ANALYSIS_READY, ready, missing, notes=tuple(notes))
     if not (_PAPER_STEPS <= ready_set):
         return CertificationResult(cls, ReadinessState.DELIVERY_READY, ready, missing, notes=tuple(notes))
     if not (_RELIABILITY_STEPS <= ready_set):
         return CertificationResult(cls, ReadinessState.PAPER_READY, ready, missing, notes=tuple(notes))
-    if testnet_ready and not live_guarded:
+    if testnet_ready is True and live_guarded is not True:
         return CertificationResult(cls, ReadinessState.TESTNET_READY, ready, missing, notes=("testnet_certified",))
-    if live_guarded:
+    if live_guarded is True:
         return CertificationResult(cls, ReadinessState.LIVE_GUARDED, ready, missing, notes=("guarded_activation_only",))
     return CertificationResult(cls, ReadinessState.PAPER_READY, ready, missing, notes=("paper_ready_live_not_enabled",))
 

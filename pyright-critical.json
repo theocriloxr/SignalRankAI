@@ -9,6 +9,7 @@
     "core/signal_lifecycle.py",
     "core/financial_activation.py",
     "core/release_guard.py",
+    "core/asset_certification.py",
     "core/account_policy.py",
     "core/transactional_outbox.py",
     "core/event_bus.py",
@@ -37,6 +38,7 @@
     "core/partial_exit_accounting.py",
     "scripts/smtp_preflight.py",
     "scripts/certify_market_classes.py",
+    "scripts/certify_providers.py",
     "scripts/semgrep_gate.py"
   ]
 }

@@ -819,6 +819,8 @@ def _validate_ohlcv(candles: list) -> bool:
                     value = float(text_value)
                 except ValueError:
                     value = _dt.fromisoformat(text_value).timestamp()
+            if not math.isfinite(value):
+                return None
             while value > 10_000_000_000:
                 value /= 1000.0
             return value if math.isfinite(value) and value > 0 else None
