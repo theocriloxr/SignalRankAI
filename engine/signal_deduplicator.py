@@ -11,15 +11,21 @@ import math
 import threading
 import time
 from collections import deque
-from typing import Optional, Dict, Set, Iterable, Any, cast
+from typing import Optional, Dict, Set, Iterable, Any, Mapping, cast
 from datetime import datetime, timedelta
 
 from db.models import Signal, MLRejectedSignal, DecisionLog
-from db.session import get_session
+from db.session import get_session, DatabaseWorkDeferred
 from sqlalchemy import select, text
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
+
+SignalData = dict[str, Any]
+
+
+class DedupAuthorityUnavailable(RuntimeError):
+    """The durable signal history cannot prove that a candidate is unique."""
 
 # Rejection telemetry is high-volume and must never contend one transaction per
 # rejected strategy candidate. A bounded process-local spool batches writes into
@@ -215,6 +221,15 @@ class SignalDeduplicator:
         return str(value or "").upper().strip()
 
     @staticmethod
+    def _normalize_direction(value: Any) -> str:
+        side = str(value or "").lower().strip()
+        return {"buy": "long", "sell": "short"}.get(side, side)
+
+    @staticmethod
+    def _direction_aliases(direction: str) -> tuple[str, ...]:
+        return ("long", "LONG", "buy", "BUY") if direction == "long" else ("short", "SHORT", "sell", "SELL")
+
+    @staticmethod
     def _first_take_profit(value: Any) -> Any:
         if isinstance(value, (list, tuple)) and value:
             first = value[0]
@@ -233,15 +248,15 @@ class SignalDeduplicator:
         floor = max(0.35, self._base_similarity_threshold * 0.55)
         return self._base_similarity_threshold - (self._base_similarity_threshold - floor) * decay_ratio
 
-    def _signal_similarity(self, left: Signal, right: Signal) -> float:
+    def _signal_similarity(self, left: Mapping[str, Any], right: Mapping[str, Any]) -> float:
         try:
             asset_left = self._normalize_text(left.get("asset") or left.get("symbol"))
             asset_right = self._normalize_text(right.get("asset") or right.get("symbol"))
             if not asset_left or asset_left != asset_right:
                 return 0.0
 
-            direction_left = self._normalize_text(left.get("direction") or left.get("side") or "long")
-            direction_right = self._normalize_text(right.get("direction") or right.get("side") or "long")
+            direction_left = self._normalize_direction(left.get("direction") or left.get("side") or "long")
+            direction_right = self._normalize_direction(right.get("direction") or right.get("side") or "long")
             if direction_left != direction_right:
                 return 0.0
 
@@ -294,8 +309,13 @@ class SignalDeduplicator:
 
     async def get_recent_signals(
         self, asset: str, timeframe: str, direction: str, lookback_hours: Optional[float] = None
-    ) -> list[Signal]:
+    ) -> list[SignalData]:
         try:
+            asset = str(asset or "").upper().strip()
+            timeframe = str(timeframe or "").lower().strip()
+            direction = self._normalize_direction(direction)
+            if not asset or not timeframe or direction not in {"long", "short"}:
+                raise DedupAuthorityUnavailable("invalid signal scope")
             lookback = self._cache_ttl if lookback_hours is None else timedelta(hours=max(0.0, float(lookback_hours)))
             cutoff = now_utc_naive() - lookback
             cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {
@@ -308,7 +328,7 @@ class SignalDeduplicator:
                 stmt = (
                     select(Signal)
                     .where(Signal.asset == asset)
-                    .where(Signal.direction == direction)
+                    .where(Signal.direction.in_(self._direction_aliases(direction)))
                     .where(Signal.created_at >= cutoff)
                     .order_by(Signal.created_at.desc())
                     .limit(250)
@@ -317,9 +337,9 @@ class SignalDeduplicator:
                     stmt = stmt.where(Signal.timeframe == timeframe)
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())
+                if len(rows) >= 250:
+                    raise DedupAuthorityUnavailable("signal history query reached its limit")
                 return [
-                    cast(
-                        Signal,
                         {
                             "asset": r.asset,
                             "timeframe": r.timeframe,
@@ -331,26 +351,25 @@ class SignalDeduplicator:
                             "strategy_name": getattr(r, "strategy_name", None),
                             "strategy_group": getattr(r, "strategy_group", None),
                             "signal_id": getattr(r, "signal_id", None),
-                        },
-                    )
+                        }
                     for r in rows
                 ]
         except Exception as e:
-            logger.warning(f"Dedup recent-signal load failed: {e}")
-            return []
+            logger.warning("[dedup] recent-signal authority unavailable: %s", type(e).__name__)
+            raise DedupAuthorityUnavailable("durable signal history unavailable") from None
 
-    async def find_semantic_duplicates(self, signal: Signal) -> list[tuple[Signal, float, float]]:
+    async def find_semantic_duplicates(self, signal: Mapping[str, Any]) -> list[tuple[SignalData, float, float]]:
         asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
         timeframe = str(signal.get("timeframe") or signal.get("tf") or "").lower().strip()
-        direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
+        direction = self._normalize_direction(signal.get("direction") or signal.get("side") or "long")
         if not asset or not timeframe or direction not in {"long", "short"}:
-            return []
+            raise DedupAuthorityUnavailable("invalid signal scope")
 
         recent = await self.get_recent_signals(
             asset, timeframe, direction, lookback_hours=self._cache_ttl.total_seconds() / 3600.0
         )
         now = now_utc_naive()
-        out: list[tuple[Signal, float, float]] = []
+        out: list[tuple[SignalData, float, float]] = []
         for candidate in recent:
             similarity = self._signal_similarity(signal, candidate)
             if similarity <= 0:
@@ -365,14 +384,14 @@ class SignalDeduplicator:
         return out
 
     async def is_duplicate(self, asset: str, timeframe: str, direction: str, entry_price: float) -> bool:
-        """Check if signal is duplicate within dedup window."""
+        """Return True to block duplicates, invalid candidates, or unavailable history."""
         try:
             asset = str(asset or "").upper().strip()
             timeframe = str(timeframe or "").lower().strip()
-            direction = str(direction or "").lower().strip()
+            direction = self._normalize_direction(direction)
             entry_price = float(entry_price or 0.0)
-            if not asset or not timeframe or direction not in {"long", "short"} or entry_price <= 0:
-                return False
+            if not asset or not timeframe or direction not in {"long", "short"} or not math.isfinite(entry_price) or entry_price <= 0:
+                return True
 
             async with get_session() as session:
                 hard_window = (
@@ -389,7 +408,7 @@ class SignalDeduplicator:
                     select(Signal)
                     .where(
                         Signal.asset == asset,
-                        Signal.direction == direction,
+                        Signal.direction.in_(self._direction_aliases(direction)),
                         Signal.created_at >= cutoff,
                     )
                     .order_by(Signal.created_at.desc())
@@ -403,10 +422,10 @@ class SignalDeduplicator:
                 if not rows:
                     return False
 
-                probe: Signal = {"asset": asset, "timeframe": timeframe, "direction": direction, "entry": entry_price}
+                probe: SignalData = {"asset": asset, "timeframe": timeframe, "direction": direction, "entry": entry_price}
                 now = now_utc_naive()
                 for row in rows:
-                    candidate: Signal = {
+                    candidate: SignalData = {
                         "asset": row.asset,
                         "timeframe": row.timeframe,
                         "direction": row.direction,
@@ -425,10 +444,11 @@ class SignalDeduplicator:
                         age_hours = self._cache_ttl.total_seconds() / 3600.0
                     if similarity >= self._decayed_duplicate_threshold(age_hours):
                         return True
-                return False
+                # A capped history cannot establish absence beyond its last row.
+                return len(rows) >= 250
         except Exception as e:
-            logger.warning(f"Dedup check failed: {e}")
-            return False
+            logger.warning("[dedup] candidate blocked: history check failed (%s)", type(e).__name__)
+            return True
 
     async def register_signal(self, asset: str, timeframe: str, direction: str, entry_price: float) -> None:
         """Register signal to prevent future duplication."""
@@ -438,12 +458,12 @@ class SignalDeduplicator:
         except Exception as e:
             logger.warning(f"Signal registration failed: {e}")
 
-    async def dedupe_batch(self, signals: Iterable[Signal]) -> list[Signal]:
-        items = [cast(Signal, dict(s)) for s in (signals or []) if s]
+    async def dedupe_batch(self, signals: Iterable[Mapping[str, Any]]) -> list[SignalData]:
+        items = [dict(s) for s in (signals or []) if s]
         if not items:
             return []
 
-        clusters: list[list[Signal]] = []
+        clusters: list[list[SignalData]] = []
         for signal in items:
             placed = False
             for cluster in clusters:
@@ -461,7 +481,7 @@ class SignalDeduplicator:
             if not placed:
                 clusters.append([signal])
 
-        def _rank(sig: Signal) -> tuple[float, float]:
+        def _rank(sig: Mapping[str, Any]) -> tuple[float, float]:
             score = float(sig.get("score") or sig.get("strength") or 0.0)
             created_at = sig.get("created_at")
             recency = created_at.timestamp() if isinstance(created_at, datetime) else 0.0
@@ -590,6 +610,8 @@ class MLRejectionTracker:
         try:
             if take_profit_levels is None:
                 return 0.0
+            if isinstance(take_profit_levels, (list, tuple, dict)):
+                return 0.0
             value = float(take_profit_levels)
             return value if value > 0 else 0.0
         except Exception:
@@ -689,12 +711,12 @@ class MLRejectionTracker:
 
         try:
             from db.priority import DBPriority
-            from db.session import DatabaseWorkDeferred
             from db.models import DecisionLog
             from utils.timeutils import now_utc_naive
 
             logs = []
             for p in batch:
+                tracked_at = p.get("outcome_tracked_at")
                 logs.append(
                     DecisionLog(
                         signal_id=p.get("signal_id"),
@@ -711,8 +733,8 @@ class MLRejectionTracker:
                             "ml_probability": p.get("ml_probability"),
                             "features": p.get("features"),
                             "actual_outcome": p.get("actual_outcome"),
-                            "outcome_tracked_at": p.get("outcome_tracked_at").isoformat()
-                            if p.get("outcome_tracked_at")
+                            "outcome_tracked_at": tracked_at.isoformat()
+                            if isinstance(tracked_at, datetime)
                             else None,
                         },
                         created_at=p.get("created_at") or now_utc_naive(),
@@ -831,6 +853,7 @@ class MLRejectionTracker:
                 for k in ("value", "count", "id"):
                     if k in value:
                         return int(value[k] or 0)
+                return int(default)
             return int(value)
         except Exception:
             return int(default)
@@ -1282,7 +1305,7 @@ class MLRejectionTracker:
                 await self._notify_rejection_outcomes(summary)
                 await self._run_adaptive_learning_if_due()
 
-                return tracked_count + backfilled
+            return tracked_count + backfilled
         except Exception as e:
             logger.error(f"Failed to track rejection outcomes: {e}")
             return 0

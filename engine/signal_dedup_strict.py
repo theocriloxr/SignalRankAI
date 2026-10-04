@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from db.models import Signal
 from db.session import get_session
+from engine.signal_deduplicator import DedupAuthorityUnavailable, SignalDeduplicator
 from sqlalchemy import select
 from utils.timeutils import now_utc_naive
 
@@ -47,7 +48,7 @@ class StrictSignalDedup:
         """
         asset = StrictSignalDedup._normalize(asset)
         timeframe = StrictSignalDedup._normalize(timeframe).lower()
-        direction = StrictSignalDedup._normalize(direction).lower()
+        direction = SignalDeduplicator._normalize_direction(direction)
         return f"{asset}|{timeframe}|{direction}"
 
     async def is_duplicate_strict(
@@ -72,11 +73,11 @@ class StrictSignalDedup:
         try:
             asset = self._normalize(asset)
             timeframe = self._normalize(timeframe).lower()
-            direction = self._normalize(direction).lower()
+            direction = SignalDeduplicator._normalize_direction(direction)
 
             # Validate inputs
             if not asset or not timeframe or direction not in {"long", "short"}:
-                return False, None
+                return True, None
 
             # Calculate lookup window
             cutoff = now_utc_naive() - timedelta(hours=max(1, int(lookback_hours)))
@@ -88,7 +89,7 @@ class StrictSignalDedup:
                     select(Signal)
                     .where(Signal.asset == asset)
                     .where(Signal.timeframe == timeframe)
-                    .where(Signal.direction == direction)
+                    .where(Signal.direction.in_(SignalDeduplicator._direction_aliases(direction)))
                     .where(Signal.created_at >= cutoff)
                     .where(Signal.expired.is_(False))
                     .where(Signal.archived.is_(False))
@@ -111,8 +112,8 @@ class StrictSignalDedup:
                 return False, None
 
         except Exception as e:
-            logger.warning(f"[dedup_strict] Check failed: {e}")
-            return False, None
+            logger.warning("[dedup_strict] candidate blocked: history check failed (%s)", type(e).__name__)
+            return True, None
 
     async def find_duplicates_strict(
         self,
@@ -136,10 +137,10 @@ class StrictSignalDedup:
         try:
             asset = self._normalize(asset)
             timeframe = self._normalize(timeframe).lower()
-            direction = self._normalize(direction).lower()
+            direction = SignalDeduplicator._normalize_direction(direction)
 
             if not asset or not timeframe or direction not in {"long", "short"}:
-                return []
+                raise DedupAuthorityUnavailable("invalid signal scope")
 
             cutoff = now_utc_naive() - timedelta(hours=max(1, int(lookback_hours)))
 
@@ -148,15 +149,18 @@ class StrictSignalDedup:
                     select(Signal)
                     .where(Signal.asset == asset)
                     .where(Signal.timeframe == timeframe)
-                    .where(Signal.direction == direction)
+                    .where(Signal.direction.in_(SignalDeduplicator._direction_aliases(direction)))
                     .where(Signal.created_at >= cutoff)
                     .where(Signal.expired.is_(False))
+                    .where(Signal.archived.is_(False))
                     .order_by(Signal.created_at.desc())
                     .limit(50)
                 )
 
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())
+                if len(rows) >= 50:
+                    raise DedupAuthorityUnavailable("signal history query reached its limit")
 
                 return [
                     {
@@ -174,8 +178,8 @@ class StrictSignalDedup:
                 ]
 
         except Exception as e:
-            logger.warning(f"[dedup_strict] Find duplicates failed: {e}")
-            return []
+            logger.warning("[dedup_strict] recent-signal authority unavailable: %s", type(e).__name__)
+            raise DedupAuthorityUnavailable("durable signal history unavailable") from None
 
     async def dedupe_batch_strict(
         self,
@@ -201,7 +205,9 @@ class StrictSignalDedup:
         for sig in signals:
             asset = self._normalize(sig.get("asset") or sig.get("symbol"))
             timeframe = self._normalize(sig.get("timeframe") or sig.get("tf")).lower()
-            direction = self._normalize(sig.get("direction") or sig.get("side") or "long").lower()
+            direction = SignalDeduplicator._normalize_direction(sig.get("direction") or sig.get("side") or "long")
+            if not asset or not timeframe or direction not in {"long", "short"}:
+                raise DedupAuthorityUnavailable("invalid signal scope")
 
             key = f"{asset}|{timeframe}|{direction}"
 

@@ -93,6 +93,7 @@ _TESTS = [
     "tests/test_semgrep_gate.py",
     "tests/test_userdash_template_contract.py",
     "tests/test_signal_lease_ownership.py",
+    "tests/test_signal_dedup_authority.py",
     "tests/test_signal_lock_contract.py",
     "tests/test_release_guard_runtime_decisions.py",
     "tests/test_soak_evidence_integrity.py",

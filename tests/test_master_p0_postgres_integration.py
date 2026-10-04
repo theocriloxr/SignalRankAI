@@ -12,6 +12,32 @@ from sqlalchemy.engine import make_url
 
 
 @pytest.mark.asyncio
+async def test_dedup_queries_actual_postgres_and_canonical_side_aliases(postgres_database):
+    from db.models import Signal
+    from db.session import get_session
+    from engine.signal_deduplicator import SignalDeduplicator
+    from engine.signal_dedup_strict import StrictSignalDedup
+    asset = "AUDIT" + uuid4().hex[:12].upper()
+    dedup = SignalDeduplicator()
+    assert not await dedup.is_duplicate(asset, "1h", "BUY", 100)
+    async with get_session() as session:
+        session.add(Signal(signal_id=str(uuid4()), asset=asset, direction="BUY", timeframe="1h",
+                           entry=100, stop_loss=99, take_profit="[101]", score=90,
+                           strategy_name="audit", strategy_group="audit", strength=1))
+        await session.commit()
+    assert await dedup.is_duplicate(asset, "1h", "BUY", 100)
+    assert not await dedup.is_duplicate(asset, "1h", "SELL", 100)
+    history = await dedup.get_recent_signals(asset, "1h", "long")
+    assert len(history) == 1 and history[0]["asset"] == asset
+    assert len(await dedup.get_recent_signals(asset, "1h", "BUY")) == 1
+    duplicates = await dedup.find_semantic_duplicates({"asset": asset, "timeframe": "1h", "direction": "long", "entry": 100})
+    assert len(duplicates) == 1 and duplicates[0][1] > 0.9
+    strict = StrictSignalDedup()
+    assert (await strict.is_duplicate_strict(asset, "1h", "long"))[0]
+    assert len(await strict.find_duplicates_strict(asset, "1h", "BUY")) == 1
+
+
+@pytest.mark.asyncio
 async def test_performance_queries_use_signal_regime_and_asset_class(postgres_database):
     from db.models import Signal, Outcome
     from db.pg_features import get_strategy_performance_by_regime, get_asset_class_strategy_performance

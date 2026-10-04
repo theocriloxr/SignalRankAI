@@ -15,6 +15,8 @@
     "core/redis_state.py",
     "engine/signal_lock.py",
     "engine/dedup_wrapper.py",
+    "engine/signal_deduplicator.py",
+    "engine/signal_dedup_strict.py",
     "db/pg_features.py",
     "db/session.py",
     "db/priority.py",
