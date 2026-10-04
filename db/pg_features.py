@@ -10,6 +10,12 @@ from datetime import datetime, timedelta, timezone
 from utils.timeutils import now_utc_naive
 from core.delivery_state import CONFIRMED_DELIVERY_STATES
 
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
 def to_naive_utc(dt: datetime) -> datetime:
     """Convert any datetime to naive UTC (no tzinfo)."""
     if dt.tzinfo is not None:
@@ -57,6 +63,7 @@ from sqlalchemy import (
     case,
     or_,
     text,
+    true,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,7 +103,7 @@ logger = logging.getLogger(__name__)
 async def ensure_alert_prefs(session: AsyncSession, telegram_user_id: int) -> None:
     """Ensure a default alert_prefs row exists for the user."""
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
-    res: Result[Tuple[AlertPreference]] = await session.execute(
+    res: Result[AlertPreference] = await session.execute(
         select(AlertPreference).where(AlertPreference.user_id == user.id)
     )
     pref: AlertPreference | None = res.scalar_one_or_none()
@@ -402,7 +409,7 @@ async def check_active_signal_exists(
         from core.redis_state import state
 
         if state.has_redis_sync():
-            if state.get_str_sync(redis_key):
+            if state.get_sync(redis_key):
                 return True
     except Exception:
         pass
@@ -436,61 +443,22 @@ async def check_active_signal_exists(
             if outcome is None:
                 # Active signal with no outcome - block duplicate
                 return True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[active_signal] database check blocked error=%s", type(exc).__name__)
+        return True
 
     return False
 
 
-async def acquire_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-    ttl_seconds: int = 14400,  # 4 hours default
-) -> bool:
-    """Acquire Redis lock for signal generation.
-
-    Prevents race conditions when multiple engine cycles
-    try to generate signals for the same asset.
-
-    Key format: signal_lock:{ASSET}:{DIRECTION}:{TIMEFRAME}
-    TTL: 4 hours (configurable)
-    """
-    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
-
-    try:
-        from core.redis_state import state
-
-        if state.has_redis_sync():
-            # Try to acquire lock (atomic set if not exists)
-            existing = state.get_str_sync(redis_key)
-            if existing:
-                # Lock already held
-                return False
-            # Acquire lock
-            state.set_str_sync(redis_key, "1", ex=ttl_seconds)
-            return True
-    except Exception:
-        pass
-
-    return True  # Allow if Redis unavailable
+async def acquire_signal_lock(asset: str, direction: str, timeframe: str, ttl_seconds: int = 14400) -> bool:
+    """Acquire the canonical Redis generation lease; Redis loss denies it."""
+    from engine.signal_lock import acquire_signal_lock as acquire
+    return await acquire(asset, direction, timeframe, ttl_seconds=ttl_seconds)
 
 
-async def release_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-) -> None:
-    """Release Redis lock after signal generation."""
-    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
-
-    try:
-        from core.redis_state import state
-
-        if state.has_redis_sync():
-            state.delete_sync(redis_key)
-    except Exception:
-        pass
+async def release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
+    from engine.signal_lock import release_signal_lock as release
+    await release(asset, direction, timeframe)
 
 
 # Delivery cooldown TTL is derived from the canonical proof-backed policy.
@@ -520,7 +488,7 @@ def check_delivery_cooldown(
     keys = (canonical_delivery_cooldown_key(uid, asset), *legacy_delivery_cooldown_keys(uid, asset, direction))
     try:
         if state.has_redis_sync():
-            return any(bool(state.get_str_sync(key)) for key in keys)
+            return any(bool(state.get_sync(key)) for key in keys)
     except Exception:
         pass
     return False
@@ -552,7 +520,7 @@ def set_delivery_cooldown(
     redis_key = canonical_delivery_cooldown_key(uid, asset)
     try:
         if state.has_redis_sync():
-            state.set_str_sync(redis_key, "1", ex=ttl)
+            state.set_sync(redis_key, "1", ex=ttl)
     except Exception:
         pass
 
@@ -734,7 +702,7 @@ async def get_or_create_signal_impl(
         if active_payload is not None:
             orphan_max_hours = max(0.0, _env_float("ACTIVE_TRADE_ORPHAN_MAX_HOURS", 12.0))
             if active_signal_id:
-                res_active: Result[Tuple[Signal]] = await session.execute(
+                res_active: Result[Signal] = await session.execute(
                     select(Signal).where(Signal.signal_id == active_signal_id)
                 )
                 existing_active = res_active.scalar_one_or_none()
@@ -765,7 +733,7 @@ async def get_or_create_signal_impl(
                                 existing_active.expected_duration = expected_duration
                         except Exception:
                             pass
-                        outcome_res: Result[Tuple[Outcome]] = await session.execute(
+                        outcome_res: Result[str] = await session.execute(
                             select(Outcome.status)
                             .where(Outcome.signal_id == active_signal_id)
                             .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
@@ -835,7 +803,7 @@ async def get_or_create_signal_impl(
     if min_interval_hours > 0:
         min_interval_cutoff = now - timedelta(hours=float(min_interval_hours))
         try:
-            res_recent: Result[Tuple[Signal]] = await session.execute(
+            res_recent: Result[Signal] = await session.execute(
                 select(Signal)
                 .where(
                     and_(
@@ -869,7 +837,7 @@ async def get_or_create_signal_impl(
 
     if cutoff is not None:
         try:
-            res_fuzzy: Result[Tuple[Signal]] = await session.execute(
+            res_fuzzy: Result[Signal] = await session.execute(
                 select(Signal)
                 .where(
                     and_(
@@ -908,7 +876,8 @@ async def get_or_create_signal_impl(
 
     rr_estimate = None
     try:
-        rr_estimate = float(signal.get("rr_ratio"))
+        rr_value = signal.get("rr_ratio")
+        rr_estimate = float(rr_value) if rr_value is not None else 0.0
     except Exception:
         rr_estimate = None
 
@@ -1037,7 +1006,7 @@ async def get_or_create_signal_impl(
         .order_by(Signal.created_at.desc())
     )
     for candidate in res.scalars().all():
-        outcome_res: Result[Tuple[Outcome]] = await session.execute(
+        outcome_res: Result[str] = await session.execute(
             select(Outcome.status)
             .where(Outcome.signal_id == candidate.signal_id)
             .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
@@ -1305,26 +1274,10 @@ async def get_or_create_signal_impl(
         ml_calibration_ece=calibration_ece,
         ml_recovery_mode=bool(signal.get("ml_recovery_mode", False)),
         ml_recovery_reason=(str(signal.get("ml_recovery_reason") or "").strip()[:64] or None),
-        ml_recovery_champion_raw_probability=(
-            float(signal.get("ml_recovery_champion_raw_probability"))
-            if signal.get("ml_recovery_champion_raw_probability") is not None
-            else None
-        ),
-        ml_recovery_certified_threshold=(
-            float(signal.get("ml_recovery_certified_threshold"))
-            if signal.get("ml_recovery_certified_threshold") is not None
-            else None
-        ),
-        ml_recovery_challenger_probability=(
-            float(signal.get("ml_recovery_challenger_probability"))
-            if signal.get("ml_recovery_challenger_probability") is not None
-            else None
-        ),
-        ml_recovery_challenger_threshold=(
-            float(signal.get("ml_recovery_challenger_threshold"))
-            if signal.get("ml_recovery_challenger_threshold") is not None
-            else None
-        ),
+        ml_recovery_champion_raw_probability=_optional_float(signal.get("ml_recovery_champion_raw_probability")),
+        ml_recovery_certified_threshold=_optional_float(signal.get("ml_recovery_certified_threshold")),
+        ml_recovery_challenger_probability=_optional_float(signal.get("ml_recovery_challenger_probability")),
+        ml_recovery_challenger_threshold=_optional_float(signal.get("ml_recovery_challenger_threshold")),
         ml_recovery_challenger_version=(str(signal.get("ml_recovery_challenger_version") or "").strip()[:64] or None),
         quality_gate_version=quality_gate_version,
         quality_gate_passed=quality_gate_passed,
@@ -1396,12 +1349,12 @@ async def record_signal_delivery(
     try:
         reset_epoch: str | None = os.getenv("DELIVERY_DEDUPE_RESET_EPOCH")
         if reset_epoch:
-            dedupe_reset_at: datetime = datetime.utcfromtimestamp(int(str(reset_epoch).strip()))
+            dedupe_reset_at = datetime.utcfromtimestamp(int(str(reset_epoch).strip()))
     except Exception:
         dedupe_reset_at = None
 
     if dedupe_reset_at:
-        cutoff: datetime = max(cutoff, dedupe_reset_at) if cutoff else dedupe_reset_at
+        cutoff = max(cutoff, dedupe_reset_at) if cutoff else dedupe_reset_at
 
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
     tier_base: str = tier_s.split("_", 1)[0].strip().lower()
@@ -1413,7 +1366,7 @@ async def record_signal_delivery(
         daily_limit = TIER_DAILY_LIMITS.get(tier_base)
         if daily_limit is not None and daily_limit != float("inf"):
             day_start = to_naive_utc(_utcnow()).replace(hour=0, minute=0, second=0, microsecond=0)
-            sent_today_res: Result[Tuple[int]] = await session.execute(
+            sent_today_res: Result[int] = await session.execute(
                 select(func.count(SignalDelivery.id)).where(
                     SignalDelivery.user_id == user.id,
                     SignalDelivery.sent_ok.is_(True),
@@ -1442,7 +1395,7 @@ async def record_signal_delivery(
         market_cutoff = max(market_cutoff, dedupe_reset_at) if market_cutoff else dedupe_reset_at
 
     try:
-        res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+        res_sig: Result[Signal] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
         sig: Signal | None = res_sig.scalar_one_or_none()
         if sig is None:
             logger.warning("[dedup] signal missing; blocking delivery user=%s signal=%s", user.id, signal_id)
@@ -1582,7 +1535,7 @@ async def record_signal_delivery(
                     return False
 
             if market_cutoff is not None:
-                res_market: Result[Tuple[int]] = await session.execute(
+                res_market: Result[int] = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
@@ -1612,7 +1565,7 @@ async def record_signal_delivery(
             if cutoff is not None:
                 # Thesis delivery dedupe: regenerated signal ids and tiny price
                 # changes should not reach the same user as a new signal.
-                res_u: Result[Tuple[int]] = await session.execute(
+                res_u: Result[int] = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
@@ -1766,12 +1719,12 @@ async def list_signals_sent_today(
     now: datetime = to_naive_utc(_utcnow())
     start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    res: Result[User] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
 
-    q: Select[Tuple[Signal]] = (
+    q: Select[Signal] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(
@@ -1781,7 +1734,7 @@ async def list_signals_sent_today(
         )
         .order_by(SignalDelivery.delivered_at.desc())
     )
-    res2: Result[Tuple[Signal]] = await session.execute(q)
+    res2: Result[Signal] = await session.execute(q)
     return list(res2.scalars().all())
 
 
@@ -1793,12 +1746,12 @@ async def count_signals_sent_today(
     now: datetime = to_naive_utc(_utcnow())
     start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    res: Result[User] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return 0
 
-    cnt_res: Result[Tuple[int]] = await session.execute(
+    cnt_res: Result[int] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
             SignalDelivery.user_id == user.id,
             SignalDelivery.sent_ok.is_(True),
@@ -1815,12 +1768,12 @@ async def list_recent_signals_delivered(
     asset: str | None = None,
     timeframe: str | None = None,
 ) -> list[Signal]:
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    res: Result[User] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
 
-    q: Select[Tuple[Signal]] = (
+    q: Select[Signal] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(SignalDelivery.user_id == user.id, SignalDelivery.sent_ok.is_(True))
@@ -1828,11 +1781,11 @@ async def list_recent_signals_delivered(
         .limit(max(1, int(limit)))
     )
     if asset:
-        q: Select[Tuple[Signal]] = q.where(Signal.asset == str(asset).upper().strip())
+        q: Select[Signal] = q.where(Signal.asset == str(asset).upper().strip())
     if timeframe:
-        q: Select[Tuple[Signal]] = q.where(Signal.timeframe == str(timeframe).lower().strip())
+        q: Select[Signal] = q.where(Signal.timeframe == str(timeframe).lower().strip())
 
-    res2: Result[Tuple[Signal]] = await session.execute(q)
+    res2: Result[Signal] = await session.execute(q)
     return list(res2.scalars().all())
 
 
@@ -1852,7 +1805,7 @@ async def list_delivered_signals_for_user(
     archived/expired booleans are only legacy projections and must not hide an
     ACTIVE_TRADE/TP1/TP2 signal after a confirmed delivery.
     """
-    res: Result[Tuple[User]] = await session.execute(
+    res: Result[User] = await session.execute(
         select(User).where(User.telegram_user_id == int(telegram_user_id))
     )
     user: User | None = res.scalar_one_or_none()
@@ -1908,7 +1861,7 @@ async def list_delivered_signals_for_user(
         ),
     )
 
-    q: Select[Tuple[Signal]] = (
+    q: Select[Signal] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
@@ -1959,14 +1912,14 @@ async def list_delivered_signals_for_user(
     else:
         q = q.where(active_projection)
 
-    res2: Result[Tuple[Signal]] = await session.execute(q)
+    res2: Result[Signal] = await session.execute(q)
     rows = list(res2.scalars().all())
 
     # Active-message tracking is a second delivery proof if the delivery row was
     # temporarily unavailable under DB pressure. Lifecycle truth still decides
     # whether that message represents an actionable/managed signal.
     if mode == "active":
-        q_active: Select[Tuple[Signal]] = (
+        q_active: Select[Signal] = (
             select(Signal)
             .join(ActiveSignalMessage, ActiveSignalMessage.signal_id == Signal.signal_id)
             .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
@@ -1982,7 +1935,7 @@ async def list_delivered_signals_for_user(
         )
         if asset:
             q_active = q_active.where(Signal.asset == str(asset).upper().strip())
-        res3: Result[Tuple[Signal]] = await session.execute(q_active)
+        res3: Result[Signal] = await session.execute(q_active)
         rows.extend(list(res3.scalars().all()))
 
     seen: set[str] = set()
@@ -2022,19 +1975,19 @@ async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -
     now: datetime = _utcnow()
     start: datetime = now - timedelta(days=7)
 
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    res: Result[User] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return {"total": 0, "top_assets": [], "top_strategies": []}
 
-    res_total: Result[Tuple[int]] = await session.execute(
+    res_total: Result[int] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
             SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start
         )
     )
     total = int(res_total.scalar() or 0)
 
-    res_assets: Result[Tuple[str, int]] = await session.execute(
+    res_assets: Result[str, int] = await session.execute(
         select(Signal.asset, func.count(SignalDelivery.id))
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
@@ -2044,7 +1997,7 @@ async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -
     )
     top_assets: list[str] = [str(a) for (a, _) in (res_assets.all() or [])]
 
-    res_strats: Result[Tuple[str, int]] = await session.execute(
+    res_strats: Result[str, int] = await session.execute(
         select(Signal.strategy_name, func.count(SignalDelivery.id))
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
@@ -2123,7 +2076,7 @@ async def upsert_outcome(
         if getattr(getattr(bind, "dialect", None), "name", "") == "postgresql":
             raise RuntimeError("outcome advisory lock failed") from exc
 
-    result: Result[Tuple[Outcome]] = await session.execute(
+    result: Result[Outcome] = await session.execute(
         select(Outcome)
         .where(Outcome.signal_id == signal_id_str)
         .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
@@ -2168,7 +2121,7 @@ async def upsert_outcome(
             "status": existing_status,
             "r_multiple": getattr(oc, "r_multiple", None),
             "percent": getattr(oc, "percent", None),
-            "closed_at": getattr(oc, "closed_at", None).isoformat() if getattr(oc, "closed_at", None) else None,
+            "closed_at": oc.closed_at.isoformat() if oc.closed_at is not None else None,
             "terminal_version": int(getattr(oc, "terminal_version", 0) or 0),
         }
         oc.status = status_l
@@ -2340,10 +2293,11 @@ async def mark_signal_delivery_result(
     if existing_proof_ok:
         if (
             sent_ok
-            and proof_ok
+            and telegram_chat_id is not None
+            and telegram_message_id is not None
             and (
-                int(getattr(row, "telegram_chat_id")) != int(telegram_chat_id)
-                or int(getattr(row, "telegram_message_id")) != int(telegram_message_id)
+                row.telegram_chat_id != int(telegram_chat_id)
+                or row.telegram_message_id != int(telegram_message_id)
             )
         ):
             logger.error(
@@ -2371,7 +2325,7 @@ async def mark_signal_delivery_result(
     row.sent_ok = bool(sent_ok)
     row.last_attempt_at = now
     row.telegram_send_started_at = getattr(row, "telegram_send_started_at", None) or now
-    if sent_ok:
+    if sent_ok and telegram_chat_id is not None and telegram_message_id is not None:
         signal_row = (
             await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)).limit(1))
         ).scalar_one_or_none()
@@ -2615,10 +2569,10 @@ async def list_signals_missing_outcomes(
     if min_created_at is not None:
         _predicates.append(Signal.created_at <= min_created_at)
 
-    q: Select[Tuple[Signal]] = (
+    q: Select[Signal] = (
         select(Signal).where(*_predicates).order_by(Signal.created_at.asc()).limit(max(1, int(limit)))
     )
-    res: Result[Tuple[Signal]] = await session.execute(q)
+    res: Result[Signal] = await session.execute(q)
     return list(res.scalars().all())
 
 
@@ -2626,7 +2580,7 @@ async def list_pending_outcome_notifications(
     session: AsyncSession,
     limit: int = 200,
 ) -> list[tuple[OutcomeNotification, Outcome, Signal]]:
-    res: Result[Tuple[OutcomeNotification, Outcome, Signal]] = await session.execute(
+    res: Result[OutcomeNotification, Outcome, Signal] = await session.execute(
         select(OutcomeNotification, Outcome, Signal)
         .join(Outcome, Outcome.id == OutcomeNotification.outcome_id)
         .join(Signal, Signal.signal_id == OutcomeNotification.signal_id)
@@ -2666,7 +2620,7 @@ async def mark_outcome_notification_delivered(
     session: AsyncSession,
     notification_id: int,
 ) -> None:
-    res: Result[Tuple[OutcomeNotification]] = await session.execute(
+    res: Result[OutcomeNotification] = await session.execute(
         select(OutcomeNotification).where(OutcomeNotification.id == int(notification_id))
     )
     row: OutcomeNotification | None = res.scalars().first()
@@ -2786,7 +2740,7 @@ async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
         await mark_outcome_notification_delivered(session, int(row.id))
 
     # Keep legacy meta flags for compatibility with old readers.
-    res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.id == int(outcome_id)))
+    res: Result[Outcome] = await session.execute(select(Outcome).where(Outcome.id == int(outcome_id)))
     oc: Outcome | None = res.scalars().first()
     if oc is not None:
         meta: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
@@ -2802,7 +2756,7 @@ async def mark_outcome_notification_failed(
     *,
     error: str | None = None,
 ) -> None:
-    res: Result[Tuple[OutcomeNotification]] = await session.execute(
+    res: Result[OutcomeNotification] = await session.execute(
         select(OutcomeNotification).where(OutcomeNotification.id == int(notification_id))
     )
     row: OutcomeNotification | None = res.scalars().first()
@@ -2818,7 +2772,7 @@ async def mark_outcome_notification_failed(
 
 
 async def get_outcome_for_signal(session: AsyncSession, signal_id: str) -> Outcome | None:
-    res: Result[Tuple[Outcome]] = await session.execute(
+    res: Result[Outcome] = await session.execute(
         select(Outcome).where(Outcome.signal_id == str(signal_id)).order_by(Outcome.id.desc()).limit(1)
     )
     return res.scalars().first()
@@ -2874,7 +2828,7 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
         or current_signal is None
         or not _env_bool("OUTCOME_DUPLICATE_NOTIFICATION_SUPPRESSION_ENABLED", True)
     ):
-        return [(int(row[1]), str(row[2])) for row in recipient_rows]
+        return [(int(telegram_id), str(row[2])) for row in recipient_rows if (telegram_id := row[1]) is not None]
 
     try:
         window_hours = max(1, int(os.getenv("SIGNAL_THESIS_DEDUP_HOURS", "4") or 4))
@@ -2884,7 +2838,7 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
 
     proof_times = [row[3] for row in recipient_rows if row[3] is not None]
     if not proof_times:
-        return [(int(row[1]), str(row[2])) for row in recipient_rows]
+        return [(int(telegram_id), str(row[2])) for row in recipient_rows if (telegram_id := row[1]) is not None]
     earliest_cutoff = min(proof_times) - timedelta(hours=window_hours)
     latest_current = max(proof_times)
     user_ids = [int(row[0]) for row in recipient_rows]
@@ -2929,6 +2883,8 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
         current_entry = 0.0
     eligible: list[tuple[int, str]] = []
     for user_id, telegram_user_id, tier, current_time in recipient_rows:
+        if telegram_user_id is None:
+            continue
         duplicate_of = None
         if current_time is not None and current_entry > 0:
             for prior_signal_id, prior_time, prior_entry in prior_by_user.get(int(user_id), []):
@@ -2952,8 +2908,8 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
 
 
 async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:
-    res: Result[Tuple[int]] = await session.execute(select(User.telegram_user_id).order_by(User.telegram_user_id.asc()))
-    ids = [int(x) for (x,) in (res.all() or [])]
+    res: Result[int | None] = await session.execute(select(User.telegram_user_id).order_by(User.telegram_user_id.asc()))
+    ids = [int(x) for (x,) in (res.all() or []) if x is not None]
     try:
         from config import OWNER_IDS, ADMIN_IDS
 
@@ -2989,7 +2945,7 @@ async def record_payment_event(
     if not ref:
         raise ValueError("paystack_reference required")
 
-    res: Result[Tuple[PaymentEvent]] = await session.execute(
+    res: Result[PaymentEvent] = await session.execute(
         select(PaymentEvent).where(PaymentEvent.paystack_reference == ref)
     )
     existing: PaymentEvent | None = res.scalars().first()
@@ -3025,7 +2981,7 @@ async def record_payment_event(
 
 async def get_alert_prefs(session: AsyncSession, telegram_user_id: int) -> dict[str, object]:
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
-    res: Result[Tuple[AlertPreference]] = await session.execute(
+    res: Result[AlertPreference] = await session.execute(
         select(AlertPreference).where(AlertPreference.user_id == user.id)
     )
     pref: AlertPreference | None = res.scalar_one_or_none()
@@ -3046,7 +3002,7 @@ async def set_alert_prefs(
     quiet_end_hour: Optional[int] = None,
 ) -> dict:
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
-    res: Result[Tuple[AlertPreference]] = await session.execute(
+    res: Result[AlertPreference] = await session.execute(
         select(AlertPreference).where(AlertPreference.user_id == user.id)
     )
     pref: AlertPreference | None = res.scalar_one_or_none()
@@ -3114,7 +3070,7 @@ async def queue_free_signal_summary(
     window_end: datetime = window_start + timedelta(days=1)
 
     # Enforce per-day cap (queued + sent)
-    res: Result[Tuple[int]] = await session.execute(
+    res: Result[int] = await session.execute(
         select(func.count(FreeSignalQueue.id)).where(
             FreeSignalQueue.user_id == user.id,
             FreeSignalQueue.date >= window_start,
@@ -3137,7 +3093,7 @@ async def queue_free_signal_summary(
         return False
 
     # Dedupe: do not queue the exact same signal more than once per user/day.
-    res_dupe: Result[Tuple[int]] = await session.execute(
+    res_dupe: Result[int] = await session.execute(
         select(func.count(FreeSignalQueue.id)).where(
             FreeSignalQueue.user_id == user.id,
             FreeSignalQueue.date >= window_start,
@@ -3188,15 +3144,17 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
 
 async def get_due_free_signal_summaries(session: AsyncSession) -> dict[int, list[dict]]:
     now: datetime = _utcnow()
-    res: Result[Tuple[FreeSignalQueue, int]] = await session.execute(
+    res: Result[FreeSignalQueue, int | None] = await session.execute(
         select(FreeSignalQueue, User.telegram_user_id)
         .join(User, User.id == FreeSignalQueue.user_id)
         .where(FreeSignalQueue.status == "queued", FreeSignalQueue.deliver_after <= now)
         .order_by(User.telegram_user_id.asc(), FreeSignalQueue.score.desc())
     )
-    rows: list[Row[Tuple[FreeSignalQueue, int]]] = list(res.all())
+    rows: list[Row[FreeSignalQueue, int | None]] = list(res.all())
     grouped: dict[int, list[dict]] = {}
     for queue_row, telegram_user_id in rows:
+        if telegram_user_id is None:
+            continue
         grouped.setdefault(int(telegram_user_id), []).append(
             {
                 "id": int(queue_row.id),
@@ -3230,7 +3188,7 @@ async def expire_old_free_signal_summaries(session: AsyncSession, max_age_hours:
         .where(FreeSignalQueue.status == "queued", FreeSignalQueue.queued_at < cutoff)
         .values(status="expired")
     )
-    res: CursorResult[Any] = await session.execute(stmt)
+    res = await session.execute(stmt)
     await session.flush()
     return int(getattr(res, "rowcount", 0) or 0)
 
@@ -3290,7 +3248,7 @@ async def get_or_create_referral_code(session: AsyncSession, referrer_telegram_u
 
 
 async def _count_referrals(session: AsyncSession, referrer_user_id: int) -> int:
-    res: Result[Tuple[int]] = await session.execute(
+    res: Result[int] = await session.execute(
         select(func.count(ReferralAttribution.id)).where(ReferralAttribution.referrer_user_id == int(referrer_user_id))
     )
     return int(res.scalar() or 0)
@@ -3318,7 +3276,7 @@ async def get_referral_progress(session: AsyncSession, referrer_telegram_user_id
 
 
 async def _sum_reward_days(session: AsyncSession, referrer_user_id: int) -> int:
-    res: Result[Tuple[int]] = await session.execute(
+    res: Result[int] = await session.execute(
         select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
             ReferralReward.referrer_user_id == int(referrer_user_id),
             ReferralReward.reward_type == "premium_days",
@@ -3574,9 +3532,9 @@ async def process_referral_start(
         result["status"] = "invalid_code"
         return result
 
-    referrer_tid = int(referrer_user.telegram_user_id)
+    referrer_tid = int(referrer_user.telegram_user_id) if referrer_user.telegram_user_id is not None else None
     result["referrer_id"] = referrer_tid
-    if int(referred_telegram_user_id) == referrer_tid:
+    if referrer_tid is not None and int(referred_telegram_user_id) == referrer_tid:
         result["status"] = "self_referral"
         return result
     if not bool(is_new_user):
@@ -3599,13 +3557,12 @@ async def process_referral_start(
     ).scalar_one_or_none()
     if existing_attribution is not None:
         result["status"] = "already_referred"
-        result["referrer_id"] = int(
-            (
+        existing_referrer_tid = (
                 await session.execute(
                     select(User.telegram_user_id).where(User.id == int(existing_attribution.referrer_user_id))
                 )
             ).scalar_one()
-        )
+        result["referrer_id"] = int(existing_referrer_tid) if existing_referrer_tid is not None else None
         return result
 
     now = _utcnow()
@@ -3617,7 +3574,7 @@ async def process_referral_start(
         reward_applied=False,
     )
     session.add(attribution)
-    if not getattr(referred_user, "referred_by", None):
+    if referrer_tid is not None and not getattr(referred_user, "referred_by", None):
         referred_user.referred_by = referrer_tid
 
     signup_reference = f"REFERRAL_SIGNUP:{int(referred_user.id)}"
@@ -3662,7 +3619,10 @@ async def process_referral_start(
         return result
 
     batch_number = int(total // requirement)
-    reward_ref = f"REFERRAL:{referrer_tid}:{batch_number}"
+    if referrer_tid is not None:
+        reward_ref = f"REFERRAL:{referrer_tid}:{batch_number}"
+    else:
+        reward_ref = f"REFERRAL:USER:{int(referrer_user.id)}:{batch_number}"
     existing_reward = (
         await session.execute(select(ReferralReward).where(ReferralReward.reference == reward_ref))
     ).scalar_one_or_none()
@@ -3715,6 +3675,7 @@ async def process_referral_start(
     await activate_subscription(
         session,
         telegram_user_id=referrer_tid,
+        user_id=int(referrer_user.id),
         tier=tier_to_extend,
         duration_days=int(grant_days),
         paystack_reference=reward_ref,
@@ -3832,7 +3793,7 @@ async def record_referral_conversion(
 
 async def archive_signal_after_outcome(session: AsyncSession, signal_id: str) -> None:
     """Mark signal as archived (soft delete) after outcome is recorded."""
-    res: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+    res: Result[Signal] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
     sig: Signal | None = res.scalar_one_or_none()
     if sig is not None:
         sig.archived = True
@@ -3889,7 +3850,7 @@ async def list_recent_signals_for_user(
 async def delete_old_signals(session: AsyncSession, older_than_days: int = 7) -> int:
     """Hard delete signals older than N days. Called periodically."""
     cutoff: datetime = _utcnow() - timedelta(days=max(1, int(older_than_days)))
-    res: Result[Tuple[str]] = await session.execute(select(Signal.signal_id).where(Signal.created_at < cutoff))
+    res: Result[str] = await session.execute(select(Signal.signal_id).where(Signal.created_at < cutoff))
     old_signal_ids: list[Any] = [row[0] for row in res.all()]
     if not old_signal_ids:
         return 0
@@ -4097,7 +4058,7 @@ async def get_random_available_signals_for_free_user(
     min_score = _env_int("FREE_RANDOM_MIN_SCORE", 80)
 
     # Get signals this user already received
-    res_delivered: Result[Tuple[str]] = await session.execute(
+    res_delivered: Result[str] = await session.execute(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
@@ -4107,7 +4068,7 @@ async def get_random_available_signals_for_free_user(
     except Exception:
         asset_lock_hours = 4
     asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
-    res_locked_assets: Result[Tuple[str]] = await session.execute(
+    res_locked_assets: Result[str] = await session.execute(
         select(Signal.asset)
         .select_from(SignalDelivery)
         .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
@@ -4134,7 +4095,7 @@ async def get_random_available_signals_for_free_user(
 
     # Get all recent signals (not yet archived)
     # Note: archived filtering will be applied once migration 0009 runs
-    res_signals: Result[Tuple[Signal]] = await session.execute(
+    res_signals: Result[Signal] = await session.execute(
         select(Signal)
         .where(
             Signal.created_at >= cutoff,
@@ -4182,7 +4143,7 @@ async def get_highest_scoring_available_signal_for_user(
     cutoff: datetime = now - timedelta(hours=24)
 
     # Get signals this user already received
-    res_delivered: Result[Tuple[str]] = await session.execute(
+    res_delivered: Result[str] = await session.execute(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
@@ -4192,7 +4153,7 @@ async def get_highest_scoring_available_signal_for_user(
     except Exception:
         asset_lock_hours = 4
     asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
-    res_locked_assets: Result[Tuple[str]] = await session.execute(
+    res_locked_assets: Result[str] = await session.execute(
         select(Signal.asset)
         .select_from(SignalDelivery)
         .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
@@ -4219,13 +4180,13 @@ async def get_highest_scoring_available_signal_for_user(
 
     # Get highest scoring recent signal not yet delivered to user and still ongoing
     # Note: archived filtering will be applied once migration 0009 runs
-    res_signal: Result[Tuple[Signal]] = await session.execute(
+    res_signal: Result[Signal] = await session.execute(
         select(Signal)
         .where(
             Signal.created_at >= cutoff,
-            Signal.signal_id.notin_(already_received) if already_received else True,
-            Signal.signal_id.notin_(resolved_signals) if resolved_signals else True,
-            ~Signal.asset.in_(locked_assets) if locked_assets else True,
+            Signal.signal_id.notin_(already_received) if already_received else true(),
+            Signal.signal_id.notin_(resolved_signals) if resolved_signals else true(),
+            ~Signal.asset.in_(locked_assets) if locked_assets else true(),
         )
         .order_by(Signal.score.desc(), Signal.created_at.desc())
         .limit(100)
@@ -4258,7 +4219,7 @@ async def queue_random_free_signals_for_all_users(
     # stale cached value or an operator allowlist.
     from db.access import resolve_product_tier
 
-    res_users: Result[Tuple[User]] = await session.execute(
+    res_users: Result[User] = await session.execute(
         select(User).where(User.is_blocked.is_(False), User.is_suspended.is_(False))
     )
     free_users: list[User] = []
@@ -4267,6 +4228,8 @@ async def queue_random_free_signals_for_all_users(
             free_users.append(candidate)
 
     for user in free_users:
+        if user.telegram_user_id is None:
+            continue
         # Check user's daily window
         try:
             anchor: datetime = user.created_at.replace(tzinfo=None)
@@ -4280,7 +4243,7 @@ async def queue_random_free_signals_for_all_users(
         window_end: datetime = window_start + timedelta(days=1)
 
         # Check how many already queued/sent today
-        res_count: Result[Tuple[int]] = await session.execute(
+        res_count: Result[int] = await session.execute(
             select(func.count(FreeSignalQueue.id)).where(
                 FreeSignalQueue.user_id == user.id,
                 FreeSignalQueue.date >= window_start,
@@ -4343,7 +4306,7 @@ async def count_signals_delivered_today(
     now: datetime = _utcnow()
     start_of_day: datetime = to_naive_utc(now).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    res: Result[Tuple[int]] = await session.execute(
+    res: Result[int] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
             SignalDelivery.user_id == user.id,
             SignalDelivery.sent_ok.is_(True),
@@ -4368,7 +4331,7 @@ async def get_last_signal_delivery_time(
     now: datetime = _utcnow()
     start_of_day: datetime = to_naive_utc(now).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    res: Result[Tuple[datetime]] = await session.execute(
+    res: Result[datetime] = await session.execute(
         select(SignalDelivery.delivered_at)
         .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start_of_day)
         .order_by(desc(SignalDelivery.delivered_at))
@@ -4425,15 +4388,15 @@ async def get_strategy_performance(session: AsyncSession, strategy_name: str) ->
     """
     try:
         # Get all outcomes for signals with this strategy
-        stmt: Select[Tuple[Outcome]] = (
+        stmt: Select[Outcome] = (
             select(Outcome)
             .select_from(Signal)
             .join(Outcome, Outcome.signal_id == Signal.signal_id)
             .where(Signal.strategy_name == strategy_name)
         )
 
-        result: Result[Tuple[Outcome]] = await session.execute(stmt)
-        outcomes: list[Outcome] = result.scalars().all()
+        result: Result[Outcome] = await session.execute(stmt)
+        outcomes: list[Outcome] = list(result.scalars().all())
 
         total: int = len(outcomes)
         wins: int = sum(1 for o in outcomes if str(getattr(o, "status", "")).lower() == "tp")
@@ -4458,7 +4421,7 @@ async def list_active_signals(
     """Return recent non-expired, non-archived signals within max_age_days."""
     now: datetime = _utcnow()
     start: datetime = now - timedelta(days=max(1, int(max_age_days)))
-    q: Select[Tuple[Signal]] = (
+    q: Select[Signal] = (
         select(Signal)
         .where(
             Signal.created_at >= start,
@@ -4468,7 +4431,7 @@ async def list_active_signals(
         .order_by(Signal.created_at.desc())
         .limit(max(1, int(limit)))
     )
-    res: Result[Tuple[Signal]] = await session.execute(q)
+    res: Result[Signal] = await session.execute(q)
     return list(res.scalars().all())
 
 
@@ -4635,7 +4598,7 @@ async def get_strategy_performance_by_regime(
         .where(
             and_(
                 Signal.strategy_name == strategy_name,
-                Outcome.regime == regime,
+                Signal.regime == regime,
             )
         )
     )
@@ -4718,8 +4681,8 @@ async def get_asset_class_strategy_performance(
         .where(
             and_(
                 Signal.strategy_name == strategy_name,
-                Outcome.asset_class == asset_class,
-                Outcome.regime == regime,
+                Signal.asset_class == asset_class,
+                Signal.regime == regime,
             )
         )
     )

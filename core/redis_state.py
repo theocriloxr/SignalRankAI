@@ -172,7 +172,10 @@ def get_delivered_signals_sync(user_id: int) -> set:
             max_connections=_redis_max_connections(),
         )
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-        return set(r.smembers(key) or set())
+        members = r.smembers(key)
+        # A synchronous Redis client returns a set. Do not consume an async
+        # client response or mistake an unexpected response for delivery proof.
+        return members if isinstance(members, set) else set()
     except Exception:
         # Redis not available (dev/railway), return empty set
         return set()
@@ -407,6 +410,61 @@ class RedisState:
 
     def has_redis_sync(self) -> bool:
         return self._get_redis_sync() is not None
+
+    def lease_acquire_sync(self, key: str, ttl_seconds: int, legacy_keys: tuple[str, ...] = ()) -> Optional[str]:
+        """Acquire a Redis-only lease atomically; unavailable storage denies it.
+
+        General state reads/writes cache locally and may queue Postgres writes.
+        They cannot establish ownership across replicas. Legacy generation keys
+        are checked in the same script so an existing cooldown is respected.
+        An uncertain Redis response leaves expiry to recover the unowned lease.
+        """
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0:
+            return None
+        import secrets
+
+        token = secrets.token_hex(32)
+        try:
+            client = self._get_redis_sync()
+            if client is None:
+                return None
+            keys = tuple(dict.fromkeys((key, *legacy_keys)))
+            acquired = client.eval(
+                "for i = 1, #KEYS do if redis.call('exists', KEYS[i]) == 1 then return 0 end end "
+                "if redis.call('set', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then return 1 else return 0 end",
+                len(keys), *keys, token, ttl_seconds,
+            )
+            return token if acquired == 1 else None
+        except Exception as exc:
+            logger.warning("[redis_lease] acquisition denied error=%s", type(exc).__name__)
+            return None
+
+    def lease_blocked_sync(self, key: str, legacy_keys: tuple[str, ...] = ()) -> bool:
+        """Read the authoritative Redis keys; absence of Redis means blocked."""
+        try:
+            client = self._get_redis_sync()
+            if client is None:
+                return True
+            return bool(client.exists(*tuple(dict.fromkeys((key, *legacy_keys)))))
+        except Exception as exc:
+            logger.warning("[redis_lease] check blocked error=%s", type(exc).__name__)
+            return True
+
+    def lease_release_sync(self, key: str, token: str) -> bool:
+        """Atomically delete only the caller's lease, without cache fallbacks."""
+        if not token:
+            return False
+        try:
+            client = self._get_redis_sync()
+            if client is None:
+                return False
+            return client.eval(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                1, key, token,
+            ) == 1
+        except Exception as exc:
+            logger.warning("[redis_lease] release denied error=%s", type(exc).__name__)
+            return False
 
     def ping_sync(self) -> bool:
         r = self._get_redis_sync()

@@ -11,6 +11,85 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 
 
+@pytest.mark.asyncio
+async def test_performance_queries_use_signal_regime_and_asset_class(postgres_database):
+    from db.models import Signal, Outcome
+    from db.pg_features import get_strategy_performance_by_regime, get_asset_class_strategy_performance
+    from db.session import get_session
+    marker = uuid4().hex[:20]
+    async with get_session() as session:
+        for asset_class, status, percent in (("crypto", "win", 2.5), ("forex", "loss", -0.5)):
+            signal_id = str(uuid4())
+            session.add(Signal(signal_id=signal_id, asset="AUDITPERF", direction="long", timeframe="1h",
+                               entry=100, stop_loss=99, take_profit="[101]", score=90,
+                               strategy_name=marker, strategy_group="audit", strength=1,
+                               regime=marker, asset_class=asset_class))
+            await session.flush()
+            session.add(Outcome(signal_id=signal_id, status=status, pnl_pct=percent, meta={}))
+        await session.flush()
+        overall = await get_strategy_performance_by_regime(session, marker, marker)
+        crypto = await get_asset_class_strategy_performance(session, marker, "crypto", marker)
+        assert overall["trades"] == 2 and overall["win_rate"] == 0.5 and overall["avg_rr"] == 5
+        assert crypto["trades"] == 1 and crypto["win_rate"] == 1
+        assert (await get_strategy_performance_by_regime(session, marker, "missing"))["trades"] == 0
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_web_only_referrers_have_separate_reward_identities(postgres_database, monkeypatch):
+    from db.models import User, ReferralReward
+    from db.pg_features import get_or_create_referral_code_for_user, process_referral_start
+    from db.session import get_session
+    monkeypatch.setenv("REFERRALS_PER_REWARD", "1")
+    monkeypatch.setenv("REFERRAL_BONUS_DAYS", "7")
+    marker = uuid4().hex
+    async with get_session() as session:
+        owners = [User(username=f"audit-{marker[:16]}-{i}", telegram_user_id=None, tier="free") for i in range(2)]
+        session.add_all(owners)
+        await session.flush()
+        for i, owner in enumerate(owners):
+            code = await get_or_create_referral_code_for_user(session, referrer_user_id=owner.id)
+            referred_id = 8000000000 + int(uuid4().hex[:8], 16)
+            result = await process_referral_start(session, referred_id, code, True)
+            assert result["status"] == "reward_granted" and result["days_granted"] == 7
+            assert result["referrer_id"] is None
+            duplicate = await process_referral_start(session, referred_id, code, True)
+            assert duplicate["status"] == "already_referred" and duplicate["referrer_id"] is None
+        rewards = list((await session.execute(select(ReferralReward).where(
+            ReferralReward.referrer_user_id.in_([owner.id for owner in owners]), ReferralReward.reward_type == "premium_days",
+        ))).scalars().all())
+        assert len(rewards) == 2 and len({reward.reference for reward in rewards}) == 2
+        assert {reward.reference for reward in rewards} == {f"REFERRAL:USER:{owner.id}:1" for owner in owners}
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_web_only_users_are_excluded_from_telegram_queues(postgres_database):
+    from db.models import User, Signal, FreeSignalQueue
+    from db.pg_features import get_due_free_signal_summaries, list_all_user_telegram_ids
+    from db.session import get_session
+    now = datetime.utcnow()
+    marker, signal_id = uuid4().hex, str(uuid4())
+    telegram_id = 8000000000 + int(uuid4().hex[:8], 16)
+    async with get_session() as session:
+        web_user = User(username=f"web-{marker[:16]}", telegram_user_id=None, tier="free")
+        telegram_user = User(telegram_user_id=telegram_id, tier="free")
+        session.add_all([web_user, telegram_user])
+        session.add(Signal(signal_id=signal_id, asset="AUDITQUEUE", direction="long", timeframe="1h",
+                           entry=100, stop_loss=99, take_profit="[101]", score=90,
+                           strategy_name="audit", strategy_group="audit", strength=1))
+        await session.flush()
+        session.add(FreeSignalQueue(user_id=web_user.id, signal_id=signal_id, date=now, asset="AUDITQUEUE",
+                                    direction="long", timeframe="1h", score=90, queued_at=now,
+                                    deliver_after=now - timedelta(seconds=1), status="queued"))
+        await session.flush()
+        summaries = await get_due_free_signal_summaries(session)
+        assert all(item["signal_id"] != signal_id for items in summaries.values() for item in items)
+        ids = await list_all_user_telegram_ids(session)
+        assert telegram_id in ids and all(isinstance(value, int) for value in ids)
+        await session.rollback()
+
+
 @pytest_asyncio.fixture
 async def postgres_database():
     from db.session import dispose_engine_for_event_loop, get_session

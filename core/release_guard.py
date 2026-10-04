@@ -40,8 +40,8 @@ def _flag(name: str, default: bool = False) -> bool:
 
 
 def _evidence(supplied: Mapping[str, Any], key: str, certification_env: str) -> bool:
-    if supplied.get(key) is True:
-        return True
+    if key in supplied:
+        return supplied[key] is True
     return bool(str(os.getenv(certification_env) or "").strip())
 
 
@@ -56,18 +56,13 @@ def _check_db_pool_safe() -> GuardCheck:
         public_testing = _flag("PUBLIC_TESTING_MODE", False)
 
         if disable_cap or allow_uncapped:
-            if public_testing:
+            if not public_testing:
                 return GuardCheck(
                     "safe_db_pool",
-                    True,
-                    "unsafe override blocked by PUBLIC_TESTING_MODE",
-                    blocking=False,
+                    False,
+                    "DB_POOL_DISABLE_RAILWAY_CAP or DB_POOL_ALLOW_UNCAPPED_RAILWAY override detected",
                 )
-            return GuardCheck(
-                "safe_db_pool",
-                False,
-                "DB_POOL_DISABLE_RAILWAY_CAP or DB_POOL_ALLOW_UNCAPPED_RAILWAY override detected",
-            )
+            # Confirm the effective cap; a mode flag alone cannot prove it.
 
         pool_size, max_overflow = _effective_pool_settings()
         railway = _is_railway_runtime()
@@ -103,7 +98,7 @@ def _check_db_pool_safe() -> GuardCheck:
         return GuardCheck(
             "safe_db_pool",
             False,
-            f"DB pool check failed: {type(exc).__name__}: {exc}",
+            f"DB pool check failed: {type(exc).__name__}",
         )
 
 
@@ -128,9 +123,8 @@ def _check_multiple_engines() -> GuardCheck:
     except Exception as exc:
         return GuardCheck(
             "engine_capacity_budget",
-            True,
-            f"engine inventory unavailable: {type(exc).__name__}: {exc}",
-            blocking=False,
+            False,
+            f"engine inventory unavailable: {type(exc).__name__}",
         )
 
 

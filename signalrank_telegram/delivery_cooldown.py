@@ -124,105 +124,25 @@ def clear_delivery_cooldown(telegram_user_id: int, asset: str, direction: str = 
 
 
 def _make_signal_lock_key(asset: str, direction: str, timeframe: str) -> str:
-    """Generate Redis key for signal generation lock.
-    
-    Format: signal_lock:{asset}:{direction}:{timeframe}
-    Example: signal_lock:SOLUSDT:BUY:4H
-    """
-    asset_upper = str(asset or "").upper().strip()
-    direction_upper = str(direction or "BUY").upper().strip()
-    tf_upper = str(timeframe or "1H").upper().strip()
-    return f"signal_lock:{asset_upper}:{direction_upper}:{tf_upper}"
+    from engine.signal_lock import _make_lock_key
+    return _make_lock_key(asset, direction, timeframe)
 
 
 def check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
-    """
-    Check if signal generation lock is active.
-    
-    Args:
-        asset: Asset symbol (e.g., "SOLUSDT")
-        direction: "BUY" or "SELL"
-        timeframe: "4H", "1H", "15M", etc.
-    
-    Returns:
-        True if lock is ACTIVE (skip signal generation)
-        False if OK to generate
-    """
-    try:
-        from core.redis_state import state
-        if not state.has_redis_sync():
-            return False
-            
-        redis_key = _make_signal_lock_key(asset, direction, timeframe)
-        exists = state.get_sync(redis_key)
-        
-        if exists:
-            logger.info(
-                f"[signal_lock] SKIP asset={asset} direction={direction} "
-                f"timeframe={timeframe} reason=lock_active"
-            )
-            return True
-            
-        return False
-        
-    except Exception as e:
-        logger.debug(f"[signal_lock] check failed: {e}")
-        return False
+    from engine.signal_lock import check_signal_lock as check
+    return check(asset, direction, timeframe)
 
 
 def set_signal_lock(asset: str, direction: str, timeframe: str, ttl_hours: int = 4) -> bool:
-    """
-    Set signal generation lock.
-    
-    Args:
-        asset: Asset symbol
-        direction: "BUY" or "SELL"
-        timeframe: Timeframe
-        ttl_hours: Lock duration in hours (default: 4)
-    
-    Returns:
-        True if lock was set
-    """
-    try:
-        from core.redis_state import state
-        if not state.has_redis_sync():
-            return False
-            
-        redis_key = _make_signal_lock_key(asset, direction, timeframe)
-        ttl_seconds = ttl_hours * 3600
-        
-        state.set_sync(redis_key, "1", ex=ttl_seconds)
-        
-        logger.info(
-            f"[signal_lock] SET asset={asset} direction={direction} "
-            f"timeframe={timeframe} ttl={ttl_hours}h"
-        )
-        return True
-        
-    except Exception as e:
-        logger.debug(f"[signal_lock] set failed: {e}")
+    from engine.signal_lock import acquire_signal_lock_sync
+    if isinstance(ttl_hours, bool) or not isinstance(ttl_hours, int) or ttl_hours <= 0:
         return False
+    return acquire_signal_lock_sync(asset, direction, timeframe, ttl_seconds=ttl_hours * 3600)
 
 
 def clear_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
-    """Clear signal generation lock."""
-    try:
-        from core.redis_state import state
-        if not state.has_redis_sync():
-            return False
-            
-        redis_key = _make_signal_lock_key(asset, direction, timeframe)
-        state.set_sync(redis_key, "", ex=1)
-        
-        logger.info(
-            f"[signal_lock] CLEAR asset={asset} direction={direction} "
-            f"timeframe={timeframe}"
-        )
-        return True
-        
-    except Exception as e:
-        logger.debug(f"[signal_lock] clear failed: {e}")
-        return False
+    from engine.signal_lock import release_signal_lock_sync
+    return release_signal_lock_sync(asset, direction, timeframe)
 
 
 # === Active Signal Check (Async) ===
@@ -277,5 +197,5 @@ async def check_active_signal_exists(session, asset: str, direction: str, timefr
         return exists
         
     except Exception as e:
-        logger.debug(f"[active_signal] check failed: {e}")
-        return False  # Fail open
+        logger.warning("[active_signal] check blocked error=%s", type(e).__name__)
+        return True

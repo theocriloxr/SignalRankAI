@@ -92,6 +92,10 @@ _TESTS = [
     "tests/test_oct1_signal_paper_lifecycle_incident.py",
     "tests/test_semgrep_gate.py",
     "tests/test_userdash_template_contract.py",
+    "tests/test_signal_lease_ownership.py",
+    "tests/test_signal_lock_contract.py",
+    "tests/test_release_guard_runtime_decisions.py",
+    "tests/test_soak_evidence_integrity.py",
 ]
 
 _STEPS: list[tuple[str, list[str]]] = [
@@ -139,6 +143,10 @@ _STEPS: list[tuple[str, list[str]]] = [
     (
         "targeted_pytest",
         [sys.executable, "-m", "pytest", "-q", *_TESTS],
+    ),
+    (
+        "redis_signal_lease_integration",
+        [sys.executable, "scripts/certify_signal_leases.py", "--output", "/tmp/signalrank-signal-leases.json"],
     ),
 ]
 

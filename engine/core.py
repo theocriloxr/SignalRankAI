@@ -279,41 +279,21 @@ def classify_signal_store_error(exc: BaseException) -> str:
 
 
 def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
-    """Compatibility wrapper: return True when a signal thesis is already locked."""
+    """Compatibility wrapper: acquire atomically, denying unavailable Redis."""
     try:
-        from signalrank_telegram.delivery_cooldown import check_signal_lock, set_signal_lock
-
-        if check_signal_lock(asset, direction, timeframe):
-            return True
-        set_signal_lock(asset, direction, timeframe)
-        return False
-    except Exception:
-        pass
-
-    try:
-        from engine.signal_lock import acquire_signal_lock
-
-        return not bool(run_sync(acquire_signal_lock(asset, direction, timeframe)))
+        from engine.signal_lock import acquire_signal_lock_sync
+        return not acquire_signal_lock_sync(asset, direction, timeframe)
     except Exception as exc:
-        logger.warning("[signal_lock] compatibility wrapper failed closed: %s", exc)
+        logger.warning("[signal_lock] compatibility wrapper failed closed: %s", type(exc).__name__)
         return True
 
 
 def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
-    """Compatibility wrapper to release a signal thesis lock."""
     try:
-        from signalrank_telegram.delivery_cooldown import clear_signal_lock
-
-        clear_signal_lock(asset, direction, timeframe)
-        return
-    except Exception:
-        pass
-    try:
-        from engine.signal_lock import release_signal_lock
-
-        run_sync(release_signal_lock(asset, direction, timeframe))
+        from engine.signal_lock import release_signal_lock_sync
+        release_signal_lock_sync(asset, direction, timeframe)
     except Exception as exc:
-        logger.debug("[signal_lock] release compatibility wrapper failed: %s", exc)
+        logger.warning("[signal_lock] release compatibility wrapper failed: %s", type(exc).__name__)
 
 
 def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe: str, tier: str = "free") -> bool:

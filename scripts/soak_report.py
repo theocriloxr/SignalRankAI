@@ -27,8 +27,8 @@ def evaluate(samples: list[dict], *, minimum_hours: int = 24,
     times: list[float] = []
     totals = {name: 0 for name in COUNTERS}
     identity: dict[str, object] | None = None
-    if type(minimum_hours) is not int or not 24 <= minimum_hours <= 72:
-        failures.append("minimum_window_must_be_24_to_72_hours")
+    if type(minimum_hours) is not int or minimum_hours < 24:
+        failures.append("minimum_window_must_be_at_least_24_hours")
     if not isinstance(samples, list) or len(samples) < 2:
         failures.append("insufficient_monitor_observations")
         samples = []

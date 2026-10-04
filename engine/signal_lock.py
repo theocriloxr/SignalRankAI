@@ -1,239 +1,183 @@
+"""Redis signal-generation leases shared by synchronous and async callers.
+
+Redis loss denies acquisition. A task/thread can release only its own token;
+expiry and replacement cannot cause an old caller to delete a newer lease.
+These leases accelerate deduplication; durable database uniqueness remains
+necessary across Redis failover, restarts and work exceeding a lease's TTL.
 """
-Signal Lock - Redis-based signal deduplication lock layer.
+from __future__ import annotations
 
-Provides distributed locking to prevent duplicate signal generation
-across multiple engine instances.
-
-Key features:
-- Redis lock: signal_lock:{ASSET}:{DIRECTION}:{TIMEFRAME}
-- TTL: 4 hours (configurable per timeframe)
-- PostgreSQL uniqueness check as backup
-
-Usage:
-    from engine.signal_lock import SignalLock
-
-    lock = SignalLock()
-
-    # Check if signal is allowed (non-blocking)
-    is_allowed = await lock.is_allowed("SOLUSDT", "BUY", "4h")
-
-    # Acquire lock (blocking with timeout)
-    acquired = await lock.acquire("SOLUSDT", "BUY", "4h")
-"""
+import asyncio
+import logging
+import re
+import threading
+import time
+from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Optional
 
 from utils.timeutils import now_utc_naive
 
-import logging
-from typing import Optional
-
 logger = logging.getLogger(__name__)
+LOCK_TTL_SECONDS = {"4h": 14400, "1d": 21600, "1h": 7200, "15m": 3600, "5m": 1800, "30m": 2700}
 
-# Timeframe-specific lock TTLs (in seconds)
-LOCK_TTL_SECONDS = {
-    "4h": 4 * 3600,  # 4 hours
-    "1d": 6 * 3600,  # 6 hours
-    "1h": 2 * 3600,  # 2 hours
-    "15m": 60 * 60,  # 1 hour
-    "5m": 30 * 60,  # 30 minutes
-    "30m": 45 * 60,  # 45 minutes
-}
+
+@dataclass(frozen=True)
+class _OwnedLease:
+    token: str
+    owner: object
+    expires_at: float
+
+
+_owned: ContextVar[dict[str, _OwnedLease] | None] = ContextVar("signal_generation_leases", default=None)
+
+
+def _owner() -> object:
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    return (threading.get_ident(), task)
 
 
 def get_lock_ttl(timeframe: str) -> int:
-    """Get TTL in seconds for a specific timeframe."""
-    tf = str(timeframe).lower().strip()
-    return LOCK_TTL_SECONDS.get(tf, 4 * 3600)  # Default 4 hours
+    return LOCK_TTL_SECONDS.get(str(timeframe).lower().strip(), 14400)
 
 
 def _make_lock_key(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> str:
-    """Generate Redis lock key.
-
-    Format: signal_lock:{ASSET}:{DIRECTION}:{TIMEFRAME}[:{STRATEGY_GROUP}]
-    """
-    asset = str(asset or "").upper().strip()
-    direction = str(direction or "long").lower().strip()
-    timeframe = str(timeframe or "1h").lower().strip()
-
-    key = f"signal_lock:{asset}:{direction}:{timeframe}"
-
-    if strategy_group:
-        strategy_group = str(strategy_group).lower().strip()
-        key += f":{strategy_group}"
-
+    symbol = str(asset or "").upper().strip()
+    side = str(direction or "").lower().strip()
+    side = {"buy": "long", "sell": "short"}.get(side, side)
+    tf = str(timeframe or "").lower().strip()
+    if not re.fullmatch(r"[A-Z0-9._/=-]+", symbol) or side not in {"long", "short"} or not re.fullmatch(r"[1-9][0-9]*[mhdw]", tf):
+        raise ValueError("invalid signal lock scope")
+    key = f"signal_lock:{symbol}:{side}:{tf}"
+    if strategy_group is not None:
+        group = str(strategy_group).lower().strip()
+        if not re.fullmatch(r"[a-z0-9_.-]+", group):
+            raise ValueError("invalid signal lock strategy group")
+        key += f":{group}"
     return key
 
 
-async def is_signal_locked(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
-    """Check if signal is currently locked (duplicate exists).
+def _legacy_keys(key: str) -> tuple[str, ...]:
+    _, asset, side, tf, *group = key.split(":")
+    alias = "buy" if side == "long" else "sell"
+    suffix = ":" + group[0] if group else ""
+    keys = [f"signal_lock:{asset}:{alias}:{tf}{suffix}", f"signal_lock:{asset}:{side.upper()}:{tf.upper()}{suffix}",
+            f"signal_lock:{asset}:{alias.upper()}:{tf.upper()}{suffix}"]
+    if group:
+        # A historical ungrouped lock also protects the broader thesis.
+        keys += [f"signal_lock:{asset}:{s}:{t}" for s, t in ((side, tf), (alias, tf), (side.upper(), tf.upper()), (alias.upper(), tf.upper()))]
+    return tuple(keys)
 
-    Args:
-        asset: Asset symbol (e.g., "SOLUSDT")
-        direction: "long" or "short"
-        timeframe: Timeframe (e.g., "4h")
-        strategy_group: Optional strategy group for more granular locking
 
-    Returns:
-        True if signal is locked (duplicate exists), False if available
-    """
-    key = _make_lock_key(asset, direction, timeframe, strategy_group)
+def _remember(key: str, token: str, ttl: int) -> None:
+    now = time.monotonic()
+    leases = {k: v for k, v in (_owned.get() or {}).items() if v.expires_at > now}
+    leases[key] = _OwnedLease(token, _owner(), now + ttl)
+    _owned.set(leases)
 
+
+def _take_owned(key: str) -> str | None:
+    leases = _owned.get() or {}
+    lease = leases.get(key)
+    if lease is None or lease.owner != _owner():
+        return None
+    _owned.set({k: v for k, v in leases.items() if k != key})
+    return lease.token
+
+
+def _acquire(key: str, ttl: int) -> str | None:
+    from core.redis_state import state
+    return state.lease_acquire_sync(key, ttl, _legacy_keys(key))
+
+
+def _blocked(key: str) -> bool:
+    from core.redis_state import state
+    return state.lease_blocked_sync(key, _legacy_keys(key))
+
+
+def _release(key: str, token: str) -> bool:
+    from core.redis_state import state
+    return state.lease_release_sync(key, token)
+
+
+def check_signal_lock(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
     try:
-        from core.redis_state import state
-
-        if state.has_redis_sync():
-            result = state.get_str_sync(key)
-            if result:
-                logger.info(f"[signal_lock] Lock exists: {key}")
-                return True
-    except Exception as e:
-        logger.debug(f"[signal_lock] Redis check failed: {e}")
-
-    return False
+        return _blocked(_make_lock_key(asset, direction, timeframe, strategy_group))
+    except Exception as exc:
+        logger.warning("[signal_lock] check blocked error=%s", type(exc).__name__)
+        return True
 
 
-async def acquire_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-    strategy_group: Optional[str] = None,
-    ttl_seconds: Optional[int] = None,
-) -> bool:
-    """Acquire a signal lock to prevent duplicate generation.
-
-    Args:
-        asset: Asset symbol
-        direction: "long" or "short"
-        timeframe: Timeframe
-        strategy_group: Optional strategy group
-        ttl_seconds: Optional custom TTL (uses default if not provided)
-
-    Returns:
-        True if lock acquired successfully, False if already locked
-    """
-    # Check if already locked first
-    if await is_signal_locked(asset, direction, timeframe, strategy_group):
-        logger.warning(f"[signal_lock] Failed to acquire: signal already locked for {asset} {direction} {timeframe}")
+def acquire_signal_lock_sync(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None, ttl_seconds: Optional[int] = None) -> bool:
+    try:
+        key = _make_lock_key(asset, direction, timeframe, strategy_group)
+        ttl = get_lock_ttl(timeframe) if ttl_seconds is None else ttl_seconds
+        token = _acquire(key, ttl)
+        if token is None:
+            return False
+        _remember(key, token, ttl)
+        return True
+    except Exception as exc:
+        logger.warning("[signal_lock] acquisition denied error=%s", type(exc).__name__)
         return False
 
-    key = _make_lock_key(asset, direction, timeframe, strategy_group)
 
-    if ttl_seconds is None:
-        ttl_seconds = get_lock_ttl(timeframe)
-
+def release_signal_lock_sync(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
     try:
-        from core.redis_state import state
-
-        if state.has_redis_sync():
-            import time
-
-            timestamp = str(time.time())
-            state.set_str_sync(key, timestamp, ttl=ttl_seconds)
-            logger.info(f"[signal_lock] Acquired: {key} TTL={ttl_seconds}s")
-            return True
-    except Exception as e:
-        logger.error(f"[signal_lock] Redis set failed: {e}")
-
-    return False
+        key = _make_lock_key(asset, direction, timeframe, strategy_group)
+        token = _take_owned(key)
+        return False if token is None else _release(key, token)
+    except Exception as exc:
+        logger.warning("[signal_lock] release denied error=%s", type(exc).__name__)
+        return False
 
 
-async def release_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-    strategy_group: Optional[str] = None,
-) -> bool:
-    """Release a signal lock.
+async def is_signal_locked(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
+    return await asyncio.to_thread(check_signal_lock, asset, direction, timeframe, strategy_group)
 
-    Args:
-        asset: Asset symbol
-        direction: "long" or "short"
-        timeframe: Timeframe
-        strategy_group: Optional strategy group
 
-    Returns:
-        True if lock released, False on error
-    """
-    key = _make_lock_key(asset, direction, timeframe, strategy_group)
-
+async def acquire_signal_lock(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None, ttl_seconds: Optional[int] = None) -> bool:
     try:
-        from core.redis_state import state
+        key = _make_lock_key(asset, direction, timeframe, strategy_group)
+        ttl = get_lock_ttl(timeframe) if ttl_seconds is None else ttl_seconds
+        token = await asyncio.to_thread(_acquire, key, ttl)
+        if token is None:
+            return False
+        # Record ownership in the calling task, not the worker thread's context.
+        _remember(key, token, ttl)
+        return True
+    except Exception as exc:
+        logger.warning("[signal_lock] acquisition denied error=%s", type(exc).__name__)
+        return False
 
-        if state.has_redis_sync():
-            state.delete_sync(key)
-            logger.info(f"[signal_lock] Released: {key}")
-            return True
-    except Exception as e:
-        logger.debug(f"[signal_lock] Release failed: {e}")
 
-    return False
+async def release_signal_lock(asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
+    try:
+        key = _make_lock_key(asset, direction, timeframe, strategy_group)
+        token = _take_owned(key)
+        return False if token is None else await asyncio.to_thread(_release, key, token)
+    except Exception as exc:
+        logger.warning("[signal_lock] release denied error=%s", type(exc).__name__)
+        return False
 
 
 class SignalLock:
-    """Signal lock manager for distributed deduplication."""
-
-    def __init__(self):
-        self._redis_client = None
-        self._init_redis()
-
-    def _init_redis(self):
-        """Initialize Redis client."""
-        try:
-            from core.redis_state import state
-
-            if state.has_redis_sync():
-                self._redis_client = state
-                logger.info("[signal_lock] Using Redis for signal locking")
-        except Exception as e:
-            logger.debug(f"[signal_lock] Redis not available: {e}")
-
-    async def is_allowed(
-        self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None
-    ) -> bool:
-        """Check if signal generation is allowed (non-blocking).
-
-        Args:
-            asset: Asset symbol
-            direction: "long" or "short"
-            timeframe: Timeframe
-            strategy_group: Optional strategy group
-
-        Returns:
-            True if signal can be generated, False if locked (duplicate)
-        """
+    async def is_allowed(self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
         return not await is_signal_locked(asset, direction, timeframe, strategy_group)
 
-    async def try_acquire(
-        self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None
-    ) -> bool:
-        """Try to acquire signal lock (non-blocking).
-
-        Args:
-            asset: Asset symbol
-            direction: "long" or "short"
-            timeframe: Timeframe
-            strategy_group: Optional strategy group
-
-        Returns:
-            True if lock acquired, False if already locked
-        """
+    async def try_acquire(self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
         return await acquire_signal_lock(asset, direction, timeframe, strategy_group)
 
+    async def acquire(self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
+        return await self.try_acquire(asset, direction, timeframe, strategy_group)
+
     async def release(self, asset: str, direction: str, timeframe: str, strategy_group: Optional[str] = None) -> bool:
-        """Release signal lock.
-
-        Args:
-            asset: Asset symbol
-            direction: "long" or "short"
-            timeframe: Timeframe
-            strategy_group: Optional strategy group
-
-        Returns:
-            True if released successfully
-        """
         return await release_signal_lock(asset, direction, timeframe, strategy_group)
 
 
-# Default instance
 signal_lock = SignalLock()
 
 
@@ -304,35 +248,5 @@ async def active_signal_exists_for_asset(asset: str, direction: str, timeframe: 
             exists = result.scalar_one_or_none() is not None
             return exists
     except Exception as e:
-        logger.debug(f"[signal_lock] PostgreSQL check error: {e}")
-        return False
-
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def test():
-        # Test signal lock
-        print("Testing SignalLock...")
-
-        # Check if allowed
-        allowed = await signal_lock.is_allowed("SOLUSDT", "BUY", "4h")
-        print(f"Initial allowed: {allowed}")
-
-        # Try to acquire
-        acquired = await signal_lock.try_acquire("SOLUSDT", "BUY", "4h")
-        print(f"Acquired: {acquired}")
-
-        # Check again (should be locked now)
-        allowed = await signal_lock.is_allowed("SOLUSDT", "BUY", "4h")
-        print(f"After acquire allowed: {allowed}")
-
-        # Release
-        released = await signal_lock.release("SOLUSDT", "BUY", "4h")
-        print(f"Released: {released}")
-
-        # Check again (should be allowed now)
-        allowed = await signal_lock.is_allowed("SOLUSDT", "BUY", "4h")
-        print(f"After release allowed: {allowed}")
-
-    asyncio.run(test())
+        logger.warning("[signal_lock] PostgreSQL check blocked error=%s", type(e).__name__)
+        return True
