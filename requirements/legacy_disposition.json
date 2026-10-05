@@ -6715,11 +6715,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 55,
+      "line_count": 62,
       "path": "docs/operations/automatic-production-releases.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "4dbfacd1582701ec4e84cf66594641bb6d674c69154fa4dd6a020b5d9e92e9db",
-      "size_bytes": 3225
+      "sha256": "09c80fcb6dee46a467ff8ae2b191bdcd9a41208ba0df0a9722329aae9b12ae41",
+      "size_bytes": 3687
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9675,11 +9675,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 205,
+      "line_count": 226,
       "path": "scripts/approve_production_release.py",
       "reason": "production/build source",
-      "sha256": "14d86f3c5c31093d47cd9903a6166b1030b634df64f48a8f88ecee54062f989f",
-      "size_bytes": 9765
+      "sha256": "562a4f6539ee355f278af53cdf860520930bb2e9ad4d494f29616cebf4a179e2",
+      "size_bytes": 11157
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14115,11 +14115,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 200,
+      "line_count": 220,
       "path": "tests/test_production_release_approval.py",
       "reason": "automated test evidence",
-      "sha256": "e0bd48357278bf0ff06f161ec61d26de151599f36f66f9e6a1e1a7bf31a86193",
-      "size_bytes": 7608
+      "sha256": "b1339011182586584aeb8a75790cb97af4313f0310453020ce16810473cc629c",
+      "size_bytes": 8450
     },
     {
       "disposition": "TEST_ONLY",

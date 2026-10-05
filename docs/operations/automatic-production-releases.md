@@ -10,6 +10,13 @@ manifest, static, frontend, mobile and release certification to succeed. It
 checks the current branch head twice and rejects superseded runs. A serialized
 job prevents two approval operations from interleaving.
 
+Automatic source promotion is limited to the paper/advisory phase: every role
+must have the execution kill switch on and every live-money flag off. Unavailable
+or ambiguous flag values block promotion. Once live-money operation is enabled,
+new source requires a separately certified trading release; old financial
+approvals cannot be carried forward by this application-only CI job. The
+controller reads rendered settings in memory and never logs their values.
+
 All four Railway triggers must use the release branch and Wait for CI. A single
 explicit environment patch updates `EXPECTED_RELEASE_COMMIT`,
 `EXPECTED_RELEASE_BRANCH` and the repository's `EXPECTED_ALEMBIC_HEAD` across

@@ -27,6 +27,7 @@ class FakeAPIs:
         self.patch_result = "change-id"
         self.trigger_reads = 0
         self.advance_on_last_read = False
+        self.variables = {"GLOBAL_EXECUTION_KILL_SWITCH": "1"}
 
     def github(self, path):
         if path.startswith("git/ref/"):
@@ -42,7 +43,7 @@ class FakeAPIs:
             self.trigger_reads += 1
             if self.advance_on_last_read and self.trigger_reads == 4:
                 self.head = "b" * 40
-            return {"deploymentTriggers": {"edges": [{"node": {
+            return {"variables": self.variables, "deploymentTriggers": {"edges": [{"node": {
                 "branch": release.BRANCH, "repository": release.REPOSITORY,
                 "checkSuites": self.check_suites,
             }}]}}
@@ -139,6 +140,25 @@ def test_superseded_run_cannot_roll_production_back(during_reads):
 def test_wait_for_ci_is_required():
     api = FakeAPIs()
     api.check_suites = False
+    with pytest.raises(release.PromotionBlocked):
+        release.approve(api, ENV)
+    assert not mutations(api)
+
+
+@pytest.mark.parametrize("flag", release.FINANCIAL_FLAGS)
+def test_live_money_cannot_inherit_source_only_ci_approval(flag):
+    api = FakeAPIs()
+    api.variables[flag] = "true"
+    with pytest.raises(release.PromotionBlocked, match="separately certified"):
+        release.approve(api, ENV)
+    assert not mutations(api)
+
+
+@pytest.mark.parametrize("variables", [None, {}, {"GLOBAL_EXECUTION_KILL_SWITCH": "0"},
+    {"GLOBAL_EXECUTION_KILL_SWITCH": "1", "REAL_EXECUTION_ENABLED": "unresolved-reference"}])
+def test_unknown_or_unprotected_financial_state_blocks_promotion(variables):
+    api = FakeAPIs()
+    api.variables = variables
     with pytest.raises(release.PromotionBlocked):
         release.approve(api, ENV)
     assert not mutations(api)

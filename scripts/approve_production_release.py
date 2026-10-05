@@ -32,6 +32,25 @@ REQUIRED_JOBS = {
     "manifest", "static-quality-checks", "backend (3.11)", "backend (3.12)",
     "frontend", "mobile", "release-certification",
 }
+FINANCIAL_FLAGS = (
+    "LIVE_FINANCIAL_FEATURES_ENABLED", "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED", "COPY_TRADE_ENABLED", "PROP_EXECUTION_ENABLED", "REAL_PAYOUTS_ENABLED",
+    "MT5_ALLOW_LIVE_ACCOUNTS", "MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED",
+    "BYBIT_EXECUTION_ENABLED", "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
+)
+
+
+def require_paper_release_state(variables, role):
+    # A source-only CI approval cannot renew a previous real-money approval.
+    # Read rendered values in memory and never include them in logs or receipts.
+    if not isinstance(variables, dict):
+        raise PromotionBlocked(f"{role}: financial release state is unavailable")
+    def normalized(key, default=""):
+        return str(variables.get(key, default)).strip().strip('"').strip("'").lower()
+    if normalized("GLOBAL_EXECUTION_KILL_SWITCH") not in {"1", "true", "yes", "on", "y"}:
+        raise PromotionBlocked(f"{role}: automatic source promotion requires the execution kill switch")
+    if any(normalized(flag, "0") not in {"0", "false", "no", "off", "n", ""} for flag in FINANCIAL_FLAGS):
+        raise PromotionBlocked(f"{role}: live-money configuration requires a separately certified release")
 
 
 def repository_schema_head():
@@ -149,12 +168,14 @@ def approve(api, env):
           deploymentTriggers(projectId:$project, environmentId:$environment, serviceId:$service, first:10) {
             edges { node { branch repository checkSuites } }
           }
+          variables(projectId:$project, environmentId:$environment, serviceId:$service)
         }""", {"project": PROJECT, "environment": ENVIRONMENT, "service": service})
         triggers = [edge["node"] for edge in data["deploymentTriggers"]["edges"]]
         if (len(triggers) != 1 or triggers[0].get("branch") != BRANCH
                 or triggers[0].get("repository") != REPOSITORY
                 or triggers[0].get("checkSuites") is not True):
             raise PromotionBlocked(f"{role}: source branch / Wait for CI configuration differs")
+        require_paper_release_state(data.get("variables"), role)
     # Recheck after the remote reads and immediately before the sole pin mutation.
     if api.github(f"git/ref/heads/{quote(BRANCH, safe='')}").get("object", {}).get("sha") != sha:
         raise PromotionBlocked("Branch advanced during release approval")
