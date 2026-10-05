@@ -1,12 +1,12 @@
 import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, Alert, FlatList, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
+import {ActivityIndicator, Alert, AppState, FlatList, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
 import * as Linking from 'expo-linking';
 import {StatusBar} from 'expo-status-bar';
 import {
   activateTelegram, api, beginMfaSetup, clearSession, completeMagicLogin,
   completeMfa, completePasswordReset, createBillingCheckout, createJournalEntry, createTelegramLink,
   disableMfa, enableMfa, getBilling, getBillingProducts, login, mfaStatus, register, registerPushDevice,
-  requestMagicLink, requestPasswordReset, updateProfile,
+  PlatformAPIError, requestMagicLink, requestPasswordReset, updateProfile,
 } from './src/api';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -19,8 +19,9 @@ export default function App() {
   const [loading,setLoading]=useState(true); const [user,setUser]=useState<any>(null);
   const [screen,setScreen]=useState<Screen>('overview'); const [authMode,setAuthMode]=useState<AuthMode>('login');
   const [form,setForm]=useState({displayName:'',email:'',password:'',code:'',mfaToken:'',resetToken:''}); const [error,setError]=useState('');
-  const loadMe=async()=>{try{const result=await api<any>('/me');setUser(result.user)}catch{setUser(null)}finally{setLoading(false)}};
+  const loadMe=async()=>{try{const result=await api<any>('/me');setUser(result.user)}catch(e){if(e instanceof PlatformAPIError&&e.status===401)setUser(null);else setError(e instanceof Error?e.message:'Could not refresh account status')}finally{setLoading(false)}};
   useEffect(()=>{loadMe()},[]);
+  useEffect(()=>{if(!user)return;const sub=AppState.addEventListener('change',next=>{if(next==='active')void loadMe()});return()=>sub.remove()},[user?.id]);
   useEffect(()=>{const handle=async({url}:{url:string})=>{const parsed=Linking.parse(url);const q:any=parsed.queryParams||{};try{if(q.magic_login){setLoading(true);const result=await completeMagicLogin(String(q.magic_login));if(result.mfa_required){setForm(v=>({...v,mfaToken:String(result.mfa_token||'')}));setAuthMode('mfa')}else setUser(result.user)}else if(q.password_reset){setForm(v=>({...v,resetToken:String(q.password_reset)}));setAuthMode('reset')}else if(q.token){setForm(v=>({...v,code:String(q.token)}));setAuthMode('activate')}}catch(e){setError(e instanceof Error?e.message:'Link failed')}finally{setLoading(false)}};Linking.getInitialURL().then(url=>{if(url)handle({url})});const sub=Linking.addEventListener('url',handle);return()=>sub.remove()},[]);
   useEffect(()=>{if(!user||!Device.isDevice||!['android','ios'].includes(Platform.OS))return;void(async()=>{try{const current=await Notifications.getPermissionsAsync();const permission=current.status==='granted'?current:await Notifications.requestPermissionsAsync();if(permission.status!=='granted')return;if(Platform.OS==='android')await Notifications.setNotificationChannelAsync('signals',{name:'Signal updates',importance:Notifications.AndroidImportance.HIGH});const projectId=process.env.EXPO_PUBLIC_EAS_PROJECT_ID||Constants.expoConfig?.extra?.eas?.projectId;if(!projectId)return;const token=await Notifications.getExpoPushTokenAsync({projectId});await registerPushDevice({pushToken:token.data,platform:Platform.OS as 'android'|'ios',deviceId:`${Device.osName||Platform.OS}:${Device.modelName||'device'}`,appVersion:Constants.expoConfig?.version})}catch{}})()},[user]);
   const authenticate=async()=>{setError('');setLoading(true);try{if(authMode==='reset'){await completePasswordReset(form.resetToken,form.password);setAuthMode('login');setError('Password reset. Sign in again.');return}const result=authMode==='login'?await login(form.email,form.password):authMode==='register'?await register(form.displayName,form.email,form.password):authMode==='activate'?await activateTelegram(form.code,form.email,form.password):await completeMfa(form.mfaToken,form.code);if(result.mfa_required){setForm(v=>({...v,mfaToken:String(result.mfa_token||''),code:''}));setAuthMode('mfa')}else{setUser(result.user);setScreen('overview')}}catch(e){setError(e instanceof Error?e.message:'Authentication failed')}finally{setLoading(false)}};
@@ -52,18 +53,35 @@ function Account({user,setUser,onRefresh,onLogout}:any){
   const refreshMfa=()=>mfaStatus().then(setMfa).catch(()=>{});
   const refreshBilling=()=>Promise.all([getBillingProducts(),getBilling()]).then(([p,b])=>{setProducts(p.products||[]);setReceipts(b.receipts||[])}).catch(()=>{});
   useEffect(()=>{refreshMfa();refreshBilling()},[]);
-  const connect=async()=>setLink(await createTelegramLink());
+  const [linkError,setLinkError]=useState('');
+  const [linkLoading,setLinkLoading]=useState(false);
+  const connect=async()=>{
+    if(linkLoading)return;
+    setLinkLoading(true);setLinkError('');
+    try{setLink(await createTelegramLink());await onRefresh()}
+    catch(e){
+      if(e instanceof PlatformAPIError&&['telegram_already_linked','telegram_verified_merge_pending'].includes(e.code||'')){setLink(null);await onRefresh()}
+      else setLinkError(e instanceof Error?e.message:'Could not create Telegram link');
+    }finally{setLinkLoading(false)}
+  };
   const save=async()=>{const result=await updateProfile({display_name:name,timezone});setUser(result.user)};
   const setup=async()=>{const result=await beginMfaSetup();setMfaSecret(result.secret)};
   const confirm=async()=>{const result=await enableMfa(mfaCode);Alert.alert('Recovery codes',result.recovery_codes.join('\n'));setMfaSecret('');setMfaCode('');refreshMfa()};
   const disable=async()=>{await disableMfa(mfaCode);setMfaCode('');refreshMfa()};
   const checkout=async(productId:string)=>{try{const result=await createBillingCheckout(productId);await Linking.openURL(result.authorization_url)}catch(e){Alert.alert('Checkout unavailable',e instanceof Error?e.message:'Could not start checkout')}};
   const telegramStatus=String(user.telegram_link_status||'not_linked').toLowerCase();
-  const telegramConnected=Boolean(user.telegram_user_id)||telegramStatus==='merge_review';
-  const telegramLabel=user.telegram_user_id?'Linked':telegramStatus==='merge_review'?'Verified · reconciliation pending':telegramStatus==='link_pending'?'Link pending':'Not linked';
+  const telegramConnected=Boolean(user.telegram_user_id)||telegramStatus==='linked'||telegramStatus==='merge_review';
+  const telegramLabel=telegramStatus==='merge_review'?'Verified · reconciliation pending':telegramConnected?'Linked':telegramStatus==='link_pending'?'Link pending':'Not linked';
   return <ScrollView>
     <View style={styles.card}><Text style={styles.rowTitle}>{user.display_name||user.username||'SignalRank user'}</Text><Text style={styles.muted}>{user.primary_email||'Telegram account'}</Text><Text style={styles.muted}>Email verified: {user.email_verified_at?'Yes':'No'}</Text><Text style={styles.muted}>Telegram: {telegramLabel}</Text><TextInput style={styles.input} placeholder="Display name" placeholderTextColor="#75869a" value={name} onChangeText={setName}/><TextInput style={styles.input} placeholder="Timezone" placeholderTextColor="#75869a" value={timezone} onChangeText={setTimezone}/><Pressable style={styles.primary} onPress={save}><Text style={styles.primaryText}>Save profile</Text></Pressable></View>
-    {!telegramConnected?<View style={styles.card}><Text style={styles.rowTitle}>Connect Telegram</Text><Text style={styles.muted}>{telegramStatus==='link_pending'?'A link code is already pending. Complete it in Telegram or create a replacement code.':'Link Telegram once to share identity and preferences across channels.'}</Text><Pressable style={styles.primary} onPress={connect}><Text style={styles.primaryText}>{telegramStatus==='link_pending'?'Create replacement code':'Create one-time code'}</Text></Pressable>{link?<><Text style={styles.metric}>{link.code}</Text><Text style={styles.muted}>Send /link {link.code} to the bot.</Text>{link.telegram_deep_link?<Pressable style={styles.primary} onPress={()=>Linking.openURL(link.telegram_deep_link)}><Text style={styles.primaryText}>Open Telegram</Text></Pressable>:null}</>:null}<Pressable style={styles.danger} onPress={onRefresh}><Text style={styles.muted}>Refresh Telegram status</Text></Pressable></View>:telegramStatus==='merge_review'?<View style={styles.card}><Text style={styles.rowTitle}>Telegram verified</Text><Text style={styles.muted}>Your Telegram identity is recognized. Older Telegram-side account history is being reconciled; do not reconnect or create another account.</Text><Pressable style={styles.primary} onPress={onRefresh}><Text style={styles.primaryText}>Refresh status</Text></Pressable></View>:null}
+    {!telegramConnected?<View style={styles.card}>
+      <Text style={styles.rowTitle}>Connect Telegram</Text>
+      <Text style={styles.muted}>{telegramStatus==='link_pending'?'A link code is already pending. Complete it in Telegram or create a replacement code.':'Link Telegram once to share identity and preferences across channels.'}</Text>
+      {linkError?<Text accessibilityRole="alert" style={styles.error}>{linkError}</Text>:null}
+      <Pressable accessibilityRole="button" accessibilityState={{disabled:linkLoading,busy:linkLoading}} disabled={linkLoading} style={styles.primary} onPress={connect}><Text style={styles.primaryText}>{linkLoading?'Creating link…':telegramStatus==='link_pending'?'Create replacement code':'Create one-time code'}</Text></Pressable>
+      {link?<><Text selectable style={styles.metric}>{link.code}</Text><Text style={styles.muted}>Send /link {link.code} to the bot, then return here. Your connection status refreshes automatically.</Text>{link.telegram_deep_link?<Pressable style={styles.primary} onPress={()=>Linking.openURL(link.telegram_deep_link)}><Text style={styles.primaryText}>Open Telegram</Text></Pressable>:null}</>:null}
+      <Pressable style={styles.danger} onPress={onRefresh}><Text style={styles.muted}>Refresh Telegram status</Text></Pressable>
+    </View>:telegramStatus==='merge_review'?<View style={styles.card}><Text style={styles.rowTitle}>Telegram verified</Text><Text style={styles.muted}>Your Telegram identity is recognized. Older Telegram-side account history is being reconciled; do not reconnect or create another account.</Text><Pressable style={styles.primary} onPress={onRefresh}><Text style={styles.primaryText}>Refresh status</Text></Pressable></View>:null}
     <View style={styles.card}><Text style={styles.rowTitle}>Plans</Text><Text style={styles.muted}>Server-priced Paystack checkout. Verify your email first.</Text>{products.map(product=><View key={product.product_id} style={styles.row}><View><Text style={styles.rowTitle}>{product.display_name}</Text><Text style={styles.muted}>{product.currency} {Number(product.price_ngn||0).toLocaleString()} · {product.duration_days} days</Text></View><Pressable style={styles.primary} onPress={()=>checkout(product.product_id)}><Text style={styles.primaryText}>Choose</Text></Pressable></View>)}</View>
     <View style={styles.card}><Text style={styles.rowTitle}>Receipts</Text>{receipts.length?receipts.slice(0,10).map(receipt=><View key={receipt.receipt_number} style={styles.row}><View><Text style={styles.rowTitle}>{receipt.plan}</Text><Text style={styles.muted}>{receipt.receipt_number}</Text></View><Text style={styles.body}>{receipt.currency} {Number(receipt.amount||0).toLocaleString()}</Text></View>):<Text style={styles.muted}>No receipts yet.</Text>}</View>
     <View style={styles.card}><Text style={styles.rowTitle}>Authenticator security</Text><Text style={styles.muted}>{mfa?.enabled?'Enabled':'Disabled'}</Text>{mfaSecret?<><Text selectable style={styles.body}>{mfaSecret}</Text><TextInput style={styles.input} placeholder="6-digit code" placeholderTextColor="#75869a" value={mfaCode} onChangeText={setMfaCode}/><Pressable style={styles.primary} onPress={confirm}><Text style={styles.primaryText}>Enable MFA</Text></Pressable></>:mfa?.enabled?<><TextInput style={styles.input} placeholder="Authenticator or recovery code" placeholderTextColor="#75869a" value={mfaCode} onChangeText={setMfaCode}/><Pressable style={styles.danger} onPress={disable}><Text style={styles.loss}>Disable MFA</Text></Pressable></>:<Pressable style={styles.primary} onPress={setup}><Text style={styles.primaryText}>Set up MFA</Text></Pressable>}</View>

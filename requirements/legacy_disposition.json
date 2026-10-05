@@ -8555,11 +8555,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 74,
+      "line_count": 92,
       "path": "mobile/App.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "71d74a93906cad93ef455d197d3f3189137fa2634b370ebc01d661ff4bc9c904",
-      "size_bytes": 24201
+      "sha256": "20d7ce8d7e21319f7e8481d255c39442e027031e37896283e83a7bc8ff011f8d",
+      "size_bytes": 25393
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8630,8 +8630,8 @@
       "line_count": 37,
       "path": "mobile/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ef8432126d228b2f4b8f34fa85dbb05e040ac0702637887b6d1c7a5b170f20db",
-      "size_bytes": 944
+      "sha256": "8746bf505e04c0083a89fd2e3f03e34218ef87028b3aa347769bab92f91eea48",
+      "size_bytes": 926
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8643,11 +8643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 206,
+      "line_count": 224,
       "path": "mobile/src/api.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "dbe744357be062b8107e981bab7ebc9e75754eac2198bf86eb3ba62821e60e3b",
-      "size_bytes": 8349
+      "sha256": "c80aab6bac0d78eeffee56f10a6a26a1b2010137f5ae39fb5feab7214bd1aa14",
+      "size_bytes": 9151
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9454,7 +9454,7 @@
       "line_count": 16122,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "4fa0a673e1a84a3c663d50c428055da62bfbd622cebfbeb54499b5a81ee657a3",
+      "sha256": "e3cfcf9b17e31dd7f265932bf338416584ff582ad80a02108682f7b84258484d",
       "size_bytes": 472988
     },
     {
@@ -9683,11 +9683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 230,
+      "line_count": 234,
       "path": "scripts/approve_production_release.py",
       "reason": "production/build source",
-      "sha256": "d79007cb390e344127d0a8160b9f324a03eeb4706260b023bc0032a909f4d1a1",
-      "size_bytes": 11446
+      "sha256": "611a3775c0a988a4504df182d4db5ab0e9bff330f2d5a21cf0434e7720959956",
+      "size_bytes": 11528
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11091,11 +11091,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1401,
+      "line_count": 1421,
       "path": "services/platform/identity.py",
       "reason": "production/build source",
-      "sha256": "0a6b8026c5a23bcaaab2833c68d5cddf1b9a5101f1c1cca778969c14f308f2e4",
-      "size_bytes": 56260
+      "sha256": "c6d70f0672082f5f964ec2796d92ba88e38506c146000caf57c517b61cb9d016",
+      "size_bytes": 57221
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13483,11 +13483,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 617,
+      "line_count": 699,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "debb2bd08e4135195ac8b7c043efaa14bb60dd8e900026bc90a3158a7a301a62",
-      "size_bytes": 35537
+      "sha256": "becb06d814bd45ddb5f2dd06c5b1fadf88ca3c6f6c14567b488331c198279557",
+      "size_bytes": 40001
     },
     {
       "disposition": "TEST_ONLY",
@@ -14291,11 +14291,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 69,
+      "line_count": 83,
       "path": "tests/test_railway_release_credential.py",
       "reason": "automated test evidence",
-      "sha256": "cc865e0aeb131113f2e0b14c0cfb5433137e100b9ed48250872c52826d619b57",
-      "size_bytes": 2811
+      "sha256": "79d0fe515e8def93be3f09f924150f1b297c779dc139a995afc6d97b80a8859b",
+      "size_bytes": 3442
     },
     {
       "disposition": "TEST_ONLY",
@@ -15531,19 +15531,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6854,
+      "line_count": 6862,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "1638090c151800cadf115fba177846dacc502f2b617b6032fc8b204c0a365eed",
-      "size_bytes": 281781
+      "sha256": "f2553bfde5d2778b6adf4ee9c7f57bbb3dfe56e9d69aea0d69402e38465cb447",
+      "size_bytes": 282171
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1134,
+      "line_count": 1171,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "45b40d05ade7f61557b7ce704b22b4105b408c40d8a1fe2b7660970184857b68",
-      "size_bytes": 141578
+      "sha256": "83f58b9f156de4ce40c4b6a7cfa573ba52a7decb50dd7ae65f339af3810c74d9",
+      "size_bytes": 143214
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15558,7 +15558,7 @@
       "line_count": 743,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5381e58dd2dbbdd6bb679189767f09899529d5db0f326d7276fcddfbf018a15a",
+      "sha256": "a7e0f13a3c3d625e884d2f905b7f6650dce9d2ee958aeff43b76c2a44c233686",
       "size_bytes": 69265
     },
     {
@@ -15582,7 +15582,7 @@
       "line_count": 36,
       "path": "web/platform_app/service-worker.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "6a3888d521559071f39551450d25c8e61c0ea61974d13b88af53657153d37790",
+      "sha256": "d962c330121b1b501609eb8cf33073282c5d4579268ac91223c8148576732d3e",
       "size_bytes": 1715
     },
     {

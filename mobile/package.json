@@ -9,7 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test:dependencies": "node --test scripts/dependency-contract.test.cjs",
+    "test:dependencies": "node --test scripts/*.test.cjs",
     "doctor": "npx expo-doctor",
     "fix-deps": "npx expo install --fix"
   },

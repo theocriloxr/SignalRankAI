@@ -91,7 +91,11 @@ class PromotionBlocked(RuntimeError):
 
 def request_json(url, headers, payload=None):
     data = None if payload is None else json.dumps(payload).encode()
-    request = Request(url, data=data, headers={"Content-Type": "application/json", **headers})
+    request = Request(url, data=data, headers={
+        "Content-Type": "application/json",
+        "User-Agent": "SignalRankAI-ReleasePreflight/1.0",
+        **headers,
+    })
     try:
         with urlopen(request, timeout=30) as response:  # nosec B310 -- fixed HTTPS API origins
             return json.load(response)

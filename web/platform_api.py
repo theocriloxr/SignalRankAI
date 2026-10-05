@@ -3357,7 +3357,7 @@ async def create_telegram_link(
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
     """Create a one-time Telegram deep-link for an authenticated app user."""
-    if user.get("telegram_user_id") is not None:
+    if user.get("telegram_user_id") is not None or user.get("telegram_link_status") == "linked":
         raise HTTPException(
             status_code=409,
             detail={
@@ -3374,7 +3374,15 @@ async def create_telegram_link(
             },
         )
     async with get_session() as session:
-        request = await create_telegram_link_request(session, user_id=int(user["id"]))
+        try:
+            request = await create_telegram_link_request(session, user_id=int(user["id"]))
+        except IdentityConflict as exc:
+            await session.rollback()
+            code = str(exc)
+            raise HTTPException(status_code=409, detail={
+                "code": code,
+                "message": "Telegram is already verified for this account. Refresh its connection status.",
+            }) from exc
         await session.commit()
     username = str(os.getenv("BOT_USERNAME") or os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().lstrip("@")
     deep_link = f"https://t.me/{username}?start=link_{request.code}" if username else None

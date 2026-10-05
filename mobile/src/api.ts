@@ -4,6 +4,24 @@ const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080').rep
 const ACCESS_KEY = 'signalrank.access_token';
 const REFRESH_KEY = 'signalrank.refresh_token';
 
+export class PlatformAPIError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code?: string) {
+    super(message);
+    this.name = 'PlatformAPIError';
+  }
+}
+
+function responseError(payload: {detail?: unknown}, status: number): PlatformAPIError {
+  const detail = payload.detail;
+  if (typeof detail === 'string') return new PlatformAPIError(detail, status);
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    const value = detail as {message?: unknown; code?: unknown};
+    const code = typeof value.code === 'string' ? value.code : undefined;
+    return new PlatformAPIError(typeof value.message === 'string' ? value.message : code || `Request failed (${status})`, status, code);
+  }
+  return new PlatformAPIError(`Request failed (${status})`, status);
+}
+
 export type SessionPayload = {
   access_token?: string;
   refresh_token?: string;
@@ -52,7 +70,7 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
     if (accessToken) response = await send(accessToken);
   }
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
+  if (!response.ok) throw responseError(payload, response.status);
   return payload as T;
 }
 

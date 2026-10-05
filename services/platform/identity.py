@@ -641,6 +641,13 @@ async def create_telegram_link_request(session: Any, *, user_id: int) -> Telegra
     ).first()
     if not row or str(row[1] or "active") != "active":
         raise AuthenticationError("account_unavailable")
+    # Re-read canonical state while holding the account lock. An API snapshot
+    # may precede a successful Telegram callback, and callers may be non-HTTP.
+    snapshot = await user_snapshot(session, int(user_id))
+    if snapshot and snapshot.get("telegram_link_status") == "linked":
+        raise IdentityConflict("telegram_already_linked")
+    if snapshot and snapshot.get("telegram_link_status") == "merge_review":
+        raise IdentityConflict("telegram_verified_merge_pending")
     token = "srl_" + secrets.token_urlsafe(40)
     code = secrets.token_hex(5).upper()
     expires = now_utc_naive() + timedelta(minutes=max(2, int(os.getenv("APP_LINK_TTL_MINUTES", "10"))))
@@ -916,6 +923,20 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
     telegram_linked_user_id = None
 
     if telegram_status != "linked":
+        verified_identity = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM auth_identities WHERE user_id=:uid "
+                    "AND provider='telegram' AND verified IS TRUE "
+                    "AND disabled_at IS NULL LIMIT 1"
+                ),
+                {"uid": int(user_id)},
+            )
+        ).first()
+        if verified_identity:
+            telegram_status = "linked"
+
+    if telegram_status != "linked":
         merge = (
             (
                 await session.execute(
@@ -941,9 +962,10 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
                         text(
                             "SELECT status,expires_at FROM account_link_requests "
                             "WHERE requesting_user_id=:uid AND provider='telegram' "
+                            "AND status='pending' AND expires_at>:now_utc "
                             "ORDER BY created_at DESC LIMIT 1"
                         ),
-                        {"uid": int(user_id)},
+                        {"uid": int(user_id), "now_utc": now_utc_naive()},
                     )
                 )
                 .mappings()
@@ -952,9 +974,7 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
             if link:
                 link_status = str(link.get("status") or "").strip().lower()
                 expires_at = link.get("expires_at")
-                if link_status == "merge_review":
-                    telegram_status = "merge_review"
-                elif link_status == "pending" and expires_at is not None and expires_at > now_utc_naive():
+                if link_status == "pending" and expires_at is not None and expires_at > now_utc_naive():
                     telegram_status = "link_pending"
 
     snapshot["telegram_link_status"] = telegram_status

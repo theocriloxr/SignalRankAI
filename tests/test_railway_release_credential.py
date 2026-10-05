@@ -10,6 +10,20 @@ from scripts import approve_production_release as release
 from scripts import check_railway_release_credential as preflight
 
 
+def test_transport_identifies_application_without_exposing_credentials(monkeypatch):
+    def respond(request, timeout):
+        assert request.get_header("User-agent") == "SignalRankAI-ReleasePreflight/1.0"
+        assert request.get_header("Project-access-token") == "private-test-token"
+        return BytesIO(b'{"data":{"__typename":"Query"}}')
+
+    monkeypatch.setattr(release, "urlopen", respond)
+    assert release.request_json(
+        "https://backboard.railway.com/graphql/v2",
+        {"Project-Access-Token": "private-test-token"},
+        {"query": "query { __typename }"},
+    ) == {"data": {"__typename": "Query"}}
+
+
 class ReadOnlyAPI:
     def __init__(self):
         self.scope = {"projectId": release.PROJECT, "environmentId": release.ENVIRONMENT}

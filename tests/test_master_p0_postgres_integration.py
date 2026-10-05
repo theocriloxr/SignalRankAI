@@ -12,6 +12,88 @@ from sqlalchemy.engine import make_url
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("verified,disabled,expected", [
+    (True, False, "linked"), (False, False, "not_linked"),
+    (True, True, "not_linked"),
+])
+async def test_telegram_identity_status_and_duplicate_link_guard_in_postgres(
+    postgres_database, verified, disabled, expected,
+):
+    from sqlalchemy import text
+    from db.models import User
+    from db.session import get_session
+    from services.platform.identity import IdentityConflict, create_telegram_link_request, user_snapshot
+
+    async with get_session() as session:
+        user = User(username="telegram-identity-" + uuid4().hex[:12], tier="free")
+        other = User(username="telegram-other-" + uuid4().hex[:12], tier="free")
+        session.add_all([user, other])
+        await session.flush()
+        await session.execute(text(
+            "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified,disabled_at) "
+            "VALUES(:iid,:uid,'telegram',:subject,:verified,:disabled)"
+        ), {"iid": str(uuid4()), "uid": user.id, "subject": uuid4().hex,
+            "verified": verified, "disabled": datetime.utcnow() if disabled else None})
+        snapshot = await user_snapshot(session, user.id)
+        assert snapshot["telegram_user_id"] is None
+        assert snapshot["telegram_link_status"] == expected
+        assert snapshot["telegram_connected_or_pending"] is (expected == "linked")
+        assert (await user_snapshot(session, other.id))["telegram_link_status"] == "not_linked"
+        if expected == "linked":
+            with pytest.raises(IdentityConflict, match="telegram_already_linked"):
+                await create_telegram_link_request(session, user_id=user.id)
+            count = await session.execute(text(
+                "SELECT COUNT(*) FROM account_link_requests WHERE requesting_user_id=:uid"
+            ), {"uid": user.id})
+            assert count.scalar_one() == 0
+        else:
+            request = await create_telegram_link_request(session, user_id=user.id)
+            assert request.user_id == user.id
+            assert (await user_snapshot(session, user.id))["telegram_link_status"] == "link_pending"
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["legacy_linked", "merge_review", "expired"])
+async def test_existing_and_expired_telegram_link_states_in_postgres(postgres_database, state):
+    from sqlalchemy import text
+    from db.models import User
+    from db.session import get_session
+    from services.platform.identity import IdentityConflict, create_telegram_link_request, user_snapshot
+
+    async with get_session() as session:
+        user = User(username="telegram-state-" + uuid4().hex[:12], tier="free",
+                    telegram_user_id=900000000000 + int(uuid4().hex[:8], 16) if state == "legacy_linked" else None)
+        session.add(user)
+        await session.flush()
+        if state == "merge_review":
+            other = User(username="telegram-merge-" + uuid4().hex[:12], tier="free")
+            session.add(other)
+            await session.flush()
+            await session.execute(text(
+                "INSERT INTO account_merge_records(merge_id,canonical_user_id,merged_user_id,status) "
+                "VALUES(:mid,:uid,:other,'pending_review')"
+            ), {"mid": str(uuid4()), "uid": user.id, "other": other.id})
+        elif state == "expired":
+            await session.execute(text(
+                "INSERT INTO account_link_requests(link_id,requesting_user_id,provider,token_hash,status,expires_at) "
+                "VALUES(:lid,:uid,'telegram',:hash,'pending',:expired)"
+            ), {"lid": str(uuid4()), "uid": user.id, "hash": uuid4().hex,
+                "expired": datetime.utcnow() - timedelta(seconds=1)})
+        snapshot = await user_snapshot(session, user.id)
+        expected = {"legacy_linked": "linked", "merge_review": "merge_review", "expired": "not_linked"}[state]
+        assert snapshot["telegram_link_status"] == expected
+        assert snapshot["telegram_connected_or_pending"] is (state != "expired")
+        if state != "expired":
+            with pytest.raises(IdentityConflict):
+                await create_telegram_link_request(session, user_id=user.id)
+        else:
+            await create_telegram_link_request(session, user_id=user.id)
+            assert (await user_snapshot(session, user.id))["telegram_link_status"] == "link_pending"
+        await session.rollback()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status,eligible", [
     (None, True), ("pending", True), ("tp1", True), ("tp2", True),
     ("tp3", False), ("sl", False), ("stop", False), ("stopped", False),
