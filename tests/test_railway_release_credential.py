@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from io import BytesIO
+from urllib.error import HTTPError
 
 import pytest
 
@@ -55,3 +57,13 @@ def test_unsafe_service_configuration_blocks_without_mutation(defect):
     with pytest.raises(release.PromotionBlocked):
         preflight.check(api)
     assert all(query.lstrip().startswith("query") for query, _ in api.calls)
+
+
+def test_http_status_diagnostic_never_reveals_url_or_response(monkeypatch):
+    def reject(request, timeout):
+        raise HTTPError("https://example.test/?token=private-value", 403,
+                        "secret response", {}, BytesIO(b"private response"))
+    monkeypatch.setattr(release, "urlopen", reject)
+    with pytest.raises(release.PromotionBlocked, match=r"HTTP 403") as captured:
+        release.request_json("https://example.test/?token=private-value", {})
+    assert "private" not in str(captured.value)

@@ -9683,11 +9683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 226,
+      "line_count": 230,
       "path": "scripts/approve_production_release.py",
       "reason": "production/build source",
-      "sha256": "e657c9eabf4416d6ba9d47fd3068d8ca36d739062b7498ac19b6f4da5f1ebf42",
-      "size_bytes": 11189
+      "sha256": "d79007cb390e344127d0a8160b9f324a03eeb4706260b023bc0032a909f4d1a1",
+      "size_bytes": 11446
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14291,11 +14291,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 57,
+      "line_count": 69,
       "path": "tests/test_railway_release_credential.py",
       "reason": "automated test evidence",
-      "sha256": "7e69a9a47dc855ce5453e208db848c4aa9e513e3b3ec2883dfcbe3d70a455f13",
-      "size_bytes": 2231
+      "sha256": "cc865e0aeb131113f2e0b14c0cfb5433137e100b9ed48250872c52826d619b57",
+      "size_bytes": 2811
     },
     {
       "disposition": "TEST_ONLY",

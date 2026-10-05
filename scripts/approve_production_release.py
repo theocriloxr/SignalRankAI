@@ -95,7 +95,11 @@ def request_json(url, headers, payload=None):
     try:
         with urlopen(request, timeout=30) as response:  # nosec B310 -- fixed HTTPS API origins
             return json.load(response)
-    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+    except HTTPError as exc:
+        # The numeric status identifies credential/scope failures safely. Never
+        # include the response body, request URL, headers or API error text.
+        raise PromotionBlocked(f"API request failed (HTTP {exc.code})") from None
+    except (URLError, TimeoutError, ValueError) as exc:
         # API response bodies and URLs can contain credentials: never log them.
         raise PromotionBlocked(f"API request failed ({type(exc).__name__})") from None
 
