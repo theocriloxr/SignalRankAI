@@ -1,5 +1,5 @@
 {
-  "file_count": 1973,
+  "file_count": 1975,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8203,6 +8203,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 68,
+      "path": "frontend/scripts/transport.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "3b8a29ccde6931899efcaa79e0b2f5e2ae49299cecb407a8943bc96f5882f861",
+      "size_bytes": 3158
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 29,
       "path": "frontend/src/app/[slug]/page.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8288,6 +8296,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "5dffd971d2790e28d625b899a787ccaedbc8fe7894cc36e0e4506aaead9dd348",
       "size_bytes": 442
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 21,
+      "path": "frontend/src/lib/transport.ts",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "d3d512da8dcf9400d1e3e478140b18379b52791f371007f6ce94a5ad60af8f6b",
+      "size_bytes": 1048
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15799,7 +15815,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 459,
-    "PRESERVE_BEHAVIOUR": 1171,
+    "PRESERVE_BEHAVIOUR": 1173,
     "TEST_ONLY": 342
   }
 }
