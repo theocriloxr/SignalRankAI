@@ -164,7 +164,7 @@ jobs:
         env:
           RAILWAY_PRODUCTION_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/check_railway_release_credential.py
+        run: python -m scripts.check_railway_release_credential
 
   release-certification:
     # A single stable required check covers matrix jobs and prevents skipped
