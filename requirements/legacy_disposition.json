@@ -1,5 +1,5 @@
 {
-  "file_count": 1952,
+  "file_count": 1955,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -43,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 165,
+      "line_count": 192,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1af77123a884bef976c992ca63f7c3607b33b411474d3f043d6a7a67812f6105",
-      "size_bytes": 5463
+      "sha256": "c3c5dc12f3ff18c943a3b168225a6f404eef9ce2d5475b7c87634cff47857355",
+      "size_bytes": 6471
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6715,6 +6715,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 55,
+      "path": "docs/operations/automatic-production-releases.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "4dbfacd1582701ec4e84cf66594641bb6d674c69154fa4dd6a020b5d9e92e9db",
+      "size_bytes": 3225
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 41,
       "path": "docs/operations/container_inputs.md",
       "reason": "documentation/specification/evidence",
@@ -9283,11 +9291,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 45,
+      "line_count": 47,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8b08837d40e51ae9496d6441016fea5c319f516c18874ea34ffa9147511542fd",
-      "size_bytes": 1407
+      "sha256": "b94b4ff549cefb61150599b0caebaaec76170c3933114fed823f9fb1eb9c75e5",
+      "size_bytes": 1493
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9659,6 +9667,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 205,
+      "path": "scripts/approve_production_release.py",
+      "reason": "production/build source",
+      "sha256": "14d86f3c5c31093d47cd9903a6166b1030b634df64f48a8f88ecee54062f989f",
+      "size_bytes": 9765
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 126,
       "path": "scripts/architecture_smoke.py",
       "reason": "production/build source",
@@ -9667,11 +9683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 274,
+      "line_count": 287,
       "path": "scripts/assert_database_schema.py",
       "reason": "production/build source",
-      "sha256": "d73e507f827c33d8dd682512535b5a2830e9e31f91ecfc4fd54f46d0b913f17e",
-      "size_bytes": 10953
+      "sha256": "a0bf1e2d63ae751fb11a22d25dead406668175342e4517c74bf115243f5bdbac",
+      "size_bytes": 11909
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14083,6 +14099,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 200,
+      "path": "tests/test_production_release_approval.py",
+      "reason": "automated test evidence",
+      "sha256": "e0bd48357278bf0ff06f161ec61d26de151599f36f66f9e6a1e1a7bf31a86193",
+      "size_bytes": 7608
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 69,
       "path": "tests/test_production_soak_monitor.py",
       "reason": "automated test evidence",
@@ -14219,19 +14243,19 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 55,
+      "line_count": 64,
       "path": "tests/test_railway_no_redis.py",
       "reason": "automated test evidence",
-      "sha256": "3bd4d710173d2172da9590ce3326e2065a668e8499e79bedac1b4da4731a0beb",
-      "size_bytes": 2069
+      "sha256": "7cf1293716ba451e14c283d42bcfa63eff3447adcbc97a2a7898f0d8d035f684",
+      "size_bytes": 2489
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 36,
+      "line_count": 49,
       "path": "tests/test_railway_redis_queue.py",
       "reason": "automated test evidence",
-      "sha256": "d6938cbb50a630536b8aa22e2977a8bc2bf152fa7b4e864def63f021a4033a33",
-      "size_bytes": 1312
+      "sha256": "c8b9822d5a8f95fd4b287c8b0d27b24840feadc447ffcf8f81d3b23699ef5150",
+      "size_bytes": 2187
     },
     {
       "disposition": "TEST_ONLY",
@@ -15630,8 +15654,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 450,
-    "PRESERVE_BEHAVIOUR": 1165,
-    "TEST_ONLY": 336
+    "DOCUMENTATION_ONLY": 451,
+    "PRESERVE_BEHAVIOUR": 1166,
+    "TEST_ONLY": 337
   }
 }

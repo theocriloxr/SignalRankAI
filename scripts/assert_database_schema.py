@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -186,9 +187,11 @@ def check_schema() -> dict[str, Any]:
             cursor.execute("SET statement_timeout = '10000ms'")
             cursor.execute(query)
             row = cursor.fetchone()
-            columns = [getattr(item, "name", item[0]) for item in cursor.description]
+            if row is None or cursor.description is None:
+                raise RuntimeError("Schema query returned no result metadata")
+            columns = [str(getattr(item, "name", item[0])) for item in cursor.description]
 
-    record = dict(zip(columns, row, strict=True))
+    record: dict[str, Any] = dict(zip(columns, row, strict=True))
     revisions = list(record.pop("deployed_revisions") or [])
     deployed = str(revisions[0]) if len(revisions) == 1 else ""
     required = {
@@ -241,25 +244,35 @@ def check_schema() -> dict[str, Any]:
     }
 
 
+def wait_for_schema(wait_seconds: int = 0) -> tuple[dict[str, Any], int]:
+    """Wait for the migration role without modifying schema or bypassing admission."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            payload = check_schema()
+        except RuntimeError as exc:
+            return {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}, EXIT_CONFIGURATION
+        except Exception as exc:  # network failures may recover while the migrator starts
+            payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
+            code = EXIT_UNREACHABLE
+        else:
+            code = 0 if payload["ok"] else EXIT_SCHEMA_MISMATCH
+        remaining = deadline - time.monotonic()
+        if code == 0 or remaining <= 0:
+            return payload, code
+        print("[schema_gate] Waiting for the migration role; admission remains blocked.", flush=True)
+        time.sleep(min(5.0, remaining))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit one JSON object")
+    parser.add_argument("--wait-seconds", type=int, default=0,
+                        help="allow a bounded wait for the migration role (0 to 600 seconds)")
     args = parser.parse_args()
-
-    try:
-        payload = check_schema()
-    except RuntimeError as exc:
-        payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
-        code = EXIT_CONFIGURATION
-    except Exception as exc:  # pragma: no cover - environment/network dependent
-        payload = {
-            "status": "BLOCKED",
-            "ok": False,
-            "error": type(exc).__name__,
-        }
-        code = EXIT_UNREACHABLE
-    else:
-        code = 0 if payload["ok"] else EXIT_SCHEMA_MISMATCH
+    if not 0 <= args.wait_seconds <= 600:
+        parser.error("--wait-seconds must be between 0 and 600")
+    payload, code = wait_for_schema(args.wait_seconds)
 
     if args.json:
         print(json.dumps(payload, sort_keys=True, default=str))
