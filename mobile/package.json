@@ -9,6 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "test:dependencies": "node --test scripts/dependency-contract.test.cjs",
     "doctor": "npx expo-doctor",
     "fix-deps": "npx expo install --fix"
   },
@@ -27,5 +28,10 @@
   "devDependencies": {
     "@types/react": "~19.2.0",
     "typescript": "~5.9.0"
+  },
+  "overrides": {
+    "xcode": {
+      "uuid": "11.1.1"
+    }
   }
 }

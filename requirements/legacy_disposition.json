@@ -1,5 +1,5 @@
 {
-  "file_count": 1958,
+  "file_count": 1959,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2635,11 +2635,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 486,
+      "line_count": 495,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9211b0041999b17cb6d3bbe2abde096a5f26deb99ad45c088b1733276aa67f91",
-      "size_bytes": 15698
+      "sha256": "143ec4d9d38f99a1a137367137fb6b9bc2ab51757b60883ef68c534376ccbba9",
+      "size_bytes": 16023
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8619,19 +8619,27 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6219,
+      "line_count": 6222,
       "path": "mobile/package-lock.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c1940e66c219b0b9ad118fc89dc9bcc42ce5b6e6d3372c1dc5a047ac8fc52960",
-      "size_bytes": 235568
+      "sha256": "bbb37d6a7e462f20fb4e9b9c873d87df7bbd5e0d413de1f266c1fb418d5cfbb0",
+      "size_bytes": 235485
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 31,
+      "line_count": 37,
       "path": "mobile/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0564bf264ce68a8c72c9e94dcec5a844e09a04ad77a0cadb79872466a06d0d26",
-      "size_bytes": 801
+      "sha256": "ef8432126d228b2f4b8f34fa85dbb05e040ac0702637887b6d1c7a5b170f20db",
+      "size_bytes": 944
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 44,
+      "path": "mobile/scripts/dependency-contract.test.cjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "1848e534a570df20b8a1c62590809ab99dd42d387e4c844c8575274a4dc76554",
+      "size_bytes": 2012
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15679,7 +15687,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 452,
-    "PRESERVE_BEHAVIOUR": 1167,
+    "PRESERVE_BEHAVIOUR": 1168,
     "TEST_ONLY": 338
   }
 }

@@ -304,6 +304,15 @@
       ]
     },
     {
+      "id": "mobile-dependency-contract",
+      "group": "mobile",
+      "description": "Native project UUID compatibility and buffer bounds regression checks",
+      "command": "cd mobile && npm run test:dependencies",
+      "severity": "high",
+      "required": true,
+      "environments": ["ci", "cleanroom"]
+    },
+    {
       "id": "mobile-audit",
       "group": "mobile",
       "description": "Dependency audit: unresolved high and critical advisories block release",
