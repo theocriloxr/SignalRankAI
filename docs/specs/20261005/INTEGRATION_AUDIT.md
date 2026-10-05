@@ -86,3 +86,18 @@ security checks. Backend gates identified a stale generated file inventory,
 which is regenerated with this change. Frontend and mobile audit gates still
 reported five and sixteen high dependency findings respectively. Failed gates
 are retained; no production approval or audit waiver has been issued.
+
+Further identity and mobile corrections:
+
+- Telegram authentication and first-use repository lookup now reuse the owner
+  of an existing verified Telegram identity. They mirror that existing binding
+  into its own legacy Telegram column, preserving tier and preferred name.
+  Conflicting owners, disabled identities and unverified bindings fail closed;
+  no account is automatically transferred or merged. Six additional flows
+  passed on isolated real PostgreSQL; the combined identity suite passed 125.
+- Native session refresh now coalesces concurrent token rotations, serializes
+  secure-store writes and rejects responses from a previous account generation.
+  Logout invalidates pending refresh/login responses. Transient refresh outages
+  retain credentials, while invalid refresh tokens and partial secure-store
+  writes fail closed. TypeScript and concurrency/error contracts are checked;
+  actual native-device behavior remains unverified.

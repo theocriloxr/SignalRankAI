@@ -12,6 +12,107 @@ from sqlalchemy.engine import make_url
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("surface", ["app_login", "telegram_repository"])
+async def test_existing_verified_telegram_identity_reuses_its_owner_without_duplicate_account(postgres_database, surface):
+    from sqlalchemy import text
+    from db.models import User
+    from db.repository import get_or_create_user
+    from db.session import get_session
+    from services.platform.identity import ensure_telegram_user, user_snapshot
+
+    telegram_id = 9_000_000_000 + int(uuid4().hex[:10], 16)
+    async with get_session() as session:
+        owner = User(username="canonical-" + uuid4().hex[:12], tier="vip", display_name="Preferred name")
+        session.add(owner)
+        await session.flush()
+        owner_id = owner.id
+        await session.execute(text(
+            "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified) "
+            "VALUES(:iid,:uid,'telegram',:subject,TRUE)"
+        ), {"iid":str(uuid4()), "uid":owner_id, "subject":str(telegram_id)})
+        before = (await session.execute(text("SELECT COUNT(*) FROM users"))).scalar_one()
+        if surface == "app_login":
+            actual = await ensure_telegram_user(session, telegram_user_id=telegram_id, display_name="Telegram display")
+        else:
+            actual = (await get_or_create_user(session, telegram_id, username="canonical_alias")).id
+        assert actual == owner_id
+        snapshot = await user_snapshot(session, owner_id)
+        assert snapshot["telegram_user_id"] == telegram_id
+        assert snapshot["telegram_link_status"] == "linked"
+        assert snapshot["tier"] == "vip"
+        assert snapshot["display_name"] == "Preferred name"
+        assert (await session.execute(text("SELECT COUNT(*) FROM users"))).scalar_one() == before
+        assert (await session.execute(text(
+            "SELECT user_id FROM auth_identities WHERE provider='telegram' AND provider_subject_id=:subject"
+        ), {"subject":str(telegram_id)})).scalar_one() == owner_id
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_telegram_identity_owner_conflict_never_transfers_or_merges_accounts(postgres_database):
+    from sqlalchemy import text
+    from db.models import User
+    from db.session import get_session
+    from services.platform.identity import IdentityConflict, ensure_telegram_user
+
+    telegram_id = 9_000_000_000 + int(uuid4().hex[:10], 16)
+    async with get_session() as session:
+        owner = User(username="auth-owner-" + uuid4().hex[:12], tier="vip")
+        other = User(username="legacy-owner-" + uuid4().hex[:12], telegram_user_id=telegram_id, tier="free")
+        session.add_all([owner, other])
+        await session.flush()
+        await session.execute(text(
+            "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified) "
+            "VALUES(:iid,:uid,'telegram',:subject,TRUE)"
+        ), {"iid":str(uuid4()), "uid":owner.id, "subject":str(telegram_id)})
+        with pytest.raises(IdentityConflict, match="telegram_identity_owner_conflict"):
+            await ensure_telegram_user(session, telegram_user_id=telegram_id)
+        assert (await session.execute(text("SELECT telegram_user_id FROM users WHERE id=:uid"), {"uid":owner.id})).scalar_one() is None
+        assert (await session.execute(text(
+            "SELECT user_id FROM auth_identities WHERE provider='telegram' AND provider_subject_id=:subject"
+        ), {"subject":str(telegram_id)})).scalar_one() == owner.id
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verified,disabled", [(False, False), (True, True)])
+async def test_telegram_login_cannot_reactivate_disabled_or_unverified_identity(postgres_database, verified, disabled):
+    from sqlalchemy import text
+    from db.models import User
+    from db.session import get_session
+    from services.platform.identity import AuthenticationError, ensure_telegram_user
+
+    telegram_id = 9_000_000_000 + int(uuid4().hex[:10], 16)
+    async with get_session() as session:
+        owner = User(username="restricted-" + uuid4().hex[:12], telegram_user_id=telegram_id, tier="free")
+        session.add(owner)
+        await session.flush()
+        await session.execute(text(
+            "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified,disabled_at) "
+            "VALUES(:iid,:uid,'telegram',:subject,:verified,:disabled)"
+        ), {"iid":str(uuid4()), "uid":owner.id, "subject":str(telegram_id), "verified":verified,
+            "disabled":datetime.utcnow() if disabled else None})
+        with pytest.raises(AuthenticationError, match="telegram_identity_unavailable"):
+            await ensure_telegram_user(session, telegram_user_id=telegram_id)
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_first_telegram_login_is_idempotent_in_postgres(postgres_database):
+    from sqlalchemy import text
+    from db.session import get_session
+    from services.platform.identity import ensure_telegram_user
+
+    telegram_id = 9_000_000_000 + int(uuid4().hex[:10], 16)
+    async with get_session() as session:
+        one = await ensure_telegram_user(session, telegram_user_id=telegram_id)
+        two = await ensure_telegram_user(session, telegram_user_id=telegram_id)
+        assert one == two
+        assert (await session.execute(text("SELECT COUNT(*) FROM users WHERE telegram_user_id=:subject"), {"subject":telegram_id})).scalar_one() == 1
+        await session.rollback()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("verified,disabled,expected", [
     (True, False, "linked"), (False, False, "not_linked"),
     (True, True, "not_linked"),

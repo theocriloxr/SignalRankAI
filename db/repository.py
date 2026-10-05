@@ -125,25 +125,17 @@ async def get_or_create_user(
             await session.flush()
         return user
 
-    user = User(
-        telegram_user_id=telegram_user_id, username=username, tier=(str(tier).strip().lower()[:16] if tier else "free")
-    )
-    session.add(user)
-    try:
+    # App identity bindings can precede the legacy Telegram column. Reuse the
+    # canonical owner instead of creating a second free-tier account for it.
+    from services.platform.identity import ensure_telegram_user
+
+    user_id = await ensure_telegram_user(session, telegram_user_id=telegram_user_id, username=username)
+    resolved = await session.execute(select(User).where(User.id == user_id))
+    user = resolved.scalar_one()
+    if tier:
+        user.tier = str(tier).strip().lower()[:16]
         await session.flush()
-        return user
-    except IntegrityError:
-        # Another concurrent request likely created the same telegram_user_id.
-        # Roll back the failed INSERT and re-select.
-        await session.rollback()
-        res2 = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
-        existing2 = res2.scalar_one_or_none()
-        if existing2 is None:
-            raise
-        if username and existing2.username != username:
-            existing2.username = username
-            await session.flush()
-        return existing2
+    return user
 
 
 async def activate_subscription(

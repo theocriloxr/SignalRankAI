@@ -5846,7 +5846,7 @@ async def broker_status(user: dict[str, Any] = Depends(current_user)) -> dict[st
             "auto_signals_daily_limit": int(account_payload.get("auto_signals_daily_limit") or 0),
             "fixed_lot_size": float(account_payload.get("fixed_lot_size") or 0.01),
             "accepted_terms": bool(account_payload.get("accepted_terms")),
-            "telegram_linked": account_payload.get("telegram_user_id") is not None,
+            "telegram_linked": user.get("telegram_link_status") == "linked" or account_payload.get("telegram_user_id") is not None,
         },
         "stats": {
             "accounts": account_stats,

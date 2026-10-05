@@ -1229,8 +1229,8 @@
       "production_example_default": null,
       "read_locations": [
         "services/platform/identity.py:164",
-        "services/platform/identity.py:377",
-        "services/platform/identity.py:484",
+        "services/platform/identity.py:417",
+        "services/platform/identity.py:524",
         "web/platform_api.py:796"
       ],
       "required_by_code": true,
@@ -1243,7 +1243,7 @@
       "name": "APP_ACTIVATION_TTL_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/identity.py:531"
+        "services/platform/identity.py:571"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1381,7 +1381,7 @@
       "name": "APP_LINK_TTL_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/identity.py:653"
+        "services/platform/identity.py:693"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1460,7 +1460,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/platform/email_delivery.py:49",
-        "services/platform/identity.py:1252"
+        "services/platform/identity.py:1292"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1472,8 +1472,8 @@
       "name": "APP_REFRESH_TOKEN_TTL_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/identity.py:376",
-        "services/platform/identity.py:460",
+        "services/platform/identity.py:416",
+        "services/platform/identity.py:500",
         "web/platform_api.py:794"
       ],
       "required_by_code": true,
@@ -4009,8 +4009,8 @@
       "name": "DECISION_LOG_WRITE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "db/repository.py:278",
-        "db/repository.py:336"
+        "db/repository.py:270",
+        "db/repository.py:328"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5381,8 +5381,8 @@
         "data/market_data.py:774",
         "engine/core.py:1119",
         "payments/paystack_policy.py:46",
-        "services/platform/identity.py:1047",
-        "services/platform/identity.py:548",
+        "services/platform/identity.py:1087",
+        "services/platform/identity.py:588",
         "services/platform/webhooks.py:88"
       ],
       "required_by_code": true,
@@ -11796,8 +11796,8 @@
         "engine/core.py:1116",
         "payments/paystack_policy.py:43",
         "railway_main.py:1189",
-        "services/platform/identity.py:1047",
-        "services/platform/identity.py:548",
+        "services/platform/identity.py:1087",
+        "services/platform/identity.py:588",
         "services/platform/webhooks.py:88",
         "signalrank_telegram/bot.py:1831",
         "signalrank_telegram/bot.py:2682",
@@ -13738,7 +13738,7 @@
       "production_example_default": null,
       "read_locations": [
         "db/pg_features.py:1032",
-        "db/repository.py:452"
+        "db/repository.py:444"
       ],
       "required_by_code": true,
       "sensitive": false

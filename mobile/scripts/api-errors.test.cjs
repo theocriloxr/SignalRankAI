@@ -50,3 +50,14 @@ test('unstructured validation data never becomes an object string', async () => 
     return true;
   });
 });
+
+for (const [name, args] of [['login', ['test@test.local', 'fixture-only']],
+  ['register', ['Test', 'test@test.local', 'fixture-only']],
+  ['completeMfa', ['fixture-token', 'fixture-code']],
+  ['activateTelegram', ['fixture-code', 'test@test.local', 'fixture-only']],
+  ['completeMagicLogin', ['fixture-token']]]) {
+  test(`${name} preserves structured authentication errors`, async () => {
+    const api = client(409, {code: 'account_review_required', message: 'Your account needs a security review.'});
+    await assert.rejects(api[name](...args), error => error instanceof api.PlatformAPIError && error.code === 'account_review_required' && error.message === 'Your account needs a security review.');
+  });
+}

@@ -238,18 +238,53 @@ async def ensure_telegram_user(
     username: str | None = None,
     display_name: str | None = None,
 ) -> int:
+    telegram_id = int(telegram_user_id)
+    if telegram_id <= 0:
+        raise AuthenticationError("invalid_telegram_identity")
+    # Serialize first use of an identity across Telegram and app login paths.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))"),
+        {"identity": "telegram:" + str(telegram_id)},
+    )
+    identity = (
+        await session.execute(
+            text("SELECT user_id,verified,disabled_at FROM auth_identities "
+                 "WHERE provider='telegram' AND provider_subject_id=:subject FOR UPDATE"),
+            {"subject": str(telegram_id)},
+        )
+    ).mappings().first()
+    if identity and (not identity.get("verified") or identity.get("disabled_at") is not None):
+        raise AuthenticationError("telegram_identity_unavailable")
     row = (
         await session.execute(
-            text("SELECT id FROM users WHERE telegram_user_id=:telegram_id"),
-            {"telegram_id": int(telegram_user_id)},
+            text("SELECT id FROM users WHERE telegram_user_id=:telegram_id FOR UPDATE"),
+            {"telegram_id": telegram_id},
         )
     ).first()
+    if identity:
+        canonical_id = int(identity["user_id"])
+        if row and int(row[0]) != canonical_id:
+            raise IdentityConflict("telegram_identity_owner_conflict")
+        owner = (
+            await session.execute(
+                text("SELECT id,telegram_user_id FROM users WHERE id=:uid FOR UPDATE"),
+                {"uid": canonical_id},
+            )
+        ).mappings().first()
+        if not owner or owner.get("telegram_user_id") not in (None, telegram_id):
+            raise IdentityConflict("telegram_primary_identity_conflict")
+        # Mirror the already verified binding on its existing owner. This never
+        # transfers an identity, merges users or changes account balances.
+        if owner.get("telegram_user_id") is None:
+            await session.execute(text("UPDATE users SET telegram_user_id=:telegram_id WHERE id=:uid"),
+                                  {"telegram_id": telegram_id, "uid": canonical_id})
+        row = (canonical_id,)
     if row:
         user_id = int(row[0])
         await session.execute(
             text(
                 "UPDATE users SET username=COALESCE(:username,username), "
-                "display_name=COALESCE(:display_name,display_name), "
+                "display_name=COALESCE(display_name,:display_name), "
                 "telegram_reachable=TRUE, telegram_unreachable_reason=NULL, "
                 "telegram_unreachable_at=NULL, notification_suppressed=FALSE, "
                 "last_active_at=NOW(), updated_at=NOW(), "
@@ -264,17 +299,20 @@ async def ensure_telegram_user(
                 await session.execute(
                     text(
                         "INSERT INTO users(telegram_user_id,username,tier,display_name,public_user_id,created_at,last_active_at,updated_at) "
-                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,NOW(),NOW(),NOW()) RETURNING id"
+                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,NOW(),NOW(),NOW()) "
+                        "ON CONFLICT(telegram_user_id) DO UPDATE SET last_active_at=NOW() RETURNING id"
                     ),
                     {"telegram_id": int(telegram_user_id), "username": username, "display_name": display_name},
                 )
             ).scalar_one()
         )
-    await session.execute(
+    bound = await session.execute(
         text(
             "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified,verified_at,metadata) "
             "VALUES(gen_random_uuid()::text,:uid,'telegram',:subject,TRUE,NOW(),CAST(:metadata AS JSONB)) "
-            "ON CONFLICT(provider,provider_subject_id) DO UPDATE SET last_used_at=NOW(), disabled_at=NULL"
+            "ON CONFLICT(provider,provider_subject_id) DO UPDATE SET last_used_at=NOW() "
+            "WHERE auth_identities.user_id=:uid AND auth_identities.verified IS TRUE "
+            "AND auth_identities.disabled_at IS NULL RETURNING user_id"
         ),
         {
             "uid": user_id,
@@ -282,6 +320,8 @@ async def ensure_telegram_user(
             "metadata": json.dumps({"username": username}, separators=(",", ":")),
         },
     )
+    if bound.scalar_one_or_none() != user_id:
+        raise IdentityConflict("telegram_identity_owner_conflict")
     return user_id
 
 

@@ -5,14 +5,14 @@ const ACCESS_KEY = 'signalrank.access_token';
 const REFRESH_KEY = 'signalrank.refresh_token';
 
 export class PlatformAPIError extends Error {
-  constructor(message: string, public readonly status: number, public readonly code?: string) {
+  constructor(message: string, public readonly status: number, public readonly code?: string, public readonly generation?: number) {
     super(message);
     this.name = 'PlatformAPIError';
   }
 }
 
-function responseError(payload: {detail?: unknown}, status: number): PlatformAPIError {
-  const detail = payload.detail;
+function responseError(payload: unknown, status: number): PlatformAPIError {
+  const detail = payload && typeof payload === 'object' ? (payload as {detail?: unknown}).detail : undefined;
   if (typeof detail === 'string') return new PlatformAPIError(detail, status);
   if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
     const value = detail as {message?: unknown; code?: unknown};
@@ -32,67 +32,137 @@ export type SessionPayload = {
   expires_at?: string;
 };
 
-export async function storeSession(payload: SessionPayload): Promise<void> {
-  if (payload.access_token) await SecureStore.setItemAsync(ACCESS_KEY, payload.access_token);
-  if (payload.refresh_token) await SecureStore.setItemAsync(REFRESH_KEY, payload.refresh_token);
+let sessionGeneration = 0;
+let sessionBlocked = false;
+let sessionWrites: Promise<void> = Promise.resolve();
+let refreshTask: {generation: number; promise: Promise<string | null>} | null = null;
+
+export function getSessionGeneration(): number { return sessionGeneration; }
+
+function assertGeneration(generation: number): void {
+  if (generation !== sessionGeneration) throw new PlatformAPIError('Account session changed. Please retry.', 409, 'session_changed');
+}
+
+function queueSessionWrite(operation: () => Promise<void>): Promise<void> {
+  const next = sessionWrites.catch(() => {}).then(operation);
+  sessionWrites = next;
+  return next;
+}
+
+async function persistSession(payload: SessionPayload, generation: number): Promise<void> {
+  if (!payload.access_token || !payload.refresh_token) throw new PlatformAPIError('Could not establish a secure session. Please retry.', 503, 'invalid_session_response');
+  await queueSessionWrite(async () => {
+    try {
+      assertGeneration(generation);
+      await SecureStore.setItemAsync(ACCESS_KEY, payload.access_token!);
+      assertGeneration(generation);
+      await SecureStore.setItemAsync(REFRESH_KEY, payload.refresh_token!);
+      assertGeneration(generation);
+    } catch (error) {
+      if (generation !== sessionGeneration) throw error;
+      ++sessionGeneration;
+      sessionBlocked = true;
+      await Promise.allSettled([SecureStore.deleteItemAsync(ACCESS_KEY), SecureStore.deleteItemAsync(REFRESH_KEY)]);
+      throw new PlatformAPIError('Secure session storage failed. Sign in again.', 503, 'session_storage_failed', sessionGeneration);
+    }
+  });
+}
+
+export async function storeSession(payload: SessionPayload, expectedGeneration = sessionGeneration): Promise<void> {
+  assertGeneration(expectedGeneration);
+  const generation = ++sessionGeneration;
+  sessionBlocked = true;
+  await persistSession(payload, generation);
+  assertGeneration(generation);
+  sessionBlocked = false;
 }
 
 export async function clearSession(): Promise<void> {
-  await Promise.all([SecureStore.deleteItemAsync(ACCESS_KEY), SecureStore.deleteItemAsync(REFRESH_KEY)]);
+  ++sessionGeneration;
+  sessionBlocked = true;
+  await queueSessionWrite(async () => {
+    await Promise.all([SecureStore.deleteItemAsync(ACCESS_KEY), SecureStore.deleteItemAsync(REFRESH_KEY)]);
+  });
 }
 
-async function refresh(): Promise<string | null> {
-  const refreshToken = await SecureStore.getItemAsync(REFRESH_KEY);
-  if (!refreshToken) return null;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/refresh`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({refresh_token: refreshToken, client_type: 'mobile'}),
-  });
-  if (!response.ok) {
-    await clearSession();
-    return null;
-  }
-  const payload = await response.json() as SessionPayload;
-  await storeSession(payload);
-  return payload.access_token || null;
+async function refresh(generation: number): Promise<string | null> {
+  assertGeneration(generation);
+  if (sessionBlocked) return null;
+  if (refreshTask?.generation === generation) return refreshTask.promise;
+  const promise = (async () => {
+    const refreshToken = await SecureStore.getItemAsync(REFRESH_KEY);
+    assertGeneration(generation);
+    if (!refreshToken || sessionBlocked) return null;
+    const response = await fetch(`${API_URL}/api/v1/platform/auth/refresh`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({refresh_token: refreshToken, client_type: 'mobile'}),
+    });
+    const payload = await response.json().catch(() => ({}));
+    assertGeneration(generation);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        const expiredGeneration = sessionGeneration + 1;
+        await clearSession();
+        assertGeneration(expiredGeneration);
+        throw new PlatformAPIError('Session expired. Sign in again.', 401, 'session_expired', expiredGeneration);
+      }
+      throw responseError(payload, response.status);
+    }
+    await persistSession(payload as SessionPayload, generation);
+    return (payload as SessionPayload).access_token || null;
+  })();
+  const task = {generation, promise};
+  refreshTask = task;
+  try { return await promise; }
+  finally { if (refreshTask === task) refreshTask = null; }
 }
 
 export async function api<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
-  let accessToken = await SecureStore.getItemAsync(ACCESS_KEY);
-  const send = (token: string | null) => fetch(`${API_URL}/api/v1/platform${path}`, {
-    ...init,
-    headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {}), ...(init.headers || {})},
-  });
+  const generation = sessionGeneration;
+  let accessToken = sessionBlocked ? null : await SecureStore.getItemAsync(ACCESS_KEY);
+  const send = (token: string | null) => {
+    assertGeneration(generation);
+    return fetch(`${API_URL}/api/v1/platform${path}`, {
+      ...init,
+      headers: {'Content-Type': 'application/json', ...(init.headers || {}), ...(token ? {Authorization: `Bearer ${token}`} : {})},
+    });
+  };
   let response = await send(accessToken);
   if (response.status === 401 && retry) {
-    accessToken = await refresh();
+    assertGeneration(generation);
+    const currentToken = sessionBlocked ? null : await SecureStore.getItemAsync(ACCESS_KEY);
+    accessToken = currentToken && currentToken !== accessToken ? currentToken : await refresh(generation);
     if (accessToken) response = await send(accessToken);
   }
   const payload = await response.json().catch(() => ({}));
+  assertGeneration(generation);
   if (!response.ok) throw responseError(payload, response.status);
   return payload as T;
 }
 
 export async function login(email: string, password: string): Promise<SessionPayload> {
+  const generation = sessionGeneration;
   const response = await fetch(`${API_URL}/api/v1/platform/auth/login`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email, password, client_type: 'mobile'}),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || 'Login failed');
-  if (!payload.mfa_required) await storeSession(payload);
+  assertGeneration(generation);
+  if (!response.ok) throw responseError(payload, response.status);
+  if (!payload.mfa_required) await storeSession(payload, generation);
   return payload;
 }
 
 export async function completeMfa(token: string, code: string): Promise<SessionPayload> {
+  const generation = sessionGeneration;
   const response = await fetch(`${API_URL}/api/v1/platform/auth/mfa/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token, code, client_type: 'mobile'}),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || 'MFA verification failed');
-  await storeSession(payload);
+  assertGeneration(generation);
+  if (!response.ok) throw responseError(payload, response.status);
+  await storeSession(payload, generation);
   return payload;
 }
 
@@ -111,24 +181,28 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 export async function register(displayName: string, email: string, password: string): Promise<SessionPayload> {
+  const generation = sessionGeneration;
   const response = await fetch(`${API_URL}/api/v1/platform/auth/register`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({display_name: displayName, email, password, client_type: 'mobile'}),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || 'Registration failed');
-  await storeSession(payload);
+  assertGeneration(generation);
+  if (!response.ok) throw responseError(payload, response.status);
+  await storeSession(payload, generation);
   return payload;
 }
 
 export async function activateTelegram(tokenOrCode: string, email: string, password: string): Promise<SessionPayload> {
+  const generation = sessionGeneration;
   const response = await fetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token_or_code: tokenOrCode, email, password, client_type: 'mobile'}),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || 'Activation failed');
-  await storeSession(payload);
+  assertGeneration(generation);
+  if (!response.ok) throw responseError(payload, response.status);
+  await storeSession(payload, generation);
   return payload;
 }
 
@@ -180,13 +254,15 @@ export async function disableMfa(code: string): Promise<{enabled: boolean}> {
 }
 
 export async function completeMagicLogin(token: string): Promise<SessionPayload> {
+  const generation = sessionGeneration;
   const response = await fetch(`${API_URL}/api/v1/platform/auth/magic-link/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token, client_type: 'mobile'}),
   });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || 'Sign-in link is invalid or expired');
-  if (!payload.mfa_required) await storeSession(payload);
+  assertGeneration(generation);
+  if (!response.ok) throw responseError(payload, response.status);
+  if (!payload.mfa_required) await storeSession(payload, generation);
   return payload;
 }
 
@@ -196,7 +272,7 @@ export async function completePasswordReset(token: string, newPassword: string):
     body: JSON.stringify({token, new_password: newPassword}),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.detail || 'Password reset failed');
+  if (!response.ok) throw responseError(payload, response.status);
 }
 
 export type BillingProduct = {
