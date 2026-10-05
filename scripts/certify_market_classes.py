@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from data.fetcher import async_get_candles, _get_last_provider_used
-from data.provider_catalog import get_provider_spec, validate_candles
+from data.fetcher import async_get_candles, _get_last_provider_used, _timeframe_to_seconds
+from data.provider_catalog import evaluate_candle_freshness, get_provider_spec, validate_candles
 
 CLASS_SAMPLES: dict[str, tuple[str, str]] = {
     "crypto_spot": ("BTCUSDT", "5m"),
@@ -90,8 +90,9 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
 
     provider = str(_get_last_provider_used(symbol, timeframe) or "unknown")
     validation = validate_candles(rows or [], minimum=20)
-    age = _latest_age(validation)
-    freshness_limit = max(180.0, float(TF_SECONDS.get(timeframe, 3600)) * 2.5)
+    freshness = evaluate_candle_freshness(validation, interval_seconds=_timeframe_to_seconds(timeframe), now_epoch=time.time())
+    age = freshness["age_seconds"]
+    freshness_limit = freshness["limit_seconds"]
     source_lower = provider.lower()
     # Certification must enforce the same authority boundary in staging and
     # production. An isolated environment does not certify an analysis feed.
@@ -102,7 +103,7 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
         spec = None
     capability_ok = bool(spec and spec.realtime_capable and asset_class in spec.asset_classes
                          and timeframe in spec.timeframes)
-    fresh = age is not None and -30.0 <= age <= freshness_limit
+    fresh = freshness["fresh"]
     valid = bool(validation.get("valid"))
     eligible = bool(valid and fresh and not analysis_only and capability_ok)
 

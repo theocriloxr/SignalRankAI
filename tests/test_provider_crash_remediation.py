@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import pytest
 
 from data import fetcher, connector_registry
@@ -12,8 +13,9 @@ def isolated_provider_cooldowns(monkeypatch):
     monkeypatch.setattr(providers, "_PROVIDER_COOLDOWN", {})
 
 
-def _rows():
-    return [{"timestamp": 1_700_000_000 + i * 300, "open": 100, "high": 101,
+def _rows(now=None):
+    latest = (time.time() if now is None else now) - 30
+    return [{"timestamp": latest - (24 - i) * 300, "open": 100, "high": 101,
              "low": 99, "close": 100, "volume": 1} for i in range(25)]
 
 
@@ -53,8 +55,9 @@ def test_async_configured_provider_preserves_lineage(monkeypatch, enabled):
 
 
 def test_repeated_provider_failure_does_not_extend_forward_fill_lifetime(monkeypatch):
-    clock = [100.0]
-    cache = {("EURUSD", "5m"): (90.0, _rows())}
+    started = 1_800_000_000.0
+    clock = [started]
+    cache = {("EURUSD", "5m"): (started - 10, _rows(started))}
     monkeypatch.setattr(fetcher, "_CANDLE_CACHE", cache)
     monkeypatch.setattr(fetcher, "_CANDLE_INFLIGHT", {})
     monkeypatch.setattr(fetcher.time, "time", lambda: clock[0])
@@ -64,10 +67,10 @@ def test_repeated_provider_failure_does_not_extend_forward_fill_lifetime(monkeyp
     monkeypatch.setattr(fetcher, "get_asset_type", lambda _: "fx")
     monkeypatch.setattr(fetcher, "_fetch_fx_multi_provider", lambda *args: [])
     assert len(fetcher.get_candles("EURUSD", "5m")) == 25
-    assert cache[("EURUSD", "5m")][0] == 90.0
-    clock[0] = 119.0
+    assert cache[("EURUSD", "5m")][0] == started - 10
+    clock[0] = started + 19
     assert len(fetcher.get_candles("EURUSD", "5m")) == 25
-    clock[0] = 121.0
+    clock[0] = started + 21
     assert fetcher.get_candles("EURUSD", "5m") == []
 
 

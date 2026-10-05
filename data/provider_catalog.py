@@ -103,6 +103,8 @@ class ProviderSpec:
             from data.connectors.yfinance_adapter import get_candles as value
         elif key == ("data.connectors.twelvedata_adapter", "get_candles"):
             from data.connectors.twelvedata_adapter import get_candles as value
+        elif key == ("data.connectors.fcs_adapter", "get_candles"):
+            from data.connectors.fcs_adapter import get_candles as value
         elif key == ("data.connectors.polygon_adapter", "get_candles"):
             from data.connectors.polygon_adapter import get_candles as value
         elif key == ("data.connectors.tiingo_adapter", "get_candles"):
@@ -148,6 +150,16 @@ class ProviderSpec:
 
 
 PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
+    ProviderSpec(
+        "fcs", "FCS API", "data.connectors.fcs_adapter", "get_candles",
+        ("forex", "equity", "index", "commodity_spot", "crypto_spot"),
+        ("fx", "cash", "index", "spot"),
+        ("1m", "5m", "15m", "30m", "1h", "2h", "4h", "5h", "1d", "1w"),
+        ("keyed_fallback", "historical"), "https://fcsapi.com/document/forex-api",
+        required_env=("FCS_API_KEY", "FCS_API_SECRET"), enabled_env="FCS_ENABLED",
+        sample_symbol="EURUSD", sample_timeframe="5m",
+        notes="FCS v4 history; symbol, plan and freshness certification remain required.",
+    ),
     ProviderSpec(
         "coinbase",
         "Coinbase Exchange",
@@ -717,6 +729,31 @@ def _parse_timestamp(value: Any) -> float | None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt.timestamp()
     return _parse_timestamp(number)
+
+
+def evaluate_candle_freshness(
+    validation: Mapping[str, Any], *, interval_seconds: float, now_epoch: float,
+) -> dict[str, Any]:
+    """Evaluate an observed candle window without changing source timestamps.
+
+    Historical research supplies its observation time explicitly; current-data
+    consumers supply the current UTC epoch. This check does not certify provider
+    entitlement, market-open status or execution capability.
+    """
+    try:
+        interval = float(interval_seconds)
+        observed = float(now_epoch)
+    except (TypeError, ValueError, OverflowError):
+        return {"fresh": False, "age_seconds": None, "limit_seconds": None, "reason": "invalid_observation_clock"}
+    if not math.isfinite(interval) or interval <= 0 or not math.isfinite(observed):
+        return {"fresh": False, "age_seconds": None, "limit_seconds": None, "reason": "invalid_observation_clock"}
+    limit = max(180.0, interval * 2.5)
+    timestamp = _parse_timestamp(validation.get("last_timestamp"))
+    if timestamp is None or timestamp <= 0:
+        return {"fresh": False, "age_seconds": None, "limit_seconds": limit, "reason": "missing_freshness_timestamp"}
+    age = observed - timestamp
+    reason = "future_timestamp" if age < -30.0 else "stale_candles" if age > limit else ""
+    return {"fresh": not reason, "age_seconds": age, "limit_seconds": limit, "reason": reason}
 
 
 def validate_candles(

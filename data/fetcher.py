@@ -288,9 +288,14 @@ def _max_provider_attempts() -> int:
     return _env_positive_int("OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME", 2)
 
 
-def _ordered_provider_candidates(providers: list[tuple[str, object]]) -> list[tuple[str, object]]:
-    healthy = [item for item in providers if provider_is_healthy(item[0])]
-    degraded = [item for item in providers if not provider_is_healthy(item[0])]
+def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_kind: str = "", timeframe: str = "") -> list[tuple[str, object]]:
+    from data.connector_registry import provider_order_env_name
+
+    env_name = provider_order_env_name(asset_kind)
+    strict_order = bool(env_name and (os.getenv(env_name) or "").strip())
+    candidates = [item for item in providers if not timeframe or _provider_timeframe_eligible(item[0], timeframe)]
+    healthy = candidates if strict_order else [item for item in candidates if provider_is_healthy(item[0])]
+    degraded = [] if strict_order else [item for item in candidates if not provider_is_healthy(item[0])]
     ordered: list[tuple[str, object]] = []
     seen: set[str] = set()
     for item in healthy + degraded:
@@ -333,6 +338,19 @@ def _run_provider_request(provider_name: str, fetch_func, *, asset: str, timefra
         semaphore.release()
 
 
+def _live_candle_rejection_reason(candles: list, timeframe: str) -> str:
+    from data.provider_catalog import evaluate_candle_freshness, validate_candles
+
+    if len(candles) < 20:
+        return "insufficient_candles"
+    validation = validate_candles(candles, minimum=20)
+    if not validation["valid"]:
+        return "invalid_candles"
+    return str(evaluate_candle_freshness(
+        validation, interval_seconds=_timeframe_to_seconds(timeframe), now_epoch=time.time(),
+    )["reason"])
+
+
 def _try_provider_chain(
     providers: list[tuple[str, object]],
     *,
@@ -341,7 +359,7 @@ def _try_provider_chain(
     asset_kind: str,
 ) -> list:
     attempted: list[str] = []
-    for provider_name, fetch_func in _ordered_provider_candidates(providers):
+    for provider_name, fetch_func in _ordered_provider_candidates(providers, asset_kind=asset_kind, timeframe=timeframe):
         attempted.append(str(provider_name))
         try:
             candles, latency_ms = _run_provider_request(
@@ -350,7 +368,8 @@ def _try_provider_chain(
                 asset=asset,
                 timeframe=timeframe,
             )
-            if len(candles) >= 20:
+            rejection_reason = _live_candle_rejection_reason(candles, timeframe)
+            if not rejection_reason:
                 mark_provider_result(provider_name, True, latency_ms=latency_ms)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(
@@ -365,7 +384,7 @@ def _try_provider_chain(
             mark_provider_capability_miss(provider_name, latency_ms=latency_ms)
             reason = _provider_failure_reason(
                 provider_name,
-                "insufficient_candles",
+                rejection_reason,
                 candles_count=len(candles),
                 latency_ms=latency_ms,
             )
@@ -428,7 +447,11 @@ def _read_cached_candles(key: tuple[str, str], ttl_seconds: float, *, allow_stal
         if (now - ts) > max(0.0, float(ttl_seconds)) and not allow_stale:
             return None
         # Return a shallow structural copy to avoid accidental mutation by callers.
-        return [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
+        copied = [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
+    # Fetch time alone is insufficient: recently cached old bars remain old.
+    if copied and _live_candle_rejection_reason(copied, key[1]):
+        return None
+    return copied
 
 
 def _read_stale_cached_candles(key: tuple[str, str], max_age_seconds: float) -> list | None:
@@ -919,77 +942,21 @@ def fetch_market_data(asset, timeframes):
             if not candles or not isinstance(candles, list) or len(candles) < 20:
                 continue
 
-            # Verify candle structure
-            first = candles[0]
-            required_keys = {"close", "high", "low", "open", "timestamp"}
-            if not all(k in first for k in required_keys):
+            from data.provider_catalog import evaluate_candle_freshness, validate_candles
+
+            validation = validate_candles(candles, minimum=20)
+            if not validation["valid"]:
                 continue
-
-            # Check candle freshness - most recent candle should not be too old
-            latest_candle = candles[-1]
-            latest_timestamp = latest_candle.get("timestamp", 0)
-
-            # Normalize timestamp to epoch seconds (accepts ms, s, or ISO string)
-            def _to_epoch_seconds(ts_val):
-                try:
-                    if isinstance(ts_val, str):
-                        _s = ts_val.strip()
-                        if _s.isdigit():
-                            ts_num = int(_s)
-                            return ts_num / 1000.0 if ts_num > 1_000_000_000_000 else float(ts_num)
-                        try:
-                            from datetime import datetime
-
-                            dt = datetime.fromisoformat(_s.replace("Z", "+00:00"))
-                            return dt.timestamp()
-                        except Exception:
-                            return 0.0
-                    if isinstance(ts_val, (int, float)):
-                        ts_num = float(ts_val)
-                        return ts_num / 1000.0 if ts_num > 1_000_000_000_000 else ts_num
-                except Exception:
-                    return 0.0
-                return 0.0
-
-            latest_ts_sec = _to_epoch_seconds(latest_timestamp)
-
-            # Convert timeframe to seconds
-            tf_seconds = _timeframe_to_seconds(tf)
             current_time = time.time()
-
-            # Import candle staleness multiplier
-            from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
-
-            # Candles should be at most N times the timeframe interval old
-            max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
-            candle_age = (current_time - latest_ts_sec) if latest_ts_sec else float("inf")
-
-            stale_but_acceptable = False
-            if candle_age > max_age:
-                # Allow a small grace window for some providers (yfinance/tradingview)
-                grace = float((os.getenv("YFINANCE_STALENESS_GRACE_SECONDS") or "120").strip())
-                try:
-                    provider_name = _get_last_provider_used(_asset_norm, _tf_norm) or ""
-                except Exception as e:
-                    logger.warning(f"[fetcher] Error getting provider: {e}")
-                    provider_name = ""
-                if provider_name in {
-                    "yahoo",
-                    "yfinance",
-                    "tradingview",
-                    "tradingview_connector",
-                    "tradingview_legacy",
-                } and candle_age <= (max_age + grace):
-                    # mark as lower confidence but accept
-                    logger.info(
-                        f"[fetcher] Stale-but-acceptable data for {asset} {tf} provider={provider_name} age={candle_age:.0f}s (max+grace={max_age + grace:.0f}s)"
-                    )
-                    stale_but_acceptable = True
-                else:
-                    logger.warning(
-                        f"[fetcher] Candle data for {asset} {tf} is stale: {candle_age:.0f}s old (max: {max_age:.0f}s)"
-                    )
-                    stale_but_acceptable = False
+            freshness = evaluate_candle_freshness(
+                validation, interval_seconds=_timeframe_to_seconds(tf), now_epoch=current_time,
+            )
+            if not freshness["fresh"]:
+                logger.warning("[fetcher] Rejecting %s %s: %s", asset, tf, freshness["reason"])
+                continue
+            latest_candle = candles[-1]
+            latest_ts_sec = validation["last_timestamp"]
+            candle_age = freshness["age_seconds"]
 
             # Calculate indicators from real candle data
             indicators = calculate_indicators(candles)
@@ -1043,7 +1010,7 @@ def fetch_market_data(asset, timeframes):
                 "candle_age_seconds": candle_age,
                 "source": provider_name or "unknown",
                 "asset_type": asset_type,
-                "stale_but_acceptable": bool(stale_but_acceptable),
+                "stale_but_acceptable": False,
             }
         except Exception as e:
             logger.warning(f"[fetcher] Skipping {asset} {tf} due to error: {e}")
@@ -1111,7 +1078,8 @@ def get_candles(asset, timeframe):
         cached = _read_cached_candles(_cache_key, _cache_ttl, allow_stale=True)
         if cached is not None:
             return cached
-        return [dict(c) if isinstance(c, dict) else c for c in (inflight.result or [])]
+        result = [dict(c) if isinstance(c, dict) else c for c in (inflight.result or [])]
+        return [] if _live_candle_rejection_reason(result, timeframe) else result
 
     candles: list = []
     try:
@@ -1137,7 +1105,8 @@ def get_candles(asset, timeframe):
         else:
             candles = _fetch_stock_multi_provider(asset, timeframe)
 
-        if (not candles) or len(candles) < 20:
+        if _live_candle_rejection_reason(list(candles or []), timeframe):
+            candles = []
             ff_ttl = _get_forward_fill_ttl_seconds()
             stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
             if stale_cached is not None and len(stale_cached) >= 20:
@@ -1167,157 +1136,45 @@ def get_candles(asset, timeframe):
                 _CANDLE_INFLIGHT.pop(_cache_key, None)
 
 
+def _fetch_registered_multi_provider(asset, timeframe, asset_kind):
+    """Use the shared configured registry for every synchronous asset class."""
+    from data.connector_registry import get_providers_for_asset, provider_order_env_name
+
+    providers = [
+        (name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout))
+        for name, fn in get_providers_for_asset(asset_kind)
+    ]
+    order_env = provider_order_env_name(asset_kind)
+    strict_order = bool(order_env and (os.getenv(order_env) or "").strip())
+    if not strict_order:
+        preferred_env = {
+            "crypto": "CRYPTO_PREFERRED_PROVIDER", "fx": "FX_PREFERRED_PROVIDER",
+            "stock": "STOCK_PREFERRED_PROVIDER", "index": "INDEX_PREFERRED_PROVIDER",
+            "commodity": "COMMODITY_PREFERRED_PROVIDER",
+        }.get(asset_kind)
+        if preferred_env:
+            providers = _prioritize_provider_list(providers, os.getenv(preferred_env) or "")
+    return _try_provider_chain(providers, asset=asset, timeframe=timeframe, asset_kind=asset_kind)
+
+
 def _fetch_crypto_multi_provider(asset, timeframe):
-    """Try multiple crypto providers in order with concurrency limits.
-
-    Uses a threading-based semaphore to limit concurrent requests per provider.
-    Requires timeframes are fetched in priority order (required TFs first).
-
-    NOTE: For Nigeria (Binance blocked):
-    - Coinbase/OKX work from Railway without regional restrictions
-    """
-    # Build provider list from connector registry (prefer connectors)
-    from data.connector_registry import get_providers_for_asset
-
-    provs = get_providers_for_asset("crypto")
-    providers = []
-    for name, fn in provs:
-        providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
-
-    # Allow explicit preferred provider via env var (e.g., CRYPTO_PREFERRED_PROVIDER=coinbase)
-    preferred = (os.getenv("CRYPTO_PREFERRED_PROVIDER") or "").strip().lower()
-    providers = _prioritize_provider_list(providers, preferred)
-
-    return _try_provider_chain(
-        providers,
-        asset=asset,
-        timeframe=timeframe,
-        asset_kind="crypto",
-    )
+    return _fetch_registered_multi_provider(asset, timeframe, "crypto")
 
 
 def _fetch_fx_multi_provider(asset, timeframe):
-    """Try multiple FX providers in order."""
-    from .providers import (
-        fetch_oanda_candles,
-        fetch_polygon_candles,
-        fetch_twelvedata_candles,
-        fetch_yahoo_candles,
-        fetch_tradingview_candles,
-    )
-    from data.connectors.tiingo_adapter import get_candles as fetch_tiingo_candles
-    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
-
-    # Convert to formats needed by different providers
-    oanda_format = asset.replace("/", "_").replace("-", "_").upper()
-    yahoo_format = asset.replace("_", "").replace("-", "")
-    if "/" not in yahoo_format and len(yahoo_format) == 6:
-        yahoo_format = f"{yahoo_format[:3]}{yahoo_format[3:]}=X"  # Yahoo FX format: EURUSD=X
-
-    alpha_enabled = os.getenv("ALPHAVANTAGE_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
-    providers = [
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
-        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
-        ("fmp", lambda timeout=10: fetch_fmp_candles(yahoo_format, timeframe, timeout=timeout)),
-        ("tiingo", lambda timeout=10: fetch_tiingo_candles(asset, timeframe, timeout=timeout)),
-        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
-        ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
-        ("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="FX_IDC")),
-    ]
-    if alpha_enabled:
-        is_intraday = timeframe in {"1m", "5m", "15m", "30m", "1h", "4h"}
-        is_premium = os.getenv("ALPHAVANTAGE_PREMIUM", "0").lower() in ("1", "true", "yes", "on")
-        if not is_intraday or is_premium:
-            providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
-
-    # Allow explicit FX preferred provider via env var (e.g., FX_PREFERRED_PROVIDER=alphavantage)
-    fx_pref = (os.getenv("FX_PREFERRED_PROVIDER") or "").strip().lower()
-    providers = _prioritize_provider_list(providers, fx_pref)
-
-    return _try_provider_chain(
-        providers,
-        asset=asset,
-        timeframe=timeframe,
-        asset_kind="fx",
-    )
+    return _fetch_registered_multi_provider(asset, timeframe, "fx")
 
 
 def _fetch_stock_multi_provider(asset, timeframe):
-    """Try multiple stock providers in order."""
-    from .providers import fetch_tradingview_candles
-
-    from data.connector_registry import get_providers_for_asset
-
-    provs = get_providers_for_asset("stock")
-    providers = []
-    for name, fn in provs:
-        providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
-    providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
-    providers = _prioritize_provider_list(providers, os.getenv("STOCK_PREFERRED_PROVIDER") or "")
-    return _try_provider_chain(
-        providers,
-        asset=asset,
-        timeframe=timeframe,
-        asset_kind="stock",
-    )
+    return _fetch_registered_multi_provider(asset, timeframe, "stock")
 
 
 def _fetch_commodity_multi_provider(asset, timeframe):
-    """Try commodity-capable providers in order without routing metals/oil as stocks or crypto."""
-    from .providers import fetch_yahoo_candles, fetch_twelvedata_candles, fetch_tradingview_candles, fetch_oanda_candles
-    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
-
-    raw = str(asset or "").upper().strip()
-    providers = [
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(raw, timeframe)),
-        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "commodity")),
-        ("fmp", lambda timeout=10: fetch_fmp_candles(raw, timeframe, timeout=timeout)),
-        ("oanda", lambda timeout=10: fetch_oanda_candles(raw.replace("/", "_").replace("-", "_"), timeframe)),
-        (
-            "tradingview",
-            lambda timeout=10: fetch_tradingview_candles(
-                raw, timeframe, exchange=(os.getenv("TRADINGVIEW_COMMODITY_PREFIX") or "TVC")
-            ),
-        ),
-    ]
-    providers = _prioritize_provider_list(providers, os.getenv("COMMODITY_PREFERRED_PROVIDER") or "")
-
-    return _try_provider_chain(
-        providers,
-        asset=asset,
-        timeframe=timeframe,
-        asset_kind="commodity",
-    )
+    return _fetch_registered_multi_provider(asset, timeframe, "commodity")
 
 
 def _fetch_index_multi_provider(asset, timeframe):
-    """Try index-capable providers in order without routing index CFDs as stocks."""
-    from .providers import (
-        fetch_yahoo_candles,
-        fetch_polygon_candles,
-        fetch_twelvedata_candles,
-        fetch_tradingview_candles,
-    )
-    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
-
-    raw = str(asset or "").upper().strip()
-    yahoo_symbol = normalize_index_symbol(raw)
-    tv_symbol = yahoo_symbol.lstrip("^") if yahoo_symbol.startswith("^") else raw.lstrip("^")
-    tv_exchange = (os.getenv("TRADINGVIEW_INDEX_PREFIX") or "TVC").strip() or "TVC"
-    providers = [
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
-        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "index")),
-        ("fmp", lambda timeout=10: fetch_fmp_candles(raw.lstrip("^"), timeframe, timeout=timeout)),
-        ("polygon", lambda timeout=10: fetch_polygon_candles(yahoo_symbol, timeframe, "indices")),
-        ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
-    ]
-    providers = _prioritize_provider_list(providers, os.getenv("INDEX_PREFERRED_PROVIDER") or "")
-    return _try_provider_chain(
-        providers,
-        asset=asset,
-        timeframe=timeframe,
-        asset_kind="index",
-    )
+    return _fetch_registered_multi_provider(asset, timeframe, "index")
 
 
 def get_stock_candles(asset, timeframe):
@@ -2826,7 +2683,7 @@ async def async_get_candles(asset, timeframe):
             return await asyncio.to_thread(get_candles, asset, timeframe)
 
         # Import registry locally to avoid import cycles at module import time
-        from data.connector_registry import get_async_providers_for_asset
+        from data.connector_registry import get_async_providers_for_asset, provider_order_env_name
 
         # Build provider list in strict fallback order.
         provs = get_async_providers_for_asset(asset_type)
@@ -2838,12 +2695,10 @@ async def async_get_candles(asset, timeframe):
             "index": "INDEX_PREFERRED_PROVIDER",
             "commodity": "COMMODITY_PREFERRED_PROVIDER",
         }.get(str(asset_type or "").lower().strip())
-        if preferred_env:
+        order_env = provider_order_env_name(asset_type)
+        strict_configured_order = bool(order_env and (os.getenv(order_env) or "").strip())
+        if preferred_env and not strict_configured_order:
             provs = _prioritize_provider_list(provs, os.getenv(preferred_env) or "")
-        strict_configured_order = bool(
-            str(asset_type or "").lower().strip() == "crypto"
-            and (os.getenv("CRYPTO_MARKET_DATA_PROVIDERS") or "").strip()
-        )
         if strict_configured_order:
             ordered_provs = list(provs)
         else:
@@ -2907,7 +2762,8 @@ async def async_get_candles(asset, timeframe):
                     )
                     _sem.release()
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-                if candles and len(candles) >= 20:
+                rejection_reason = _live_candle_rejection_reason(list(candles or []), timeframe)
+                if not rejection_reason:
                     mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                     _set_last_provider_used(asset, timeframe, provider_name)
                     logger.info(
@@ -2918,7 +2774,7 @@ async def async_get_candles(asset, timeframe):
                     mark_provider_capability_miss(provider_name, latency_ms=_latency_ms)
                     reason = _provider_failure_reason(
                         provider_name,
-                        "insufficient_candles",
+                        rejection_reason,
                         candles_count=len(candles or []),
                         latency_ms=_latency_ms,
                     )

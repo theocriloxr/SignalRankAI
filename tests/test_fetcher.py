@@ -1,4 +1,5 @@
 import unittest
+import time
 from unittest.mock import patch
 
 import data.fetcher as fetcher
@@ -6,7 +7,7 @@ import data.fetcher as fetcher
 
 def make_candles(n=200):
     out = []
-    ts = 1600000000000
+    ts = int((time.time() - n * 60) * 1000)
     for i in range(n):
         out.append({
             "timestamp": ts + i * 60000,

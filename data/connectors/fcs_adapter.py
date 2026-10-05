@@ -1,207 +1,133 @@
+"""FCS v4 read-only candles; provider access is verified separately.
+
+Contracts: https://fcsapi.com/document/forex-api and /stock-api, /crypto-api.
+Credentials stay in the POST body and never enter logs or request URLs.
 """
-FCS Adapter - Financial Content Services API
-
-API Key required: FCS_API_KEY (or FCS_API_SECRET)
-Free Tier: Varies (check https://fcsapi.com/)
-Best for: Crypto, Forex, Stocks
-
-Docs: https://fcsapi.com/docs
-"""
-
 from __future__ import annotations
 
-from typing import List, Dict, Any
-import os
+import json
 import logging
+import math
+import os
+import time
+from typing import Any
+
+from core.asset_registry import resolve_asset_spec
+from data.provider_catalog import evaluate_candle_freshness, validate_candles
+from utils import httpx_client
+from utils.async_runner import run_sync
 
 logger = logging.getLogger(__name__)
-
-try:
-    import httpx
-except Exception:
-    httpx = None
-
-from utils.async_runner import run_sync
-from utils import httpx_client
+TIMEFRAMES = frozenset({"1m", "5m", "15m", "30m", "1h", "2h", "4h", "5h", "1d", "1w"})
+BASE_URL = "https://api-v4.fcsapi.com"
 
 
-async def _async_get_candles(
-    symbol: str,
-    timeframe: str,
-    limit: int = 200,
-    timeout: float = 10.0,
-) -> List[Dict[str, Any]]:
-    """
-    Fetch candles from FCS API.
+def _request_identity(symbol: str) -> tuple[str, str] | None:
+    raw = str(symbol or "").strip().upper()
+    spec = resolve_asset_spec(raw.split(":")[-1])
+    market = {"forex": "forex", "commodity": "forex", "stock": "stock",
+              "index": "stock", "crypto": "crypto"}.get(spec.asset_class)
+    if market is None:
+        return None
+    # Preserve exchange prefixes and stock punctuation; never substitute an ETF.
+    mapped = raw.replace("/", "").replace("_", "") if spec.asset_class == "forex" else raw
+    configured = os.getenv("FCS_SYMBOL_MAP_JSON", "").strip()
+    if configured:
+        try:
+            mapping = json.loads(configured)
+            if not isinstance(mapping, dict):
+                return None
+            mapped = mapping.get(raw, mapped)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(mapped, str) or not mapped.strip() or len(mapped) > 100:
+        return None
+    return market, mapped.strip()
 
-    Args:
-        symbol: Trading symbol (e.g., "BTC/USDT", "EURUSD")
-        timeframe: Timeframe (1h, 4h, 1d)
-        limit: Number of candles to fetch
-        timeout: Request timeout
 
-    Returns:
-        List of candle dicts with keys: timestamp, open, high, low, close, volume
-    """
-    api_key = (os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip()
-    if not api_key:
-        logger.debug("fcs_adapter: FCS_API_KEY not set")
-        return []
+async def _request(market: str, endpoint: str, params: dict[str, Any], timeout: float) -> Any:
+    from data.providers import _is_cooldown_active, _maybe_apply_rate_limit_cooldown
 
-    # Clean symbol - FCS uses format like BTCUSDT, EURUSD
-    symbol = (symbol or "").upper().strip()
-    symbol_clean = symbol.replace("/", "").replace("-", "").replace("_", "")
-
-    request_timeout = min(10.0, max(2.0, float(timeout)))
-
-    # FCS uses different timeframe format
-    # 1h, 2h, 4h, 6h, 12h, 1d, 1w
-    tf_map = {
-        "1m": "1m",
-        "5m": "5m",
-        "15m": "15m",
-        "30m": "30m",
-        "1h": "1h",
-        "2h": "2h",
-        "4h": "4h",
-        "6h": "6h",
-        "12h": "12h",
-        "1d": "1d",
-        "1w": "1w",
-    }
-    fcs_tf = tf_map.get((timeframe or "").strip().lower(), "1h")
-
-    # API ID for FCS - checking different possible IDs based on their docs
-    # The format is typically: https://fcsapi.com/api/v3/{indicator}/...
+    if _is_cooldown_active("fcs"):
+        return None
+    key = (os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip()
+    client = httpx_client.get_client("fcs") if key else None
+    if client is None:
+        return None
     try:
-        # Try standard candles endpoint
-        url = f"https://fcsapi.com/api/v3/candles?symbol={symbol_clean}&timeframe={fcs_tf}&accessKey={api_key}"
+        response = await client.post(f"{BASE_URL}/{market}/{endpoint}", json={**params, "access_key": key}, timeout=timeout)
+        if response.status_code != 200:
+            _maybe_apply_rate_limit_cooldown("fcs", status_code=response.status_code)
+            logger.debug("fcs_adapter rejected http_status=%s", response.status_code)
+            return None
+        payload = response.json()
+        if isinstance(payload, dict) and (payload.get("status") is False or payload.get("code") not in (None, 200, "200")):
+            _maybe_apply_rate_limit_cooldown("fcs", message=str(payload.get("msg") or ""))
+            logger.debug("fcs_adapter provider_rejected")
+            return None
+        return payload.get("response", payload) if isinstance(payload, dict) else payload
+    except Exception as exc:
+        logger.debug("fcs_adapter error_type=%s", type(exc).__name__)
+        return None
 
-        client = httpx_client.get_client("fcs")
 
-        if client is not None:
-            resp = await client.get(url, timeout=request_timeout)
-        else:
-            async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
-                resp = await client_fallback.get(url)
-
-        if resp.status_code != 200:
-            logger.debug(f"fcs_adapter HTTP {resp.status_code}: {getattr(resp, 'text', '')[:200]}")
-            return []
-
-        data = resp.json()
-
-        # FCS response format: {"candles": [...], "status": "ok"}
-        if not data or not isinstance(data, dict):
-            return []
-
-        # Check for API error
-        status = data.get("status")
-        if status == "error" or data.get("err"):
-            err_msg = data.get("message", data.get("err", "unknown"))
-            logger.debug(f"fcs_adapter API error: {err_msg}")
-            return []
-
-        candles_data = data.get("candles") or data.get("data") or []
-        if not candles_data:
-            return []
-
-        out: List[Dict[str, Any]] = []
-
-        # FCS format: [[timestamp, open, high, low, close, volume], ...]
-        for row in candles_data[:limit]:
-            try:
-                if isinstance(row, list) and len(row) >= 6:
-                    out.append(
-                        {
-                            "timestamp": int(row[0]),
-                            "open": float(row[1]),
-                            "high": float(row[2]),
-                            "low": float(row[3]),
-                            "close": float(row[4]),
-                            "volume": float(row[5]),
-                        }
-                    )
-                elif isinstance(row, dict):
-                    out.append(
-                        {
-                            "timestamp": int(row.get("t", row.get("timestamp", 0))),
-                            "open": float(row.get("o", row.get("open", 0))),
-                            "high": float(row.get("h", row.get("high", 0))),
-                            "low": float(row.get("l", row.get("low", 0))),
-                            "close": float(row.get("c", row.get("close", 0))),
-                            "volume": float(row.get("v", row.get("volume", 0))),
-                        }
-                    )
-            except (ValueError, TypeError) as e:
-                logger.debug(f"fcs_adapter parse error: {e}")
-                continue
-
-        # FCS typically returns newest first, reverse to chronological
-        return out[::-1]
-
-    except Exception as e:
-        logger.debug(f"fcs_adapter exception: {e}")
+async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> list[dict[str, Any]]:
+    identity = _request_identity(symbol)
+    tf = str(timeframe or "").strip().lower()
+    if identity is None or tf not in TIMEFRAMES:
         return []
-
-
-async def _async_get_latest_price(
-    symbol: str,
-    timeout: float = 5.0,
-) -> float:
-    """
-    Fetch latest price from FCS API.
-
-    Args:
-        symbol: Trading symbol (e.g., "BTCUSDT")
-        timeout: Request timeout
-
-    Returns:
-        Latest price or 0.0 on failure
-    """
-    api_key = (os.getenv("FCS_API_KEY") or os.getenv("FCS_API_SECRET") or "").strip()
-    if not api_key:
-        return 0.0
-
-    symbol = (symbol or "").upper().strip().replace("/", "").replace("-", "").replace("_", "")
-
-    request_timeout = min(5.0, max(1.0, float(timeout)))
-
     try:
-        url = f"https://fcsapi.com/api/v1/latest_price?symbol={symbol}&accessKey={api_key}"
+        requested = max(1, min(1000, int(limit)))
+        request_timeout = min(10.0, max(1.0, float(timeout)))
+        if not math.isfinite(float(timeout)):
+            return []
+    except (ValueError, TypeError, OverflowError):
+        return []
+    market, ticker = identity
+    payload = await _request(market, "history", {"symbol": ticker, "period": tf, "length": requested, "page": 1, "is_chart": 0}, request_timeout)
+    if isinstance(payload, dict):
+        bars = list(payload.values())
+    elif isinstance(payload, list):
+        bars = payload
+    else:
+        return []
+    out = []
+    for bar in bars:
+        try:
+            if isinstance(bar, list) and len(bar) >= 6:
+                stamp, opened, high, low, close, volume = bar[:6]
+            elif isinstance(bar, dict):
+                stamp, opened, high, low, close, volume = (bar.get(field) for field in ("t", "o", "h", "l", "c", "v"))
+            else:
+                return []
+            out.append({"timestamp": float(stamp), "open": float(opened), "high": float(high),
+                        "low": float(low), "close": float(close), "volume": float(volume or 0)})
+        except (ValueError, TypeError, OverflowError):
+            return []
+    out.sort(key=lambda bar: bar["timestamp"])
+    if not validate_candles(out, minimum=1)["valid"]:
+        return []
+    return out[-requested:]
 
-        client = httpx_client.get_client("fcs")
 
-        if client is not None:
-            resp = await client.get(url, timeout=request_timeout)
-        else:
-            async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
-                resp = await client_fallback.get(url)
-
-        if resp.status_code != 200:
-            return 0.0
-
-        data = resp.json()
-
-        # FCS returns: {"price": {"symbol": "BTCUSDT", "price": 12345.67}}
-        price_data = data.get("price", {})
-        if isinstance(price_data, dict):
-            return float(price_data.get("price", 0))
-
+async def _async_get_latest_price(symbol: str, timeout: float = 5.0) -> float:
+    """Analysis price only; execution consumes the timestamped quote contract."""
+    identity = _request_identity(symbol)
+    if identity is None:
         return 0.0
-
-    except Exception as e:
-        logger.debug(f"fcs_adapter price error: {e}")
+    market, ticker = identity
+    payload = await _request(market, "latest", {"symbol": ticker}, min(5.0, max(1.0, timeout)))
+    row = payload[0] if isinstance(payload, list) and payload else payload
+    active = row.get("active") if isinstance(row, dict) else None
+    if not isinstance(active, dict):
         return 0.0
+    fresh = evaluate_candle_freshness({"last_timestamp": row.get("update") or active.get("t")}, interval_seconds=60, now_epoch=time.time())
+    try:
+        price = float(active.get("c"))
+    except (ValueError, TypeError):
+        return 0.0
+    return price if fresh["fresh"] and math.isfinite(price) and price > 0 else 0.0
 
 
-def get_candles(
-    symbol: str,
-    timeframe: str,
-    limit: int = 200,
-    timeout: float = 10.0,
-) -> List[Dict[str, Any]]:
-    """
-    Sync-compatible wrapper that runs the async FCS client safely.
-    """
+def get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> list[dict[str, Any]]:
     return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))

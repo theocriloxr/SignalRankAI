@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1361,
+  "variable_count": 1359,
   "variables": [
     {
       "declared_defaults": {},
@@ -1117,23 +1117,13 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:62",
-        "data/fetcher.py:2484",
+        "data/fetcher.py:2341",
         "data/providers.py:1082",
         "data/providers.py:966",
         "data/startup_selfcheck.py:137"
       ],
       "required_by_code": true,
       "sensitive": true
-    },
-    {
-      "declared_defaults": {},
-      "name": "ALPHAVANTAGE_ENABLED",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1217"
-      ],
-      "required_by_code": true,
-      "sensitive": false
     },
     {
       "declared_defaults": {},
@@ -1156,16 +1146,6 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "ALPHAVANTAGE_PREMIUM",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1229"
-      ],
-      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -2507,7 +2487,7 @@
       "name": "CANDLE_CACHE_PRUNE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:450"
+        "data/fetcher.py:473"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2517,7 +2497,7 @@
       "name": "CANDLE_FORWARD_FILL_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:457"
+        "data/fetcher.py:480"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2527,7 +2507,7 @@
       "name": "CANDLE_REQUEST_CACHE_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1078"
+        "data/fetcher.py:1045"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2696,13 +2676,13 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "COMMODITY_PREFERRED_PROVIDER",
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "COMMODITY_MARKET_DATA_PROVIDERS",
       "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1283"
-      ],
-      "required_by_code": true,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -3109,7 +3089,7 @@
         "data/connectors/cryptocompare_adapter.py:106",
         "data/connectors/cryptocompare_adapter.py:32",
         "data/cryptocompare_ws.py:69",
-        "data/fetcher.py:2260",
+        "data/fetcher.py:2117",
         "data/get_live_price.py:255",
         "data/get_live_price.py:588",
         "data/pair_discovery.py:384",
@@ -3143,7 +3123,7 @@
       "name": "CRYPTO_DATA_PROVIDER",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2354",
+        "data/fetcher.py:2211",
         "data/pair_discovery.py:1267",
         "data/pair_discovery.py:349",
         "data/pair_discovery.py:801",
@@ -3175,11 +3155,8 @@
       },
       "name": "CRYPTO_MARKET_DATA_PROVIDERS",
       "production_example_default": null,
-      "read_locations": [
-        "data/connector_registry.py:165",
-        "data/fetcher.py:2845"
-      ],
-      "required_by_code": true,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -3227,10 +3204,8 @@
       },
       "name": "CRYPTO_PREFERRED_PROVIDER",
       "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1188"
-      ],
-      "required_by_code": true,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -4123,7 +4098,7 @@
       "name": "DEGRADED_MODE_MIN_CANDLES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:734"
+        "data/fetcher.py:757"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5620,8 +5595,7 @@
       "name": "FCS_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "data/connectors/fcs_adapter.py:162",
-        "data/connectors/fcs_adapter.py:46",
+        "data/connectors/fcs_adapter.py:53",
         "data/get_live_price.py:133",
         "data/get_live_price.py:689"
       ],
@@ -5633,13 +5607,34 @@
       "name": "FCS_API_SECRET",
       "production_example_default": null,
       "read_locations": [
-        "data/connectors/fcs_adapter.py:162",
-        "data/connectors/fcs_adapter.py:46",
+        "data/connectors/fcs_adapter.py:53",
         "data/get_live_price.py:133",
         "data/get_live_price.py:689"
       ],
       "required_by_code": true,
       "sensitive": true
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "FCS_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "FCS_SYMBOL_MAP_JSON",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/fcs_adapter.py:34"
+      ],
+      "required_by_code": true,
+      "sensitive": false
     },
     {
       "declared_defaults": {
@@ -6060,6 +6055,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "FX_MARKET_DATA_PROVIDERS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "FX_PAIRS",
       "production_example_default": null,
@@ -6067,16 +6072,6 @@
         "config.py:79",
         "data/pair_discovery.py:958",
         "data/startup_selfcheck.py:136"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "FX_PREFERRED_PROVIDER",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1234"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6408,7 +6403,7 @@
       "name": "INDEX_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2037"
+        "data/fetcher.py:1894"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6418,7 +6413,7 @@
       "name": "INDEX_DAILY_BREAK_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2057"
+        "data/fetcher.py:1914"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6434,11 +6429,21 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "INDEX_MARKET_DATA_PROVIDERS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "INDEX_MARKET_MODE",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2027",
+        "data/fetcher.py:1884",
         "data/market_hours.py:266"
       ],
       "required_by_code": true,
@@ -6449,17 +6454,7 @@
       "name": "INDEX_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2036"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "INDEX_PREFERRED_PROVIDER",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1314"
+        "data/fetcher.py:1893"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6947,7 +6942,7 @@
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2873"
+        "data/fetcher.py:2728"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8592,7 +8587,7 @@
       "name": "NASDAQ_DATA_LINK_API_KEY",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:100",
+        "data/connector_registry.py:148",
         "data/connectors/nasdaq_data_link_adapter.py:37"
       ],
       "required_by_code": true,
@@ -8612,7 +8607,7 @@
       "name": "NASDAQ_DATA_LINK_DATASETS_JSON",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:101",
+        "data/connector_registry.py:149",
         "data/connectors/nasdaq_data_link_adapter.py:22"
       ],
       "required_by_code": true,
@@ -8879,7 +8874,7 @@
       "name": "OHLC_INFLIGHT_WAIT_TIMEOUT_SECONDS",
       "production_example_default": "25",
       "read_locations": [
-        "data/fetcher.py:416"
+        "data/fetcher.py:435"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11489,7 +11484,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:473"
+        "data/fetcher.py:496"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11499,7 +11494,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_OPTIONAL",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:504"
+        "data/fetcher.py:527"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11509,7 +11504,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:481"
+        "data/fetcher.py:504"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11519,7 +11514,7 @@
       "name": "PROVIDER_OUTAGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:465"
+        "data/fetcher.py:488"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11529,7 +11524,7 @@
       "name": "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:496"
+        "data/fetcher.py:519"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14280,8 +14275,8 @@
       "name": "STOCK_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2037",
-        "data/fetcher.py:2114"
+        "data/fetcher.py:1894",
+        "data/fetcher.py:1971"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14297,22 +14292,22 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
-      "name": "STOCK_OPEN_UTC",
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "STOCK_MARKET_DATA_PROVIDERS",
       "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:2036",
-        "data/fetcher.py:2113"
-      ],
-      "required_by_code": true,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
       "declared_defaults": {},
-      "name": "STOCK_PREFERRED_PROVIDER",
+      "name": "STOCK_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1256"
+        "data/fetcher.py:1893",
+        "data/fetcher.py:1970"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14483,7 +14478,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:37",
-        "data/fetcher.py:2161",
+        "data/fetcher.py:2018",
         "engine/admin_pulse.py:753",
         "engine/admin_pulse.py:915",
         "engine/core.py:1688",
@@ -15143,16 +15138,6 @@
     },
     {
       "declared_defaults": {},
-      "name": "TRADINGVIEW_COMMODITY_PREFIX",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:1279"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
       "name": "TRADINGVIEW_ENRICHMENT_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
@@ -15177,7 +15162,6 @@
       "name": "TRADINGVIEW_INDEX_PREFIX",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1306",
         "signalrank_telegram/commands.py:120"
       ],
       "required_by_code": true,
@@ -16095,16 +16079,6 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "YFINANCE_STALENESS_GRACE_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "data/fetcher.py:970"
-      ],
-      "required_by_code": true,
       "sensitive": false
     },
     {

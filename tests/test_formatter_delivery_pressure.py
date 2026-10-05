@@ -118,7 +118,10 @@ async def test_configured_crypto_order_beats_health_reordering(monkeypatch):
 
     async def provider(name, symbol, timeframe, timeout=5):
         attempts.append(name)
-        return [{"close": 1.0}] * 20
+        import time
+        latest = time.time() - 30
+        return [{"timestamp": latest - (19 - i) * 300, "open": 1, "high": 2,
+                 "low": 0.5, "close": 1, "volume": 1} for i in range(20)]
 
     providers = [
         ("coinbase_connector", lambda symbol, timeframe, timeout=5: provider("coinbase", symbol, timeframe, timeout)),

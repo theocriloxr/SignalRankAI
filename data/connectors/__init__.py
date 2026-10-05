@@ -11,6 +11,7 @@ from .cryptocompare_adapter import (
     cryptocompare_get_candles as cryptocompare_get_candles_async,
 )
 from .twelvedata_adapter import get_candles as twelvedata_get_candles
+from .fcs_adapter import get_candles as fcs_get_candles
 from .polygon_adapter import get_candles as polygon_get_candles
 from .tiingo_adapter import get_candles as tiingo_get_candles
 from .fmp_adapter import get_candles as fmp_get_candles
@@ -69,6 +70,7 @@ __all__ = [
     "cryptocompare_get_candles",
     "cryptocompare_get_candles_async",
     "twelvedata_get_candles",
+    "fcs_get_candles",
     "polygon_get_candles",
     "tiingo_get_candles",
     "fmp_get_candles",

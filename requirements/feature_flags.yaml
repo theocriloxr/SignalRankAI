@@ -115,14 +115,6 @@
     },
     {
       "dangerous": false,
-      "name": "ALPHAVANTAGE_ENABLED",
-      "production_example_default": null,
-      "required_safe_default": null,
-      "rollback": "restore previous environment value and redeploy",
-      "safe_default_satisfied": null
-    },
-    {
-      "dangerous": false,
       "name": "ANALYTICS_ML_TRAIN_ENABLED",
       "production_example_default": "0",
       "required_safe_default": null,
@@ -484,6 +476,14 @@
     {
       "dangerous": false,
       "name": "EXPECTANCY_HARD_BLOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "FCS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

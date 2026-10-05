@@ -49,8 +49,20 @@ does not prove that the supplied production token is valid.
   authenticated overview and catch-all pages still describe capabilities without
   fetching and presenting their canonical backend state. Those pages are not a
   completed replacement for the serving legacy application.
-- Provider fallback accepts a sufficient number of candles without first
-  rejecting stale history. This can prevent later providers from being tried.
+- Provider fallback, request caches and live indicator inputs now reject stale,
+  future and structurally invalid candle windows before accepting a provider.
+  Historical validation remains separate and accepts an explicit observation
+  time. Both async and sync paths use the registered asset-class chain, honor
+  explicit provider allowlists and exclude unconfigured or disabled feeds.
+  These changes passed 125 focused regressions including the FCS v4 contract.
+- The FCS candle adapter used an undocumented guessed endpoint and response
+  format. It now uses the documented v4 history endpoint, preserves source
+  timestamps, sends credentials in the POST body and redacts provider errors.
+  A read-only production-key probe at 21:21 UTC on October 5 returned 200 valid
+  fresh EURUSD candles. XAUUSD returned valid stale candles, and AAPL/NAS100
+  returned provider code 213 with no candles. This proves FX access only; it
+  does not certify broker execution or all market classes. Contract reference:
+  https://fcsapi.com/document/forex-api
 - The configured equity feed rejected a current-day AAPL aggregate request with
   HTTP 403 / `NOT_AUTHORIZED`; crypto passed the open-session certification, but
   the other required asset classes did not.
@@ -68,3 +80,9 @@ reviewed, and no extraction or document-specific implementation is claimed.
 
 No real-money readiness, subsystem score, completed soak, external broker fill,
 production promotion or overall completion is claimed by this audit.
+
+Hosted CI for commit 99d67ae8 passed the Railway credential preflight and static
+security checks. Backend gates identified a stale generated file inventory,
+which is regenerated with this change. Frontend and mobile audit gates still
+reported five and sixteen high dependency findings respectively. Failed gates
+are retained; no production approval or audit waiver has been issued.

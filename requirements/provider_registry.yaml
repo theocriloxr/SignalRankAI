@@ -1,9 +1,62 @@
 {
-  "count": 33,
+  "count": 34,
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "kind": "provider_registry",
   "providers": [
+    {
+      "asset_classes": [
+        "forex",
+        "equity",
+        "index",
+        "commodity_spot",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.fcs_adapter",
+      "default_enabled": true,
+      "display_name": "FCS API",
+      "docs_url": "https://fcsapi.com/document/forex-api",
+      "enabled_env": "FCS_ENABLED",
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "fcs",
+      "market_types": [
+        "fx",
+        "cash",
+        "index",
+        "spot"
+      ],
+      "notes": "FCS v4 history; symbol, plan and freshness certification remain required.",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "FCS_API_KEY",
+        "FCS_API_SECRET"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback",
+        "historical"
+      ],
+      "sample_symbol": "EURUSD",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "4h",
+        "5h",
+        "1d",
+        "1w"
+      ]
+    },
     {
       "asset_classes": [
         "crypto_spot"
