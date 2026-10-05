@@ -15,7 +15,7 @@ function client(status, detail) {
       assert.equal(name, 'expo-secure-store');
       return {getItemAsync: async () => null};
     },
-    fetch: async () => ({status, ok: false, json: async () => ({detail})}),
+    fetch: async (_url, init) => {assert.equal(init.credentials, 'omit'); return {status, ok: false, json: async () => ({detail})};},
   });
   return exports;
 }

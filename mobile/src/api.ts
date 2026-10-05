@@ -4,6 +4,11 @@ const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080').rep
 const ACCESS_KEY = 'signalrank.access_token';
 const REFRESH_KEY = 'signalrank.refresh_token';
 
+function mobileFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  // Native sessions use explicit bearer/refresh proof, never browser cookies.
+  return fetch(url, {...init, credentials: 'omit'});
+}
+
 export class PlatformAPIError extends Error {
   constructor(message: string, public readonly status: number, public readonly code?: string, public readonly generation?: number) {
     super(message);
@@ -93,7 +98,7 @@ async function refresh(generation: number): Promise<string | null> {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_KEY);
     assertGeneration(generation);
     if (!refreshToken || sessionBlocked) return null;
-    const response = await fetch(`${API_URL}/api/v1/platform/auth/refresh`, {
+    const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/refresh`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({refresh_token: refreshToken, client_type: 'mobile'}),
     });
@@ -122,7 +127,7 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   let accessToken = sessionBlocked ? null : await SecureStore.getItemAsync(ACCESS_KEY);
   const send = (token: string | null) => {
     assertGeneration(generation);
-    return fetch(`${API_URL}/api/v1/platform${path}`, {
+    return mobileFetch(`${API_URL}/api/v1/platform${path}`, {
       ...init,
       headers: {'Content-Type': 'application/json', ...(init.headers || {}), ...(token ? {Authorization: `Bearer ${token}`} : {})},
     });
@@ -142,7 +147,7 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
 
 export async function login(email: string, password: string): Promise<SessionPayload> {
   const generation = sessionGeneration;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/login`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/login`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({email, password, client_type: 'mobile'}),
   });
@@ -155,7 +160,7 @@ export async function login(email: string, password: string): Promise<SessionPay
 
 export async function completeMfa(token: string, code: string): Promise<SessionPayload> {
   const generation = sessionGeneration;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/mfa/complete`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/mfa/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token, code, client_type: 'mobile'}),
   });
@@ -167,14 +172,14 @@ export async function completeMfa(token: string, code: string): Promise<SessionP
 }
 
 export async function requestMagicLink(email: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/magic-link/request`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/magic-link/request`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email}),
   });
   if (!response.ok) throw new Error('Could not request sign-in link');
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/password-reset/request`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/password-reset/request`, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email}),
   });
   if (!response.ok) throw new Error('Could not request password reset');
@@ -182,7 +187,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 export async function register(displayName: string, email: string, password: string): Promise<SessionPayload> {
   const generation = sessionGeneration;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/register`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/register`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({display_name: displayName, email, password, client_type: 'mobile'}),
   });
@@ -195,7 +200,7 @@ export async function register(displayName: string, email: string, password: str
 
 export async function activateTelegram(tokenOrCode: string, email: string, password: string): Promise<SessionPayload> {
   const generation = sessionGeneration;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token_or_code: tokenOrCode, email, password, client_type: 'mobile'}),
   });
@@ -233,6 +238,41 @@ export async function createJournalEntry(input: {title?: string; notes: string; 
 }
 
 
+export type LogoutResult = {device_credentials_removed: boolean; server_session_revoked: boolean};
+
+export async function logout(): Promise<LogoutResult> {
+  // Invalidate in-flight login/refresh responses before waiting for storage or
+  // the network. Capture and remove this actor's proof in the same write queue
+  // so a later login is never deleted by this logout.
+  ++sessionGeneration;
+  sessionBlocked = true;
+  let refreshToken: string | null = null;
+  let deviceRemoved = false;
+  await queueSessionWrite(async () => {
+    try { refreshToken = await SecureStore.getItemAsync(REFRESH_KEY); } catch {}
+    const removals = await Promise.allSettled([
+      SecureStore.deleteItemAsync(ACCESS_KEY), SecureStore.deleteItemAsync(REFRESH_KEY),
+    ]);
+    deviceRemoved = removals.every(result => result.status === 'fulfilled');
+  });
+  let serverRevoked = false;
+  if (refreshToken) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/logout-mobile`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal,
+        body: JSON.stringify({refresh_token: refreshToken}),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      serverRevoked = response.ok && !!payload && typeof payload === 'object'
+        && (payload as {logged_out?: unknown}).logged_out === true;
+    } catch {} finally { clearTimeout(timeout); }
+  }
+  return {device_credentials_removed: deviceRemoved, server_session_revoked: serverRevoked};
+}
+
+
 export async function updateProfile(input: Record<string, unknown>): Promise<{user: Record<string, unknown>}> {
   return api('/profile', {method: 'PATCH', body: JSON.stringify(input)});
 }
@@ -255,7 +295,7 @@ export async function disableMfa(code: string): Promise<{enabled: boolean}> {
 
 export async function completeMagicLogin(token: string): Promise<SessionPayload> {
   const generation = sessionGeneration;
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/magic-link/complete`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/magic-link/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token, client_type: 'mobile'}),
   });
@@ -267,7 +307,7 @@ export async function completeMagicLogin(token: string): Promise<SessionPayload>
 }
 
 export async function completePasswordReset(token: string, newPassword: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/v1/platform/auth/password-reset/complete`, {
+  const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/password-reset/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({token, new_password: newPassword}),
   });

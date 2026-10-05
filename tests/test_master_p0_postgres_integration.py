@@ -12,6 +12,88 @@ from sqlalchemy.engine import make_url
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("first", ["refresh", "logout"])
+async def test_postgres_logout_and_refresh_are_serialized_per_account(postgres_database, monkeypatch, first):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from db.models import User
+    from services.platform.identity import (
+        AuthenticationError, create_session_tokens, revoke_refresh_session_family, rotate_refresh_token,
+    )
+
+    monkeypatch.setenv("APP_AUTH_SECRET", "isolated-postgres-session-test-" * 3)
+    # Exercise PostgreSQL locks on independent connections, without the
+    # application's single-class admission gate serializing the fixture first.
+    engine = create_async_engine(os.environ["DATABASE_URL"], pool_size=3, max_overflow=0)
+    session_scope = async_sessionmaker(engine, expire_on_commit=False)
+    user_id = None
+    contender = None
+    try:
+        async with session_scope() as session:
+            user = User(username="logout-race-" + uuid4().hex[:12], tier="free")
+            session.add(user)
+            await session.flush()
+            user_id = user.id
+            old = await create_session_tokens(session, user_id=user_id)
+            other = await create_session_tokens(session, user_id=user_id)
+            await session.commit()
+
+        started = asyncio.Event()
+        async def competing_operation():
+            async with session_scope() as session:
+                started.set()
+                try:
+                    if first == "refresh":
+                        result = await revoke_refresh_session_family(session, refresh_token=old.refresh_token)
+                    else:
+                        result = await rotate_refresh_token(session, refresh_token=old.refresh_token)
+                except AuthenticationError as exc:
+                    await session.commit()
+                    return str(exc)
+                await session.commit()
+                return result
+
+        async with session_scope() as holding:
+            if first == "refresh":
+                successor = await rotate_refresh_token(holding, refresh_token=old.refresh_token)
+            else:
+                assert await revoke_refresh_session_family(holding, refresh_token=old.refresh_token) is True
+            contender = asyncio.create_task(competing_operation())
+            await asyncio.wait_for(started.wait(), timeout=5)
+            # A held user-row lock must prevent the second operation from
+            # completing, regardless of which token it would mutate.
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(asyncio.shield(contender), timeout=0.2)
+            await holding.commit()
+        result = await asyncio.wait_for(contender, timeout=5)
+        if first == "refresh":
+            assert result is True
+        else:
+            assert result == "refresh_token_revoked"
+        async with session_scope() as session:
+            rows = (await session.execute(text(
+                "SELECT session_id,revoked_at,revoke_reason FROM user_sessions WHERE user_id=:uid"
+            ), {"uid":user_id})).all()
+            active = [row[0] for row in rows if row[1] is None]
+            assert active == [other.session_id]
+            if first == "refresh":
+                assert next(row for row in rows if row[0] == successor.session_id)[2] == "user_logout"
+            else:
+                assert len(rows) == 2, "logout-first must never create a successor"
+    finally:
+        if contender and not contender.done():
+            contender.cancel()
+            await asyncio.gather(contender, return_exceptions=True)
+        if user_id:
+            async with session_scope() as session:
+                await session.execute(text("DELETE FROM security_events WHERE user_id=:uid"), {"uid":user_id})
+                await session.execute(text("DELETE FROM user_sessions WHERE user_id=:uid"), {"uid":user_id})
+                await session.execute(text("DELETE FROM users WHERE id=:uid"), {"uid":user_id})
+                await session.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("surface", ["app_login", "telegram_repository"])
 async def test_existing_verified_telegram_identity_reuses_its_owner_without_duplicate_account(postgres_database, surface):
     from sqlalchemy import text

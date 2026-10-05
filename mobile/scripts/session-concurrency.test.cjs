@@ -16,12 +16,12 @@ function client(fetch, options = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../src/api.ts'), 'utf8');
   const compiled = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, {exports, process: {env: {EXPO_PUBLIC_API_URL: 'https://local.test'}}, fetch,
+  vm.runInNewContext(compiled, {exports, AbortController, setTimeout, clearTimeout, process: {env: {EXPO_PUBLIC_API_URL: 'https://local.test'}}, fetch: (url, init) => {assert.equal(init.credentials, 'omit'); return fetch(url, init);},
     require: name => {
       assert.equal(name, 'expo-secure-store');
       return {getItemAsync: async key => tokens.get(key) || null,
         setItemAsync: async (key, value) => {if (options.failRefreshWrite && key.endsWith('refresh_token')) throw new Error('device locked'); tokens.set(key, value);},
-        deleteItemAsync: async key => {tokens.delete(key);}};
+        deleteItemAsync: async key => {if (options.failAccessDelete && key.endsWith('access_token')) throw new Error('device locked'); tokens.delete(key);}};
     }});
   return {api: exports, tokens};
 }
@@ -110,4 +110,90 @@ test('partial secure-store writes fail closed and cannot authorize a request', a
   assert.equal(tokens.size, 0);
   await assert.rejects(api.api('/me'), error => error.status === 401);
   assert.equal(authorization, undefined);
+});
+
+test('sign-out proves its device family to the server and removes both local tokens', async () => {
+  let requests = 0;
+  const {api, tokens} = client(async (url, init) => {
+    requests++;
+    assert.equal(url, 'https://local.test/api/v1/platform/auth/logout-mobile');
+    assert.equal(JSON.parse(init.body).refresh_token, 'old-refresh');
+    assert.equal(init.headers.Authorization, undefined);
+    assert.equal(tokens.size, 0);
+    return response(200, {logged_out: true});
+  });
+  const result = await api.logout();
+  assert.equal(result.device_credentials_removed, true);
+  assert.equal(result.server_session_revoked, true);
+  assert.equal(requests, 1);
+});
+
+test('sign-out during rotation revokes using the old family proof without restoring tokens', async () => {
+  const refreshing = deferred(), started = deferred();
+  let logoutCalls = 0;
+  const {api, tokens} = client(async (url, init) => {
+    if (url.endsWith('/auth/refresh')) {
+      started.resolve(); await refreshing.promise;
+      return response(200, {access_token: 'late-access', refresh_token: 'late-refresh'});
+    }
+    if (url.endsWith('/auth/logout-mobile')) {
+      logoutCalls++;
+      assert.equal(JSON.parse(init.body).refresh_token, 'old-refresh');
+      return response(200, {logged_out: true});
+    }
+    return response(401, {detail: 'expired'});
+  });
+  const rejected = assert.rejects(api.api('/me'), error => error.code === 'session_changed');
+  await started.promise;
+  assert.equal((await api.logout()).server_session_revoked, true);
+  refreshing.resolve();
+  await rejected;
+  assert.equal(logoutCalls, 1);
+  assert.equal(tokens.size, 0);
+});
+
+test('an offline server does not prevent local sign-out or claim server revocation', async () => {
+  const {api, tokens} = client(async () => {throw new Error('offline');});
+  const result = await api.logout();
+  assert.equal(result.device_credentials_removed, true);
+  assert.equal(result.server_session_revoked, false);
+  assert.equal(tokens.size, 0);
+});
+
+test('a failed token removal is reported even if server revocation succeeds', async () => {
+  let authorization;
+  const {api, tokens} = client(async (url, init) => {
+    if (url.endsWith('/auth/logout-mobile')) return response(200, {logged_out: true});
+    authorization = init.headers.Authorization;
+    return response(401, {detail: 'signed out'});
+  }, {failAccessDelete: true});
+  const result = await api.logout();
+  assert.equal(result.device_credentials_removed, false);
+  assert.equal(result.server_session_revoked, true);
+  assert.equal(tokens.has('signalrank.refresh_token'), false);
+  await assert.rejects(api.api('/me'), error => error.status === 401);
+  assert.equal(authorization, undefined);
+});
+
+test('a new login while server sign-out is pending keeps its new credentials', async () => {
+  const signingOut = deferred(), started = deferred();
+  const {api, tokens} = client(async url => {
+    if (url.endsWith('/auth/logout-mobile')) {started.resolve(); await signingOut.promise; return response(200, {logged_out: true});}
+    if (url.endsWith('/auth/login')) return response(200, {access_token: 'new-actor', refresh_token: 'new-family', user: {id: 456}});
+    return response(200, {user: {id: 456}});
+  });
+  const pending = api.logout();
+  await started.promise;
+  const logoutGeneration = api.getSessionGeneration();
+  await api.login('next@test.local', 'fixture-only');
+  signingOut.resolve();
+  assert.equal((await pending).server_session_revoked, true);
+  assert.notEqual(logoutGeneration, api.getSessionGeneration());
+  assert.equal(tokens.get('signalrank.access_token'), 'new-actor');
+  assert.equal(tokens.get('signalrank.refresh_token'), 'new-family');
+});
+
+test('a malformed successful logout response is not treated as confirmed revocation', async () => {
+  const {api} = client(async () => response(200, {}));
+  assert.equal((await api.logout()).server_session_revoked, false);
 });

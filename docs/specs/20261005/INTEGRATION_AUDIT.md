@@ -101,3 +101,38 @@ Further identity and mobile corrections:
   retain credentials, while invalid refresh tokens and partial secure-store
   writes fail closed. TypeScript and concurrency/error contracts are checked;
   actual native-device behavior remains unverified.
+
+Further session-revocation correction:
+
+- Mobile sign-out previously removed only local tokens. It now sends explicit
+  refresh proof to a dedicated family-revocation endpoint after immediately
+  invalidating pending client responses and removing device credentials.
+  Rotated proof can revoke its own successors; it cannot issue access, select
+  another user or revoke another device family. Existing web/device revocation
+  also covers the selected rotation family. User-row locks serialize rotation
+  with logout before either session-row mutation.
+- Both PostgreSQL race orderings passed on independent local connections:
+  refresh first creates a successor that logout subsequently revokes; logout
+  first prevents a successor from being created. Other device sessions remain
+  active. Local HTTP identity/auth tests and 29 mobile contract tests passed;
+  mobile TypeScript and the critical Python typing gate passed. Offline or
+  failed secure-store deletion is surfaced explicitly, and a later login is
+  never erased by an earlier pending logout. These are local results, not
+  production deployment or native-device certification.
+
+- The replacement Next.js API client previously omitted cookie credentials and
+  CSRF proof. Its transport now preserves cancellation/body/headers, includes
+  cookie credentials and sends the exact `sr_csrf` proof for mutations without
+  exposing HttpOnly tokens. Seven transport contracts, frontend lint,
+  TypeScript and the production build passed locally. The canonical release
+  manifest includes the transport contracts as a required gate. This is API
+  plumbing; the descriptive authenticated pages are still incomplete.
+
+- Mobile login and refresh also emitted browser session cookies, while native
+  mutations had no cookie CSRF proof. Mobile requests now explicitly omit
+  cookies; mobile session issuance/refresh returns explicit tokens without
+  setting browser cookies, and mobile refresh cannot borrow a browser cookie.
+  Browser/PWA cookies and CSRF middleware remain enforced. HTTP contracts cover
+  all three client types and ambient-cookie rejection, and native request
+  contracts assert credential omission. This removes the server/client
+  inconsistency; native cookie handling still requires device acceptance.

@@ -2635,11 +2635,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 495,
+      "line_count": 504,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "143ec4d9d38f99a1a137367137fb6b9bc2ab51757b60883ef68c534376ccbba9",
-      "size_bytes": 16023
+      "sha256": "7352f7fbe8326e61c57719ea3dbc1a65e5e9e649ffe8c3b5eff4316c795d014c",
+      "size_bytes": 16327
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6923,11 +6923,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 103,
+      "line_count": 138,
       "path": "docs/specs/20261005/INTEGRATION_AUDIT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e0c00d74b1dda7e7fccacfaf82ca6f6c08440184db0e8c79f9e3530fd4a23dd9",
-      "size_bytes": 6168
+      "sha256": "24366fe16c8ce1da54f099057b7d111988ca534a6dc6d3071afbe5592b216c51",
+      "size_bytes": 8443
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8107,11 +8107,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 36,
+      "line_count": 21,
       "path": "frontend/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "60b55ff7df79af72590f9524208e46642bc32bdc175cdad41349681c0e2f958f",
-      "size_bytes": 1450
+      "sha256": "ce0fe9d3b1d65b5ccdd3e513d6010461292b76c4e3f291cbb682cc2f7d2dab61",
+      "size_bytes": 1208
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8139,11 +8139,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 27,
+      "line_count": 28,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cf57b70060ef75b6384bd16517bb9dc0fc20c3e39b4907d8c9d64e3f8a12142a",
-      "size_bytes": 562
+      "sha256": "94b4489ba2d32c6f359e8a05d6051a42e4c367d88882d584ed7b74264ed34afb",
+      "size_bytes": 626
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8283,11 +8283,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 12,
+      "line_count": 15,
       "path": "frontend/src/lib/client.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "76a2bcbebd097e21dbdc569ae5161306989975f5017c62c8710a960dc9db2f3e",
-      "size_bytes": 347
+      "sha256": "5dffd971d2790e28d625b899a787ccaedbc8fe7894cc36e0e4506aaead9dd348",
+      "size_bytes": 442
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8614,16 +8614,16 @@
       "line_count": 106,
       "path": "mobile/App.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1b9eb9281bb777357f36801c32fdafa832a915756c6c5b895869da86c1f91a10",
-      "size_bytes": 26250
+      "sha256": "2217d155339cf4d6ea36b6ca206d0b46ca23902aeb773c57a73e9f7c80280caf",
+      "size_bytes": 26574
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 20,
+      "line_count": 33,
       "path": "mobile/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "312a055f353e06ffb85c2ae51995950ee5955d138a48a23da9635e00ac0e09e5",
-      "size_bytes": 566
+      "sha256": "98476a1681e47bca760ee4862f03c62cc304a34e79a3a0a18aa6253f69f93292",
+      "size_bytes": 1491
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8694,8 +8694,8 @@
       "line_count": 63,
       "path": "mobile/scripts/api-errors.test.cjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "7338257dad520a57b6f18d54c516e996e655b07663bfc784f8b4c5dbaeb3dc90",
-      "size_bytes": 2777
+      "sha256": "bc509206599e446c0997f6671253f4f983c87b0ef14b34704be973ee3b70fd07",
+      "size_bytes": 2835
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8707,19 +8707,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 113,
+      "line_count": 199,
       "path": "mobile/scripts/session-concurrency.test.cjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "f90f26ca26768c81e8bd2620106de8e049d5e4f5af4e11f52bf81d022222a971",
-      "size_bytes": 5934
+      "sha256": "91da1bad8194bca00824f6668a9e7ebe56386963a17b4687a62c5bf6d7987de8",
+      "size_bytes": 10064
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 300,
+      "line_count": 340,
       "path": "mobile/src/api.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "e8cbfcd503cd2adfa41f05027eba3f0a55ffb17fb2c7a2bdb6dc16d1d2ab6fe5",
-      "size_bytes": 12554
+      "sha256": "b0d47929a8f84fe5b92287ff55ad12618790cf1477409e4f3d3d6201693a6b98",
+      "size_bytes": 14469
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9526,7 +9526,7 @@
       "line_count": 16096,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "62f27b57d7061c8a53cce51b07d174c2ceae628902562ea1294b5d944f7144ed",
+      "sha256": "040e96685b4f77b2178befb44e24898bccd788767dd93cb940c821a5cf713dec",
       "size_bytes": 472270
     },
     {
@@ -11163,11 +11163,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1461,
+      "line_count": 1510,
       "path": "services/platform/identity.py",
       "reason": "production/build source",
-      "sha256": "1bd5dce845b4c27b78225fb95a52e6dabe358e2693b6c4fc87c5881001c03698",
-      "size_bytes": 59389
+      "sha256": "413939c35fd531d22ba70ebce0b05859e47dd3c3cefe9b8ac69f16c8724f07e2",
+      "size_bytes": 61552
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12843,11 +12843,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 341,
+      "line_count": 419,
       "path": "tests/test_auth_fail_closed_boundaries.py",
       "reason": "automated test evidence",
-      "sha256": "6b0a24565868c74cfbc14b24effe224ef8621895a33a5c260ccfda8da1e34add",
-      "size_bytes": 16413
+      "sha256": "517a6305827eea985e3c5cd15c99321ae9923796a296b0e0324ea08dd3911b72",
+      "size_bytes": 21163
     },
     {
       "disposition": "TEST_ONLY",
@@ -13571,11 +13571,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 800,
+      "line_count": 882,
       "path": "tests/test_master_p0_postgres_integration.py",
       "reason": "automated test evidence",
-      "sha256": "706d9f3fa53dc614b9e3b20e8de385c5650eeea0115604fd6d02b3c5c02b55cf",
-      "size_bytes": 45501
+      "sha256": "89943483724b6492cb569837946908fd565abf80e40acac70ec469ff41f8814b",
+      "size_bytes": 49636
     },
     {
       "disposition": "TEST_ONLY",
@@ -15627,11 +15627,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6862,
+      "line_count": 6882,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "f021f65ee88844d8168fbcb7fc8f86ab28176071d293e0576c225c2f56ee8a6e",
-      "size_bytes": 282219
+      "sha256": "078a7bc9e3fc78154e298620ae51fa95abead41e97c54c9dcd49c3d54abccdf1",
+      "size_bytes": 283171
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

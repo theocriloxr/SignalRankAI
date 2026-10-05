@@ -57,6 +57,7 @@ from services.platform.identity import (
     request_password_reset,
     revoke_all_sessions,
     revoke_session,
+    revoke_refresh_session_family,
     rotate_refresh_token,
     user_snapshot,
     validate_telegram_login_payload,
@@ -139,6 +140,10 @@ class LoginRequest(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str | None = Field(default=None, min_length=20, max_length=512)
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
+
+
+class MobileLogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=20, max_length=512)
 
 
 class TelegramActivationCompleteRequest(BaseModel):
@@ -938,12 +943,11 @@ async def _create_login_response(
             device_id=device_id,
         )
         await session.commit()
-    csrf = _set_session_cookies(
-        response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
-    )
     payload = {**_token_response(tokens, client_type), "user": user}
     if client_type != "mobile":
-        payload["csrf_token"] = csrf
+        payload["csrf_token"] = _set_session_cookies(
+            response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
+        )
     return payload
 
 
@@ -2091,7 +2095,9 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
 
 @router.post("/auth/refresh")
 async def refresh(payload: RefreshRequest, request: Request, response: Response) -> dict[str, Any]:
-    raw = str(payload.refresh_token or request.cookies.get(REFRESH_COOKIE) or "").strip()
+    # Mobile refresh is explicit proof, never authority from a cookie jar.
+    cookie_proof = request.cookies.get(REFRESH_COOKIE) if payload.client_type != "mobile" else None
+    raw = str(payload.refresh_token or cookie_proof or "").strip()
     if not raw:
         raise HTTPException(status_code=401, detail="Refresh token required")
     try:
@@ -2114,11 +2120,13 @@ async def refresh(payload: RefreshRequest, request: Request, response: Response)
             await session.commit()
     except AuthenticationError as exc:
         rejected = JSONResponse(status_code=401, content={"detail": str(exc)})
-        _clear_session_cookies(rejected)
+        if payload.client_type != "mobile":
+            _clear_session_cookies(rejected)
         return rejected
-    _set_session_cookies(
-        response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
-    )
+    if payload.client_type != "mobile":
+        _set_session_cookies(
+            response, access=tokens.access_token, refresh=tokens.refresh_token, session_id=tokens.session_id
+        )
     return {**_token_response(tokens, payload.client_type), "user": user}
 
 
@@ -2230,6 +2238,18 @@ async def logout_all(response: Response, user: dict[str, Any] = Depends(current_
         await session.commit()
     _clear_session_cookies(response)
     return {"logged_out": True, "sessions_revoked": count}
+
+
+@router.post("/auth/logout-mobile")
+async def logout_mobile(payload: MobileLogoutRequest) -> dict[str, bool]:
+    # Explicit proof in the body supports expired/rotated access credentials.
+    # This route never consumes cookies, chooses a user, or returns new tokens.
+    if not is_db_configured():
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    async with get_session() as session:
+        await revoke_refresh_session_family(session, refresh_token=payload.refresh_token)
+        await session.commit()
+    return {"logged_out": True}
 
 
 @router.get("/me")

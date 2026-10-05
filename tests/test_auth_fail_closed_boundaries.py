@@ -187,6 +187,48 @@ async def test_refresh_replay_commits_family_revocation_and_clears_cookies(auth_
     assert db.connection.execute("SELECT event_type FROM security_events").fetchone() == ("session.refresh_reuse_detected",)
 
 
+async def test_mobile_logout_revokes_rotated_family_without_touching_other_devices(auth_runtime):
+    db, app = auth_runtime
+    raw = "srr_" + "rotated-proof" * 5
+    db.add_session("old", raw=raw, revoked=True, successor="new")
+    db.add_session("new")
+    db.add_session("other-device", family="device-two")
+    db.add_session("other-user", uid=2, family="family-2")
+    async with _client(app) as client:
+        signed_out = await client.post("/api/v1/platform/auth/logout-mobile", json={"refresh_token": raw})
+        assert signed_out.status_code == 200 and signed_out.json() == {"logged_out": True}
+        token = identity.encode_access_token(1, session_id="new")
+        assert (await client.get("/api/v1/platform/me", headers={"Authorization": f"Bearer {token}"})).status_code == 401
+        repeated = await client.post("/api/v1/platform/auth/logout-mobile", json={"refresh_token": raw})
+        unknown = await client.post("/api/v1/platform/auth/logout-mobile", json={"refresh_token": "srr_" + "unknown" * 8})
+        assert repeated.json() == unknown.json() == signed_out.json()
+    assert db.connection.execute("SELECT revoked_at FROM user_sessions WHERE session_id='other-device'").fetchone() == (None,)
+    assert db.connection.execute("SELECT revoked_at FROM user_sessions WHERE session_id='other-user'").fetchone() == (None,)
+    assert db.connection.execute("SELECT revoke_reason FROM user_sessions WHERE session_id='new'").fetchone() == ("user_logout",)
+
+
+async def test_mobile_logout_requires_explicit_proof_and_cannot_use_ambient_cookies(auth_runtime):
+    db, app = auth_runtime
+    db.add_session("device")
+    async with _client(app) as client:
+        client.cookies.set("sr_refresh", "device")
+        assert (await client.post("/api/v1/platform/auth/logout-mobile", json={})).status_code == 422
+        assert (await client.post("/api/v1/platform/auth/logout-mobile", json={"refresh_token": "short"})).status_code == 422
+    assert db.connection.execute("SELECT revoked_at FROM user_sessions WHERE session_id='device'").fetchone() == (None,)
+
+
+async def test_device_revocation_of_a_rotated_session_revokes_successors(auth_runtime):
+    db, _ = auth_runtime
+    db.add_session("old", revoked=True, successor="new")
+    db.add_session("new")
+    db.add_session("unrelated", family="device-two")
+    assert await identity.revoke_session(db, session_id="old", user_id=1, reason="device_revoked") is True
+    await db.commit()
+    assert db.connection.execute("SELECT revoke_reason FROM user_sessions WHERE session_id='new'").fetchone() == ("device_revoked",)
+    assert db.connection.execute("SELECT revoked_at FROM user_sessions WHERE session_id='unrelated'").fetchone() == (None,)
+    assert await identity.revoke_session(db, session_id="unrelated", user_id=2) is False
+
+
 async def test_valid_refresh_rotates_once_then_replay_invalidates_successor(auth_runtime):
     db, app = auth_runtime
     raw = "srr_" + "valid-refresh" * 6
@@ -196,12 +238,47 @@ async def test_valid_refresh_rotates_once_then_replay_invalidates_successor(auth
             "/api/v1/platform/auth/refresh", json={"refresh_token": raw, "client_type": "mobile"},
         )
         assert refreshed.status_code == 200
+        assert "set-cookie" not in refreshed.headers
         successor = refreshed.json()["session_id"]
         assert successor != "old"
         assert db.connection.execute("SELECT rotated_to_session_id FROM user_sessions WHERE session_id='old'").fetchone() == (successor,)
         replay = await client.post("/api/v1/platform/auth/refresh", json={"refresh_token": raw})
         assert replay.status_code == 401
     assert db.connection.execute("SELECT revoked_at FROM user_sessions WHERE session_id=?", (successor,)).fetchone()[0]
+
+
+async def test_mobile_refresh_cannot_consume_an_ambient_browser_refresh_cookie(auth_runtime):
+    db, app = auth_runtime
+    raw = "srr_" + "browser-proof" * 5
+    db.add_session("browser-session", raw=raw)
+    async with _client(app) as client:
+        client.cookies.set("sr_refresh", raw)
+        response = await client.post("/api/v1/platform/auth/refresh", json={"client_type": "mobile"})
+    assert response.status_code == 401 and response.json()["detail"] == "Refresh token required"
+    assert "set-cookie" not in response.headers
+    assert db.connection.execute("SELECT COUNT(*) FROM user_sessions").fetchone() == (1,)
+    assert db.connection.execute("SELECT revoked_at FROM user_sessions").fetchone() == (None,)
+
+
+@pytest.mark.parametrize("client_type", ["mobile", "web", "pwa"])
+async def test_session_issuance_keeps_mobile_bearer_separate_from_browser_cookies(auth_runtime, monkeypatch, client_type):
+    db, app = auth_runtime
+    monkeypatch.setattr(platform_api, "authenticate_email_password", AsyncMock(return_value=1))
+    async with _client(app) as client:
+        response = await client.post("/api/v1/platform/auth/login", json={
+            "email":"person@example.test", "password":"fixture-password", "client_type":client_type,
+        })
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["authenticated"] is True
+    if client_type == "mobile":
+        assert payload["access_token"] and payload["refresh_token"]
+        assert "csrf_token" not in payload and "set-cookie" not in response.headers
+    else:
+        assert payload["csrf_token"]
+        assert "access_token" not in payload and "refresh_token" not in payload
+        assert len(response.headers.get_list("set-cookie")) == 4
+    assert db.connection.execute("SELECT COUNT(*) FROM user_sessions").fetchone() == (1,)
 
 
 @pytest.mark.parametrize("status", ["suspended", "closed", "", None])
@@ -291,6 +368,7 @@ async def test_verified_mfa_issues_session_and_challenge_cannot_replay(auth_runt
         assert response.status_code == 200, response.text
         assert response.json()["authenticated"] is True
         assert response.json()["access_token"]
+        assert "set-cookie" not in response.headers
         replay = await client.post("/api/v1/platform/auth/mfa/complete", json={"token": raw, "code": code})
     assert replay.status_code == 401
     assert replay.json()["detail"] == "challenge_already_used"

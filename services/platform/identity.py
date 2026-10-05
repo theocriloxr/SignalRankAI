@@ -448,6 +448,20 @@ async def create_session_tokens(
     )
 
 
+async def _lock_refresh_owner(session: Any, token_hash: str) -> None:
+    # Take the stable account lock before any session-row lock. Refresh creates
+    # a successor row, so locking only the submitted token cannot serialize a
+    # logout with rotation of another token in the same device family.
+    row = (
+        await session.execute(
+            text("SELECT user_id FROM user_sessions WHERE refresh_token_hash=:token_hash"),
+            {"token_hash": token_hash},
+        )
+    ).first()
+    if row:
+        await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(row[0])})
+
+
 async def rotate_refresh_token(
     session: Any,
     *,
@@ -456,6 +470,7 @@ async def rotate_refresh_token(
     ip_address: str | None = None,
 ) -> SessionTokens:
     token_hash = _sha256(refresh_token)
+    await _lock_refresh_owner(session, token_hash)
     row = (
         await session.execute(
             text(
@@ -474,9 +489,9 @@ async def rotate_refresh_token(
             await session.execute(
                 text(
                     "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()), revoke_reason='refresh_reuse_detected', refresh_reuse_detected=TRUE "
-                    "WHERE session_family_id=:family"
+                    "WHERE user_id=:uid AND session_family_id=:family"
                 ),
-                {"family": family_id},
+                {"family": family_id, "uid": int(user_id)},
             )
             await record_security_event(
                 session,
@@ -532,17 +547,50 @@ async def rotate_refresh_token(
 
 
 async def revoke_session(session: Any, *, session_id: str, user_id: int, reason: str = "user_logout") -> bool:
-    result = await session.execute(
+    await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(user_id)})
+    row = (
+        await session.execute(
+            text("SELECT session_family_id FROM user_sessions WHERE session_id=:sid AND user_id=:uid"),
+            {"sid": str(session_id), "uid": int(user_id)},
+        )
+    ).first()
+    if not row:
+        return False
+    await session.execute(
         text(
             "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()),revoke_reason=:reason "
-            "WHERE session_id=:sid AND user_id=:uid"
+            "WHERE user_id=:uid AND (session_id=:sid OR session_family_id=:family) AND revoked_at IS NULL"
         ),
-        {"sid": str(session_id), "uid": int(user_id), "reason": str(reason)[:128]},
+        {"sid": str(session_id), "family": row[0], "uid": int(user_id), "reason": str(reason)[:128]},
     )
-    return bool(result.rowcount)
+    return True
+
+
+async def revoke_refresh_session_family(session: Any, *, refresh_token: str) -> bool:
+    """Revoke only the device family proven by this opaque refresh credential.
+
+    A rotated token still proves the same family for logout; it never grants
+    access or creates new tokens. Unknown tokens are an idempotent no-op.
+    """
+    token_hash = _sha256(refresh_token)
+    await _lock_refresh_owner(session, token_hash)
+    row = (
+        await session.execute(
+            text("SELECT session_id,user_id FROM user_sessions WHERE refresh_token_hash=:token_hash"),
+            {"token_hash": token_hash},
+        )
+    ).first()
+    if not row:
+        return False
+    await revoke_session(session, session_id=str(row[0]), user_id=int(row[1]))
+    await record_security_event(
+        session, user_id=int(row[1]), event_type="session.device_logout", session_id=str(row[0]),
+    )
+    return True
 
 
 async def revoke_all_sessions(session: Any, *, user_id: int, except_session_id: str | None = None) -> int:
+    await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(user_id)})
     result = await session.execute(
         text(
             "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()),revoke_reason='logout_all' "
@@ -1436,6 +1484,7 @@ __all__ = [
     "record_security_event",
     "revoke_all_sessions",
     "revoke_session",
+    "revoke_refresh_session_family",
     "rotate_refresh_token",
     "user_snapshot",
     "validate_password",

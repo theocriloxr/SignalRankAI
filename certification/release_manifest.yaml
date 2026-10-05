@@ -244,6 +244,15 @@
       ]
     },
     {
+      "id": "frontend-session-transport",
+      "group": "frontend",
+      "description": "Cookie session and CSRF transport contracts",
+      "command": "cd frontend && npm run test:transport",
+      "severity": "critical",
+      "required": true,
+      "environments": ["ci", "cleanroom"]
+    },
+    {
       "id": "frontend-audit-policy-regressions",
       "group": "frontend",
       "description": "Audit policy rejects incomplete scans and unresolved advisories",
