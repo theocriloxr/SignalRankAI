@@ -145,6 +145,27 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: python scripts/run_release_manifest.py --environment ci --group mobile
 
+  railway-credential-preflight:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/provider-discovery-readiness-20260923'
+    needs: manifest
+    runs-on: ubuntu-latest
+    environment: signalrank-production-release
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify scoped Railway credential and paper release state without mutations
+        env:
+          RAILWAY_PRODUCTION_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_railway_release_credential.py
+
   release-certification:
     # A single stable required check covers matrix jobs and prevents skipped
     # downstream jobs from being mistaken for a certified release.
@@ -168,7 +189,7 @@ jobs:
   approve-production-source:
     # Pin approval belongs to the same check suite as certification. Railway
     # holds deployment requests until this job and the workflow succeed.
-    needs: release-certification
+    needs: [release-certification, railway-credential-preflight]
     if: github.event_name == 'push' && github.ref == 'refs/heads/fix/provider-discovery-readiness-20260923'
     runs-on: ubuntu-latest
     environment: signalrank-production-release

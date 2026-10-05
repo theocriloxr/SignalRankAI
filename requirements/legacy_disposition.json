@@ -1,5 +1,5 @@
 {
-  "file_count": 1959,
+  "file_count": 1961,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -43,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 193,
+      "line_count": 214,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "58fd488e3cfc49e361112da5115fb118f0ebcc5066dd775ecd5bc00b7c574ece",
-      "size_bytes": 6573
+      "sha256": "6aea646884af9440f90595a538b7d1be45af183d0c58ff191d34124cc8252d02",
+      "size_bytes": 7364
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6715,11 +6715,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 62,
+      "line_count": 69,
       "path": "docs/operations/automatic-production-releases.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "09c80fcb6dee46a467ff8ae2b191bdcd9a41208ba0df0a9722329aae9b12ae41",
-      "size_bytes": 3687
+      "sha256": "c84ac818e1c454eda5429311c502866a13bdecab59b04c20a57dd27cffaa409f",
+      "size_bytes": 4159
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9686,8 +9686,8 @@
       "line_count": 226,
       "path": "scripts/approve_production_release.py",
       "reason": "production/build source",
-      "sha256": "562a4f6539ee355f278af53cdf860520930bb2e9ad4d494f29616cebf4a179e2",
-      "size_bytes": 11157
+      "sha256": "e657c9eabf4416d6ba9d47fd3068d8ca36d739062b7498ac19b6f4da5f1ebf42",
+      "size_bytes": 11189
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9816,6 +9816,14 @@
       "reason": "production/build source",
       "sha256": "2725b26f7fca1f8ffb89e8e7b8baf28c03f61d5402a415d293c5bcf47db8463d",
       "size_bytes": 5757
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 46,
+      "path": "scripts/check_railway_release_credential.py",
+      "reason": "production/build source",
+      "sha256": "e65f77f587ea8942723fbb030cd32a7c6cf69f7df50a896e6e999e0e915c9c21",
+      "size_bytes": 2112
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14283,6 +14291,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 57,
+      "path": "tests/test_railway_release_credential.py",
+      "reason": "automated test evidence",
+      "sha256": "7e69a9a47dc855ce5453e208db848c4aa9e513e3b3ec2883dfcbe3d70a455f13",
+      "size_bytes": 2231
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 256,
       "path": "tests/test_railway_runtime_incident_fixes.py",
       "reason": "automated test evidence",
@@ -15687,7 +15703,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 452,
-    "PRESERVE_BEHAVIOUR": 1168,
-    "TEST_ONLY": 338
+    "PRESERVE_BEHAVIOUR": 1169,
+    "TEST_ONLY": 339
   }
 }

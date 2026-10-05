@@ -44,6 +44,13 @@ for project `5baa1c14-a748-4dc8-8eb6-411c621e56c3`, production environment
 secret available to every branch. The job's GitHub token needs only Actions
 read and Contents read. Missing credentials fail closed.
 
+On an exact release-branch push, `railway-credential-preflight` independently
+verifies that the encrypted secret authenticates as the intended project and
+production environment. It reads each role's trigger and rendered settings to
+confirm Wait for CI, the kill switch and paper-only flags. It issues only GraphQL
+queries and prints no credential or variable values. Passing this check verifies
+read access and scope; source promotion still requires every release gate.
+
 ## Meaning of success
 
 Approval success means the approved pins and deployment requests were accepted.
