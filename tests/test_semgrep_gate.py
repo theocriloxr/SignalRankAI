@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.semgrep_gate import _validate_report
+from scripts.semgrep_gate import _validate_report, _validate_probe, _build_command
 
 
 def test_semgrep_gate_accepts_complete_zero_finding_report() -> None:
@@ -56,3 +56,51 @@ def test_semgrep_gate_never_converts_tool_failure_into_pass(exit_code: int) -> N
     report = {"results": [], "errors": [], "paths": {"scanned": ["one.py"]}}
     with pytest.raises(RuntimeError, match="nonzero_exit"):
         _validate_report(report, minimum_scanned=1, raw_exit=exit_code)
+
+
+def probe_report():
+    return {"results": [
+        {"check_id": "python.boto3.security.hardcoded-token.hardcoded-token", "path": "unsafe_sample.py"},
+        {"check_id": "python.flask.security.injection.user-eval.eval-injection", "path": "unsafe_sample.py"},
+        {"check_id": "javascript.lang.security.detect-eval-with-expression.detect-eval-with-expression", "path": "unsafe_sample.ts"},
+    ], "errors": [], "paths": {"scanned": ["unsafe_sample.py", "unsafe_sample.ts", "safe_sample.py"]}}
+
+
+def test_probe_requires_known_python_and_typescript_detections():
+    _validate_probe(probe_report(), 1)
+
+
+@pytest.mark.parametrize("fault", ["missing_detection", "safe_false_positive", "parse_error", "timeout", "no_scan"])
+def test_probe_rejects_analysis_regressions(fault):
+    report = probe_report()
+    if fault == "missing_detection":
+        report["results"].pop()
+    elif fault == "safe_false_positive":
+        report["results"].append({"check_id": "bad", "path": "safe_sample.py"})
+    elif fault == "parse_error":
+        report["errors"] = [{"type": "Parse error"}]
+    elif fault == "timeout":
+        report["time"] = {"fixpoint_timeouts": ["unsafe_sample.py"]}
+    else:
+        report["paths"] = {"scanned": []}
+    with pytest.raises(RuntimeError):
+        _validate_probe(report, 1)
+
+
+@pytest.mark.parametrize("exit_code", [0, 2, 7, -1])
+def test_probe_cannot_pass_without_findings_exit_code(exit_code):
+    with pytest.raises(RuntimeError):
+        _validate_probe(probe_report(), exit_code)
+
+
+def test_engine_selection_preserves_rules_targets_and_strictness(monkeypatch, tmp_path):
+    from scripts import install_opengrep
+    monkeypatch.setattr("scripts.semgrep_gate.shutil.which", lambda engine: engine)
+    verified = []
+    monkeypatch.setattr(install_opengrep, "verify_binary", verified.append)
+    semgrep = _build_command(tmp_path / "report.json", ["core", "web"])
+    opengrep = _build_command(tmp_path / "report.json", ["core", "web"], "opengrep")
+    assert semgrep[1:] == opengrep[1:2] + ["--metrics", "off"] + opengrep[2:]
+    assert str(verified[0]) == "opengrep"
+    for argument in ["--strict", "--error", "p/default", "p/security-audit", "core", "web"]:
+        assert argument in opengrep

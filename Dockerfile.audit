@@ -4,5 +4,6 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 SEMGREP_SEND_METRICS=off HOME=/tmp
 COPY requirements-security-tools.txt ./
 RUN python -m pip install --requirement requirements-security-tools.txt
 COPY . .
+RUN python scripts/install_opengrep.py --directory /usr/local/bin
 USER 10001:10001
-CMD ["python", "scripts/semgrep_gate.py", "--output", "/tmp/semgrep.json", "--minimum-scanned", "400"]
+CMD ["python", "scripts/semgrep_gate.py", "--engine", "opengrep", "--output", "/tmp/semgrep.json", "--minimum-scanned", "400"]

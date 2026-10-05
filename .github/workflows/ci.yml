@@ -45,6 +45,7 @@ jobs:
           python -m venv "$RUNNER_TEMP/signalrank-security-tools"
           "$RUNNER_TEMP/signalrank-security-tools/bin/python" -m pip install -r requirements-security-tools.txt
           "$RUNNER_TEMP/signalrank-security-tools/bin/python" -m pip check
+          python scripts/install_opengrep.py --directory "$RUNNER_TEMP/signalrank-security-tools/bin"
       - name: Run static gates against the locked runtime
         run: |
           export PATH="$RUNNER_TEMP/signalrank-security-tools/bin:$PATH"

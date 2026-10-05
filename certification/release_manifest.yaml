@@ -71,8 +71,8 @@
     {
       "id": "security-semgrep",
       "group": "static",
-      "description": "Semgrep SAST: require zero findings, zero scan errors, and complete runtime/application scan evidence",
-      "command": "python scripts/semgrep_gate.py --minimum-scanned 400",
+      "description": "Semgrep rule packs with checksum-pinned OpenGrep: require detection probes, zero findings/errors and complete runtime/application analysis",
+      "command": "python scripts/semgrep_gate.py --engine opengrep --minimum-scanned 400",
       "severity": "high",
       "required": true,
       "environments": [

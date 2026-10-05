@@ -24,7 +24,8 @@ ENV PATH="/opt/security-tools/bin:$PATH"
 
 COPY . .
 
-RUN /usr/local/bin/python scripts/run_release_manifest.py --environment ci --group static \
+RUN /usr/local/bin/python scripts/install_opengrep.py --directory /opt/security-tools/bin \
+    && /usr/local/bin/python scripts/run_release_manifest.py --environment ci --group static \
     && /usr/local/bin/python -m pip check
 
 CMD ["python","-c","import time; print('SIGNALRANK_STATIC_CLEANROOM_PASS'); time.sleep(600)"]

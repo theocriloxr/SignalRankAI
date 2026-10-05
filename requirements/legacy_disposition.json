@@ -1,5 +1,5 @@
 {
-  "file_count": 1955,
+  "file_count": 1958,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -43,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 192,
+      "line_count": 193,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c3c5dc12f3ff18c943a3b168225a6f404eef9ce2d5475b7c87634cff47857355",
-      "size_bytes": 6471
+      "sha256": "58fd488e3cfc49e361112da5115fb118f0ebcc5066dd775ecd5bc00b7c574ece",
+      "size_bytes": 6573
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -366,8 +366,8 @@
       "line_count": null,
       "path": "Dockerfile.audit",
       "reason": "production/build source",
-      "sha256": "c018ef1dafcf5747dd1ecf4a54f6fbf2cd4a3fde8b83075f0428799c53c3566f",
-      "size_bytes": 427
+      "sha256": "942b06d40edb4a4fc14c634a192d418d7d850866b8aa8ea141bbc953acd5ae4d",
+      "size_bytes": 517
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -422,8 +422,8 @@
       "line_count": null,
       "path": "Dockerfile.static.cleanroom",
       "reason": "production/build source",
-      "sha256": "9938ecc60ed8e2984bd009bbf7370dd4e1b17f9e75786ca317c0557c68f80874",
-      "size_bytes": 1168
+      "sha256": "bb31766d871239052d59d2a600f2a1baa877b1e0af35eba4e421766852da3f47",
+      "size_bytes": 1263
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -2638,8 +2638,8 @@
       "line_count": 486,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "2397b32194ead1eaea98661193f796c156f1feffcd4c23a5951445aa1a5ca948",
-      "size_bytes": 15643
+      "sha256": "9211b0041999b17cb6d3bbe2abde096a5f26deb99ad45c088b1733276aa67f91",
+      "size_bytes": 15698
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6739,6 +6739,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 38,
+      "path": "docs/operations/security-analysis-engine.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "3fcf0602c57fdaa7e9f9d1971b07384131704d585a98ac14cb39716ecac7ac02",
+      "size_bytes": 2353
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 78,
       "path": "docs/providers/DYNAMIC_INSTRUMENT_REGISTRY.md",
       "reason": "documentation/specification/evidence",
@@ -9291,11 +9299,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 47,
+      "line_count": 48,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b94b4ff549cefb61150599b0caebaaec76170c3933114fed823f9fb1eb9c75e5",
-      "size_bytes": 1493
+      "sha256": "1b3dbdda08638bc4e2d30230e2d64ec819398fe4e21b6ba063f0d9384750d35f",
+      "size_bytes": 1528
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9955,6 +9963,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 69,
+      "path": "scripts/install_opengrep.py",
+      "reason": "production/build source",
+      "sha256": "23bb725c0f5db76565a6b7397911ec39fc7d60f53f49b8bfa790210251d3d18c",
+      "size_bytes": 2419
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 583,
       "path": "scripts/live_production_evidence.py",
       "reason": "production/build source",
@@ -10235,11 +10251,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 173,
+      "line_count": 240,
       "path": "scripts/semgrep_gate.py",
       "reason": "production/build source",
-      "sha256": "be620981e17dc832d5b8fb9d2f374b405e6b39fb6472d7da36e74d4e96d5d892",
-      "size_bytes": 5272
+      "sha256": "70784f1c290bcc167a9f5f42f1c4eab9a9d3db1c4042b8a91a05f5cd4eec57e7",
+      "size_bytes": 8690
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14507,11 +14523,19 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 58,
+      "line_count": 45,
+      "path": "tests/test_security_engine_install.py",
+      "reason": "automated test evidence",
+      "sha256": "a5cdd358ef51c8631fa2bee5ae233ab0530f9f1d919aaebb510afd1747a6bd16",
+      "size_bytes": 1857
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 106,
       "path": "tests/test_semgrep_gate.py",
       "reason": "automated test evidence",
-      "sha256": "5ec91db814d660d4f211c0828f5e77d2c7df606d5bdf138542679ce2340fb690",
-      "size_bytes": 2162
+      "sha256": "a2e4c209899d6186b0ac1c70cbbe720d2c57f04a1db833b93139a2c17aa2f9b0",
+      "size_bytes": 4427
     },
     {
       "disposition": "TEST_ONLY",
@@ -15654,8 +15678,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 451,
-    "PRESERVE_BEHAVIOUR": 1166,
-    "TEST_ONLY": 337
+    "DOCUMENTATION_ONLY": 452,
+    "PRESERVE_BEHAVIOUR": 1167,
+    "TEST_ONLY": 338
   }
 }
