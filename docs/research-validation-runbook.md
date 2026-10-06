@@ -189,22 +189,40 @@ its own HTTP process and removes only its own uniquely named test database.
 Reports label synthetic observations and distinguish a dirty checkout from an
 immutable candidate. This gate does not replace native-device or broker testing.
 
-## Schema 0049 deployment and recovery
+## Schema 0050 deployment and recovery
 
 1. Pass the required `backend-research-validation` release gate, including real
    PostgreSQL tests. Hosted CI creates disposable owned databases and migrates
    each from an empty schema; the suite's database is not destroyed.
 2. Preserve a tested backup and apply the normal controlled migration path to
-   `0049_research_trial_ledger`. Verify all three tables and six enabled
+   `0050_profile_health_index`. Verify all three research tables and six enabled
    append-only/truncate guards on their expected relations and function. Both the
    startup gate and runtime readiness fail if any guard is disabled or misplaced.
+   Verify the valid, ready, nonunique B-tree index
+   `public.ix_adaptive_evidence_profile_signal` on
+   `public.adaptive_signal_evidence (profile_id, signal_id)`. An identically
+   named index on another relation, reversed keys, expressions, a partial
+   predicate or included columns does not satisfy admission. Both gates use
+   the same catalogue predicate; runtime checks retain one database round trip.
    Do not deploy a different commit per service.
 3. Deploy only after every existing required release/approval gate passes.
 4. If candidate execution is degraded, suspend it and use the neutral baseline.
    Older approvals require fresh validation before reactivation.
-5. Do not downgrade 0049 to erase evidence. Its downgrade deliberately fails.
+5. Do not downgrade 0049 to erase evidence or 0050 to remove surveillance
+   support. Their downgrades deliberately fail.
    Use a forward repair or an approved recovery that preserves experiment
    history. A restore/retention policy for this new evidence is still required.
+
+Migration 0050 builds its index concurrently, outside a transaction. Alembic's
+autocommit block commits preceding revisions before starting the build, so a
+failed build does not roll back earlier revisions. Retry the same migration:
+a correctly defined valid/ready index is reused, and a correctly defined
+invalid index left by a cancelled concurrent build is dropped concurrently
+and rebuilt. A name collision or different definition blocks migration and
+requires a reviewed forward repair; it is never automatically dropped.
+The index supports the bounded surveillance query but is not a measured
+production-latency guarantee. Full capacity and account qualification remain
+separate requirements.
 
 Migration environment loading now respects `SIGNALRANK_ALLOW_DOTENV=0`, defaults
 to no dotenv access on production/Railway, and never lets `.env.local` overwrite

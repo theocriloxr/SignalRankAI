@@ -148,7 +148,7 @@ async def seed_research_outcomes(get_session, asset):
     from utils.timeutils import now_utc_naive
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0049_research_trial_ledger"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0050_profile_health_index"
         for i in range(160):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
@@ -281,6 +281,103 @@ async def test_failure_recording_outage_keeps_the_durable_pending_definition_and
         assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 0
     assert "failure_recording_failed" in caplog.text
     assert "synthetic persistence outage" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["missing", "wrong_columns", "wrong_relation", "unique", "expression", "partial", "included", "cancelled_build"])
+async def test_actual_admission_rejects_missing_or_misidentified_health_indexes(monkeypatch, worker_database, fault):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+    from db.profile_health_schema import PROFILE_HEALTH_INDEX_SQL, profile_health_index_valid
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    admission = await railway_main._database_readiness_check()
+    async with worker_database() as session:
+        index_metadata = dict((await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one())
+    assert admission["ok"], {"admission": admission, "index": index_metadata}
+    assert schema_gate.check_schema()["ok"]
+    async with sessions() as session:
+        await session.execute(text("DROP INDEX public.ix_adaptive_evidence_profile_signal"))
+        if fault == "wrong_columns":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (signal_id,profile_id)"))
+        elif fault == "wrong_relation":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.signals (signal_id,asset)"))
+        elif fault == "unique":
+            await session.execute(text("CREATE UNIQUE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id)"))
+        elif fault == "expression":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (lower(profile_id),signal_id)"))
+        elif fault == "partial":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id) WHERE profile_id IS NOT NULL"))
+        elif fault == "included":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id) INCLUDE (asset)"))
+        await session.commit()
+    if fault == "cancelled_build":
+        # Create a genuine invalid index without editing system catalogues:
+        # hold a writer lock, cancel the concurrent build after catalogue
+        # creation, and release only these owned database connections.
+        from sqlalchemy.exc import DBAPIError
+        from importlib import import_module
+        engine = worker_database.kw["bind"]
+        async with engine.connect() as blocker, engine.connect() as build:
+            await blocker.execute(text("LOCK TABLE public.adaptive_signal_evidence IN ROW EXCLUSIVE MODE"))
+            build = await build.execution_options(isolation_level="AUTOCOMMIT")
+            pid = (await build.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+            operation = asyncio.create_task(build.execute(text(import_module("db.migrations.versions.0050_profile_health_index").CREATE_SQL)))
+            try:
+                for _ in range(100):
+                    async with sessions() as session:
+                        observed = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one_or_none()
+                    if observed is not None and observed["indisvalid"] is False:
+                        break
+                    await asyncio.sleep(0.05)
+                else:
+                    pytest.fail("concurrent build did not expose an invalid index within the bounded wait")
+                async with sessions() as session:
+                    assert (await session.execute(text("SELECT pg_cancel_backend(:pid)"), {"pid": pid})).scalar_one()
+                with pytest.raises(DBAPIError):
+                    await asyncio.wait_for(operation, timeout=10)
+            finally:
+                await blocker.rollback()
+                if not operation.done():
+                    operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+    runtime = await railway_main._database_readiness_check()
+    assert not runtime["ok"] and runtime["detail"] == "adaptive_profile_health_index_missing_or_invalid"
+    assert "adaptive_profile_health_index" in schema_gate.check_schema()["missing"]
+    async with sessions() as session:
+        record = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one_or_none()
+        assert not profile_health_index_valid(dict(record) if record is not None else None)
+    # Exercise the real concurrent migration operation on retry, including
+    # refusal to drop a correctly named index on the wrong keys/relation.
+    from importlib import import_module
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    async def retry_index_build():
+        async with worker_database.kw["bind"].connect() as connection:
+            def retry(sync_connection):
+                context = MigrationContext.configure(sync_connection)
+                with context.begin_transaction(), Operations.context(context):
+                    import_module("db.migrations.versions.0050_profile_health_index").upgrade()
+            await connection.run_sync(retry)
+    if fault in {"missing", "cancelled_build"}:
+        await retry_index_build()
+        await retry_index_build()
+        assert (await railway_main._database_readiness_check())["ok"]
+        assert schema_gate.check_schema()["ok"]
+    else:
+        with pytest.raises(RuntimeError, match="definition_mismatch"):
+            await retry_index_build()
+        async with sessions() as session:
+            unchanged = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one()
+            assert unchanged["columns"] == record["columns"]
 
 
 @pytest.mark.asyncio

@@ -62,7 +62,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing", [None, "research_experiments_table", "research_append_only_triggers"])
+@pytest.mark.parametrize("missing", [None, "research_experiments_table", "research_append_only_triggers", "adaptive_profile_health_index"])
 async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatch, missing) -> None:
     import db.session as db_session
     import railway_main
@@ -72,7 +72,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     class _Mappings:
         def one(self):
             result = {
-                "deployed_revision": "0049_research_trial_ledger",
+                "deployed_revision": "0050_profile_health_index",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -91,6 +91,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "research_experiments_table": True,
                 "research_experiment_results_table": True,
                 "research_append_only_triggers": True,
+                "adaptive_profile_health_index": True,
                 "broker_connections_credential_format": True,
                 "broker_connections_credential_version": True,
                 "broker_connections_credential_key_id": True,
@@ -139,11 +140,11 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     result = await railway_main._database_readiness_check()
 
     assert result["ok"] is (missing is None)
-    assert result["revision"] == "0049_research_trial_ledger"
+    assert result["revision"] == "0050_profile_health_index"
     if missing is None:
         assert result["probe_timeout_seconds"] == 8.0
     else:
-        assert result["detail"] in {"required_ecosystem_tables_missing", "research_evidence_immutability_guards_missing"}
+        assert result["detail"] in {"required_ecosystem_tables_missing", "research_evidence_immutability_guards_missing", "adaptive_profile_health_index_missing_or_invalid"}
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"
     assert captured["kwargs"]["timeout_seconds"] == 8.0

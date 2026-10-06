@@ -2351,7 +2351,7 @@ def _database_readiness_timeout_seconds() -> float:
 
 
 async def _database_readiness_check() -> dict[str, object]:
-    """Verify connectivity and the complete runtime schema in one round trip."""
+    """Verify the runtime schema, immutable guards and physical health index."""
     timeout_s = _database_readiness_timeout_seconds()
     try:
         from alembic.config import Config
@@ -2359,6 +2359,7 @@ async def _database_readiness_check() -> dict[str, object]:
         from sqlalchemy import text
 
         from db.priority import DBPriority
+        from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL
         from db.session import get_session, is_db_configured
 
         if not is_db_configured():
@@ -2371,8 +2372,7 @@ async def _database_readiness_check() -> dict[str, object]:
 
         # Readiness is traffic-admission control, so it uses the reserved
         # critical lane rather than competing as an ordinary interactive query.
-        # A single catalogue query proves connectivity, migration head, required
-        # columns and the active-thesis guard without four separate round trips.
+        # Catalogue checks prove schema/guards and the physical health index.
         async with get_session(
             priority=DBPriority.CRITICAL,
             label="readiness",
@@ -2381,7 +2381,7 @@ async def _database_readiness_check() -> dict[str, object]:
             result = await asyncio.wait_for(
                 session.execute(
                     text(
-                        """
+                        f"""
                         SELECT
                             COALESCE(
                                 (SELECT version_num FROM alembic_version LIMIT 1),
@@ -2472,6 +2472,7 @@ async def _database_readiness_check() -> dict[str, object]:
                               WHERE NOT guard.tgisinternal
                                 AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
                                 AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
+                            {PROFILE_HEALTH_INDEX_VALID_SQL} AS adaptive_profile_health_index,
                             EXISTS (
                                 SELECT 1 FROM information_schema.columns
                                 WHERE table_schema = current_schema()
@@ -2679,6 +2680,9 @@ async def _database_readiness_check() -> dict[str, object]:
 
         if not bool(row.get("research_append_only_triggers")):
             return {"ok": False, "detail": "research_evidence_immutability_guards_missing", "revision": deployed}
+
+        if not bool(row.get("adaptive_profile_health_index")):
+            return {"ok": False, "detail": "adaptive_profile_health_index_missing_or_invalid", "revision": deployed}
 
         if not bool(row.get("active_guard_present")):
             return {

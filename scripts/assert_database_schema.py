@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL
+
 EXIT_CONFIGURATION = 64
 EXIT_UNREACHABLE = 69
 EXIT_SCHEMA_MISMATCH = 78
@@ -60,7 +62,7 @@ def check_schema() -> dict[str, Any]:
 
     import psycopg2
 
-    query = """
+    query = f"""
         SELECT
           (SELECT array_agg(version_num ORDER BY version_num) FROM alembic_version) AS deployed_revisions,
           to_regclass('public.subscription_products') IS NOT NULL AS subscription_products,
@@ -91,6 +93,7 @@ def check_schema() -> dict[str, Any]:
             WHERE NOT guard.tgisinternal
               AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
               AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
+          {PROFILE_HEALTH_INDEX_VALID_SQL} AS adaptive_profile_health_index,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -229,6 +232,7 @@ def check_schema() -> dict[str, Any]:
             "research_experiments",
             "research_experiment_results",
             "research_append_only_triggers",
+            "adaptive_profile_health_index",
             "broker_connections_credential_format",
             "broker_connections_credential_version",
             "broker_connections_credential_key_id",

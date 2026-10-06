@@ -80,6 +80,28 @@ tests and expanded critical typing passed. Broader sizing/correlation and
 account-policy proof remains required before directive 1 or financial readiness
 can be called complete.
 
+Immutable spot-risk candidate `c9c5ad09` passed 3,072 local tests with zero
+failures or skips and was published with identical source as `b32fc7d6`.
+Hosted CI on that exact published commit passed both backend Python versions,
+static quality, critical typing, manifest validation, the research browser
+and credential preflight. Frontend/mobile security failed and production
+approval was skipped. The four serving Railway application deployments
+remained successful on `8f858393` at 22:05 UTC on 6 October. A successful
+older deployment does not certify this newer candidate.
+
+The following schema candidate adds the concurrent profile/signal index used
+by bounded health surveillance. Startup and runtime admission verify its actual
+relation, ordered keys, nonunique B-tree definition and valid/ready state.
+Testing exposed and corrected a driver discrepancy in the PostgreSQL internal
+index-type representation. The checks now share a catalogue predicate and
+preserve one runtime database round trip. Missing or mismatched physical
+indexes block admission even when the Alembic head is current.
+Its focused PostgreSQL admission checks passed for missing, reversed-key,
+wrong-relation, unique, expression, partial and included-column indexes. An
+actually cancelled concurrent build was repaired on retry; a second retry was
+idempotent. The broader 68-test integration/admission set and expanded critical
+typing also passed. Full immutable-source verification remains the next gate.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

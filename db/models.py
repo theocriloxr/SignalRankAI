@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     JSON,
     UniqueConstraint,
+    Index,
     event,
 )
 
@@ -1305,7 +1306,8 @@ class AdaptiveAssetProfile(Base):
 
 class AdaptiveSignalEvidence(Base):
     __tablename__ = "adaptive_signal_evidence"
-    __table_args__ = (UniqueConstraint("signal_id", "duplicate_fingerprint", name="uq_adaptive_signal_evidence"),)
+    __table_args__ = (UniqueConstraint("signal_id", "duplicate_fingerprint", name="uq_adaptive_signal_evidence"),
+                     Index("ix_adaptive_evidence_profile_signal", "profile_id", "signal_id"))
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)

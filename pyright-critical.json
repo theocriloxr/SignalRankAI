@@ -49,6 +49,8 @@
     "engine/wfo.py",
     "ml/optuna_tuner.py",
     "db/migration_environment.py",
+    "db/profile_health_schema.py",
+    "db/migrations/versions/0050_profile_health_index.py",
     "runtime/outcome.py",
     "runtime/analytics.py",
     "scripts/controlled_migrate.py",

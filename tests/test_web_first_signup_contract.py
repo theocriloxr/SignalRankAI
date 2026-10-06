@@ -13,7 +13,7 @@ def _source(path: str) -> str:
 def test_web_signup_migration_is_single_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0049_research_trial_ledger"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0050_profile_health_index"]
     migration = _source("db/migrations/versions/0039_web_signup_acquisition.py")
     assert 'down_revision = "0038_account_security_product"' in migration
     assert "CREATE TABLE IF NOT EXISTS user_acquisition" in migration
@@ -74,7 +74,7 @@ def test_custom_domain_is_canonical_production_origin() -> None:
         assert "APP_BASE_URL=https://signalrank.criloxsolutions.com" in profile
         assert "APP_ALLOWED_ORIGINS=https://signalrank.criloxsolutions.com" in profile
         assert "APP_COOKIE_SECURE=1" in profile
-        assert "EXPECTED_ALEMBIC_HEAD=0049_research_trial_ledger" in profile
+        assert "EXPECTED_ALEMBIC_HEAD=0050_profile_health_index" in profile
 
 
 def test_email_links_prefer_configured_app_base_url_over_railway_domain() -> None:
