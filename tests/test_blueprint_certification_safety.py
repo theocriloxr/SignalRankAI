@@ -86,6 +86,7 @@ class FakeCursor:
                 "broker_execution_decisions",
                 "research_hypotheses", "research_experiments",
                 "research_experiment_results", "research_append_only_triggers",
+                "adaptive_profile_health_index",
                 "broker_connections_credential_format",
                 "broker_connections_credential_version",
                 "broker_connections_credential_key_id",
@@ -126,6 +127,7 @@ class FakeCursor:
     (False, ("mt5_credentials_password_nullable",), False),
     (False, ("research_append_only_triggers",), False),
     (False, ("research_experiments",), False),
+    (False, ("adaptive_profile_health_index",), False),
 ])
 def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, extra_revision, missing, allowed):
     head = schema_gate._expected_head()

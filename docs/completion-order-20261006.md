@@ -101,6 +101,14 @@ wrong-relation, unique, expression, partial and included-column indexes. An
 actually cancelled concurrent build was repaired on retry; a second retry was
 idempotent. The broader 68-test integration/admission set and expanded critical
 typing also passed. Full immutable-source verification remains the next gate.
+The first full index run on `3d14120c` exposed an older schema-admission mock
+missing the new physical-index flag. Its failures are retained. The successor
+updates that fixture and explicitly tests rejection when the index flag is false;
+neither production admission nor the physical index validation is weakened.
+The restricted Windows process environment also prevented Git Bash from
+creating its signal pipe in backup/restore script tests. The successor's full
+run permits local process execution to verify those scripts; the original
+environment failures remain in the earlier report.
 
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found

@@ -6643,11 +6643,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 118,
+      "line_count": 126,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "ad4042058664f1bb3e4ece3f9a9b6fc7ec758f734dbcbef37c1415c6c78ec8de",
-      "size_bytes": 8756
+      "sha256": "fd8bf151ffe42e0f0ac278f79a88b9c404f8e9ced8904a0870cafef8aca4a54b",
+      "size_bytes": 9345
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13011,11 +13011,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 208,
+      "line_count": 210,
       "path": "tests/test_blueprint_certification_safety.py",
       "reason": "automated test evidence",
-      "sha256": "9bfa9adfe8849b58dd18b75afae6f6ba940f60b6e458e451e59836e8f46bfb73",
-      "size_bytes": 8642
+      "sha256": "a498787a1f759ccf78f53ced7e8f40dfddca2487149c13a384454f0e78dbacaf",
+      "size_bytes": 8747
     },
     {
       "disposition": "TEST_ONLY",
