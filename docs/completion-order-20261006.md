@@ -47,7 +47,15 @@ those saved sources.
 
 ## Release blockers carried forward
 
-The last hosted release failed frontend/mobile dependency security gates.
+Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
+Ruff, Bandit and the browser gate. Python dependency scanning then found
+Werkzeug CVE-2026-102598; the next security refresh pins the official patched
+3.1.9 release. Frontend/mobile dependency security gates still fail.
+The refreshed Python lock passed `pip-audit` with no known vulnerabilities.
+The official PyPI wheel digest was verified and the Windows device-name
+reproducer rejected `NUL:`, `CON:`, `COM1:` and `LPT9:` while accepting a normal
+filename. This is dependency evidence, not a complete application security audit.
+Upstream source: https://github.com/pallets/werkzeug/security/advisories/GHSA-g6x2-hccm-hh4m.
 Provider coverage outside crypto and actual demo/funded-prop account rules and
 fills remain incomplete. A final candidate must pass required CI, deploy to
 every production application service using one approved immutable commit,

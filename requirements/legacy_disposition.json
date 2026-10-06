@@ -6627,11 +6627,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 55,
+      "line_count": 63,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "3909058f8bc835849271bc8eeed961df811c8ec16bd41e9f73bcb726a08f5ca4",
-      "size_bytes": 4457
+      "sha256": "0fa8f882041a4a26665f061a365214191fc7d325e8de04193d17a00c0c5ed837",
+      "size_bytes": 5090
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9558,8 +9558,8 @@
       "line_count": null,
       "path": "requirements.lock",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "3df3f9d2b41ccfffecd0d7cd425ef045d2338477f049d4b294448eadaa7f8adf",
-      "size_bytes": 3218
+      "sha256": "a4d5172ec37bab3b131f7c104b48858579ea65cb51940b83fea9673ceee30599",
+      "size_bytes": 3294
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
