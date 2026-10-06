@@ -1,21 +1,18 @@
-"""
-Risk Management Module - PRODUCTION UPGRADE
-- Dynamic realtime risk % (0.25-1.25%) from ML/regime/news/gemini
-- 0.5% base -> throttle at DD_SOFT=6%, stop at DD_HARD=12%
-- Enhanced ATR stops, correlation, trailing
-"""
+"""Bounded spot-unit risk advice, separate from broker/account certification."""
 
 from utils.timeutils import now_utc_naive
 
 import os
+import math
 import logging
 from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 import numpy as np
 
 from core.tier_constants import DD_SOFT_THROTTLE
 from engine.risk import soft_throttle_active, hard_stop_active
-from engine.signal_metrics import resolve_confidence_ratio, resolve_ml_probability, resolve_score_percent
+from engine.signal_metrics import resolve_calibrated_probability
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +24,16 @@ MAX_LEVERAGE = float(os.getenv("MAX_LEVERAGE", "3.0"))  # Reduced
 MIN_RR_RATIO = float(os.getenv("MIN_RR_RATIO", "1.5"))
 
 
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 class RiskManager:
     """Enhanced dynamic risk manager using realtime data sources."""
 
@@ -35,22 +42,23 @@ class RiskManager:
         self.correlation_manager = CorrelationManager()
 
     def get_dynamic_risk_pct(self, signal: Dict, account_state: Optional[Any] = None) -> float:
-        """Realtime risk % from ML + regime + sentiment + expectancy (0.25-1.25%)."""
-        ml_prob = resolve_ml_probability(signal)
-        if ml_prob is None:
-            score_pct = resolve_score_percent(signal)
-            if score_pct is not None:
-                ml_prob = max(0.0, min(score_pct / 100.0, 1.0))
-        if ml_prob is None:
-            ml_prob = resolve_confidence_ratio(signal)
+        """Advice may reduce the configured risk; heuristics cannot increase it."""
+        base = _finite_number(BASE_RISK_PCT)
+        ml_base = _finite_number(os.getenv("ML_RISK_BASE", "0.5"))
+        ml_range = _finite_number(os.getenv("ML_RISK_RANGE", "0.5"))
+        if base is None or not 0 <= base <= 1.25 or ml_base is None or ml_range is None or not 0 <= ml_base <= 1 or not 0 <= ml_range <= 1 or ml_base + ml_range > 1:
+            return 0.0
+        ml_prob = resolve_calibrated_probability(signal)
+        if signal.get("ml_calibration_validated") is True and ml_prob is None:
+            return 0.0
         regime = signal.get("regime", "neutral")
-        news_sent = float(signal.get("news_sentiment", 0) or signal.get("gemini_score", 0))
-        live_exp = float(signal.get("live_expectancy", 0.15))
+        news_sent = _finite_number(signal.get("news_sentiment") if signal.get("news_sentiment") is not None else signal.get("gemini_score", 0))
+        live_exp = _finite_number(signal["live_expectancy"]) if "live_expectancy" in signal else None
+        if news_sent is None or ("live_expectancy" in signal and live_exp is None):
+            return 0.0
 
         # ML base (configurable range)
-        ml_base = float(os.getenv("ML_RISK_BASE", "0.5"))
-        ml_range = float(os.getenv("ML_RISK_RANGE", "0.5"))
-        ml_risk = ml_base + (float(ml_prob) * ml_range) if ml_prob is not None else 1.0
+        ml_risk = ml_base + ml_prob * ml_range if ml_prob is not None else 1.0
 
         # Regime mult
         regime_mult = 1.2 if regime == "trending" else 0.8 if regime == "ranging" else 1.0
@@ -63,39 +71,55 @@ class RiskManager:
         )
 
         # Expectancy nerf
-        exp_mult = min(1.5, live_exp / DD_SOFT_THROTTLE) if live_exp > 0 else 0.5
+        exp_mult = 1.0 if live_exp is None else min(1.5, live_exp / DD_SOFT_THROTTLE) if live_exp > 0 else 0.5
 
-        risk_pct = BASE_RISK_PCT * ml_risk * regime_mult * sentiment_mult * exp_mult
+        risk_pct = min(base, base * ml_risk * regime_mult * sentiment_mult * exp_mult)
 
         # DD throttle
-        if account_state:
-            if soft_throttle_active(account_state):
+        if account_state is not None:
+            drawdown = _finite_number(account_state.get("drawdown") if isinstance(account_state, dict) else getattr(account_state, "drawdown", None))
+            if drawdown is None or drawdown < 0:
+                return 0.0
+            account_view = SimpleNamespace(drawdown=drawdown)
+            if soft_throttle_active(account_view):
                 risk_pct *= 0.5
-            if hard_stop_active(account_state):
+            if hard_stop_active(account_view):
                 return 0.0
 
-        return max(0.25, min(risk_pct, 1.25))
+        return risk_pct if math.isfinite(risk_pct) and risk_pct > 0 else 0.0
 
     def calculate_position_size(self, signal: Dict, account_equity: float, **kwargs) -> float:
         """Enhanced: equity * dynamic_pct / risk_distance."""
-        entry = float(signal.get("entry", 0))
-        stop = float(signal.get("stop_loss", 0))
+        entry, stop, equity = (_finite_number(signal.get("entry")), _finite_number(signal.get("stop_loss")), _finite_number(account_equity))
+        if entry is None or stop is None or equity is None or min(entry, stop, equity) <= 0:
+            return 0.0
+        direction = str(signal.get("direction") or "").lower()
+        if (direction in {"long", "buy"} and stop >= entry) or (direction in {"short", "sell"} and stop <= entry) or (direction and direction not in {"long", "buy", "short", "sell"}):
+            return 0.0
         risk_dist = abs(entry - stop)
 
         if risk_dist <= 0:
             return 0.0
 
-        risk_pct = self.get_dynamic_risk_pct(signal)
-        risk_amount = account_equity * (risk_pct / 100)
+        risk_pct = self.get_dynamic_risk_pct(signal, account_state=kwargs.get("account_state"))
+        if risk_pct <= 0:
+            return 0.0
+        risk_amount = equity * (risk_pct / 100)
         size = risk_amount / risk_dist
 
         # Bounds + vol adjust
-        size = max(0.01, min(size, account_equity * 0.1))
+        # Convert the quote-currency notional cap to units. No minimum lot may
+        # increase the loss budget or revive an account hard stop.
+        size = min(size, equity * 0.1 / entry)
         vol_regime = signal.get("vol_regime", "medium")
         if vol_regime == "high":
             size *= 0.7
 
-        return max(0.0, size)
+        if not math.isfinite(size) or size <= 0:
+            return 0.0
+        if size * risk_dist > risk_amount or size * entry > equity * 0.1:
+            size = math.nextafter(size, 0.0)
+        return size if size * risk_dist <= risk_amount and size * entry <= equity * 0.1 else 0.0
 
     # Existing methods preserved for compatibility
     def calculate_atr_stops(self, current_price: float, atr: float, direction: int = 1) -> Dict[str, float]:
@@ -159,7 +183,7 @@ class RiskManager:
     # Partial exits
     def calculate_partial_exit_levels(
         self, entry: float, take_profit: float, direction: int = 1, num_levels: int = 3
-    ) -> List[Dict[str, float]]:
+    ) -> List[Dict[str, float | str]]:
         if direction == 1:  # Long
             tp_distance = take_profit - entry
             return [
@@ -176,7 +200,7 @@ class RiskManager:
 
 class SmartRiskSizer:
     """
-    Smart Kelly Position Sizing.
+    Legacy threshold-based unit sizing; this is not Kelly sizing.
 
     Scales position size dynamically based on:
     1. Stop Loss Distance (ATR)
@@ -258,7 +282,7 @@ class CorrelationManager:
         new_pair: str,
         existing_pairs: List[str],
         max_correlation: float = 0.7,
-        returns_data: Dict[str, np.ndarray] = None,
+        returns_data: Optional[Dict[str, np.ndarray]] = None,
     ) -> Tuple[bool, str]:
         if not existing_pairs or not returns_data:
             return True, "No correlation check needed"

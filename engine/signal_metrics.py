@@ -137,6 +137,15 @@ def resolve_confluence_total(signal: Mapping[str, Any]) -> Optional[int]:
     return None
 
 
+def resolve_calibrated_probability(signal: Mapping[str, Any]) -> Optional[float]:
+    """Return only a qualified persisted probability, without score fallbacks."""
+    from core.production_integrity import calibration_evidence_valid
+    if not calibration_evidence_valid(signal):
+        return None
+    value = signal.get("ml_probability_calibrated")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
     """Resolve the best available model probability as a 0..1 ratio.
 

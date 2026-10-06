@@ -25,6 +25,23 @@ fills or account equity. Invalid/nonfinite observations suspend a profile even
 below the ordinary sample minimum. Validated per-profile health baselines,
 instrument execution evidence and funded-account constraints remain unfinished.
 
+The `RiskManager` spot-unit adviser now forwards account drawdown state into
+sizing, preserves zero risk and soft throttles, and rejects malformed inputs or
+wrong-side stops. Its 10% quote-notional cap is converted to units by dividing
+by entry price. A minimum unit floor cannot exceed the loss budget or revive a
+hard stop; floating-point rounding is also checked against both budgets.
+Heuristic score/confidence and unvalidated model outputs cannot supply its
+probability weight. The new `resolve_calibrated_probability` reuses the canonical
+held-out evidence validator. Advice can reduce the configured base risk, with
+no increases from regime, sentiment or supplied expectancy. Missing expectancy
+does not fabricate a historical estimate.
+
+These changes affect the existing engine adviser and conservative legacy WFO
+replay. They do not convert spot units into broker lots/contracts, qualify a
+funded account, establish an edge, or replace account/execution kill-switch
+checks. The separate legacy threshold sizers, primary dynamic-risk function
+and correlation assumptions still require consolidation and qualification.
+
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply
 an observation; future closes and closes preceding the decision are excluded.

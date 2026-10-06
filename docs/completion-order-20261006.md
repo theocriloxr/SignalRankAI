@@ -70,6 +70,16 @@ records duplicate-profile trials as REJECTED. Actual PostgreSQL checks cover an
 objective exception, a division-by-zero transaction failure and unavailable
 failure recording. Pending crash/outage definitions remain visible and counted.
 
+Immutable health candidate `dd2c485f` passed all 3,034 local tests and was
+published as `27408df9`. Immutable ledger candidate `bd831485` passed all 3,038
+local tests and was published as `c6bf7cc6`. Both reports show clean, unchanged
+source trees and no skips. The following spot-risk adviser repair prevents
+minimum floors from reviving zero risk or erasing drawdown throttles, forwards
+account state and checks both loss and quote-notional budgets. Its 50 focused
+tests and expanded critical typing passed. Broader sizing/correlation and
+account-policy proof remains required before directive 1 or financial readiness
+can be called complete.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

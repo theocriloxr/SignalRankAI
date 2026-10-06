@@ -7026,7 +7026,7 @@
       "name": "MAX_ACTIVE_TRADES",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:24"
+        "engine/risk_manager.py:21"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7046,7 +7046,7 @@
       "name": "MAX_LEVERAGE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:26"
+        "engine/risk_manager.py:23"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7279,7 +7279,7 @@
       "name": "MIN_RR_RATIO",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:27"
+        "engine/risk_manager.py:24"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8108,7 +8108,7 @@
       "name": "ML_RISK_BASE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:51"
+        "engine/risk_manager.py:47"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8148,7 +8148,7 @@
       "name": "ML_RISK_RANGE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:52"
+        "engine/risk_manager.py:48"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13088,7 +13088,7 @@
       "name": "RISK_PER_TRADE_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:23",
+        "engine/risk_manager.py:20",
         "signalrank_telegram/formatter.py:63"
       ],
       "required_by_code": true,
@@ -15070,7 +15070,7 @@
       "name": "TRADE_COOLDOWN_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:25"
+        "engine/risk_manager.py:22"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15292,7 +15292,7 @@
       "name": "TRAILING_STOP_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:146"
+        "engine/risk_manager.py:170"
       ],
       "required_by_code": true,
       "sensitive": false
