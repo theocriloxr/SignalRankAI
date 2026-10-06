@@ -5,6 +5,7 @@
   "reportMissingTypeStubs": false,
   "include": [
     "core/env.py",
+    "core/production_integrity.py",
     "core/outcome_accounting.py",
     "core/signal_lifecycle.py",
     "core/financial_activation.py",

@@ -3075,11 +3075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 372,
+      "line_count": 371,
       "path": "core/production_integrity.py",
       "reason": "production/build source",
-      "sha256": "1272e58242a790dc0678a33125b3ec6381f8fe9f0b0818a70c35fae5c2814696",
-      "size_bytes": 13621
+      "sha256": "70af52622b65da596cbee645e4b06ff4080db3f976d0aa5d99907cff203be7a0",
+      "size_bytes": 13763
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6627,11 +6627,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 63,
+      "line_count": 80,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0fa8f882041a4a26665f061a365214191fc7d325e8de04193d17a00c0c5ed837",
-      "size_bytes": 5090
+      "sha256": "a7bfc77e31429d72d0f7cf793b770c201d1adcbab70c924ef6c017461b566c9f",
+      "size_bytes": 6230
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6859,11 +6859,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 184,
+      "line_count": 205,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "9b9afaec9422d3263308ef5ff4f0c1195806d775a40bf1ea31fa4dce607252f9",
-      "size_bytes": 11149
+      "sha256": "824660ffab68d67aa3c471089bd419b5dc7a4cbb91bcccf30723fa9027dd1e85",
+      "size_bytes": 12657
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7219,11 +7219,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 659,
+      "line_count": 683,
       "path": "engine/adaptive/learning.py",
       "reason": "production/build source",
-      "sha256": "aca5ba0995092691ad957d121cb1c170f512f18f13e004ed0fd9bf90b98f91dc",
-      "size_bytes": 32276
+      "sha256": "b9c24760e35666ce0c0d61479e8809b6ff1c9e53e71eaa7a9cfd0f0dc3a549cd",
+      "size_bytes": 34480
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9467,11 +9467,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 64,
+      "line_count": 65,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1c6624bf9b3dfbd4f5c50aa3ba400899f17afcc6744f47b2e818305e6e832fd6",
-      "size_bytes": 2075
+      "sha256": "f5c78907364d512ac6d6d2052d982516123a8f45cf62a71af066bab860b6e635",
+      "size_bytes": 2111
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9622,7 +9622,7 @@
       "line_count": 16137,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "fcef0e835d8098a4c102656f66403c2730ae5c89efbf6e4d7fdd68d1a6fd32de",
+      "sha256": "28988668b4bd4ddcd8a3e7f1494d541766e2c6b8e42d3b54ba37a13e5bbf9633",
       "size_bytes": 473487
     },
     {
@@ -12891,11 +12891,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 172,
+      "line_count": 231,
       "path": "tests/test_adaptive_health_lifecycle.py",
       "reason": "automated test evidence",
-      "sha256": "8e5e5268907a4687f46408ac0b0fe0cd2d9dc9a8c4621a735d85b5b45a917203",
-      "size_bytes": 8362
+      "sha256": "68964e30de1dade6d24675bb50c843e0f94b8573a8b1df998fd3d5ae9ec398ef",
+      "size_bytes": 11294
     },
     {
       "disposition": "TEST_ONLY",
@@ -12915,11 +12915,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 320,
+      "line_count": 382,
       "path": "tests/test_adaptive_worker_research_postgres.py",
       "reason": "automated test evidence",
-      "sha256": "ab68e99e5bd302ae8764fedbacc0bc330c0eb90ceb5f3fa4892f857f1575969f",
-      "size_bytes": 17772
+      "sha256": "6bc0b5f579293d02dd3d0e14761af7a06236535e170b61253714ff8febd8b2cb",
+      "size_bytes": 22156
     },
     {
       "disposition": "TEST_ONLY",
@@ -15387,11 +15387,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 494,
+      "line_count": 520,
       "path": "tests/test_v1365_production_integrity.py",
       "reason": "automated test evidence",
-      "sha256": "23b0be85f96d6d469177e18fafbf765982d521c58abb0e91623519c58c96a26f",
-      "size_bytes": 20915
+      "sha256": "3161b2a954c9d38fc3bc71b2f3ed7e885e2c6234ceef93c6591db5133664e97c",
+      "size_bytes": 22581
     },
     {
       "disposition": "TEST_ONLY",

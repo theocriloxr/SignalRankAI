@@ -82,6 +82,68 @@ def use_database(monkeypatch, database):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["wrong_calibration", "uncalibrated", "bounded_window", "version_sample"])
+async def test_actual_health_reads_canonical_probabilities_and_a_bounded_unique_window(monkeypatch, worker_database, mode):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from engine.adaptive import learning, repository
+    from utils.timeutils import now_utc_naive
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setenv("ML_PUBLIC_CALIBRATION_METRICS_REQUIRED", "1")
+    monkeypatch.setenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100")
+    monkeypatch.setattr(repository, "state", SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True))
+    invalidated = []
+    monkeypatch.setattr(repository, "invalidate_profile_cache", invalidated.append)
+    count = 350 if mode == "bounded_window" else 70 if mode == "version_sample" else 35
+    start = now_utc_naive() - timedelta(days=20)
+    async with sessions() as session:
+        user = User(telegram_user_id=987654320)
+        session.add(user)
+        session.add(AdaptiveAssetProfile(profile_id="health-probability", asset="AUDITPROB", asset_class="crypto",
+                                         version=1, state="CANARY", is_current=True))
+        await session.flush()
+        for i in range(count):
+            identifier = str(uuid4())
+            version = "bad-small" if mode == "version_sample" and i < 20 else "good-large"
+            calibrated = mode in {"wrong_calibration", "version_sample"}
+            probability = 0.05 if mode == "wrong_calibration" or version == "bad-small" else 0.99
+            session.add(Signal(signal_id=identifier, asset="AUDITPROB", asset_class="crypto", timeframe="1h",
+                direction="long", entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                strategy_name="audit", strategy_group="trend", regime="trend", status="closed",
+                ml_probability_calibrated=probability if calibrated else None, ml_calibration_validated=calibrated,
+                ml_calibration_version=version if calibrated else None, ml_calibration_validation_rows=250,
+                ml_calibration_brier=0.16, ml_calibration_ece=0.04, created_at=start + timedelta(minutes=20 * i)))
+            await session.flush()
+            loss = mode == "bounded_window" and i < 100
+            session.add(Outcome(signal_id=identifier, status="loss" if loss else "win", r_multiple=-1 if loss else 0.5,
+                provenance="delivered", closed_at=start + timedelta(minutes=20 * i + 10), performance_inclusion_status="eligible"))
+            session.add(SignalDelivery(user_id=user.id, signal_id=identifier, sent_ok=True, delivery_state="CONFIRMED"))
+            # Two component rows must never turn one signal into two observations.
+            for component in ("a", "b"):
+                session.add(AdaptiveSignalEvidence(signal_id=identifier, asset="AUDITPROB", timeframe="1h", strategy_id=component,
+                    strategy_version="1", family="trend", direction="long", setup_type="audit", confidence=1.0 if calibrated else 0.0,
+                    raw_score=80, profile_id="health-probability", profile_version=1, duplicate_fingerprint=uuid4().hex))
+        await session.commit()
+    result = await learning.monitor_profile_health()
+    report = result["profile_diagnostics"][0]
+    assert report["sample_size"] == min(250, count)
+    assert report["expectancy_r"] == 0.5
+    assert not report["broker_fills_certified"]
+    if mode == "wrong_calibration":
+        assert result["suspended_assets"] == ["AUDITPROB"] and invalidated == ["AUDITPROB"]
+        assert report["brier_score"] == pytest.approx(0.9025)
+        async with sessions() as session:
+            details = (await session.execute(text("SELECT metrics FROM adaptive_drift_events"))).scalar_one()
+            assert details["calibration_versions"]["good-large"]["sample_size"] == 35
+    else:
+        assert result["suspended_assets"] == [] and invalidated == []
+        if mode == "version_sample":
+            assert report["qualified_calibration_version_count"] == 1
+            assert report["brier_score"] == pytest.approx(0.0001)
+        else:
+            assert report["brier_score"] is None and report["calibration_status"] == "UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial(monkeypatch, worker_database):
     from db.models import Signal, Outcome
     from utils.timeutils import now_utc_naive

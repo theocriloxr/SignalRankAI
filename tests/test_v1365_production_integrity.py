@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -75,6 +74,33 @@ def test_public_probability_requires_validated_calibration(monkeypatch):
     metric_failed = probability_for_public_display(_signal(ml_calibration_ece=0.30))
     assert metric_failed.probability is None
     assert not metric_failed.calibrated
+
+
+@pytest.mark.parametrize("field,value", [
+    ("ml_probability_calibrated", float("nan")), ("ml_probability_calibrated", float("inf")),
+    ("ml_probability_calibrated", -0.01), ("ml_probability_calibrated", 1.01),
+    ("ml_probability_calibrated", True), ("ml_probability_calibrated", "0.67"),
+    ("ml_calibration_validated", "false"), ("ml_calibration_validated", 1),
+    ("ml_calibration_version", 123), ("ml_calibration_version", " " * 3),
+    ("ml_calibration_validation_rows", 250.9), ("ml_calibration_validation_rows", "250"),
+    ("ml_calibration_validation_rows", True), ("ml_calibration_brier", -0.01),
+    ("ml_calibration_ece", -0.01), ("ml_calibration_brier", False),
+    ("ml_calibration_ece", float("nan")), ("ml_calibration_brier", "0.16"),
+])
+def test_malformed_calibration_cannot_become_a_public_probability(monkeypatch, field, value):
+    from core.production_integrity import probability_for_public_display
+    monkeypatch.setenv("ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION", "1")
+    monkeypatch.setenv("ML_PUBLIC_CALIBRATION_METRICS_REQUIRED", "1")
+    result = probability_for_public_display(_signal(**{field: value}))
+    assert not result.calibrated and result.probability is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -0.01, 1.01, True, "0.67"])
+def test_unvalidated_score_display_does_not_clamp_malformed_values(monkeypatch, value):
+    from core.production_integrity import probability_for_public_display
+    monkeypatch.setenv("ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION", "0")
+    result = probability_for_public_display({"ml_probability_raw": value})
+    assert not result.calibrated and result.probability is None
 
 
 def test_profile_filters_asset_timeframe_strategy_and_score():

@@ -170,3 +170,62 @@ async def test_invalid_health_thresholds_fail_before_querying_the_database(monke
     with pytest.raises(ValueError, match="invalid_adaptive_health_thresholds"):
         await learning._monitor_runtime_profiles(database)
     database.execute.assert_not_awaited()
+
+
+def health_rows(count, *, probability=None, version="audit-calibration", outcome=0.5):
+    return [{"r_multiple": outcome, "confidence": 0.0,
+             "ml_probability_calibrated": probability, "ml_calibration_version": version,
+             "ml_calibration_validated": probability is not None,
+             "ml_calibration_validation_rows": 250, "ml_calibration_brier": 0.16,
+             "ml_calibration_ece": 0.04} for _ in range(count)]
+
+
+def health_metrics(rows):
+    from engine.adaptive.learning import _runtime_health_metrics
+    return _runtime_health_metrics(rows, minimum_live=30, drawdown_limit=10,
+                                   brier_limit=0.35, expectancy_floor=-0.10)
+
+
+def test_heuristic_confidence_is_not_scored_as_a_calibrated_probability():
+    report = health_metrics(health_rows(35))
+    assert report["reasons"] == [] and report["brier_score"] is None
+    assert report["calibration_status"] == "UNAVAILABLE"
+    assert report["expectancy_r"] == 0.5
+
+
+def test_health_detects_wrong_calibrated_predictions_even_with_high_component_confidence():
+    rows = health_rows(35, probability=0.05)
+    for row in rows:
+        row["confidence"] = 1.0
+    report = health_metrics(rows)
+    assert report["reasons"] == ["live_calibration_drift"]
+    assert report["brier_score"] == pytest.approx(0.9025)
+    assert report["broker_fills_certified"] is False
+    assert report["approved_baseline_comparison"] == "UNVERIFIED"
+
+
+def test_calibration_versions_require_their_own_minimum_sample():
+    report = health_metrics(health_rows(20, probability=0.01, version="bad-small") +
+                            health_rows(50, probability=0.99, version="good-large"))
+    assert report["reasons"] == []
+    assert report["calibration_versions"]["bad-small"]["brier_score"] is None
+    assert report["brier_score"] == pytest.approx(0.0001)
+    assert report["qualified_calibration_version_count"] == 1
+    report = health_metrics(health_rows(35, probability=0.01, version="bad") +
+                            health_rows(35, probability=0.99, version="good"))
+    assert report["reasons"] == ["live_calibration_drift"]
+    assert report["brier_score"] == pytest.approx(0.9801), "good versions must not hide a degraded version"
+
+
+@pytest.mark.parametrize("probability", [float("nan"), float("inf"), -0.1, 1.1, True])
+def test_invalid_claimed_calibration_suspends_below_the_sample_minimum(probability):
+    report = health_metrics(health_rows(2, probability=probability))
+    assert report["reasons"] == ["invalid_calibrated_health_observations"]
+    json.dumps(report, allow_nan=False)
+
+
+def test_overflowing_delivery_metrics_are_quarantined_without_nonfinite_json():
+    report = health_metrics(health_rows(35, outcome=1e308))
+    assert report["reasons"] == ["invalid_delivery_health_observations"]
+    assert report["expectancy_r"] is None and report["max_drawdown_r"] is None
+    json.dumps(report, allow_nan=False)

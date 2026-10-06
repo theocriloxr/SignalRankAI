@@ -286,6 +286,12 @@ def evaluate_public_win_rate_claim(
     )
 
 
+def _unit_interval_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 1:
+        return None
+    return float(value)
+
+
 def calibration_evidence_valid(signal: Mapping[str, Any]) -> bool:
     """Validate held-out calibration evidence attached to a persisted signal.
 
@@ -293,30 +299,29 @@ def calibration_evidence_valid(signal: Mapping[str, Any]) -> bool:
     observations and pass Brier/ECE thresholds. This prevents a raw model score
     from being relabelled as a public win probability.
     """
-    if signal.get("ml_probability_calibrated") is None:
+    if _unit_interval_number(signal.get("ml_probability_calibrated")) is None:
         return False
-    if not str(signal.get("ml_calibration_version") or "").strip():
+    version = signal.get("ml_calibration_version")
+    if not isinstance(version, str) or not version.strip() or len(version) > 64:
         return False
-    if not bool(signal.get("ml_calibration_validated", False)):
+    if signal.get("ml_calibration_validated") is not True:
         return False
-    try:
-        rows = int(signal.get("ml_calibration_validation_rows") or 0)
-    except Exception:
-        rows = 0
+    rows = signal.get("ml_calibration_validation_rows")
+    if type(rows) is not int or not 0 <= rows <= 10_000_000:
+        return False
     minimum_rows = int(_env_float("ML_MIN_CALIBRATION_VALIDATION_ROWS", 100, 20, 10000000))
     if rows < minimum_rows:
         return False
     metrics_required = _env_bool("ML_PUBLIC_CALIBRATION_METRICS_REQUIRED", True)
     if not metrics_required:
         return True
-    try:
-        brier = float(signal.get("ml_calibration_brier"))
-        ece = float(signal.get("ml_calibration_ece"))
-    except Exception:
+    brier = _unit_interval_number(signal.get("ml_calibration_brier"))
+    ece = _unit_interval_number(signal.get("ml_calibration_ece"))
+    if brier is None or ece is None:
         return False
     max_brier = _env_float("ML_MAX_CALIBRATION_BRIER", 0.25, 0.0, 1.0)
     max_ece = _env_float("ML_MAX_CALIBRATION_ECE", 0.10, 0.0, 1.0)
-    return math.isfinite(brier) and math.isfinite(ece) and brier <= max_brier and ece <= max_ece
+    return brier <= max_brier and ece <= max_ece
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,19 +337,13 @@ def probability_for_public_display(signal: Mapping[str, Any]) -> ProbabilityDisp
     version = str(signal.get("ml_calibration_version") or "").strip() or None
     calibrated = calibrated_raw is not None and version is not None and calibration_evidence_valid(signal)
     if calibrated:
-        try:
-            value = max(0.0, min(1.0, float(calibrated_raw)))
-        except Exception:
-            value = None
+        value = _unit_interval_number(calibrated_raw)
         return ProbabilityDisplay(value, value is not None, "Calibrated win probability", version)
 
     raw = signal.get("ml_probability_raw")
     if raw is None:
         raw = signal.get("ml_probability")
-    try:
-        raw_value = max(0.0, min(1.0, float(raw))) if raw is not None else None
-    except Exception:
-        raw_value = None
+    raw_value = _unit_interval_number(raw)
     if _env_bool("ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION", True):
         return ProbabilityDisplay(None, False, "Model score (uncalibrated)", None)
     return ProbabilityDisplay(raw_value, False, "Model score (uncalibrated)", None)

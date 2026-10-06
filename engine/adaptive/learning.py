@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
+from core.production_integrity import calibration_evidence_valid
+from ml.metrics import brier_score
 from db.session import get_session
 from core.redis_state import state
 from utils.timeutils import now_utc_naive
@@ -127,26 +129,28 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             await session.execute(
                 text(
                     """
-                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,
-                       MAX(ev.confidence) AS confidence,o.r_multiple,s.created_at,s.signal_id
+                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,h.*
                 FROM adaptive_asset_profiles p
-                JOIN adaptive_signal_evidence ev ON ev.profile_id=p.profile_id
-                JOIN signals s ON s.signal_id=ev.signal_id
-                JOIN outcomes o ON o.signal_id=s.signal_id
-                WHERE p.is_current=TRUE
-                  AND p.state IN ('CANARY','LIMITED_LIVE','APPROVED')
-                  AND o.r_multiple IS NOT NULL
-                  AND o.performance_inclusion_status='eligible'
-                  AND o.closed_at IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1 FROM signal_deliveries sd
-                      WHERE sd.signal_id=s.signal_id
-                        AND sd.sent_ok=TRUE
-                        AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED'
-                  )
-                  AND s.created_at >= NOW() - INTERVAL '120 days'
-                GROUP BY p.profile_id,p.asset,p.state,p.rollback_profile_id,o.r_multiple,o.closed_at,s.created_at,s.signal_id
-                ORDER BY p.profile_id,o.closed_at DESC,s.signal_id
+                JOIN LATERAL (
+                    SELECT o.r_multiple,o.closed_at,s.created_at,s.signal_id,
+                           s.ml_probability_calibrated,s.ml_calibration_version,
+                           s.ml_calibration_validated,s.ml_calibration_validation_rows,
+                           s.ml_calibration_brier,s.ml_calibration_ece
+                    FROM signals s JOIN outcomes o ON o.signal_id=s.signal_id
+                    WHERE o.r_multiple IS NOT NULL
+                      AND o.performance_inclusion_status='eligible'
+                      AND o.closed_at IS NOT NULL AND o.closed_at <= NOW()
+                      AND s.created_at <= o.closed_at
+                      AND s.created_at >= NOW() - INTERVAL '120 days'
+                      AND EXISTS (SELECT 1 FROM adaptive_signal_evidence ev
+                                  WHERE ev.profile_id=p.profile_id AND ev.signal_id=s.signal_id)
+                      AND EXISTS (SELECT 1 FROM signal_deliveries sd
+                                  WHERE sd.signal_id=s.signal_id AND sd.sent_ok=TRUE
+                                    AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')
+                    ORDER BY o.closed_at DESC,s.signal_id LIMIT 250
+                ) h ON TRUE
+                WHERE p.is_current=TRUE AND p.state IN ('CANARY','LIMITED_LIVE','APPROVED')
+                ORDER BY p.profile_id,h.closed_at DESC,h.signal_id
                 """
                 )
             )
@@ -164,31 +168,13 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
 
     suspended: list[str] = []
     restored: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
     for profile_id, evidence_rows in grouped.items():
-        invalid_evidence = any(
-            isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float)) or not math.isfinite(float(row["r_multiple"]))
-            or isinstance(row.get("confidence"), bool) or not isinstance(row.get("confidence"), (int, float)) or not math.isfinite(float(row["confidence"]))
-            or not 0 <= float(row["confidence"]) <= 1
-            for row in evidence_rows
-        )
-        if len(evidence_rows) < minimum_live and not invalid_evidence:
-            continue
-        expectancy = drawdown = brier = None
-        reasons: list[str] = []
-        if invalid_evidence:
-            reasons.append("invalid_delivery_health_observations")
-        else:
-            returns = [float(row["r_multiple"]) for row in reversed(evidence_rows)]
-            expectancy = sum(returns) / len(returns)
-            drawdown = _max_drawdown(returns)
-            brier = sum((float(row["confidence"]) - (1.0 if float(row["r_multiple"]) > 0 else 0.0)) ** 2
-                        for row in evidence_rows) / len(evidence_rows)
-            if expectancy < expectancy_floor:
-                reasons.append("live_expectancy_below_floor")
-            if drawdown > drawdown_limit:
-                reasons.append("live_drawdown_above_limit")
-            if brier > brier_limit:
-                reasons.append("live_calibration_drift")
+        metrics = _runtime_health_metrics(evidence_rows, minimum_live=minimum_live,
+            drawdown_limit=drawdown_limit, brier_limit=brier_limit, expectancy_floor=expectancy_floor)
+        if len(diagnostics) < 20:
+            diagnostics.append({"profile_id": profile_id, **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
+        reasons = metrics["reasons"]
         if not reasons:
             continue
         meta = profile_meta[profile_id]
@@ -205,15 +191,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             ),
             {
                 "profile_id": profile_id,
-                "details": json.dumps(
-                    {
-                        "reasons": reasons,
-                        "sample_size": len(evidence_rows),
-                        "expectancy_r": expectancy,
-                        "max_drawdown_r": drawdown,
-                        "brier_score": brier,
-                    }
-                ),
+                "details": json.dumps(metrics, allow_nan=False),
             },
         )
         await session.execute(
@@ -226,20 +204,66 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             {
                 "asset": asset,
                 "profile_id": profile_id,
-                "metrics": json.dumps(
-                    {
-                        "reasons": reasons,
-                        "sample_size": len(evidence_rows),
-                        "expectancy_r": expectancy,
-                        "max_drawdown_r": drawdown,
-                        "brier_score": brier,
-                    }
-                ),
+                "metrics": json.dumps(metrics, allow_nan=False),
                 "resolution": "neutral_fallback_requires_revalidation",
             },
         )
         suspended.append(asset)
-    return {"suspended_assets": suspended, "restored_profiles": restored}
+    return {"suspended_assets": suspended, "restored_profiles": restored,
+            "evaluated_profile_count": len(grouped), "profile_diagnostics": diagnostics,
+            "diagnostics_truncated": len(grouped) > len(diagnostics)}
+
+
+def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
+                            drawdown_limit: float, brier_limit: float, expectancy_floor: float) -> dict[str, Any]:
+    """Delivery outcome diagnostics; component confidence is never a probability."""
+    result: dict[str, Any] = {"reasons": [], "sample_size": len(rows), "expectancy_r": None,
+        "max_drawdown_r": None, "brier_score": None, "calibrated_sample_size": 0,
+        "calibration_status": "UNAVAILABLE", "calibration_versions": {},
+        "qualified_calibration_version_count": 0, "brier_aggregation": "worst_qualified_version",
+        "broker_fills_certified": False, "approved_baseline_comparison": "UNVERIFIED"}
+    if not 1 <= len(rows) <= 250:
+        raise ValueError("delivery_health_window_must_be_1_to_250")
+    if any(isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float))
+           or not math.isfinite(row["r_multiple"]) for row in rows):
+        result["reasons"].append("invalid_delivery_health_observations")
+        return result
+    versions: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    for row in rows:
+        if row.get("ml_calibration_validated") is not True:
+            continue
+        if not calibration_evidence_valid(row):
+            result["reasons"].append("invalid_calibrated_health_observations")
+            return result
+        versions[row["ml_calibration_version"]].append((int(row["r_multiple"] > 0), float(row["ml_probability_calibrated"])))
+    result["calibrated_sample_size"] = sum(len(observations) for observations in versions.values())
+    scores: list[float] = []
+    for version, observations in sorted(versions.items()):
+        score = brier_score([label for label, _ in observations], [probability for _, probability in observations]) if len(observations) >= minimum_live else None
+        result["calibration_versions"][version] = {"sample_size": len(observations), "brier_score": score}
+        if score is not None:
+            scores.append(score)
+    result["qualified_calibration_version_count"] = len(scores)
+    result["brier_score"] = max(scores) if scores else None
+    result["calibration_status"] = "OBSERVED" if scores else "INSUFFICIENT" if versions else "UNAVAILABLE"
+    if len(rows) < minimum_live:
+        return result
+    returns = [float(row["r_multiple"]) for row in reversed(rows)]
+    try:
+        expectancy, drawdown = math.fsum(returns) / len(returns), _max_drawdown(returns)
+        if not math.isfinite(expectancy) or not math.isfinite(drawdown):
+            raise ValueError("delivery_metric_overflow")
+    except (OverflowError, ValueError):
+        result["reasons"].append("invalid_delivery_health_observations")
+        return result
+    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown)
+    if expectancy < expectancy_floor:
+        result["reasons"].append("live_expectancy_below_floor")
+    if drawdown > drawdown_limit:
+        result["reasons"].append("live_drawdown_above_limit")
+    if scores and max(scores) > brier_limit:
+        result["reasons"].append("live_calibration_drift")
+    return result
 
 
 async def monitor_profile_health() -> dict[str, Any]:

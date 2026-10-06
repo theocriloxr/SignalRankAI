@@ -47,6 +47,23 @@ those saved sources.
 
 ## Release blockers carried forward
 
+Published `13ad9f61` has the same source tree as immutable candidate `32d04b68`,
+which passed 2,997 local tests with no skips. Hosted `d76ccc26` passed both
+backend Python versions, the browser gate, critical typing, the legacy typing
+budget, Python dependency audit and OpenGrep: zero findings/errors, 494 scanned
+files with coverage/detection probes. Frontend/mobile audits still failed and
+production approval was skipped. The upstream npm registry and reviewed
+advisories still list no patched release for braces or node-forge on 6 October.
+Their audit failures remain blockers; no package renaming, ignored advisory or
+scan exclusion has been used to manufacture a pass.
+
+The next health candidate removes heuristic-confidence Brier scores, validates
+persisted calibrated evidence, evaluates calibration versions separately and
+bounds each profile's outcome query in PostgreSQL. Its diagnosis remains signal
+delivery evidence, not broker fills or approved per-instrument baseline proof.
+The existing availability monitor has a retained 43,745-second observation gap
+and is DEGRADED; elapsed hours cannot certify a clean release soak.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

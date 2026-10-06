@@ -25,6 +25,27 @@ fills or account equity. Invalid/nonfinite observations suspend a profile even
 below the ordinary sample minimum. Validated per-profile health baselines,
 instrument execution evidence and funded-account constraints remain unfinished.
 
+Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
+ordered by outcome close time. Multiple component-evidence rows do not multiply
+an observation; future closes and closes preceding the decision are excluded.
+Component confidence is not a probability and is no longer used for Brier loss.
+The monitor reuses the canonical calibration-evidence validator and the existing
+Brier implementation, with the training target `r_multiple > 0`. Missing or
+unvalidated calibration is reported as UNAVAILABLE, with a null Brier score.
+Each calibration version must independently meet the health sample minimum;
+the reported Brier score is the worst qualified version, so one healthy version
+cannot hide another degraded version. This is a predictive-loss diagnostic,
+not a complete calibration or model-baseline comparison. See the
+[scikit-learn Brier documentation](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.brier_score_loss.html).
+
+Claimed validated probabilities with malformed values, missing qualification or
+nonfinite metrics cause suspension, even below the ordinary sample minimum.
+The shared public-display validator also rejects string/boolean probabilities,
+noninteger sample counts and negative calibration-loss metrics. Overflowing
+delivery metrics produce a suspension with null metrics instead of invalid
+JSON. Successful iterations expose bounded profile diagnostics (first 20,
+explicit truncation flag); every profile in the query is still evaluated.
+
 Candidate outcome datasets include the timestamp at which an outcome or later
 correction became available. Unresolved labels are excluded, rather than
 converted into losses or break-even trades. Train decisions and label-availability
