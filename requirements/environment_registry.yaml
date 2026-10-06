@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1362,
+  "variable_count": 1365,
   "variables": [
     {
       "declared_defaults": {},
@@ -5570,6 +5570,26 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {},
+      "name": "EXPECTANCY_BOOST_BASE",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/risk.py:622"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "EXPECTANCY_BOOST_RANGE",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/risk.py:623"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         ".env.example": "0"
       },
@@ -7026,7 +7046,7 @@
       "name": "MAX_ACTIVE_TRADES",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:21"
+        "engine/risk_manager.py:18"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7046,7 +7066,7 @@
       "name": "MAX_LEVERAGE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:23"
+        "engine/risk_manager.py:20"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7067,7 +7087,7 @@
       "name": "MAX_PORTFOLIO_CORRELATION",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk.py:885"
+        "engine/risk.py:718"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7088,6 +7108,16 @@
       "production_example_default": null,
       "read_locations": [
         "engine/portfolio_intelligence.py:268"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "MAX_SIGNAL_VOLATILITY",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/risk.py:533"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7279,7 +7309,7 @@
       "name": "MIN_RR_RATIO",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:24"
+        "engine/risk_manager.py:21"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7289,7 +7319,7 @@
       "name": "MIN_RR_RISK",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk.py:783"
+        "engine/risk.py:652"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8108,7 +8138,7 @@
       "name": "ML_RISK_BASE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:47"
+        "engine/risk_manager.py:34"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8148,7 +8178,7 @@
       "name": "ML_RISK_RANGE",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:48"
+        "engine/risk_manager.py:35"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8737,7 +8767,7 @@
       "name": "NEWS_VOL_ADJ",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk.py:644"
+        "engine/risk.py:534"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11096,7 +11126,7 @@
       "name": "POSITION_SIZE_ENFORCE_ASSET_CAPS",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk.py:924"
+        "engine/risk.py:755"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13088,7 +13118,9 @@
       "name": "RISK_PER_TRADE_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:20",
+        "engine/risk.py:621",
+        "engine/risk.py:744",
+        "engine/risk_manager.py:17",
         "signalrank_telegram/formatter.py:63"
       ],
       "required_by_code": true,
@@ -15070,7 +15102,7 @@
       "name": "TRADE_COOLDOWN_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:22"
+        "engine/risk_manager.py:19"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15292,7 +15324,7 @@
       "name": "TRAILING_STOP_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/risk_manager.py:170"
+        "engine/risk_manager.py:116"
       ],
       "required_by_code": true,
       "sensitive": false

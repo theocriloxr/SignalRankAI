@@ -1,5 +1,6 @@
 import os
 import logging
+import math
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -9,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from core.tier_constants import EXPECTANCY_MIN, DD_SOFT_THROTTLE, DD_HARD_LIMIT, CANDLE_STALENESS_MULTIPLIER
-from engine.signal_metrics import resolve_confidence_ratio, resolve_ml_probability, resolve_score_percent
+from engine.risk_advice import account_drawdown, bounded_risk_percent, bounded_spot_units, finite_number
 
 logger = logging.getLogger(__name__)
 
@@ -434,163 +435,53 @@ def calculate_position_size_by_asset_class(
     asset_class: Optional[str] = None,
     current_exposure_pct: float = 0.0,
 ) -> Optional[float]:
-    """
-    Calculate position size with asset-class-specific constraints.
-
-    Applies:
-    1. Base sizing from risk amount / risk distance
-    2. Per-trade max position cap (crypto 2%, forex 1%, stock 0.5%)
-    3. Portfolio exposure check (crypto 10%, forex 5%, stock 3%)
-
-    Args:
-        account_balance: Total account equity (float)
-        signal_entry: Entry price (float)
-        signal_sl: Stop loss price (float)
-        risk_amount: Amount to risk on this trade (float, e.g., 0.5% of account)
-        asset_class: "crypto", "forex", or "stock"
-        current_exposure_pct: Current portfolio exposure in this asset class (%)
-
-    Returns:
-        Position size in base units (float) or None if invalid
-
-    Example:
-        >>> # Account: $10k, want to risk $50 (0.5%), entry=100, SL=95
-        >>> calculate_position_size_by_asset_class(10000, 100, 95, 50, "crypto")
-        10.0  # (50 / 5) = 10 units
-    """
-    try:
-        account_balance = float(account_balance)
-        signal_entry = float(signal_entry)
-        signal_sl = float(signal_sl)
-        risk_amount = float(risk_amount)
-        current_exposure_pct = float(current_exposure_pct)
-
-        if account_balance <= 0 or signal_entry <= 0:
-            logger.warning(f"[PosSize_calc] Invalid account_balance={account_balance} or entry={signal_entry}")
-            return None
-
-        # Detect asset class if not provided
-        if asset_class is None:
-            asset_class = "stock"
-
-        config = get_asset_class_config(asset_class)
-
-        # Step 1: Base position size from risk amount
-        risk_distance = abs(signal_entry - signal_sl)
-        if risk_distance <= 0:
-            logger.warning(f"[PosSize_calc] Invalid risk_distance={risk_distance}")
-            return None
-
-        position_size = risk_amount / risk_distance
-
-        # Step 2: Cap by max position percentage
-        max_position_pct = config.get("max_position_pct", 1.0)
-        max_position_value = (account_balance * max_position_pct) / 100.0
-        max_position_units = max_position_value / signal_entry
-
-        if position_size > max_position_units:
-            logger.info(
-                f"[PosSize_calc] Position capped: {position_size:.4f} → {max_position_units:.4f} units "
-                f"(max_pct={max_position_pct}% of ${account_balance})"
-            )
-            position_size = max_position_units
-
-        # Step 3: Check portfolio exposure limit
-        max_portfolio_exposure = config.get("max_portfolio_exposure", 5.0)
-        position_value_pct = (position_size * signal_entry / account_balance) * 100.0
-        total_exposure = current_exposure_pct + position_value_pct
-
-        if total_exposure > max_portfolio_exposure:
-            # Scale down to stay within exposure limit
-            available_exposure = max_portfolio_exposure - current_exposure_pct
-            if available_exposure > 0:
-                scale_factor = available_exposure / position_value_pct
-                position_size *= scale_factor
-                logger.info(
-                    f"[PosSize_calc] Exposure capped: current={current_exposure_pct:.2f}% "
-                    f"+ new={position_value_pct:.2f}% > limit={max_portfolio_exposure}% "
-                    f"scaled by {scale_factor:.2f}x to {position_size:.4f} units"
-                )
-            else:
-                logger.warning(
-                    f"[PosSize_calc] No exposure available: current={current_exposure_pct:.2f}% "
-                    f">= limit={max_portfolio_exposure}%"
-                )
-                return None
-
-        # Apply minimum position size floor
-        if position_size < 0.01:
-            logger.warning(f"[PosSize_calc] Position size {position_size:.6f} below minimum 0.01")
-            return None
-
-        logger.debug(
-            f"[PosSize_calc] asset_class={asset_class} account={account_balance} "
-            f"entry={signal_entry} risk_dist={risk_distance} risk_amount={risk_amount} "
-            f"position_size={position_size:.4f} max_pct={max_position_pct}% exposure={total_exposure:.2f}%"
-        )
-        return float(position_size)
-
-    except Exception as e:
-        logger.warning(f"[PosSize_calc] Exception: {e}")
+    """Spot-unit advice constrained by both class notional and loss budgets."""
+    equity, entry, stop, loss, exposure = (finite_number(value) for value in
+        (account_balance, signal_entry, signal_sl, risk_amount, current_exposure_pct))
+    if any(value is None for value in (equity, entry, stop, loss, exposure)):
         return None
+    assert equity is not None and entry is not None and stop is not None and loss is not None and exposure is not None
+    if min(equity, entry, stop) <= 0 or loss < 0 or not 0 <= exposure <= 100:
+        return None
+    name = str(asset_class or "stock").lower().strip()
+    if name not in ASSET_CLASS_RISK_CONFIG:
+        return None
+    config = ASSET_CLASS_RISK_CONFIG[name]
+    position_pct, portfolio_pct = finite_number(config.get("max_position_pct")), finite_number(config.get("max_portfolio_exposure"))
+    if position_pct is None or portfolio_pct is None or not 0 <= position_pct <= 100 or not 0 <= portfolio_pct <= 100:
+        return None
+    available_pct = min(position_pct, max(0.0, portfolio_pct - exposure))
+    if loss == 0 or available_pct == 0:
+        return 0.0
+    units = bounded_spot_units(equity=equity, entry=entry, stop=stop, risk_amount=loss,
+                               notional_budget=equity * available_pct / 100)
+    return units if units > 0 else None
 
 
 # PHASE 2 FIX: Helper to find best target for direction
 def best_target_for_direction(entry, stop, targets, direction):
-    """Return the best valid target for given direction based on RR.
-
-    For longs: returns the highest TP (best reward)
-    For shorts: returns the lowest TP (best reward)
-
-    Args:
-        entry: Entry price float
-        stop: Stop loss price float
-        targets: List of target prices (single float or list)
-        direction: Trade direction ('long' or 'short')
-
-    Returns:
-        Best target float or None if no valid targets
-    """
-    if not targets or entry is None or stop is None:
+    """Select a finite target on the profitable side of valid stop geometry."""
+    entry, stop = finite_number(entry), finite_number(stop)
+    side = str(direction or "long").lower().strip()
+    if entry is None or stop is None or min(entry, stop) <= 0:
         return None
-
-    try:
-        entry = float(entry)
-        stop = float(stop)
-    except (TypeError, ValueError):
+    if ((side in {"long", "buy"} and stop >= entry)
+            or (side in {"short", "sell"} and stop <= entry)
+            or side not in {"long", "buy", "short", "sell"}):
         return None
-
-    risk_dist = abs(entry - stop)
-    if risk_dist <= 0:
-        return None
-
-    # Normalize targets to list
-    if isinstance(targets, (int, float, str)):
+    if isinstance(targets, (int, float, str, dict)):
         targets = [targets]
-    elif isinstance(targets, dict):
-        targets = [targets.get("price") or targets.get("tp") or targets.get("target")]
-
-    valid = []
-    direction = str(direction or "long").lower().strip()
-
-    for t in targets:
-        try:
-            tp_val = float(t) if not isinstance(t, dict) else float(t.get("price") or t.get("tp") or t.get("target"))
-            if tp_val and tp_val > 0:
-                rr = abs(tp_val - entry) / risk_dist
-                valid.append((rr, tp_val))
-        except (TypeError, ValueError):
-            continue
-
-    if not valid:
+    if not isinstance(targets, (list, tuple)):
         return None
-
-    # For longs: highest RR (highest TP)
-    # For shorts: highest RR (lowest TP - since price goes down)
-    if direction == "long":
-        return max(valid, key=lambda x: x[0])[1]
-    else:
-        return max(valid, key=lambda x: x[0])[1]
+    valid = []
+    for target in targets:
+        raw = target.get("price") or target.get("tp") or target.get("target") if isinstance(target, dict) else target
+        value = finite_number(raw)
+        if value is None or value <= 0:
+            continue
+        if (side in {"long", "buy"} and value > entry) or (side in {"short", "sell"} and value < entry):
+            valid.append(value)
+    return (max(valid) if side in {"long", "buy"} else min(valid)) if valid else None
 
 
 # PHASE 2 FIX: RR stats tracking
@@ -638,21 +529,24 @@ def _record_rr_stats(rr_key: str) -> None:
 
 # Dynamic real-time thresholds (no fixed values)
 def get_max_volatility(asset_type: str) -> float:
-    """Realtime volatility max from ATR regime + news vol."""
-    base = _env_float("MAX_SIGNAL_VOLATILITY", 0.12)
-    # Reduce for low-liquidity/news events
-    news_vol_adj = 1.0 - min(0.3, float(os.getenv("NEWS_VOL_ADJ", "0.1") or 0.1))
-    return base * news_vol_adj
+    """Configured volatility ceiling; invalid policy cannot increase it."""
+    base = finite_number(os.getenv("MAX_SIGNAL_VOLATILITY", "0.12"))
+    adjustment = finite_number(os.getenv("NEWS_VOL_ADJ", "0.1"))
+    if base is None or adjustment is None or not 0 <= base <= 1 or not 0 <= adjustment <= 1:
+        return 0.0
+    return base * (1.0 - min(0.3, adjustment))
 
 
 def soft_throttle_active(account_state: Any) -> bool:
-    """Check if soft drawdown throttle active (reduce position sizes)."""
-    return getattr(account_state, "drawdown", 0) > DD_SOFT_THROTTLE
+    """Check validated account drawdown, accepting mappings and objects."""
+    drawdown = account_drawdown(account_state)
+    return drawdown is not None and drawdown > DD_SOFT_THROTTLE
 
 
 def hard_stop_active(account_state: Any) -> bool:
-    """Check if hard drawdown stop active (block all signals)."""
-    return getattr(account_state, "drawdown", 0) > DD_HARD_LIMIT
+    """An invalid account state or reached hard limit blocks execution."""
+    drawdown = account_drawdown(account_state)
+    return drawdown is None or drawdown >= DD_HARD_LIMIT
 
 
 def check_correlation_gate(
@@ -713,58 +607,35 @@ def calculate_dynamic_risk(
     gemini_score: Optional[float] = None,
     account_state: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Dynamic risk profile using realtime data (ATR/vol/regime/news/gemini/outcomes)."""
-    asset = signal.get("asset", "").lower()
-    direction = signal.get("direction", "long").lower()
-
-    # Realtime volatility from ATR (not fixed BB width)
-    atr_pct = float(signal.get("atr_rel", 0) or signal.get("volatility", 0) or 0)
-    vol_regime = "high" if atr_pct > 0.08 else "medium" if atr_pct > 0.04 else "low"
-
-    # News/gemini sentiment adjustment (block conflicting)
-    sentiment_score = news_sentiment or gemini_score or 0.0
-    sentiment_ok = abs(sentiment_score) < 2.0  # From STRONG_SENTIMENT_THRESHOLD
-
-    # Regime adjustment
-    regime_mult = 0.8 if regime == "ranging" else 1.2 if regime == "trending" else 1.0
-
-    # ML expectancy boost
-    ml_prob = resolve_ml_probability(signal)
-    if ml_prob is None:
-        score_pct = resolve_score_percent(signal)
-        if score_pct is not None:
-            ml_prob = max(0.0, min(score_pct / 100.0, 1.0))
-    if ml_prob is None:
-        ml_prob = resolve_confidence_ratio(signal)
-    if ml_prob is not None:
-        exp_base = _env_float("EXPECTANCY_BOOST_BASE", 0.5)
-        exp_range = _env_float("EXPECTANCY_BOOST_RANGE", 0.5)
-        expectancy_boost = exp_base + (ml_prob * exp_range)
-    else:
-        expectancy_boost = 1.0
-
-    # Base risk 0.5% dynamic
-    base_risk_pct = _env_float("RISK_PER_TRADE_PCT", 0.5)
-    dynamic_risk_pct = base_risk_pct * regime_mult * expectancy_boost
-
-    # Soft throttle if DD >6%
-    if account_state and soft_throttle_active(account_state):
-        dynamic_risk_pct *= 0.5
-
-    profile = {
-        "risk_pct": max(0.1, min(dynamic_risk_pct, 2.0)),
-        "max_volatility": get_max_volatility("crypto" if "usdt" in asset else "fx" if "/" in asset else "stock"),
+    """Bounded advice using qualified calibration; no heuristic probability."""
+    advice_signal = dict(signal)
+    if regime is not None:
+        advice_signal["regime"] = regime
+    if news_sentiment is not None:
+        advice_signal["news_sentiment"] = news_sentiment
+    elif gemini_score is not None:
+        advice_signal["gemini_score"] = gemini_score
+    atr_value = signal.get("atr_rel") if signal.get("atr_rel") is not None else signal.get("volatility", 0)
+    atr_pct = finite_number(atr_value)
+    sentiment = finite_number(advice_signal.get("news_sentiment") if advice_signal.get("news_sentiment") is not None else advice_signal.get("gemini_score", 0))
+    risk_pct = bounded_risk_percent(advice_signal, base=os.getenv("RISK_PER_TRADE_PCT", "0.5"),
+        probability_base=os.getenv("EXPECTANCY_BOOST_BASE", "0.5"),
+        probability_range=os.getenv("EXPECTANCY_BOOST_RANGE", "0.5"), account_state=account_state)
+    maximum_volatility = get_max_volatility(str(signal.get("asset_class") or get_asset_class(str(signal.get("asset") or ""))))
+    if atr_pct is None or atr_pct < 0 or maximum_volatility <= 0 or atr_pct > maximum_volatility:
+        risk_pct = 0.0
+    return {
+        "risk_pct": risk_pct,
+        "max_volatility": maximum_volatility,
         "max_drawdown": DD_HARD_LIMIT,
-        "soft_throttle": soft_throttle_active(account_state) if account_state else False,
-        "hard_stop": hard_stop_active(account_state) if account_state else False,
-        "vol_regime": vol_regime,
-        "sentiment_ok": sentiment_ok,
-        "regime": regime,
-        "expectancy_boost": expectancy_boost,
+        "soft_throttle": soft_throttle_active(account_state) if account_state is not None else False,
+        "hard_stop": hard_stop_active(account_state) if account_state is not None else False,
+        "vol_regime": "unavailable" if atr_pct is None else "high" if atr_pct > 0.08 else "medium" if atr_pct > 0.04 else "low",
+        "sentiment_ok": sentiment is not None and abs(sentiment) < 2.0,
+        "regime": advice_signal.get("regime"),
+        "expectancy_boost": 1.0,  # Retained response field; expectancy grants no capital boost.
+        "broker_contract_certified": False,
     }
-
-    logger.debug(f"[risk] Dynamic profile for {asset}: {profile}")
-    return profile
 
 
 def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
@@ -773,78 +644,40 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     if hard_stop_active(account_state):
         return False
 
-    # Realtime volatility (ATR-based)
-    atr_pct = float(signal.get("atr_rel", 0) or signal.get("volatility", 0) or 0)
-    if atr_pct > get_max_volatility(signal.get("asset_class", "crypto")):
+    atr_raw = signal.get("atr_rel") if signal.get("atr_rel") is not None else signal.get("volatility", 0)
+    atr_pct = finite_number(atr_raw)
+    maximum_volatility = get_max_volatility(str(signal.get("asset_class") or "crypto"))
+    if atr_pct is None or atr_pct < 0 or maximum_volatility <= 0 or atr_pct > maximum_volatility:
+        return False
+    minimum_rr = finite_number(os.getenv("MIN_RR_RISK", "1.5"))
+    entry = finite_number(signal.get("entry"))
+    stop = finite_number(signal.get("stop_loss") if signal.get("stop_loss") is not None else signal.get("stop"))
+    target = best_target_for_direction(entry, stop, signal.get("take_profit"), signal.get("direction"))
+    if minimum_rr is None or minimum_rr <= 0 or entry is None or stop is None or target is None:
+        return False
+    ratio = abs(target - entry) / abs(entry - stop)
+    if finite_number(ratio) is None or ratio < minimum_rr:
         return False
 
-    # ORIGINAL VALUE: 1.5 - Made configurable via MIN_RR_RISK env var (default 1.5)
-    # ADDED: diagnostic logging to identify which gate rejects signals
-    min_rr_risk = float(os.getenv("MIN_RR_RISK", "1.5") or 1.5)
-    entry = signal.get("entry")
-    stop = signal.get("stop_loss") or signal.get("stop")
-
-    # FIX: Check ALL take profit levels, not just the first one
-    # Use the best target that aligns with trade direction
-    tp_primary = signal.get("take_profit")
-    if isinstance(tp_primary, list):
-        # For longs: want highest TP (best reward)
-        # For shorts: want lowest TP (best reward)
-        direction = str(signal.get("direction") or "long").lower()
-        valid_tps = []
-        for tp in tp_primary:
-            try:
-                tp_val = (
-                    float(tp)
-                    if not isinstance(tp, dict)
-                    else float(tp.get("price") or tp.get("tp") or tp.get("target"))
-                )
-                if tp_val and tp_val > 0:
-                    valid_tps.append(tp_val)
-            except (TypeError, ValueError):
-                continue
-
-        if valid_tps:
-            if direction == "long":
-                # Long: take the highest TP for best RR
-                tp_primary = max(valid_tps)
-            else:
-                # Short: take the lowest TP for best RR
-                tp_primary = min(valid_tps)
-        else:
-            tp_primary = None
-    elif isinstance(tp_primary, dict):
-        tp_primary = tp_primary.get("price") or tp_primary.get("tp") or tp_primary.get("target")
-
-    if entry and stop and tp_primary:
-        risk_dist = abs(float(entry) - float(stop))
-        reward_dist = abs(float(tp_primary) - float(entry))
-        rr_ratio = reward_dist / risk_dist if risk_dist > 0 else 0
-        if rr_ratio < min_rr_risk:
-            # DEBUG: Log detailed RR rejection info
-            logger.warning(
-                f"[RISK_DEBUG] RR_REJECTED asset={signal.get('asset')} "
-                f"rr_ratio={rr_ratio:.4f} min_required={min_rr_risk} "
-                f"entry={entry} stop={stop} tp={tp_primary} "
-                f"risk_dist={risk_dist:.4f} reward_dist={reward_dist:.4f}"
-            )
-            return False
-
-    # Freshness check (integrate tier_constants)
+    # Generation-time callers may not have stamped creation yet. Supplied
+    # timestamps must be plausible and the bar budget is converted to seconds.
     now = now_utc_naive()
     created_at = signal.get("created_at")
     if not isinstance(created_at, datetime):
         created_at = now
     created_at = to_naive_utc(created_at) or now
-    created_age = (now - created_at).total_seconds()
-    tf_mult = float(signal.get("timeframe_mult", CANDLE_STALENESS_MULTIPLIER))
-    if created_age > (int(signal.get("timeframe_minutes", 60)) * tf_mult):
+    age_seconds = (now - created_at).total_seconds()
+    multiplier = finite_number(signal.get("timeframe_mult", CANDLE_STALENESS_MULTIPLIER))
+    minutes = finite_number(signal.get("timeframe_minutes", 60))
+    if multiplier is None or minutes is None or min(multiplier, minutes) <= 0:
         return False
-
-    # Expectancy gate is optional. Default behavior is down-weight-first in
-    # scoring, with hard blocking only when explicitly enabled.
-    live_expectancy = float(signal.get("live_expectancy", EXPECTANCY_MIN))
-    if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_expectancy < EXPECTANCY_MIN:
+    freshness_seconds = minutes * 60 * multiplier
+    if not math.isfinite(freshness_seconds) or age_seconds < -5 or age_seconds > freshness_seconds:
+        return False
+    expectancy = finite_number(signal["live_expectancy"]) if "live_expectancy" in signal else None
+    if "live_expectancy" in signal and expectancy is None:
+        return False
+    if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and (expectancy is None or expectancy < EXPECTANCY_MIN):
         return False
 
     # Correlation gate: block when new trade is too correlated with existing open positions.
@@ -895,64 +728,36 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
 def calculate_position_size(
     signal: Dict[str, Any], account_balance: float, risk_pct: Optional[float] = None
 ) -> Optional[float]:
-    """
-    Real position sizing: equity * dynamic_risk_pct / risk_distance.
-
-    PHASE 3: Now asset-class-aware - applies differentiated position caps and
-    portfolio exposure limits based on asset class (crypto/forex/stock).
-    """
-    try:
-        entry = float(signal.get("entry", 0))
-        stop = float(signal.get("stop_loss", 0) or signal.get("stop", 0))
-        risk_dist = abs(entry - stop)
-
-        if risk_dist <= 0 or entry <= 0:
-            return None
-
-        # Dynamic risk % from profile or base
-        profile = signal.get("risk_profile")
-        risk_pct = risk_pct or (profile.get("risk_pct") if profile else _env_float("RISK_PER_TRADE_PCT", 0.5))
-
-        risk_amount = account_balance * (risk_pct / 100.0)
-
-        # Keep the legacy public sizing contract by default: risk amount divided
-        # by risk distance. The asset-class cap path is available for live
-        # deployments that explicitly opt in via env or per-signal metadata.
-        asset_class = signal.get("asset_class") or get_asset_class(signal.get("asset", ""))
-        current_exposure = signal.get("current_exposure_pct", 0.0)
-        enforce_asset_caps = str(
-            signal.get("enforce_asset_caps", os.getenv("POSITION_SIZE_ENFORCE_ASSET_CAPS", "0"))
-        ).strip().lower() in {"1", "true", "yes", "on"}
-
-        if not enforce_asset_caps:
-            size = risk_amount / risk_dist
-            logger.debug(
-                f"[position] {signal.get('asset', '?')} basic size={size:.4f} (risk={risk_pct}%, dist={risk_dist:.5f})"
-            )
-            return float(size)
-
-        size = calculate_position_size_by_asset_class(
-            account_balance=account_balance,
-            signal_entry=entry,
-            signal_sl=stop,
-            risk_amount=risk_amount,
-            asset_class=asset_class,
-            current_exposure_pct=current_exposure,
-        )
-
-        if size is None:
-            # Fallback to basic sizing if asset-class calculation fails
-            size = risk_amount / risk_dist
-            size = max(0.01, min(size, account_balance * 0.1))  # Max 10% notional
-            logger.debug(
-                f"[position] {signal.get('asset', '?')} FALLBACK size={size:.4f} (risk={risk_pct}%, dist={risk_dist:.5f})"
-            )
-            return float(size)
-
-        logger.debug(
-            f"[position] {signal.get('asset', '?')} asset_class={asset_class} size={size:.4f} (risk={risk_pct}%, dist={risk_dist:.5f})"
-        )
-        return float(size)
-    except Exception as e:
-        logger.warning(f"[position] Calculation failed: {e}")
+    """Bounded spot-unit advice; invalid class caps cannot fall back to more risk."""
+    equity, entry = finite_number(account_balance), finite_number(signal.get("entry"))
+    stop_value = signal.get("stop_loss") if signal.get("stop_loss") is not None else signal.get("stop")
+    stop = finite_number(stop_value)
+    if equity is None or entry is None or stop is None or min(equity, entry, stop) <= 0:
         return None
+    profile = signal.get("risk_profile")
+    if profile is not None and not isinstance(profile, dict):
+        return None
+    if profile is not None and "hard_stop" in profile and not isinstance(profile["hard_stop"], bool):
+        return None
+    if profile is not None and profile.get("hard_stop") is True:
+        return 0.0
+    raw_risk = risk_pct if risk_pct is not None else profile["risk_pct"] if profile is not None and "risk_pct" in profile else os.getenv("RISK_PER_TRADE_PCT", "0.5")
+    percentage = finite_number(raw_risk)
+    if percentage is None or not 0 <= percentage <= 1.25:
+        return None
+    if percentage == 0:
+        return 0.0
+    loss = equity * percentage / 100
+    units = bounded_spot_units(equity=equity, entry=entry, stop=stop, risk_amount=loss,
+        notional_budget=equity * 0.1, direction=signal.get("direction"))
+    if units <= 0:
+        return None
+    enforce_caps = str(signal.get("enforce_asset_caps", os.getenv("POSITION_SIZE_ENFORCE_ASSET_CAPS", "0"))).strip().lower() in {"1", "true", "yes", "on"}
+    if enforce_caps:
+        capped = calculate_position_size_by_asset_class(equity, entry, stop, loss,
+            signal.get("asset_class") or get_asset_class(str(signal.get("asset") or "")),
+            signal.get("current_exposure_pct", 0.0))
+        if capped is None:
+            return None
+        units = min(units, capped)
+    return units

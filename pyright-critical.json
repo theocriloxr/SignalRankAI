@@ -38,6 +38,8 @@
     "engine/adaptive/statistics.py",
     "services/dynamic_sizing.py",
     "engine/risk_manager.py",
+    "engine/risk.py",
+    "engine/risk_advice.py",
     "engine/signal_metrics.py",
     "engine/adaptive/research_ledger.py",
     "engine/adaptive/integrity.py",

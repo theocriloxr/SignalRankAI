@@ -51,8 +51,10 @@ def test_calculate_position_size(sample_signal):
     assert size is not None
     assert size > 0
     risk_dist = abs(sample_signal['entry'] - sample_signal['stop_loss'])
-    expected = (balance * 0.01) / risk_dist
+    expected = min((balance * 0.01) / risk_dist, balance * 0.1 / sample_signal['entry'])
     assert abs(size - expected) < 0.01
+    assert size * sample_signal['entry'] <= balance * 0.1
+    assert size * risk_dist <= balance * 0.01
 
 def test_soft_throttle_active(account_state_soft):
     assert soft_throttle_active(account_state_soft) == True

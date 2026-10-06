@@ -39,8 +39,23 @@ does not fabricate a historical estimate.
 These changes affect the existing engine adviser and conservative legacy WFO
 replay. They do not convert spot units into broker lots/contracts, qualify a
 funded account, establish an edge, or replace account/execution kill-switch
-checks. The separate legacy threshold sizers, primary dynamic-risk function
-and correlation assumptions still require consolidation and qualification.
+checks. The primary dynamic-risk path now shares the bounded probability and
+drawdown policy with `RiskManager`. It preserves explicit/environment/profile
+zero risk, accepts account mappings, stops at the reached hard drawdown limit
+and rejects malformed risk/volatility configuration. Supplied positive
+expectancy does not grant a capital increase or mix R units with drawdown
+fractions. The primary spot sizing path also applies the 10% quote-notional
+ceiling. An enabled asset-class cap cannot fall back to a larger quantity;
+tiny valid units are retained for later venue rounding instead of imposing an
+invented 0.01 minimum. Wrong-side stops and nonfinite geometry are rejected.
+Reward/risk checks select finite targets on the profitable side of the trade,
+and the signal freshness budget converts bar minutes to seconds and rejects
+implausible future timestamps. Generation-time signals may not yet have a
+creation timestamp; this check does not replace provider freshness or
+point-in-time research evidence.
+The separate legacy threshold sizers and correlation assumptions still require
+consolidation and qualification. These advice limits remain unqualified for
+broker contracts, commissions, spread/slippage, margin and funded-account rules.
 
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply

@@ -7,31 +7,18 @@ import math
 import logging
 from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 import numpy as np
 
-from core.tier_constants import DD_SOFT_THROTTLE
-from engine.risk import soft_throttle_active, hard_stop_active
-from engine.signal_metrics import resolve_calibrated_probability
+from engine.risk_advice import bounded_risk_percent, finite_number as _finite_number
 
 logger = logging.getLogger(__name__)
 
 # Realtime dynamic config (no fixed values beyond env defaults)
-BASE_RISK_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))  # 0.5% base
+BASE_RISK_PCT = _finite_number(os.getenv("RISK_PER_TRADE_PCT", "0.5"))  # Invalid input disables risk advice.
 MAX_ACTIVE_TRADES = int(os.getenv("MAX_ACTIVE_TRADES", "3"))  # Reduced for safety
 TRADE_COOLDOWN_MINUTES = int(os.getenv("TRADE_COOLDOWN_MINUTES", "15"))
 MAX_LEVERAGE = float(os.getenv("MAX_LEVERAGE", "3.0"))  # Reduced
 MIN_RR_RATIO = float(os.getenv("MIN_RR_RATIO", "1.5"))
-
-
-def _finite_number(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-        return number if math.isfinite(number) else None
-    except (TypeError, ValueError, OverflowError):
-        return None
 
 
 class RiskManager:
@@ -42,51 +29,10 @@ class RiskManager:
         self.correlation_manager = CorrelationManager()
 
     def get_dynamic_risk_pct(self, signal: Dict, account_state: Optional[Any] = None) -> float:
-        """Advice may reduce the configured risk; heuristics cannot increase it."""
-        base = _finite_number(BASE_RISK_PCT)
-        ml_base = _finite_number(os.getenv("ML_RISK_BASE", "0.5"))
-        ml_range = _finite_number(os.getenv("ML_RISK_RANGE", "0.5"))
-        if base is None or not 0 <= base <= 1.25 or ml_base is None or ml_range is None or not 0 <= ml_base <= 1 or not 0 <= ml_range <= 1 or ml_base + ml_range > 1:
-            return 0.0
-        ml_prob = resolve_calibrated_probability(signal)
-        if signal.get("ml_calibration_validated") is True and ml_prob is None:
-            return 0.0
-        regime = signal.get("regime", "neutral")
-        news_sent = _finite_number(signal.get("news_sentiment") if signal.get("news_sentiment") is not None else signal.get("gemini_score", 0))
-        live_exp = _finite_number(signal["live_expectancy"]) if "live_expectancy" in signal else None
-        if news_sent is None or ("live_expectancy" in signal and live_exp is None):
-            return 0.0
-
-        # ML base (configurable range)
-        ml_risk = ml_base + ml_prob * ml_range if ml_prob is not None else 1.0
-
-        # Regime mult
-        regime_mult = 1.2 if regime == "trending" else 0.8 if regime == "ranging" else 1.0
-
-        # Sentiment (block/nerf conflict)
-        sentiment_mult = (
-            0.7
-            if abs(news_sent) > 2
-            else (1.1 if news_sent * (1 if signal.get("direction") == "long" else -1) > 1 else 1.0)
-        )
-
-        # Expectancy nerf
-        exp_mult = 1.0 if live_exp is None else min(1.5, live_exp / DD_SOFT_THROTTLE) if live_exp > 0 else 0.5
-
-        risk_pct = min(base, base * ml_risk * regime_mult * sentiment_mult * exp_mult)
-
-        # DD throttle
-        if account_state is not None:
-            drawdown = _finite_number(account_state.get("drawdown") if isinstance(account_state, dict) else getattr(account_state, "drawdown", None))
-            if drawdown is None or drawdown < 0:
-                return 0.0
-            account_view = SimpleNamespace(drawdown=drawdown)
-            if soft_throttle_active(account_view):
-                risk_pct *= 0.5
-            if hard_stop_active(account_view):
-                return 0.0
-
-        return risk_pct if math.isfinite(risk_pct) and risk_pct > 0 else 0.0
+        """Use the shared bounded advice policy; venue/account rules apply later."""
+        return bounded_risk_percent(signal, base=BASE_RISK_PCT,
+            probability_base=os.getenv("ML_RISK_BASE", "0.5"),
+            probability_range=os.getenv("ML_RISK_RANGE", "0.5"), account_state=account_state)
 
     def calculate_position_size(self, signal: Dict, account_equity: float, **kwargs) -> float:
         """Enhanced: equity * dynamic_pct / risk_distance."""

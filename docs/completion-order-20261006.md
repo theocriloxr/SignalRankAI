@@ -110,6 +110,16 @@ creating its signal pipe in backup/restore script tests. The successor's full
 run permits local process execution to verify those scripts; the original
 environment failures remain in the earlier report.
 
+The following primary-risk repair shares the bounded probability/drawdown
+policy with the existing adviser. It removes raw-model and heuristic-score
+probability fallbacks, preserves all zero-risk sources, converts the quote
+notional limit into units and refuses to bypass rejected asset-class caps.
+It also corrects losing-side reward/risk targets, nonfinite inputs and the
+minutes/seconds freshness mismatch. The focused 116-test risk set passed;
+expanded critical typing and the complete immutable-source suite remain
+required. Legacy threshold sizing, correlation and venue/account qualification
+are still outstanding.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

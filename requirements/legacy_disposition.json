@@ -1,5 +1,5 @@
 {
-  "file_count": 1998,
+  "file_count": 2000,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2638,8 +2638,8 @@
       "line_count": 543,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a40252294b3641f9c27d195fa37e66706d5a47ed13ae072633cf50158312d208",
-      "size_bytes": 17950
+      "sha256": "1126cd51b0c4bcd0ef5ad902ec20aa908cd7d64ef8d7efb013d95ead13bf0ecf",
+      "size_bytes": 17984
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6643,11 +6643,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 126,
+      "line_count": 136,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "fd8bf151ffe42e0f0ac278f79a88b9c404f8e9ced8904a0870cafef8aca4a54b",
-      "size_bytes": 9345
+      "sha256": "ce660558bb69a685dbc8a9b09025d8aeda9b4f314f621d67768d5874fd675ecb",
+      "size_bytes": 9968
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6875,11 +6875,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 258,
+      "line_count": 273,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "29224aa6bcb397e1aea1159fd16d7f70cc84e701edcc8fadc08f78aa115c486f",
-      "size_bytes": 16165
+      "sha256": "8b2a0b0e77d4e9aac39b07da9fc074094cd5f9b5b90b275ed8531b26e83fe2cf",
+      "size_bytes": 17265
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7755,11 +7755,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 958,
+      "line_count": 763,
       "path": "engine/risk.py",
       "reason": "production/build source",
-      "sha256": "f7163da86d5a4d79497c8c1d8288ff7b5e295a92db5e8e5cadfb927c6284501f",
-      "size_bytes": 34302
+      "sha256": "d31182b0b3a0241b04440bd9563d00647dc2adef35b7c677688aee251ce651ef",
+      "size_bytes": 28786
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 79,
+      "path": "engine/risk_advice.py",
+      "reason": "production/build source",
+      "sha256": "14f18af75c82b22ae8536a4a1d5c261de0bbfe75e28278e049190dc38efcad13",
+      "size_bytes": 4492
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7771,11 +7779,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 295,
+      "line_count": 241,
       "path": "engine/risk_manager.py",
       "reason": "production/build source",
-      "sha256": "53fdd0ac1d717c72370987a35bfd0ac5b48323100d12a7be9a8409cac52b1f20",
-      "size_bytes": 12291
+      "sha256": "03acafc7465aeacb768233761d527a6acbd166f722c95bcb241f81f2266d611f",
+      "size_bytes": 9949
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9483,11 +9491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 69,
+      "line_count": 71,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8ba9cd4507715c055f1dd7f4c3beb33a9d5723516babd3cd59d8eeb2a746a00a",
-      "size_bytes": 2267
+      "sha256": "17d0e351bd34d95a979580af15bb7592870fc0f20ecd57687cd24d7f05bc83c9",
+      "size_bytes": 2318
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9635,11 +9643,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16137,
+      "line_count": 16169,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "3f33626b5924499c2f7e8e8f1afc5c7ef26d05ca2374f15a0cb1bb04ff6e836d",
-      "size_bytes": 473487
+      "sha256": "a725f5b5a73143f12192cd6d0811bf46030319dd8da1e692e18900efea55a90a",
+      "size_bytes": 474286
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14323,6 +14331,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 159,
+      "path": "tests/test_primary_risk_advice.py",
+      "reason": "automated test evidence",
+      "sha256": "71b7618b9b3b211d88b76bc417ebc68bbf7327161b61ec6fbb9eb6ad13da9724",
+      "size_bytes": 7726
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 77,
       "path": "tests/test_product_tier_resolution.py",
       "reason": "automated test evidence",
@@ -14755,11 +14771,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 130,
+      "line_count": 132,
       "path": "tests/test_risk_dynamic.py",
       "reason": "automated test evidence",
-      "sha256": "e6547c7d569f2054ba31e904c5bd59dbda1a96f4192f9329c2a68a8100081b96",
-      "size_bytes": 4267
+      "sha256": "996b5d2f0374372b40c3b7249d44e005376a4a4693844e31bbdc6c7cb165dac7",
+      "size_bytes": 4416
     },
     {
       "disposition": "TEST_ONLY",
@@ -15999,7 +16015,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 461,
-    "PRESERVE_BEHAVIOUR": 1185,
-    "TEST_ONLY": 351
+    "PRESERVE_BEHAVIOUR": 1186,
+    "TEST_ONLY": 352
   }
 }
