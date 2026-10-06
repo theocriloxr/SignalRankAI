@@ -120,6 +120,27 @@ expanded critical typing and the complete immutable-source suite remain
 required. Legacy threshold sizing, correlation and venue/account qualification
 are still outstanding.
 
+The subsequent legacy-sizer repair removes the duplicated implementation and
+shared mutable account singleton. Both import paths use bounded qualified
+threshold advice, preserve zero risk and hard stops, and expose invalid
+configuration without nonfinite JSON or positive advertised risk. This remains
+spot-unit advice rather than broker-contract or funded-account certification.
+
+The index candidate `76874a15` passed all 3,082 local tests with no skips and
+five owned browser checks, then was published as `e4c7db2d` with identical
+source. Hosted backend CI exposed a migration-inspection import failure when
+the repository was absent from `PYTHONPATH`; the local harness had hidden that
+dependency. The successor loads the shared helper only during actual online
+migration and adds standalone verifier and isolated-interpreter metadata
+checks without `PYTHONPATH`. The hosted failure remains retained and production
+approval remains blocked. Primary-risk candidate `2cfcfbd5` separately passed
+all 3,138 local tests with no skips and five browser checks; its source is still
+unpublished pending the portable migration repair.
+The repaired standalone CLI and isolated metadata checks passed alongside the
+legacy-sizer tests (32 cases), and all eight actual PostgreSQL index fault/retry
+cases passed again. The expanded 139-test risk set, critical typing and Ruff
+also passed. Full immutable-source and hosted verification remain required.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

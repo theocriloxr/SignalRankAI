@@ -53,8 +53,16 @@ and the signal freshness budget converts bar minutes to seconds and rejects
 implausible future timestamps. Generation-time signals may not yet have a
 creation timestamp; this check does not replace provider freshness or
 point-in-time research evidence.
-The separate legacy threshold sizers and correlation assumptions still require
-consolidation and qualification. These advice limits remain unqualified for
+Both legacy `SmartRiskSizer` import paths now use one bounded implementation.
+Unqualified bare probabilities cannot weight risk; validated thresholds can
+reduce the configured budget, with any higher legacy multiplier capped at 1.
+Invalid policy inputs produce zero quantity and safe diagnostic JSON. Missing
+model evidence no longer crashes probability formatting. The convenience
+getter creates a separate adviser per call so one account cannot inherit
+another caller's mutable balance or base risk. This helper still requires
+caller-supplied equity/state and cannot authorize an account or broker order.
+Correlation assumptions still require consolidation and qualification.
+These advice limits remain unqualified for
 broker contracts, commissions, spread/slippage, margin and funded-account rules.
 
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,

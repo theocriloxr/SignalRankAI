@@ -5,7 +5,6 @@ Revises: 0049_research_trial_ledger
 """
 from alembic import op
 from sqlalchemy import text
-from db.profile_health_schema import PROFILE_HEALTH_INDEX_SQL, profile_health_index_definition_matches
 
 revision = "0050_profile_health_index"
 down_revision = "0049_research_trial_ledger"
@@ -16,6 +15,10 @@ CREATE_SQL = "CREATE INDEX CONCURRENTLY ix_adaptive_evidence_profile_signal ON p
 
 
 def _existing_index():
+    # Revision inspection runs before env.py installs the repository path.
+    # Only an executing online migration needs the application helper.
+    from db.profile_health_schema import PROFILE_HEALTH_INDEX_SQL, profile_health_index_definition_matches
+
     raw = op.get_bind().execute(text(PROFILE_HEALTH_INDEX_SQL)).mappings().one_or_none()
     row = dict(raw) if raw is not None else None
     if row is not None and not profile_health_index_definition_matches(row):

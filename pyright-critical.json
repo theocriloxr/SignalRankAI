@@ -40,6 +40,7 @@
     "engine/risk_manager.py",
     "engine/risk.py",
     "engine/risk_advice.py",
+    "engine/risk_sizer.py",
     "engine/signal_metrics.py",
     "engine/adaptive/research_ledger.py",
     "engine/adaptive/integrity.py",

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
 import shlex
+import subprocess
+import sys
 
 import pytest
 
@@ -12,6 +15,32 @@ from scripts import generate_release_provenance as provenance
 
 COMMIT = "a" * 40
 BRANCH = "test/release-provenance"
+
+
+@pytest.mark.parametrize("entrypoint", ["verifier", "isolated_metadata"])
+def test_migration_inspection_and_release_cli_do_not_require_pythonpath(entrypoint):
+    root = Path(__file__).resolve().parents[1]
+    env = {key: value for key, value in os.environ.items() if key.upper() in {
+        "SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+        "APPDATA", "LOCALAPPDATA", "COMSPEC", "PROGRAMFILES", "PROGRAMFILES(X86)",
+        "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH"}}
+    env.update(APP_ENV="test", ENVIRONMENT="test", SIGNALRANK_ALLOW_DOTENV="0",
+        SIGNALRANK_DISABLE_BACKGROUND_THREADS="1", GLOBAL_EXECUTION_KILL_SWITCH="1",
+        REAL_EXECUTION_ENABLED="0", AUTO_EXECUTION_ENABLED="0", AUTO_TRADE_ENABLED="0",
+        COPY_TRADE_ENABLED="0", PROP_EXECUTION_ENABLED="0", REAL_PAYOUTS_ENABLED="0",
+        DATABASE_URL="postgresql+asyncpg://unused@127.0.0.1:1/signalrank_release_test")
+    if entrypoint == "verifier":
+        command = [sys.executable, str(root / "scripts/verify_release_chain.py")]
+        marker = "ALEMBIC_RELEASE_CHAIN_PASS head=0050_profile_health_index"
+    else:
+        command = [sys.executable, "-I", "-c",
+            "from alembic.config import Config; from alembic.script import ScriptDirectory; "
+            "print(ScriptDirectory.from_config(Config('alembic.ini')).get_heads())"]
+        marker = "['0050_profile_health_index']"
+    result = subprocess.run(command, cwd=root, env=env, capture_output=True,
+                            text=True, encoding="utf-8", errors="replace", timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert marker in result.stdout
 
 
 def test_locked_components_are_unique_and_pinned():
