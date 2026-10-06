@@ -19,6 +19,7 @@ from utils.timeutils import now_utc_naive
 
 from .components import DEFAULT_COMPONENTS
 from .dataset import AdaptiveDatasetRow, build_dataset
+from .statistics import profit_factor as _profit_factor
 from .repository import publish_approved_profiles
 from .walk_forward import walk_forward_evaluate
 from .integrity import audit_adaptive_dataset
@@ -26,12 +27,6 @@ from .research_ledger import register_hypothesis, start_experiment, complete_exp
 from .statistics import return_diagnostics, block_bootstrap_survival
 
 logger = logging.getLogger(__name__)
-
-
-def _profit_factor(values: list[float]) -> float:
-    wins = sum(value for value in values if value > 0)
-    loss = abs(sum(value for value in values if value < 0))
-    return wins / loss if loss else (999.0 if wins else 0.0)
 
 
 def _max_drawdown(values: list[float]) -> float:
@@ -93,7 +88,8 @@ def _derive_weights(
         expectancy = sum(values) / len(values)
         reliability = min(1.0, len(values) / max(minimum_samples * 3, 1))
         weight = 1.0 + max(-0.15, min(0.15, expectancy * 0.08)) * reliability
-        if _profit_factor(values) < 1.0 or _max_drawdown(values) > float(
+        pf = _profit_factor(values)
+        if (pf is not None and pf < 1.0) or _max_drawdown(values) > float(
             os.getenv("ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R", "12") or 12
         ):
             weight = min(weight, 0.90)
@@ -109,7 +105,8 @@ def _derive_weights(
     summary = {
         "sample_size": len(rows),
         "mean_expectancy_r": sum(all_returns) / len(all_returns) if all_returns else 0.0,
-        "profit_factor": _profit_factor(all_returns),
+        "profit_factor": _profit_factor(all_returns) if all_returns else None,
+        "profit_factor_reason": "no_observed_losses" if all_returns and not any(value < 0 for value in all_returns) else "no_observations" if not all_returns else None,
         "max_drawdown_r": _max_drawdown(all_returns),
         "family_segments": {key: len(value) for key, value in by_family.items()},
         "regime_segments": {key: len(value) for key, value in by_regime.items()},

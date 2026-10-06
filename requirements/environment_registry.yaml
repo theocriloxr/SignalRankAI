@@ -393,7 +393,7 @@
       "name": "ADAPTIVE_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:288",
+        "engine/adaptive/learning.py:285",
         "engine/adaptive/repository.py:70"
       ],
       "required_by_code": true,
@@ -409,7 +409,7 @@
       "name": "ADAPTIVE_DRIFT_MAX_BRIER",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:124"
+        "engine/adaptive/learning.py:121"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -424,7 +424,7 @@
       "name": "ADAPTIVE_DRIFT_MAX_DRAWDOWN_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:123"
+        "engine/adaptive/learning.py:120"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -439,7 +439,7 @@
       "name": "ADAPTIVE_DRIFT_MIN_EXPECTANCY_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:125"
+        "engine/adaptive/learning.py:122"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -454,7 +454,7 @@
       "name": "ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:122"
+        "engine/adaptive/learning.py:119"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -551,7 +551,7 @@
       "name": "ADAPTIVE_LOOKBACK_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:280"
+        "engine/adaptive/learning.py:277"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -596,7 +596,7 @@
       "name": "ADAPTIVE_MIN_OUTCOME_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:279"
+        "engine/adaptive/learning.py:276"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -611,7 +611,7 @@
       "name": "ADAPTIVE_OPTIMISATION_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:276"
+        "engine/adaptive/learning.py:273"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -654,7 +654,7 @@
       "name": "ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:97"
+        "engine/adaptive/learning.py:93"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -708,8 +708,8 @@
       "name": "ADAPTIVE_WFO_COST_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:462",
-        "engine/adaptive/learning.py:483"
+        "engine/adaptive/learning.py:459",
+        "engine/adaptive/learning.py:480"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -724,9 +724,9 @@
       "name": "ADAPTIVE_WFO_EMBARGO_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:461",
-        "engine/adaptive/learning.py:482",
-        "engine/adaptive/learning.py:603"
+        "engine/adaptive/learning.py:458",
+        "engine/adaptive/learning.py:479",
+        "engine/adaptive/learning.py:600"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -741,8 +741,8 @@
       "name": "ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:459",
-        "engine/adaptive/learning.py:480"
+        "engine/adaptive/learning.py:456",
+        "engine/adaptive/learning.py:477"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -757,8 +757,8 @@
       "name": "ADAPTIVE_WFO_VALIDATION_ROWS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:460",
-        "engine/adaptive/learning.py:481"
+        "engine/adaptive/learning.py:457",
+        "engine/adaptive/learning.py:478"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6261,7 +6261,7 @@
       "name": "GITHUB_SHA",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:433"
+        "engine/adaptive/learning.py:430"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11854,7 +11854,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:90",
-        "engine/adaptive/learning.py:433",
+        "engine/adaptive/learning.py:430",
         "engine/core.py:3124",
         "engine/shadow_outcome_worker.py:55",
         "railway_main.py:3121",

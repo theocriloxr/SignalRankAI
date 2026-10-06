@@ -31,6 +31,12 @@ those saved sources.
   installed runtime packages, producing an incomplete local result. Verification
   now permits interpreter discovery and checks the actual locked runtime; a
   zero-error result with missing package resolution is not equivalent evidence.
+- The health candidate `2cd31a7e` passed all 2,972 local tests, five owned browser
+  checks, critical typing and source/governance checks. Its identical source
+  tree was published as `6a720660`; hosted gates on that exact release commit
+  remain required. The next candidate removes invented no-loss profit factors
+  and hardens the existing spot-unit sizing helper without claiming venue or
+  account-policy certification.
 - The original production availability monitor continues. As of 02:13 UTC on
   6 October, it had 919 samples over 45.90 hours and status `DEGRADED`, observing
   `8f8583933a853a54ba1b3585610ee466903c08fc`, schema 0045. It is not the new

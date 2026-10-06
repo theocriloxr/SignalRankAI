@@ -1,8 +1,39 @@
 from datetime import datetime, timedelta
+import json
+import pytest
 
 from engine.adaptive.dataset import build_dataset
 from engine.adaptive.promotion import evaluate_profile_promotion
 from engine.adaptive.walk_forward import walk_forward_evaluate
+from engine.adaptive.statistics import profit_factor
+
+
+@pytest.mark.parametrize("sample,expected", [([1, 2, -1], 3.0), ([-1, -2], 0.0),
+    ([1, 2, 0], None), ([0, 0], None)])
+def test_profit_factor_requires_observed_losses(sample, expected):
+    assert profit_factor(sample) == expected
+
+
+def test_overflow_cannot_become_reported_profitability():
+    with pytest.raises(ValueError, match="profit_factor_overflow"):
+        profit_factor([1e308, -1e-308])
+
+
+def test_all_winning_folds_remain_unqualified_without_a_loss_denominator():
+    raw = _rows()
+    for row in raw:
+        row["r_multiple"] = 0.3
+    dataset, _ = build_dataset(raw)
+    result = walk_forward_evaluate(dataset, family_weights={}, minimum_train=80, validation_size=20)
+    assert result.fold_count >= 3 and result.leakage_checks_passed
+    assert result.positive_folds == 0
+    assert result.profit_factor is None and result.worst_fold_profit_factor is None
+    assert result.profit_factor_reason == "no_observed_losses"
+    assert all(fold.candidate_profit_factor is None for fold in result.folds)
+    json.dumps(result.to_dict(), allow_nan=False)
+    gate = evaluate_profile_promotion(result.to_dict(), human_approved=True,
+                                     current_state="SHADOW", target_state="FORWARD_TEST")
+    assert not gate.eligible and "missing_or_invalid_metric:profit_factor" in gate.reasons
 
 
 def _rows(count: int = 160):

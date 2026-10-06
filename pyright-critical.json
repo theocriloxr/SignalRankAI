@@ -35,6 +35,7 @@
     "engine/adaptive/walk_forward.py",
     "engine/adaptive/promotion.py",
     "engine/adaptive/statistics.py",
+    "services/dynamic_sizing.py",
     "engine/adaptive/research_ledger.py",
     "engine/adaptive/integrity.py",
     "engine/adaptive/learning.py",

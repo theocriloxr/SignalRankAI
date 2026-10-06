@@ -116,6 +116,19 @@ def probability_backtest_overfitting(matrix: Sequence[Sequence[float]], *, block
             "blocks": blocks, "method_version": "cscv-v1", "evidence_class": "research"}
 
 
+def profit_factor(returns_r: Sequence[float]) -> float | None:
+    """Gross wins / gross losses; an unobserved denominator is unavailable."""
+    values = _values(returns_r, 1)
+    wins = sum(value for value in values if value > 0)
+    losses = -sum(value for value in values if value < 0)
+    if not math.isfinite(wins) or not math.isfinite(losses):
+        raise ValueError("profit_factor_overflow")
+    result = wins / losses if losses else None
+    if result is not None and not math.isfinite(result):
+        raise ValueError("profit_factor_overflow")
+    return result
+
+
 def return_diagnostics(returns_r: Sequence[float]) -> dict:
     values = _values(returns_r, 1)
     equity = peak = depth = 0.0
@@ -126,11 +139,10 @@ def return_diagnostics(returns_r: Sequence[float]) -> dict:
         depth = max(depth, peak - equity)
         duration = duration + 1 if equity < peak else 0
         longest = max(longest, duration)
-    wins = sum(value for value in values if value > 0)
     losses = -sum(value for value in values if value < 0)
     tail = sorted(values)[:max(1, math.ceil(len(values) * 0.05))]
     return {"sample_size": len(values), "expectancy_r": mean(values), "median_r": median(values),
-            "total_r": sum(values), "profit_factor": wins / losses if losses else None,
+            "total_r": sum(values), "profit_factor": profit_factor(values),
             "profit_factor_reason": None if losses else "no_observed_losses",
             "max_drawdown_r": depth, "max_drawdown_duration_observations": longest,
             "open_drawdown_duration_observations": duration, "expected_shortfall_5pct_r": mean(tail),

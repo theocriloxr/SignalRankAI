@@ -68,6 +68,20 @@ and explicitly labelled. The seeded moving-block bootstrap is conditional on
 observed R and a declared risk fraction; it cannot prove survival against
 unobserved gaps, liquidity crises or funded-prop rules.
 
+Profit factor uses one canonical gross-win/gross-loss calculation. A sample
+without observed losses reports `null` with a reason, including each WFO fold;
+it never substitutes 999 or infinity. If any fold lacks a denominator, the
+worst-fold factor is unavailable and that fold does not count as qualified
+positive evidence. Numerical overflow fails evaluation.
+
+The existing `DynamicSizer` is spot-unit advice, not instrument-specific broker
+sizing. It requires a supplied historical win-rate estimate independently of
+model confidence, blocks nonpositive Kelly edge and nonfinite inputs, and
+reports the risk actually implied by its suggested units. It does not verify
+that estimate's provenance. Venue/contract specifications, estimation
+uncertainty and per-account/portfolio risk limits still require validation;
+this helper cannot certify funded-prop suitability or authorize execution.
+
 The adaptive outcome-weighting proxy cannot verify quote replay, historical
 universe membership, point-in-time feature calculations, instrument costs,
 historical search completeness or supported-regime coverage. The deterministic
