@@ -6638,6 +6638,7 @@ def run_bot() -> None:
     # adaptive import must not remove callback handlers or every other command.
     try:
         from .adaptive_commands import (
+            research_command,
             adaptive_status_command,
             adaptive_pause_command,
             adaptive_resume_command,
@@ -6646,6 +6647,7 @@ def run_bot() -> None:
             adaptive_rollback_command,
         )
         application.add_handler(CommandHandler("adaptive_status", _audit_handler("adaptive_status", adaptive_status_command)))
+        application.add_handler(CommandHandler("research", _audit_handler("research", research_command)))
         application.add_handler(CommandHandler("adaptive_pause", _audit_handler("adaptive_pause", adaptive_pause_command)))
         application.add_handler(CommandHandler("adaptive_resume", _audit_handler("adaptive_resume", adaptive_resume_command)))
         application.add_handler(CommandHandler("adaptive_promote", _audit_handler("adaptive_promote", adaptive_promote_command)))

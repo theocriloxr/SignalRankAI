@@ -7,13 +7,9 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-try:
-    from dotenv import load_dotenv
+from db.migration_environment import load_migration_environment
 
-    load_dotenv(".env", override=False)
-    load_dotenv(".env.local", override=True)
-except Exception:
-    pass
+load_migration_environment(PROJECT_ROOT)
 from config import config as app_config
 from logging.config import fileConfig
 

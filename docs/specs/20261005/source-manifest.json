@@ -12,301 +12,496 @@
           "line_start": 28,
           "line_end": 90,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 2. CORE PRINCIPLE",
           "line_start": 91,
           "line_end": 150,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 3. REQUIRED RESEARCH PIPELINE",
           "line_start": 151,
           "line_end": 200,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 4. RESEARCH HYPOTHESIS REGISTRY",
           "line_start": 201,
           "line_end": 256,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/research_ledger.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_ledger_postgres.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 5. EXPERIMENT / TRIAL LEDGER",
           "line_start": 257,
           "line_end": 327,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/research_ledger.py",
+            "engine/adaptive/learning.py",
+            "ml/optuna_tuner.py",
+            "engine/backtest.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_ledger_postgres.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 6. BACKTEST INTEGRITY AUDITOR",
           "line_start": 328,
           "line_end": 533,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/integrity.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 7. MULTIPLE TESTING / SELECTION BIAS",
           "line_start": 534,
           "line_end": 584,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/statistics.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 8. WALK-FORWARD IMPROVEMENTS",
           "line_start": 585,
           "line_end": 647,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/walk_forward.py",
+            "engine/wfo.py",
+            "ml/evidence.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py",
+            "tests/test_adaptive_dataset_and_wfo.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 9. REGIME ROBUSTNESS",
           "line_start": 648,
           "line_end": 693,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 10. STRATEGY METRICS",
           "line_start": 694,
           "line_end": 756,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/statistics.py",
+            "engine/backtest.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 11. DRAWDOWN DURATION",
           "line_start": 757,
           "line_end": 774,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/statistics.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 12. POSITION SIZING",
           "line_start": 775,
           "line_end": 825,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 13. LOSS-STREAK AND SURVIVAL TESTING",
           "line_start": 826,
           "line_end": 866,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/statistics.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 14. EXECUTION STRESS TESTING",
           "line_start": 867,
           "line_end": 891,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 15. LIVE STRATEGY HEALTH",
           "line_start": 892,
           "line_end": 978,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/learning.py"
+          ],
+          "verification_evidence": [
+            "tests/test_adaptive_worker_research_postgres.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 16. PREDEFINED KILL CONDITIONS",
           "line_start": 979,
           "line_end": 1010,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 17. STRATEGY QUARANTINE AND RECOVERY",
           "line_start": 1011,
           "line_end": 1035,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/learning.py",
+            "signalrank_telegram/adaptive_commands.py"
+          ],
+          "verification_evidence": [
+            "tests/test_adaptive_worker_research_postgres.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 18. AI / OPENAI ROLE",
           "line_start": 1036,
           "line_end": 1082,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 19. ADVERSARIAL AI CRITIC",
           "line_start": 1083,
           "line_end": 1111,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 20. MULTI-ASSET ANNUALIZATION",
           "line_start": 1112,
           "line_end": 1143,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/statistics.py",
+            "engine/backtest.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 21. SAME-CANDLE AMBIGUITY",
           "line_start": 1144,
           "line_end": 1161,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/backtest_execution.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 22. DATA POINT-IN-TIME CORRECTNESS",
           "line_start": 1162,
           "line_end": 1183,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/dataset.py",
+            "engine/backtest.py",
+            "engine/wfo.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 23. MODEL VALIDATION",
           "line_start": 1184,
           "line_end": 1219,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 24. CALIBRATION",
           "line_start": 1220,
           "line_end": 1246,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 25. REJECTED SIGNAL ANALYSIS",
           "line_start": 1247,
           "line_end": 1291,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 26. STRATEGY SELECTION / ENSEMBLES",
           "line_start": 1292,
           "line_end": 1311,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 27. PORTFOLIO VALIDATION",
           "line_start": 1312,
           "line_end": 1344,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 28. CAPACITY / LIQUIDITY",
           "line_start": 1345,
           "line_end": 1361,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 29. STRATEGY DECAY",
           "line_start": 1362,
           "line_end": 1381,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 30. AUDITABILITY",
           "line_start": 1382,
           "line_end": 1415,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/research_ledger.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_ledger_postgres.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 31. DATABASE AND MIGRATIONS",
           "line_start": 1416,
           "line_end": 1459,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "db/migrations/versions/0049_research_trial_ledger.py",
+            "db/migration_environment.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_ledger_postgres.py",
+            "tests/test_migration_environment.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 32. OWNER/ADMIN UI",
           "line_start": 1460,
           "line_end": 1531,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "web/platform_api.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_operator_access.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 33. TELEGRAM / OWNER DIAGNOSTICS",
           "line_start": 1532,
           "line_end": 1552,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "signalrank_telegram/adaptive_commands.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_operator_access.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 34. OBSERVABILITY",
           "line_start": 1553,
           "line_end": 1583,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 35. TESTING",
           "line_start": 1584,
           "line_end": 1667,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "tests/test_research_validation.py",
+            "tests/test_research_ledger_postgres.py",
+            "tests/test_adaptive_worker_research_postgres.py",
+            "tests/test_research_operator_access.py"
+          ],
+          "verification_evidence": [
+            "certification/release_manifest.yaml"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 36. SECURITY",
           "line_start": 1668,
           "line_end": 1687,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "web/platform_api.py",
+            "engine/adaptive/research_ledger.py"
+          ],
+          "verification_evidence": [
+            "tests/test_research_operator_access.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 37. PERFORMANCE",
           "line_start": 1688,
           "line_end": 1707,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/research_ledger.py",
+            "engine/adaptive/statistics.py"
+          ],
+          "verification_evidence": [],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 38. GOOGLE DOCUMENT QUALITY REVIEW",
           "line_start": 1708,
           "line_end": 1732,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "BLOCKED_SOURCE_UNAVAILABLE",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 39. ADD YOUR OWN IMPROVEMENTS",
           "line_start": 1733,
           "line_end": 1788,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "db/migration_environment.py"
+          ],
+          "verification_evidence": [
+            "tests/test_migration_environment.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 40. DO NOT FABRICATE PERFORMANCE",
           "line_start": 1789,
           "line_end": 1817,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "docs/research-validation-runbook.md"
+          ],
+          "verification_evidence": [],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 41. CURRENT PROJECT SAFETY",
           "line_start": 1818,
           "line_end": 1862,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "engine/adaptive/promotion.py",
+            "docs/completion-order-20261006.md"
+          ],
+          "verification_evidence": [
+            "tests/test_research_validation.py"
+          ],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 42. DELIVERABLES",
           "line_start": 1863,
           "line_end": 1981,
-          "implementation_evidence": [],
-          "verification_evidence": []
+          "implementation_evidence": [
+            "docs/research-validation-runbook.md"
+          ],
+          "verification_evidence": [],
+          "status": "PARTIAL",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         },
         {
           "heading": "# 43. COMPLETION STANDARD",
           "line_start": 1982,
           "line_end": 2037,
           "implementation_evidence": [],
-          "verification_evidence": []
+          "verification_evidence": [],
+          "status": "NOT_YET_VERIFIED",
+          "evidence_scope": "local_candidate_components; not full directive or production certification"
         }
       ]
     },

@@ -13,6 +13,7 @@ def _rows(count: int = 160):
             {
                 "signal_id": f"s-{index:04d}",
                 "decision_time": start + timedelta(hours=index),
+                "outcome_known_at": start + timedelta(hours=index, minutes=30),
                 "asset": "BTCUSDT",
                 "asset_class": "crypto",
                 "timeframe": "1h",
@@ -64,6 +65,10 @@ def test_promotion_requires_next_state_transition():
         "max_drawdown_r": 4,
         "brier_score": 0.15,
         "leakage_checks_passed": True,
+        "fold_count": 5, "worst_fold_expectancy": 0.1,
+        **{key: True for key in ("integrity_audit_passed", "trial_history_verified", "selection_bias_passed",
+                                 "execution_stress_passed", "risk_survival_passed", "portfolio_validation_passed",
+                                 "kill_conditions_approved")},
     }
     blocked = evaluate_profile_promotion(
         metrics,

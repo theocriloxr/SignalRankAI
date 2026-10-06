@@ -57,7 +57,7 @@ def test_provider_completion_boundary_separates_enabled_from_optional_external()
 
 def test_current_release_points_to_current_release_candidate_boundary() -> None:
     text = CURRENT_RELEASE.read_text(encoding="utf-8")
-    assert "Repository Alembic head: 0048_runtime_schema_bridge" in text
+    assert "Repository Alembic head: 0049_research_trial_ledger" in text
     assert "FINAL_COMPLETION_REPORT_20260926.md" in text
     assert "BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md" in text
     assert "docs/security/THREAT_MODEL.md" in text

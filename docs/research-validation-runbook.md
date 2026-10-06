@@ -1,0 +1,122 @@
+# Research validation and immutable experiment history
+
+## Runtime integration
+
+`AdaptiveLearningWorker` monitors current approved/canary profiles before checking
+whether optimization is paused or disabled. A suspension commits independently
+of candidate research and invalidates the cached approval. It restores the
+neutral baseline; it never activates a previously approved profile automatically.
+The owner rollback command follows the same revalidation requirement.
+
+Candidate outcome datasets include the timestamp at which an outcome or later
+correction became available. Unresolved labels are excluded, rather than
+converted into losses or break-even trades. Train decisions and label-availability
+timestamps must both precede the validation start minus embargo. Missing label
+availability, duplicate observations, nonfinite returns and mixed evidence
+classes fail validation. Candidates are partitioned by asset, asset class and
+evidence class.
+
+The worker commits a deterministic trial definition before evaluation. A crash
+can leave a pending trial, which remains included in the raw count. Terminal
+evidence commits with its shadow candidate and WFO report. Identical retries do
+not create another variant. Strategy display-name changes do not reset lineage.
+Definitions/results reject updates, deletion and truncation at the database
+level. This protects ordinary application/database writes; a privileged
+database administrator can still alter the database or disable its triggers.
+
+The existing grid optimizer and Optuna tuner require a trial recorder. Use
+`engine.adaptive.research_ledger.run_recorded_search` around a callable that
+supplies its recorder to the optimizer. It runs the existing optimizer in a
+worker thread, commits each STARTED event before calling the objective, then
+records COMPLETED or FAILED evidence. Required provenance includes dataset,
+feature/label/execution/risk versions, code commit, seed and scopes. A recorder
+or database failure stops the search. There is no unrecorded fallback or model
+activation. This adapter must run with real thread execution; unit-test helpers
+that inline `asyncio.to_thread` are unsuitable for its integration test.
+
+## Statistics and evidence units
+
+Deflated Sharpe requires uniformly spaced excess returns, an explicit
+annualization basis, a raw trial count and cross-trial Sharpe variance. Its
+skew and kurtosis convention is Pearson kurtosis, not excess kurtosis. The raw
+trial count is retained as the effective count without a dependence discount.
+Its lag-one serial-dependence screen is only a screen, not proof of independent
+observations. CSCV PBO requires aligned common observations for all candidates,
+equally sized partitions and nonconstant trial series. It supplements, rather
+than replaces, chronological validation.
+
+Irregular trade R is not daily equity return. Its descriptive report therefore
+does not invent annualized Sharpe. Drawdown duration is measured in observations
+and explicitly labelled. The seeded moving-block bootstrap is conditional on
+observed R and a declared risk fraction; it cannot prove survival against
+unobserved gaps, liquidity crises or funded-prop rules.
+
+The adaptive outcome-weighting proxy cannot verify quote replay, historical
+universe membership, point-in-time feature calculations, instrument costs,
+historical search completeness or supported-regime coverage. The deterministic
+auditor records these as blocking `UNVERIFIED` evidence. These candidates remain
+SHADOW and are not eligible for financial promotion.
+
+The legacy WFO runner now trains only on earlier, closed training observations.
+Its replay uses post-decision observations, correct orderbook sides, available
+liquidity, adverse entry/exit slippage, commissions on both notionals and
+stop-first resolution of same-bar ambiguity. Unverified limit queues receive
+no optimistic fill. Its current spot-unit simulation is not multi-asset broker
+certification; contract/tick values, borrow, swap, funding and venue-specific
+costs remain unverified.
+
+## Operator diagnostics and authorization
+
+`GET /api/v1/platform/operator/research` is OWNER/ADMIN-only and reads the canonical
+ledger. `/research [asset]` uses the same snapshot for configured Telegram
+owners/admins. Neither interface accepts client-supplied performance results or
+promotes a strategy. The JSON snapshot includes hypothesis/version lineage,
+specification, raw family counts, terminal status and immutable result hashes.
+
+## Schema 0049 deployment and recovery
+
+1. Pass the required `backend-research-validation` release gate, including real
+   PostgreSQL tests. Hosted CI creates disposable owned databases and migrates
+   each from an empty schema; the suite's database is not destroyed.
+2. Preserve a tested backup and apply the normal controlled migration path to
+   `0049_research_trial_ledger`. Verify all three tables and six enabled
+   append-only/truncate guards. Do not deploy a different commit per service.
+3. Deploy only after every existing required release/approval gate passes.
+4. If candidate execution is degraded, suspend it and use the neutral baseline.
+   Older approvals require fresh validation before reactivation.
+5. Do not downgrade 0049 to erase evidence. Its downgrade deliberately fails.
+   Use a forward repair or an approved recovery that preserves experiment
+   history. A restore/retention policy for this new evidence is still required.
+
+Migration environment loading now respects `SIGNALRANK_ALLOW_DOTENV=0`, defaults
+to no dotenv access on production/Railway, and never lets `.env.local` overwrite
+an explicitly selected `DATABASE_URL`. This avoids redirecting an isolated
+migration into a different database.
+
+## Relevant configuration
+
+Existing variables remain authoritative: `ADAPTIVE_OPTIMISATION_ENABLED`,
+`ADAPTIVE_MIN_OUTCOME_SAMPLES`, `ADAPTIVE_LOOKBACK_DAYS`,
+`ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS`, `ADAPTIVE_WFO_VALIDATION_ROWS`,
+`ADAPTIVE_WFO_EMBARGO_SECONDS`, `ADAPTIVE_WFO_COST_R`,
+`ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES`, `ADAPTIVE_DRIFT_MAX_DRAWDOWN_R`,
+`ADAPTIVE_DRIFT_MAX_BRIER`, `ADAPTIVE_DRIFT_MIN_EXPECTANCY_R`,
+`ADAPTIVE_DB_TIMEOUT_SECONDS`. Promotion uses the versioned server-side
+`PromotionPolicy`; callers cannot supply a weaker policy through the operator
+command. Defaults are governance thresholds, not statistically demonstrated
+universal constants. Per-instrument approved policies remain to be integrated.
+
+`APP_ENV=test`, loopback PostgreSQL, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`,
+`SIGNALRANK_ALLOW_DOTENV=0` and disabled financial flags are mandatory for the
+isolated integration runner. Unknown historical trial coverage remains visible
+as `since_ledger_introduction`, with prior history unverified.
+
+## Remaining research directive gaps
+
+The Google Doc review is blocked by inaccessible content. Complete the
+instrument-specific execution/capacity stress matrix, supported/disabled regime
+policies, point-in-time universe/revision evidence, ML search integration at all
+call sites, approved health baselines/decay analysis, portfolio interaction
+validation, full operator UI, telemetry/alert retention, feature/pivot/repainting
+tests and per-asset statistical qualification. No result in this candidate
+certifies profitable trading or enables real-money execution.

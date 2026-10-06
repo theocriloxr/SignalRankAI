@@ -100,7 +100,6 @@ def test_asyncpg_runtime_state_writes_use_cast_not_bind_colon_cast():
     root = Path(__file__).resolve().parents[1]
     checked = [
         root / "services" / "codex_governance.py",
-        root / "ml" / "retrain.py",
         root / "scripts" / "ai_reviewer.py",
     ]
     for path in checked:

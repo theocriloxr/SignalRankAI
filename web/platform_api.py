@@ -1610,6 +1610,15 @@ async def operator_adaptive(
     return {"action": action, "paused": paused, "profiles": [dict(row) for row in rows]}
 
 
+@router.get("/operator/research")
+async def operator_research(asset: str | None = None, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if _platform_operator_authority(user) not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from engine.adaptive.research_ledger import research_snapshot
+    async with get_session(label="platform.operator.research", timeout_seconds=6.0) as session:
+        return await research_snapshot(session, asset=str(asset).strip().upper() if asset else None)
+
+
 @router.get("/operator/business")
 async def operator_business(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     authority = _platform_operator_authority(user)

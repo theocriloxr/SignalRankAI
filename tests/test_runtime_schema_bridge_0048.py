@@ -42,8 +42,8 @@ def test_schema_admission_requires_0048_bridge_columns() -> None:
 def test_release_chain_and_current_release_name_0048_as_head() -> None:
     verifier = (ROOT / "scripts/verify_release_chain.py").read_text(encoding="utf-8")
     release = (ROOT / "CURRENT_RELEASE.md").read_text(encoding="utf-8")
-    assert 'EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0048_runtime_schema_bridge")' in verifier
+    assert 'EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0049_research_trial_ledger")' in verifier
     assert '"0047_event_outbox"' in verifier
     assert '"0048_runtime_schema_bridge"' in verifier
-    assert "Repository Alembic head: 0048_runtime_schema_bridge" in release
+    assert "Repository Alembic head: 0049_research_trial_ledger" in release
     assert "signalrank-blueprint-0048-runtime-schema-bridge-20261002" in release

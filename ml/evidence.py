@@ -316,6 +316,7 @@ def purged_walk_forward_splits(
     train_size: int,
     test_size: int,
     embargo: int = 0,
+    label_end_times: Sequence[Any] | None = None,
 ) -> list[tuple[list[int], list[int]]]:
     """Build chronological train/test folds with an embargo gap.
 
@@ -325,13 +326,24 @@ def purged_walk_forward_splits(
     n = len(timestamps)
     if train_size <= 0 or test_size <= 0:
         return []
+    if embargo < 0:
+        raise ValueError("negative_walk_forward_embargo")
+    if any(timestamps[i] > timestamps[i + 1] for i in range(n - 1)):
+        raise ValueError("walk_forward_timestamps_not_chronological")
+    if label_end_times is not None:
+        if len(label_end_times) != n or any(end < start for start, end in zip(timestamps, label_end_times)):
+            raise ValueError("invalid_walk_forward_label_availability")
     folds: list[tuple[list[int], list[int]]] = []
     start = 0
     while start + train_size + embargo + test_size <= n:
         train = list(range(start, start + train_size))
         test_start = start + train_size + max(0, embargo)
         test = list(range(test_start, test_start + test_size))
-        folds.append((train, test))
+        cutoff = timestamps[test_start]
+        train = [index for index in train if timestamps[index] < cutoff
+                 and (label_end_times is None or label_end_times[index] < cutoff)]
+        if train:
+            folds.append((train, test))
         start += test_size
     return folds
 

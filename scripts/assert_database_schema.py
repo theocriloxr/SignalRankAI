@@ -74,6 +74,18 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.broker_reconciliation_state') IS NOT NULL AS broker_reconciliation_state,
           to_regclass('public.trading_account_ledger_entries') IS NOT NULL AS trading_account_ledger_entries,
           to_regclass('public.broker_execution_decisions') IS NOT NULL AS broker_execution_decisions,
+          to_regclass('public.research_hypotheses') IS NOT NULL AS research_hypotheses,
+          to_regclass('public.research_experiments') IS NOT NULL AS research_experiments,
+          to_regclass('public.research_experiment_results') IS NOT NULL AS research_experiment_results,
+          (SELECT COUNT(*)=6 FROM pg_trigger WHERE NOT tgisinternal
+             AND tgname IN ('research_hypotheses_immutable','research_hypotheses_no_truncate',
+                            'research_experiments_immutable','research_experiments_no_truncate',
+                            'research_experiment_results_immutable','research_experiment_results_no_truncate')
+            AND tgrelid IN (to_regclass('public.research_hypotheses'),
+                            to_regclass('public.research_experiments'),
+                            to_regclass('public.research_experiment_results'))
+            AND tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
+            AND tgenabled IN ('O','A')) AS research_append_only_triggers,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -208,6 +220,10 @@ def check_schema() -> dict[str, Any]:
             "broker_reconciliation_state",
             "trading_account_ledger_entries",
             "broker_execution_decisions",
+            "research_hypotheses",
+            "research_experiments",
+            "research_experiment_results",
+            "research_append_only_triggers",
             "broker_connections_credential_format",
             "broker_connections_credential_version",
             "broker_connections_credential_key_id",

@@ -24,6 +24,8 @@ class BacktestRunner:
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
             df = df.sort_values("timestamp").reset_index(drop=True)
+            if df["timestamp"].isna().any() or df["timestamp"].duplicated().any():
+                raise ValueError("invalid_or_duplicate_backtest_timestamp")
         return df
 
     def load_from_parquet(self, path: str) -> pd.DataFrame:
@@ -71,6 +73,11 @@ class BacktestRunner:
     def run_backtest(
         self, assets: Iterable[str], timeframes: Iterable[str], start: datetime, end: datetime, include_ml: bool = False
     ) -> Dict[str, List[dict]]:
+        from engine.wfo import WalkForwardOptimizer
+        from ml.features import extract_features
+        assets, timeframes = tuple(assets), tuple(timeframes)
+        if include_ml:
+            raise ValueError("historical_model_artifact_and_training_cutoff_required")
         out: Dict[str, List[dict]] = {a: [] for a in assets}
         for asset in assets:
             for tf in timeframes:
@@ -87,6 +94,13 @@ class BacktestRunner:
                 # iterate over rows, starting after warmup
                 for idx in range(50, len(window)):
                     slice_df = window.iloc[: idx + 1]
+                    # Provider candles use opening timestamps; OHLC features
+                    # become available only when that candle closes.
+                    decision_time = slice_df.iloc[-1]["timestamp"] + pd.Timedelta(
+                        minutes=WalkForwardOptimizer._timeframe_minutes(tf)
+                    )
+                    if decision_time > pd.to_datetime(end, utc=True):
+                        continue
                     candles = slice_df.tail(300)[["timestamp", "open", "high", "low", "close", "volume"]].to_dict(
                         "records"
                     )
@@ -99,7 +113,8 @@ class BacktestRunner:
                             sig_dict = {
                                 "asset": asset,
                                 "timeframe": tf,
-                                "timestamp": slice_df.iloc[-1]["timestamp"],
+                                "timestamp": decision_time,
+                                "decision_data_available_at": decision_time,
                                 "direction": sig.direction,
                                 "entry": float(sig.entry),
                                 "stop_loss": float(sig.stop_loss),
@@ -109,9 +124,11 @@ class BacktestRunner:
                                 "strategy_group": sig.strategy_group,
                                 "confidence": float(sig.confidence),
                             }
+                            sig_dict["_research_features"] = extract_features(sig_dict, {tf: market_data})
+                            sig_dict["_research_feature_available_at"] = decision_time
                             out[asset].append(sig_dict)
-                    except Exception:
-                        continue
+                    except Exception as exc:
+                        raise RuntimeError(f"backtest_signal_generation_failed:{asset}:{tf}") from exc
         return out
 
 
@@ -123,6 +140,7 @@ Backtest Engine
 """
 
 import logging
+import math
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import numpy as np
@@ -192,7 +210,6 @@ class BacktestEngine:
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
 
         total_pnl = df["pnl"].sum()
-        total_pnl_pct = df["pnl_pct"].mean()
 
         avg_win = df[df["win"]]["pnl"].mean() if winning_trades > 0 else 0
         avg_loss = df[~df["win"]]["pnl"].mean() if losing_trades > 0 else 0
@@ -200,11 +217,13 @@ class BacktestEngine:
         profit_factor = abs(df[df["win"]]["pnl"].sum() / df[~df["win"]]["pnl"].sum()) if losing_trades > 0 else 0
 
         # Drawdown analysis
-        cumulative_pnl = df["pnl"].cumsum()
-        running_max = cumulative_pnl.expanding().max()
+        cumulative_pnl = pd.concat([pd.Series([0.0]), df["pnl"]]).cumsum()
+        running_max = cumulative_pnl.cummax()
         drawdown = cumulative_pnl - running_max
         max_drawdown = drawdown.min()
-        max_drawdown_pct = (max_drawdown / abs(avg_win) * 100) if avg_win != 0 else 0
+        # A cash drawdown divided by average winning trade is not an equity
+        # drawdown percentage. Initial capital/time-indexed equity is absent.
+        max_drawdown_pct = None
 
         # Risk metrics
         expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
@@ -220,42 +239,47 @@ class BacktestEngine:
             "avg_loss": round(avg_loss, 2),
             "profit_factor": round(profit_factor, 2),
             "max_drawdown": round(max_drawdown, 2),
-            "max_drawdown_pct": round(max_drawdown_pct, 2),
+            "max_drawdown_pct": max_drawdown_pct,
+            "drawdown_percentage_reason": "initial_equity_and_time_indexed_equity_required",
             "expectancy": round(expectancy, 2),
             "avg_hold_time_hours": round(df["hold_time"].mean(), 2),
-            "sharpe_ratio": self._calculate_sharpe(df["pnl"]),
-            "sortino_ratio": self._calculate_sortino(df["pnl"]),
+            "sharpe_ratio": None,
+            "sortino_ratio": None,
+            "annualization_basis": "irregular_cash_trade_PnL_not_period_returns",
         }
 
         return self.metrics
 
-    def _calculate_sharpe(self, returns: pd.Series, risk_free_rate: float = 0.02) -> float:
+    def _calculate_sharpe(self, returns: pd.Series, risk_free_rate: float = 0.0, *, periods_per_year: float | None = None) -> float | None:
         """Calculate Sharpe ratio."""
-        if len(returns) < 2:
-            return 0
+        if periods_per_year is None or len(returns) < 2:
+            return None
+        if not np.isfinite(periods_per_year) or periods_per_year <= 0 or not np.isfinite(returns).all():
+            raise ValueError("invalid_annualization_input")
 
-        excess_return = returns.mean() - (risk_free_rate / 252)  # Annual to daily
+        excess_return = returns.mean() - risk_free_rate
         std_dev = returns.std()
 
         if std_dev == 0:
             return 0
 
-        sharpe = (excess_return / std_dev) * np.sqrt(252)  # Annualize
+        sharpe = (excess_return / std_dev) * np.sqrt(periods_per_year)
         return round(sharpe, 2)
 
-    def _calculate_sortino(self, returns: pd.Series, risk_free_rate: float = 0.02) -> float:
+    def _calculate_sortino(self, returns: pd.Series, risk_free_rate: float = 0.0, *, periods_per_year: float | None = None) -> float | None:
         """Calculate Sortino ratio (only downside volatility)."""
-        if len(returns) < 2:
-            return 0
+        if periods_per_year is None or len(returns) < 2:
+            return None
+        if not np.isfinite(periods_per_year) or periods_per_year <= 0 or not np.isfinite(returns).all():
+            raise ValueError("invalid_annualization_input")
 
-        excess_return = returns.mean() - (risk_free_rate / 252)
-        downside_returns = returns[returns < 0]
-        downside_std = downside_returns.std()
+        excess_return = returns.mean() - risk_free_rate
+        downside_std = np.sqrt(np.mean(np.minimum(returns - risk_free_rate, 0) ** 2))
 
         if downside_std == 0:
             return 0
 
-        sortino = (excess_return / downside_std) * np.sqrt(252)
+        sortino = (excess_return / downside_std) * np.sqrt(periods_per_year)
         return round(sortino, 2)
 
     def get_summary(self) -> str:
@@ -281,8 +305,8 @@ class BacktestEngine:
 ║ Max Drawdown:        ${self.metrics["max_drawdown"]:>18.2f} ║
 ║ Avg Hold Time:       {self.metrics["avg_hold_time_hours"]:>18}h ║
 │────────────────────────────────────────│
-║ Sharpe Ratio:        {self.metrics["sharpe_ratio"]:>20} ║
-║ Sortino Ratio:       {self.metrics["sortino_ratio"]:>20} ║
+║ Sharpe Ratio:        {str(self.metrics["sharpe_ratio"]):>20} ║
+║ Sortino Ratio:       {str(self.metrics["sortino_ratio"]):>20} ║
 ╚════════════════════════════════════════╝
 """
         return summary
@@ -370,18 +394,36 @@ class OptimizationEngine:
     def __init__(self):
         self.results = []
 
-    def optimize_parameters(self, backtest_fn, param_ranges: Dict[str, List], metric: str = "win_rate") -> Dict:
+    def optimize_parameters(self, backtest_fn, param_ranges: Dict[str, List], metric: str = "expectancy_r", *, record_trial=None, max_trials: int = 1000) -> Dict:
         """Find optimal parameter values by testing all combinations."""
+        if record_trial is None:
+            return {"enabled": False, "reason": "durable_research_trial_recorder_required", "best_params": None}
+        if not isinstance(max_trials, int) or not 1 <= max_trials <= 10000:
+            raise ValueError("invalid_optimization_compute_budget")
+        count = math.prod(len(values) for values in param_ranges.values())
+        if not param_ranges or count == 0 or count > max_trials:
+            raise ValueError("optimization_trial_budget_exceeded")
+        self.results = []
         best_params = None
         best_score = -np.inf
 
         # Generate all parameter combinations
         param_combinations = self._generate_combinations(param_ranges)
 
-        for params in param_combinations:
+        for trial_number, params in enumerate(param_combinations):
             # Run backtest with these parameters
-            result = backtest_fn(params)
-            score = result.get(metric, -np.inf)
+            experiment_id = record_trial("STARTED", trial_number, params, None)
+            if not experiment_id:
+                raise ValueError("durable_trial_id_required_before_objective")
+            try:
+                result = backtest_fn(params)
+                score = float(result[metric])
+                if not math.isfinite(score):
+                    raise ValueError("invalid_optimization_metric")
+            except Exception:
+                record_trial("FAILED", trial_number, params, {"experiment_id": experiment_id})
+                raise
+            record_trial("COMPLETED", trial_number, params, {"experiment_id": experiment_id, "score": score, "result": result})
 
             if score > best_score:
                 best_score = score
@@ -389,7 +431,8 @@ class OptimizationEngine:
 
             self.results.append({"params": params, "score": score, "result": result})
 
-        return {"best_params": best_params, "best_score": best_score, "all_results": self.results}
+        return {"enabled": True, "best_params": best_params, "best_score": best_score, "all_results": self.results,
+                "production_activation_allowed": False, "selection_bias_adjustment_required": True}
 
     def _generate_combinations(self, param_ranges: Dict[str, List]) -> List[Dict]:
         """Generate all combinations of parameter values."""

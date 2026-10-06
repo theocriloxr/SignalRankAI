@@ -179,6 +179,16 @@
       ]
     },
     {
+      "id": "backend-research-validation",
+      "group": "backend",
+      "description": "Purged research, immutable trial lineage, optimizer persistence and operator authorization",
+      "command": "python -m pytest -q tests/test_research_validation.py tests/test_research_ledger_postgres.py tests/test_adaptive_worker_research_postgres.py tests/test_research_operator_access.py tests/test_migration_environment.py tests/test_adaptive_dataset_and_wfo.py tests/test_backtest_wfo.py tests/test_orderbook_fills.py tests/test_wfo_train.py",
+      "severity": "critical",
+      "required": true,
+      "environments": ["ci", "cleanroom"],
+      "required_environment": ["DATABASE_URL", "APP_ENV=test", "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"]
+    },
+    {
       "id": "backend-postgres-integrity",
       "group": "backend",
       "description": "Real PostgreSQL receipt, paper idempotency, lifecycle concurrency and outcome authority",

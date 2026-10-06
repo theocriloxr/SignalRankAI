@@ -17,7 +17,7 @@ def test_cross_channel_paper_receipts_are_the_single_migration_head() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0048_runtime_schema_bridge"
+        "0049_research_trial_ledger"
     ]
     migration = _source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"

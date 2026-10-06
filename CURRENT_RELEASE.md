@@ -4,8 +4,8 @@
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0048_runtime_schema_bridge
-Release-candidate branch: implementation-of-master-blueprint
+Repository Alembic head: 0049_research_trial_ledger
+Release-candidate branch: fix/provider-discovery-readiness-20260923
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
 Production runtime baseline: 8f8583933a853a54ba1b3585610ee466903c08fc
@@ -23,7 +23,8 @@ chain with:
 
 - `0046_decision_log`: unified decision/rejection evidence;
 - `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;
-- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair.
+- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;
+- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.
 
 The current release candidate also includes:
 

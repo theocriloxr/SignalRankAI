@@ -105,6 +105,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("assets", "Inspect enabled assets and capabilities", "ADMIN", "Admin"),
     CommandSpec("release_guard", "Check launch safety gates", "ADMIN", "Admin"),
     CommandSpec("adaptive_status", "Inspect adaptive profiles and lifecycle", "ADMIN", "Adaptive"),
+    CommandSpec("research", "Inspect immutable trials and validation evidence", "ADMIN", "Adaptive"),
     CommandSpec("adaptive_pause", "Pause adaptive learning and weighting", "ADMIN", "Adaptive"),
     CommandSpec("adaptive_resume", "Resume adaptive learning", "ADMIN", "Adaptive"),
     CommandSpec("adaptive_promote", "Promote an evidence-qualified profile", "ADMIN", "Adaptive"),

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
 
@@ -38,10 +39,12 @@ class AdaptiveDatasetRow:
     sequence_hashes: tuple[str, ...] = ()
     data_quality_score: float = 0.0
     profile_id: str | None = None
+    outcome_known_at: datetime | None = None
 
     def canonical(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["decision_time"] = self.decision_time.isoformat()
+        payload["outcome_known_at"] = self.outcome_known_at.isoformat() if self.outcome_known_at else None
         return payload
 
 
@@ -84,13 +87,29 @@ def normalise_evidence_category(value: Any, *, delivered: bool = False, executed
 
 
 def build_dataset(
-    rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v1"
+    rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v2"
 ) -> tuple[tuple[AdaptiveDatasetRow, ...], DatasetManifest]:
     parsed: list[AdaptiveDatasetRow] = []
     for row in rows:
         dt = row.get("decision_time") or row.get("created_at")
         if not isinstance(dt, datetime):
             continue
+        # Legacy DB timestamps are UTC-naive. Canonical datasets use UTC-aware
+        # timestamps so mixed providers cannot silently change chronology.
+        dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        known_at = row.get("outcome_known_at")
+        if isinstance(known_at, datetime):
+            known_at = known_at.replace(tzinfo=timezone.utc) if known_at.tzinfo is None else known_at.astimezone(timezone.utc)
+        else:
+            known_at = None
+        if row.get("r_multiple") is None:
+            continue  # An unresolved outcome is not a break-even trade.
+        result_r = float(row["r_multiple"])
+        quality = float(row.get("data_quality_score") or 0.0)
+        if not math.isfinite(result_r) or not math.isfinite(quality):
+            raise ValueError("non_finite_adaptive_dataset_value")
+        if known_at is not None and known_at < dt:
+            raise ValueError("outcome_precedes_decision")
         sequence_hashes = tuple(sorted({str(x) for x in (row.get("sequence_hashes") or ()) if x}))
         delivered = bool(row.get("delivered"))
         executed = bool(row.get("executed"))
@@ -104,13 +123,14 @@ def build_dataset(
                 family=str(row.get("family") or row.get("strategy_group") or "unknown").lower(),
                 regime=str(row.get("regime") or "unknown").lower(),
                 direction=str(row.get("direction") or "UNKNOWN").upper(),
-                r_multiple=float(row.get("r_multiple") or 0.0),
+                r_multiple=result_r,
                 evidence_category=normalise_evidence_category(
                     row.get("evidence_category") or row.get("status"), delivered=delivered, executed=executed
                 ),
                 sequence_hashes=sequence_hashes,
-                data_quality_score=max(0.0, min(1.0, float(row.get("data_quality_score") or 0.0))),
+                data_quality_score=max(0.0, min(1.0, quality)),
                 profile_id=str(row.get("profile_id")) if row.get("profile_id") else None,
+                outcome_known_at=known_at,
             )
         )
     parsed.sort(key=lambda item: (item.decision_time, item.signal_id))
