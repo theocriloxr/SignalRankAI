@@ -73,6 +73,31 @@ owners/admins. Neither interface accepts client-supplied performance results or
 promotes a strategy. The JSON snapshot includes hypothesis/version lineage,
 specification, raw family counts, terminal status and immutable result hashes.
 
+The existing web control room displays that snapshot in an OWNER/ADMIN research
+panel. It supports asset filtering, retry after a failed read, hypothesis lineage,
+failed/pending trials, statistical units and blocking integrity findings in both
+themes and mobile viewports. Family counts retain all assets even when the trial
+list is filtered. This is diagnostic access; there is no financial promotion
+control. Owner-only maintenance failures no longer prevent an ADMIN from loading
+permitted research diagnostics.
+
+The required `research-browser-ui` CI gate uses a disposable owned PostgreSQL
+database, actual HTTP authentication and synthetic observations. It checks both
+themes on desktop and mobile, filtering, injected read failure/recovery, escaped
+untrusted hypothesis text and customer access denial. Browser tooling is isolated
+from the locked runtime to avoid changing its dependency versions. Reproduce it
+with a loopback test `DATABASE_URL`, `APP_ENV=test`, and:
+
+```sh
+python scripts/run_research_browser_drill.py --output-dir artifacts/research-browser
+```
+
+Use `--browser-python` for an isolated interpreter containing
+`requirements-browser-tests.txt` and an installed Chromium. The runner stops only
+its own HTTP process and removes only its own uniquely named test database.
+Reports label synthetic observations and distinguish a dirty checkout from an
+immutable candidate. This gate does not replace native-device or broker testing.
+
 ## Schema 0049 deployment and recovery
 
 1. Pass the required `backend-research-validation` release gate, including real
@@ -80,7 +105,9 @@ specification, raw family counts, terminal status and immutable result hashes.
    each from an empty schema; the suite's database is not destroyed.
 2. Preserve a tested backup and apply the normal controlled migration path to
    `0049_research_trial_ledger`. Verify all three tables and six enabled
-   append-only/truncate guards. Do not deploy a different commit per service.
+   append-only/truncate guards on their expected relations and function. Both the
+   startup gate and runtime readiness fail if any guard is disabled or misplaced.
+   Do not deploy a different commit per service.
 3. Deploy only after every existing required release/approval gate passes.
 4. If candidate execution is degraded, suspend it and use the neutral baseline.
    Older approvals require fresh validation before reactivation.

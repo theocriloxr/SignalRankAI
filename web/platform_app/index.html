@@ -14,12 +14,12 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="manifest" href="/app/manifest.webmanifest?v=41" />
-  <link rel="icon" href="/app-assets/icon.svg?v=41" type="image/svg+xml" />
-  <link rel="shortcut icon" href="/app-assets/icon.svg?v=41" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=41" />
+  <link rel="manifest" href="/app/manifest.webmanifest?v=42" />
+  <link rel="icon" href="/app-assets/icon.svg?v=42" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/app-assets/icon.svg?v=42" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=42" />
   <meta name="msapplication-TileColor" content="#050907" />
-  <link rel="stylesheet" href="/app-assets/styles.css?v=41" />
+  <link rel="stylesheet" href="/app-assets/styles.css?v=42" />
   <title>SignalRankAI · Trading Intelligence</title>
 </head>
 <body class="session-booting">
@@ -27,7 +27,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="Signal Rank AI home">
-      <span class="brand-logo"><img src="/app-assets/icon.svg?v=41" alt="" width="42" height="42" /></span>
+      <span class="brand-logo"><img src="/app-assets/icon.svg?v=42" alt="" width="42" height="42" /></span>
       <span class="brand-copy"><strong>SignalRankAI</strong><small>Trading Intelligence</small></span>
     </a>
     <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sessionNav" title="Collapse navigation">
@@ -92,7 +92,7 @@
 
   <main id="mainContent" tabindex="-1">
     <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
-      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=41" alt="" width="54" height="54" /></div>
+      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=42" alt="" width="54" height="54" /></div>
       <div>
         <p class="eyebrow">SIGNALRANKAI · TRADING INTELLIGENCE</p>
         <h1 id="bootstrapTitle">Restoring your secure session…</h1>
@@ -104,7 +104,7 @@
 
     <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
-        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=41" alt="SignalRankAI" /></div>
+        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=42" alt="SignalRankAI" /></div>
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
         <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and supported connected-account workflows.</p>
@@ -389,6 +389,14 @@
           <span id="operatorAuthorityBadge" class="status-pill">OPERATOR</span>
         </div>
         <div id="operatorSummary" class="card-grid"></div>
+        <article class="panel research-review-panel">
+          <div class="panel-heading"><div><p class="eyebrow">STRATEGY RESEARCH</p><h3>Experiment history</h3><p>Review tested ideas, failed trials and the evidence required before a strategy can advance.</p></div></div>
+          <form id="operatorResearchForm" class="filters">
+            <label for="operatorResearchAsset">Asset<input id="operatorResearchAsset" name="asset" maxlength="32" placeholder="All assets" autocomplete="off" /></label>
+            <button id="refreshOperatorResearch" class="ghost" type="submit">Refresh research</button>
+          </form>
+          <div id="operatorResearch" aria-live="polite" aria-busy="false"><p class="muted">Research history loads when the control room opens.</p></div>
+        </article>
         <div class="two-column">
           <article class="panel">
             <div class="panel-heading"><div><p class="eyebrow">RELEASE &amp; SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
@@ -738,6 +746,6 @@
   </main>
 
   <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
-  <script src="/app-assets/app.js?v=41" defer></script>
+  <script src="/app-assets/app.js?v=42" defer></script>
 </body>
 </html>

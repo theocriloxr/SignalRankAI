@@ -62,7 +62,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatch) -> None:
+@pytest.mark.parametrize("missing", [None, "research_experiments_table", "research_append_only_triggers"])
+async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatch, missing) -> None:
     import db.session as db_session
     import railway_main
 
@@ -70,8 +71,8 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
 
     class _Mappings:
         def one(self):
-            return {
-                "deployed_revision": "0048_runtime_schema_bridge",
+            result = {
+                "deployed_revision": "0049_research_trial_ledger",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -86,6 +87,10 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "broker_reconciliation_state_table": True,
                 "trading_account_ledger_entries_table": True,
                 "broker_execution_decisions_table": True,
+                "research_hypotheses_table": True,
+                "research_experiments_table": True,
+                "research_experiment_results_table": True,
+                "research_append_only_triggers": True,
                 "broker_connections_credential_format": True,
                 "broker_connections_credential_version": True,
                 "broker_connections_credential_key_id": True,
@@ -106,6 +111,9 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "outcome_duplicate_groups": 0,
                 "outcome_guard_present": True,
             }
+            if missing:
+                result[missing] = False
+            return result
 
     class _Result:
         def mappings(self):
@@ -130,9 +138,12 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
 
     result = await railway_main._database_readiness_check()
 
-    assert result["ok"] is True
-    assert result["revision"] == "0048_runtime_schema_bridge"
-    assert result["probe_timeout_seconds"] == 8.0
+    assert result["ok"] is (missing is None)
+    assert result["revision"] == "0049_research_trial_ledger"
+    if missing is None:
+        assert result["probe_timeout_seconds"] == 8.0
+    else:
+        assert result["detail"] in {"required_ecosystem_tables_missing", "research_evidence_immutability_guards_missing"}
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"
     assert captured["kwargs"]["timeout_seconds"] == 8.0

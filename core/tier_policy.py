@@ -624,6 +624,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "admin_signal_lookup": Tier.ADMIN,
         "admin_feedback": Tier.ADMIN,
         "adaptive_status": Tier.ADMIN,
+        "research": Tier.ADMIN,
         "adaptive_pause": Tier.ADMIN,
         "adaptive_resume": Tier.ADMIN,
         "adaptive_promote": Tier.ADMIN,

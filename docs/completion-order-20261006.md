@@ -8,7 +8,7 @@ those saved sources.
 
 | Order | Work | Current state |
 | --- | --- | --- |
-| 1 | Research, backtesting, statistical validation, strategy health | In progress. The research ledger, label-availability purge, conservative legacy replay, optimizer recorder and operator diagnostics are implemented in the candidate. Full instrument-specific stress, portfolio validation, health baselines and research UI remain unfinished. |
+| 1 | Research, backtesting, statistical validation, strategy health | In progress. The research ledger, label-availability purge, conservative legacy replay, optimizer recorder and canonical research UI are implemented in the candidate. Full instrument-specific stress, portfolio validation, approved health baselines and broader health/promotion UI remain unfinished. |
 | 2 | Customer UX, personalization, broker execution experience | Queued after directive 1. The second copy of this attachment is identical and does not introduce another directive. Existing Telegram identity/return-flow fixes must be retained and deployed. |
 | 3 | Complete web and mobile design | Queued. Existing authentication and transport foundations do not constitute finished product screens or native-device verification. |
 | 4 | Repository gaps and multi-broker routing | Queued. Durable execution-plan routing and actual broker evidence still require closure. |
@@ -21,7 +21,9 @@ those saved sources.
 - The Google Doc referenced by directive 1 remains inaccessible. Its independent
   review is unverified until readable source content is available.
 - The published branch and production release must be reported separately from
-  the isolated, uncommitted candidate.
+  the isolated research candidates. The foundation is `9f73d7d1`; its complete
+  suite found stale schema/command fixtures and Windows sandbox subprocess
+  failures. Those failures are retained while the next candidate is verified.
 - The original production availability monitor continues. As of 02:13 UTC on
   6 October, it had 919 samples over 45.90 hours and status `DEGRADED`, observing
   `8f8583933a853a54ba1b3585610ee466903c08fc`, schema 0045. It is not the new

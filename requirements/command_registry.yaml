@@ -2593,9 +2593,9 @@
       "canonical_name": "research",
       "fallback_handlers": [],
       "handler": "research_command",
-      "minimum_tier": "FREE",
+      "minimum_tier": "ADMIN",
       "registration": "runtime_static",
-      "role_scope": "FREE",
+      "role_scope": "ADMIN",
       "sources": [
         "signalrank_telegram/bot.py:6650"
       ],

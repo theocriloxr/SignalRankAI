@@ -1,5 +1,5 @@
-const CACHE='signalrank-shell-v41';
-const ASSETS=['/app','/app-assets/styles.css?v=41','/app-assets/app.js?v=41','/app-assets/icon.svg?v=41','/app-assets/logo.svg?v=41','/app/manifest.webmanifest?v=41'];
+const CACHE='signalrank-shell-v42';
+const ASSETS=['/app','/app-assets/styles.css?v=42','/app-assets/app.js?v=42','/app-assets/icon.svg?v=42','/app-assets/logo.svg?v=42','/app/manifest.webmanifest?v=42'];
 const SHELL_ASSETS=new Set(ASSETS.filter(path=>path!=='/app'));
 const isWorkspacePath=path=>path==='/app'||path.startsWith('/app/');
 self.addEventListener('install',event=>event.waitUntil((async()=>{

@@ -182,11 +182,34 @@
       "id": "backend-research-validation",
       "group": "backend",
       "description": "Purged research, immutable trial lineage, optimizer persistence and operator authorization",
-      "command": "python -m pytest -q tests/test_research_validation.py tests/test_research_ledger_postgres.py tests/test_adaptive_worker_research_postgres.py tests/test_research_operator_access.py tests/test_migration_environment.py tests/test_adaptive_dataset_and_wfo.py tests/test_backtest_wfo.py tests/test_orderbook_fills.py tests/test_wfo_train.py",
+      "command": "python -m pytest -q tests/test_research_validation.py tests/test_research_ledger_postgres.py tests/test_adaptive_worker_research_postgres.py tests/test_research_operator_access.py tests/test_migration_environment.py tests/test_adaptive_dataset_and_wfo.py tests/test_backtest_wfo.py tests/test_orderbook_fills.py tests/test_wfo_train.py tests/test_research_browser_safety.py",
       "severity": "critical",
       "required": true,
-      "environments": ["ci", "cleanroom"],
-      "required_environment": ["DATABASE_URL", "APP_ENV=test", "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"]
+      "environments": [
+        "ci",
+        "cleanroom"
+      ],
+      "required_environment": [
+        "DATABASE_URL",
+        "APP_ENV=test",
+        "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"
+      ]
+    },
+    {
+      "id": "research-browser-ui",
+      "group": "research-browser",
+      "description": "Owned real-PostgreSQL operator research browser drill; synthetic observations, no native-device or broker certification",
+      "command": "python scripts/run_research_browser_drill.py --output-dir artifacts/research-browser",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci"
+      ],
+      "required_environment": [
+        "APP_ENV=test",
+        "SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1",
+        "GLOBAL_EXECUTION_KILL_SWITCH=1"
+      ]
     },
     {
       "id": "backend-postgres-integrity",
@@ -260,7 +283,10 @@
       "command": "cd frontend && npm run test:transport",
       "severity": "critical",
       "required": true,
-      "environments": ["ci", "cleanroom"]
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
     },
     {
       "id": "frontend-audit-policy-regressions",
@@ -329,7 +355,10 @@
       "command": "cd mobile && npm run test:dependencies",
       "severity": "high",
       "required": true,
-      "environments": ["ci", "cleanroom"]
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
     },
     {
       "id": "mobile-audit",

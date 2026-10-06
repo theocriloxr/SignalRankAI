@@ -321,10 +321,16 @@ $('#operatorForceSignalForm')?.addEventListener('submit',async e=>{
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
   const overview=await request('/operator/overview');state.operator=overview;
-  const jobs=[request('/operator/diagnostics'),request('/operator/maintenance')];
-  if(String(overview.authority||'')==='OWNER')jobs.push(request('/operator/business'));
-  const results=await Promise.all(jobs);
-  state.operatorDiagnostics=results[0];state.operatorMaintenance=results[1];state.operatorBusiness=results[2]||null;
+  const isOwner=String(overview.authority||'')==='OWNER';
+  const maintenancePanel=$('.operator-maintenance-panel');if(maintenancePanel)maintenancePanel.hidden=!isOwner;
+  for(const id of ['operatorKillSwitchOn','operatorKillSwitchOff']){const button=$('#'+id);if(button)button.hidden=!isOwner}
+  loadOperatorResearch().catch(()=>{});
+  const results=await Promise.allSettled([request('/operator/diagnostics'),
+    isOwner?request('/operator/maintenance'):Promise.resolve(null),
+    isOwner?request('/operator/business'):Promise.resolve(null)]);
+  state.operatorDiagnostics=results[0].status==='fulfilled'?results[0].value:null;
+  state.operatorMaintenance=results[1].status==='fulfilled'?results[1].value:null;
+  state.operatorBusiness=results[2].status==='fulfilled'?results[2].value:null;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
   const overrideRow=$('#operatorOverrideQualityRow');if(overrideRow)overrideRow.hidden=String(op.authority||'')!=='OWNER';
@@ -347,11 +353,57 @@ async function loadOperator(){
     ['Signal model',ai.signal_model||ai.fast_model||'—'],['Deep model',ai.deep_model||'—'],
     ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
-  renderOperatorDiagnostics();
-  renderOperatorMaintenance();
+  if(state.operatorDiagnostics)renderOperatorDiagnostics();else{const target=$('#operatorDiagnostics');if(target)target.textContent='Diagnostics unavailable. Use Run diagnostics to retry.'}
+  if(state.operatorMaintenance)renderOperatorMaintenance();else if(isOwner){const target=$('#operatorMaintenance');if(target)target.textContent='Maintenance status unavailable. Refresh the control room to retry.'}
   renderOperatorBusiness();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
+
+let researchRequestVersion=0;
+function researchNumber(value,digits=2){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'Unverified'}
+function renderOperatorResearch(snapshot){
+  const target=$('#operatorResearch');if(!target)return;
+  const experiments=Array.isArray(snapshot?.experiments)?snapshot.experiments:[];
+  const families=Array.isArray(snapshot?.families)?snapshot.families:[];
+  const familyRows=families.map(family=>`<div class="research-family"><strong>${esc(family.trial_family)}</strong><span>${esc(family.raw_trial_count)} trials · ${esc(family.terminal_trial_count)} terminal results</span></div>`).join('');
+  const rows=experiments.map(experiment=>{
+    const result=experiment.result||{};const definition=experiment.specification||{};const hypothesis=experiment.hypothesis||{};
+    const integrity=result.integrity||{};const wfo=result.walk_forward||{};const returns=result.return_diagnostics||{};
+    const checks=Array.isArray(integrity.checks)?integrity.checks:[];
+    const blockers=checks.filter(check=>check.blocking!==false&&!['PASS','NOT_APPLICABLE'].includes(check.status));
+    const statistical=result.multiple_testing||{};const survival=result.survival||{};
+    const scopes=Array.isArray(definition.asset_scope)?definition.asset_scope.join(', '):'Scope unverified';
+    const terminal=['COMPLETED','FAILED','REJECTED'].includes(experiment.status)?experiment.status:'PENDING RESULT';
+    const checkRows=checks.map(check=>`<li><strong>${esc(check.check_id)}</strong><span>${esc(check.status||'UNVERIFIED')}</span><p>${esc(check.reason||'Evidence not supplied')}</p></li>`).join('');
+    const fields=[['Dataset',experiment.dataset_version],['Features',experiment.feature_version],['Code commit',definition.code_commit],
+      ['Hypothesis version',experiment.hypothesis_version],['Parent hypothesis',experiment.parent_hypothesis_id||'Root hypothesis'],
+      ['Evidence class',result.evidence_category||definition.evidence_category||'Unverified'],['Execution model',definition.execution_model_version],
+      ['Result hash',experiment.evidence_hash||'Awaiting terminal result']];
+    return `<details class="research-experiment"><summary><div><strong>${esc(experiment.strategy_id)} · ${esc(scopes)}</strong><small>${esc(String(experiment.experiment_id||'').slice(0,12))} · ${esc(terminal)}</small></div><span class="status-pill">${result.promotion_eligible===true?'Eligibility requires operator review':'Promotion not certified'}</span></summary>
+      <p>${esc(hypothesis.description||'No hypothesis description recorded.')}</p><p class="muted">Mechanism: ${esc(hypothesis.mechanism_status||'Unverified')} · ${esc(blockers.length)} blocking integrity checks</p>
+      <dl class="research-metrics">${[['Out-of-sample observations',wfo.sample_size??'Unverified'],['Positive WFO folds',typeof wfo.positive_folds==='number'&&typeof wfo.fold_count==='number'?`${wfo.positive_folds} / ${wfo.fold_count}`:'Unverified'],['Worst fold expectancy (R)',researchNumber(wfo.worst_fold_expectancy)],['Expected R',researchNumber(returns.expectancy_r)],['Maximum drawdown (R)',researchNumber(returns.max_drawdown_r)],['Longest drawdown (observations)',returns.max_drawdown_duration_observations??'Unverified'],['Selection-bias qualification',statistical.pass_fail===true?'Passed recorded policy':'Unverified / failed'],['Bootstrap ruin probability (0–1)',researchNumber(survival.risk_of_ruin,4)]].map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>
+      <p class="small">Bootstrap survival is conditional on observed returns and the recorded risk fraction; it does not certify broker fills or prop-account compliance.</p>
+      <h4>Integrity evidence</h4>${checkRows?`<ul class="research-checks">${checkRows}</ul>`:'<p class="muted">No integrity report recorded.</p>'}
+      <h4>Lineage and reproducibility</h4><dl class="research-lineage">${fields.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value??'Unverified')}</dd></div>`).join('')}</dl>
+    </details>`
+  }).join('');
+  target.innerHTML=`<p class="research-coverage">History begins when the ledger was introduced. Earlier trial counts remain unverified. Lineage totals cover all assets; the experiment list shows the latest 50 matching trials.</p>${familyRows?`<div class="research-families">${familyRows}</div>`:''}${rows||'<div class="empty-state"><h4>No recorded experiments</h4><p>Eligible resolved outcomes and registered research searches add experiments to this history. Refresh after a research run completes.</p></div>'}`
+}
+async function loadOperatorResearch(){
+  const target=$('#operatorResearch');if(!target)return;
+  const version=++researchRequestVersion;const button=$('#refreshOperatorResearch');
+  const asset=String($('#operatorResearchAsset')?.value||'').trim().toUpperCase();
+  target.setAttribute('aria-busy','true');if(button)button.disabled=true;
+  try{
+    const snapshot=await request('/operator/research'+(asset?'?asset='+encodeURIComponent(asset):''));
+    if(version===researchRequestVersion)renderOperatorResearch(snapshot);
+    return snapshot
+  }catch(error){
+    if(version===researchRequestVersion)target.innerHTML=`<div class="empty-state"><h4>Research evidence unavailable</h4><p>${esc(error.message||'The research service could not be reached.')} Use Refresh research to retry.</p></div>`;
+    throw error
+  }finally{if(version===researchRequestVersion){target.setAttribute('aria-busy','false');if(button)button.disabled=false}}
+}
+$('#operatorResearchForm')?.addEventListener('submit',event=>{event.preventDefault();loadOperatorResearch().catch(()=>{})});
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
 $('#refreshOperatorDiagnostics')?.addEventListener('click',()=>loadOperatorDiagnostics().catch(err=>toast(err.message,true)));
 $('#operatorAiTest')?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;const original=button.textContent;button.textContent='Testing…';try{const result=await request('/operator/ai-test',{method:'POST',body:'{}'});toast(result.test?.connected||result.test?.ok?'OpenAI connection verified':'OpenAI probe completed');await loadOperator()}catch(err){toast(err.message,true)}finally{button.disabled=false;button.textContent=original}});

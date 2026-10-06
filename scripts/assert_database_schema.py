@@ -77,15 +77,20 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.research_hypotheses') IS NOT NULL AS research_hypotheses,
           to_regclass('public.research_experiments') IS NOT NULL AS research_experiments,
           to_regclass('public.research_experiment_results') IS NOT NULL AS research_experiment_results,
-          (SELECT COUNT(*)=6 FROM pg_trigger WHERE NOT tgisinternal
-             AND tgname IN ('research_hypotheses_immutable','research_hypotheses_no_truncate',
-                            'research_experiments_immutable','research_experiments_no_truncate',
-                            'research_experiment_results_immutable','research_experiment_results_no_truncate')
-            AND tgrelid IN (to_regclass('public.research_hypotheses'),
-                            to_regclass('public.research_experiments'),
-                            to_regclass('public.research_experiment_results'))
-            AND tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
-            AND tgenabled IN ('O','A')) AS research_append_only_triggers,
+          (SELECT COUNT(*)=6 FROM pg_trigger AS guard
+            JOIN (VALUES
+              ('public.research_hypotheses','research_hypotheses_immutable'),
+              ('public.research_hypotheses','research_hypotheses_no_truncate'),
+              ('public.research_experiments','research_experiments_immutable'),
+              ('public.research_experiments','research_experiments_no_truncate'),
+              ('public.research_experiment_results','research_experiment_results_immutable'),
+              ('public.research_experiment_results','research_experiment_results_no_truncate')
+            ) AS required(table_name,trigger_name)
+              ON guard.tgrelid=to_regclass(required.table_name)
+             AND guard.tgname=required.trigger_name
+            WHERE NOT guard.tgisinternal
+              AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
+              AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()

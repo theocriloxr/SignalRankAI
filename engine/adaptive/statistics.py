@@ -1,6 +1,6 @@
 """Research statistics with explicit units and bounded, reproducible computation.
 
-DSR follows Bailey/López de Prado (2014), equations 8/10/12. Its inputs are
+DSR follows Bailey/López de Prado (2014). Its inputs are
 unannualized Sharpe ratios of equally spaced excess returns. Irregular trade R
 is descriptive evidence, never automatically treated as a daily return series.
 """

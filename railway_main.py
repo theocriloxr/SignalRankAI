@@ -2455,6 +2455,23 @@ async def _database_readiness_check() -> dict[str, object]:
                                 SELECT 1 FROM information_schema.tables
                                 WHERE table_schema = current_schema() AND table_name = 'broker_execution_decisions'
                             ) AS broker_execution_decisions_table,
+                            to_regclass('public.research_hypotheses') IS NOT NULL AS research_hypotheses_table,
+                            to_regclass('public.research_experiments') IS NOT NULL AS research_experiments_table,
+                            to_regclass('public.research_experiment_results') IS NOT NULL AS research_experiment_results_table,
+                            (SELECT COUNT(*)=6 FROM pg_trigger AS guard
+                              JOIN (VALUES
+                                ('public.research_hypotheses','research_hypotheses_immutable'),
+                                ('public.research_hypotheses','research_hypotheses_no_truncate'),
+                                ('public.research_experiments','research_experiments_immutable'),
+                                ('public.research_experiments','research_experiments_no_truncate'),
+                                ('public.research_experiment_results','research_experiment_results_immutable'),
+                                ('public.research_experiment_results','research_experiment_results_no_truncate')
+                              ) AS required(table_name,trigger_name)
+                                ON guard.tgrelid=to_regclass(required.table_name)
+                               AND guard.tgname=required.trigger_name
+                              WHERE NOT guard.tgisinternal
+                                AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
+                                AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
                             EXISTS (
                                 SELECT 1 FROM information_schema.columns
                                 WHERE table_schema = current_schema()
@@ -2647,6 +2664,9 @@ async def _database_readiness_check() -> dict[str, object]:
             "broker_reconciliation_state": bool(row.get("broker_reconciliation_state_table")),
             "trading_account_ledger_entries": bool(row.get("trading_account_ledger_entries_table")),
             "broker_execution_decisions": bool(row.get("broker_execution_decisions_table")),
+            "research_hypotheses": bool(row.get("research_hypotheses_table")),
+            "research_experiments": bool(row.get("research_experiments_table")),
+            "research_experiment_results": bool(row.get("research_experiment_results_table")),
         }
         missing_tables = sorted(name for name, present in table_flags.items() if not present)
         if missing_tables:
@@ -2656,6 +2676,9 @@ async def _database_readiness_check() -> dict[str, object]:
                 "missing": missing_tables,
                 "revision": deployed,
             }
+
+        if not bool(row.get("research_append_only_triggers")):
+            return {"ok": False, "detail": "research_evidence_immutability_guards_missing", "revision": deployed}
 
         if not bool(row.get("active_guard_present")):
             return {

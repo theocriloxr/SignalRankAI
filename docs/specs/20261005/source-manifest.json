@@ -364,10 +364,14 @@
           "line_start": 1460,
           "line_end": 1531,
           "implementation_evidence": [
-            "web/platform_api.py"
+            "web/platform_api.py",
+            "web/platform_app/app.js",
+            "web/platform_app/index.html"
           ],
           "verification_evidence": [
-            "tests/test_research_operator_access.py"
+            "tests/test_research_operator_access.py",
+            "scripts/run_research_browser_drill.py",
+            "scripts/verify_research_ui.py"
           ],
           "status": "PARTIAL",
           "evidence_scope": "local_candidate_components; not full directive or production certification"
@@ -377,10 +381,14 @@
           "line_start": 1532,
           "line_end": 1552,
           "implementation_evidence": [
-            "signalrank_telegram/adaptive_commands.py"
+            "signalrank_telegram/adaptive_commands.py",
+            "web/platform_app/app.js",
+            "web/platform_app/index.html"
           ],
           "verification_evidence": [
-            "tests/test_research_operator_access.py"
+            "tests/test_research_operator_access.py",
+            "scripts/run_research_browser_drill.py",
+            "scripts/verify_research_ui.py"
           ],
           "status": "PARTIAL",
           "evidence_scope": "local_candidate_components; not full directive or production certification"
@@ -2852,7 +2860,7 @@
           "verification_evidence": []
         },
         {
-          "heading": "# 13. CUSTOMER APP — DESKTOP NAVIGATION",
+          "heading": "# 13. CUSTOMER APP \u2014 DESKTOP NAVIGATION",
           "line_start": 510,
           "line_end": 554,
           "implementation_evidence": [],
@@ -3475,7 +3483,7 @@
           "verification_evidence": []
         },
         {
-          "heading": "# 102. WEB ↔ TELEGRAM ↔ MOBILE PARITY",
+          "heading": "# 102. WEB \u2194 TELEGRAM \u2194 MOBILE PARITY",
           "line_start": 2657,
           "line_end": 2684,
           "implementation_evidence": [],
@@ -3581,7 +3589,7 @@
       "line_count": 2292,
       "sections": [
         {
-          "heading": "# 1. DO NOT TRUST EXISTING “IMPLEMENTED” OR “VERIFIED” LABELS BLINDLY",
+          "heading": "# 1. DO NOT TRUST EXISTING \u201cIMPLEMENTED\u201d OR \u201cVERIFIED\u201d LABELS BLINDLY",
           "line_start": 21,
           "line_end": 61,
           "implementation_evidence": [],
@@ -3756,7 +3764,7 @@
           "verification_evidence": []
         },
         {
-          "heading": "# 26. LEGACY “FIRST ACTIVE ACCOUNT” FALLBACK",
+          "heading": "# 26. LEGACY \u201cFIRST ACTIVE ACCOUNT\u201d FALLBACK",
           "line_start": 778,
           "line_end": 813,
           "implementation_evidence": [],

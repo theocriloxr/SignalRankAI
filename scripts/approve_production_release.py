@@ -30,7 +30,7 @@ SERVICES = {
 }
 REQUIRED_JOBS = {
     "manifest", "static-quality-checks", "backend (3.11)", "backend (3.12)",
-    "frontend", "mobile", "railway-credential-preflight", "release-certification",
+    "research-browser", "frontend", "mobile", "railway-credential-preflight", "release-certification",
 }
 FINANCIAL_FLAGS = (
     "LIVE_FINANCIAL_FEATURES_ENABLED", "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED",

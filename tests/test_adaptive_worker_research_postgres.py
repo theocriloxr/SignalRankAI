@@ -176,3 +176,67 @@ async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch
         assert next(row for row in profiles if row["profile_id"] == old)["state"] == "APPROVED"
         assert (await session.execute(text("SELECT resolution FROM adaptive_drift_events"))).scalar_one() == "neutral_fallback_requires_revalidation"
         assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_and_startup_admission_reject_every_disabled_research_guard(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+
+    for table in ("research_hypotheses", "research_experiments", "research_experiment_results"):
+        for suffix in ("immutable", "no_truncate"):
+            guard = f"{table}_{suffix}"
+            async with worker_database() as session:
+                await session.execute(text(f"ALTER TABLE public.{table} DISABLE TRIGGER {guard}"))
+                await session.commit()
+            try:
+                runtime = await railway_main._database_readiness_check()
+                assert not runtime["ok"]
+                assert runtime["detail"] == "research_evidence_immutability_guards_missing"
+                startup = schema_gate.check_schema()
+                assert not startup["ok"]
+                assert "research_append_only_triggers" in startup["missing"]
+            finally:
+                async with worker_database() as session:
+                    await session.execute(text(f"ALTER TABLE public.{table} ENABLE TRIGGER {guard}"))
+                    await session.commit()
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+
+
+@pytest.mark.asyncio
+async def test_same_named_guard_on_the_wrong_relation_cannot_pass_admission(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    async with worker_database() as session:
+        await session.execute(text("DROP TRIGGER research_hypotheses_immutable ON public.research_hypotheses"))
+        await session.execute(text("""CREATE TRIGGER research_hypotheses_immutable
+            BEFORE UPDATE OR DELETE ON public.research_experiments
+            FOR EACH ROW EXECUTE FUNCTION public.reject_research_evidence_mutation()"""))
+        await session.commit()
+    assert (await railway_main._database_readiness_check())["detail"] == "research_evidence_immutability_guards_missing"
+    assert "research_append_only_triggers" in schema_gate.check_schema()["missing"]
