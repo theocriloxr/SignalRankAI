@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import logging
 import math
 import os
 from dataclasses import asdict
+from contextlib import asynccontextmanager
 from collections import defaultdict
 from datetime import timedelta
-from typing import Any
+from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -281,6 +283,40 @@ async def monitor_profile_health() -> dict[str, Any]:
     return {**drift, "published": published}
 
 
+@asynccontextmanager
+async def _record_evaluation_failure(session: Any, experiment_id: str, run_id: str) -> AsyncIterator[None]:
+    """Preserve a handled failure after rolling back an aborted evaluation transaction."""
+    try:
+        yield
+    except Exception as exc:
+        failure = {"reason": "adaptive_candidate_evaluation_failed", "error_type": type(exc).__name__[:128],
+                   "stage": "walk_forward_and_candidate_persistence", "promotion_eligible": False}
+        try:
+            async with asyncio.timeout(8):
+                await session.rollback()
+        except Exception as rollback_error:
+            logger.warning("[adaptive_learning] failed_transaction_rollback_error error_type=%s", type(rollback_error).__name__)
+        try:
+            async with asyncio.timeout(8), get_session(priority="critical", label="adaptive.record_failure", timeout_seconds=8) as failed_session:
+                await failed_session.execute(text("SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_learning'))"))
+                # A concurrent worker may have closed the same idempotent trial
+                # after our rollback. Preserve its immutable terminal evidence.
+                terminal = (await failed_session.execute(text(
+                    "SELECT status FROM research_experiment_results WHERE experiment_id=:id"), {"id": experiment_id})).scalar_one_or_none()
+                if terminal is None:
+                    await complete_experiment(failed_session, experiment_id, failure, status="FAILED")
+                await failed_session.execute(text(
+                    "UPDATE adaptive_optimisation_runs SET status='FAILED',completed_at=NOW(),"
+                    "summary=CAST(:summary AS JSONB) WHERE run_id=:run_id"),
+                    {"run_id": run_id, "summary": json.dumps({**failure, "experiment_id": experiment_id,
+                                                              "preserved_terminal_status": terminal})})
+                await failed_session.commit()
+        except Exception as recording_error:
+            logger.error("[adaptive_learning] failure_recording_failed run=%s experiment=%s error_type=%s; retained definition remains visible",
+                         run_id, experiment_id, type(recording_error).__name__)
+        raise
+
+
 class AdaptiveLearningWorker:
     async def run_once(self) -> dict[str, Any]:
         # Pausing research never pauses the independent health loop.
@@ -466,6 +502,8 @@ class AdaptiveLearningWorker:
 
             created = 0
             duplicates = 0
+            terminal_trials_skipped = 0
+            failed_trials_skipped = 0
             wfo_runs = 0
             for (asset, asset_class, evidence_category), asset_rows in by_asset.items():
                 if len(asset_rows) < minimum_samples:
@@ -494,144 +532,157 @@ class AdaptiveLearningWorker:
                 # before evaluation, then reacquire the worker transaction lock.
                 await session.commit()
                 await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_learning'))"))
-                wfo = walk_forward_evaluate(
-                    asset_rows,
-                    family_weights=family_weights,
-                    regime_weights=regime_weights,
-                    minimum_train=max(60, int(os.getenv("ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS", "80") or 80)),
-                    validation_size=max(20, int(os.getenv("ADAPTIVE_WFO_VALIDATION_ROWS", "30") or 30)),
-                    embargo_seconds=max(0, int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)),
-                    cost_r=max(0.0, float(os.getenv("ADAPTIVE_WFO_COST_R", "0.01") or 0.01)),
-                )
-                fingerprint = _profile_fingerprint(
-                    asset=asset,
-                    dataset_version=manifest.dataset_version,
-                    feature_version=feature_version,
-                    family_weights=family_weights,
-                    regime_weights=regime_weights,
-                    evidence_category=evidence_category,
-                )
-                exists = bool(
-                    (
-                        await session.execute(
-                            text(
-                                """
-                                SELECT 1 FROM adaptive_asset_profiles
-                                WHERE asset=:asset
-                                  AND metadata->>'profile_fingerprint'=:fingerprint
-                                LIMIT 1
-                                """
-                            ),
-                            {"asset": asset, "fingerprint": fingerprint},
-                        )
-                    ).scalar()
-                )
-                if exists:
-                    duplicates += 1
+                terminal = (await session.execute(text(
+                    "SELECT status FROM research_experiment_results WHERE experiment_id=:id"), {"id": experiment_id})).scalar_one_or_none()
+                if terminal is not None:
+                    terminal_trials_skipped += 1
+                    if terminal == "FAILED":
+                        failed_trials_skipped += 1
+                    else:
+                        duplicates += 1
                     continue
+                async with _record_evaluation_failure(session, experiment_id, run_id):
+                    wfo = walk_forward_evaluate(
+                        asset_rows,
+                        family_weights=family_weights,
+                        regime_weights=regime_weights,
+                        minimum_train=max(60, int(os.getenv("ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS", "80") or 80)),
+                        validation_size=max(20, int(os.getenv("ADAPTIVE_WFO_VALIDATION_ROWS", "30") or 30)),
+                        embargo_seconds=max(0, int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)),
+                        cost_r=max(0.0, float(os.getenv("ADAPTIVE_WFO_COST_R", "0.01") or 0.01)),
+                    )
+                    fingerprint = _profile_fingerprint(
+                        asset=asset,
+                        dataset_version=manifest.dataset_version,
+                        feature_version=feature_version,
+                        family_weights=family_weights,
+                        regime_weights=regime_weights,
+                        evidence_category=evidence_category,
+                    )
+                    exists = bool(
+                        (
+                            await session.execute(
+                                text(
+                                    """
+                                    SELECT 1 FROM adaptive_asset_profiles
+                                    WHERE asset=:asset
+                                      AND metadata->>'profile_fingerprint'=:fingerprint
+                                    LIMIT 1
+                                    """
+                                ),
+                                {"asset": asset, "fingerprint": fingerprint},
+                            )
+                        ).scalar()
+                    )
+                    if exists:
+                        await complete_experiment(session, experiment_id,
+                            {"reason": "existing_profile_fingerprint", "promotion_eligible": False,
+                             "profile_fingerprint": fingerprint, "walk_forward": wfo.to_dict()}, status="REJECTED")
+                        duplicates += 1
+                        continue
 
-                version = int(
-                    (
-                        await session.execute(
-                            text(
-                                "SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"
-                            ),
-                            {"asset": asset},
-                        )
-                    ).scalar()
-                    or 1
-                )
-                profile_id = f"{asset}:adaptive:{fingerprint[:12]}"
-                metadata = {
-                    **evidence_summary,
-                    "evidence_source": "chronological_outcomes_and_sequence_references",
-                    "dataset_version": manifest.dataset_version,
-                    "feature_version": feature_version,
-                    "sequence_coverage": manifest.sequence_coverage,
-                    "profile_fingerprint": fingerprint,
-                    "walk_forward": wfo.to_dict(),
-                    "requires_sequence_wfo": not bool(wfo.fold_count),
-                    "automatic_live_promotion": False,
-                    "human_approval_required": True,
-                    "brier_score": None,
-                    "research_experiment_id": experiment_id,
-                    "evidence_category": evidence_category,
-                }
-                counts = await trial_counts(session, hypothesis_id)
-                research_evidence = {
-                    "hypothesis_id": hypothesis_id, "experiment_id": experiment_id,
-                    "dataset_version": manifest.dataset_version, "feature_version": feature_version,
-                    "code_commit": code_commit, "trial_counts": counts,
-                    "integrity": audit_adaptive_dataset(asset_rows, wfo),
-                    "return_diagnostics": return_diagnostics([row.r_multiple for row in asset_rows]),
-                    "multiple_testing": {"status": "UNVERIFIED", "deflated_sharpe_probability": None,
-                                         "reason": "irregular_trade_R_and_incomplete_historical_trial_coverage"},
-                    "survival": block_bootstrap_survival([row.r_multiple for row in asset_rows], risk_fraction=0.005,
-                                                        block_size=min(10, len(asset_rows)), horizon=100, runs=100, seed=0),
-                    "promotion_eligible": False,
-                    "walk_forward": wfo.to_dict(), "evidence_category": evidence_category,
-                }
-                await complete_experiment(session, experiment_id, research_evidence)
-                metadata["research_validation"] = research_evidence
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO adaptive_asset_profiles(
-                            profile_id, asset, asset_class, version, state, source_scope, is_current,
-                            family_weights, regime_weights, minimum_confidence, minimum_reward_risk,
-                            maximum_score_multiplier, minimum_score_multiplier, data_sufficiency_score,
-                            sample_size, metadata, created_at, updated_at
-                        ) VALUES(
-                            :profile_id, :asset, :asset_class, :version, 'SHADOW', 'asset', FALSE,
-                            CAST(:family_weights AS JSONB), CAST(:regime_weights AS JSONB), 0.70, 1.5,
-                            1.15, 0.85, :sufficiency, :sample_size, CAST(:metadata AS JSONB), NOW(), NOW()
-                        ) ON CONFLICT(profile_id) DO NOTHING
-                        """
-                    ),
-                    {
-                        "profile_id": profile_id,
-                        "asset": asset,
-                        "asset_class": asset_class,
-                        "version": version,
-                        "family_weights": json.dumps(family_weights),
-                        "regime_weights": json.dumps(regime_weights),
-                        "sufficiency": min(1.0, len(asset_rows) / max(minimum_samples * 4, 1)),
-                        "sample_size": len(asset_rows),
-                        "metadata": json.dumps(metadata),
-                    },
-                )
-                wfo_run_id = str(uuid4())
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO adaptive_walk_forward_runs(
-                            run_id, profile_id, dataset_version, feature_version, status,
-                            started_at, completed_at, config, metrics, folds
-                        ) VALUES(
-                            :run_id, :profile_id, :dataset_version, :feature_version, 'COMPLETED',
-                            NOW(), NOW(), CAST(:config AS JSONB), CAST(:metrics AS JSONB), CAST(:folds AS JSONB)
-                        )
-                        """
-                    ),
-                    {
-                        "run_id": wfo_run_id,
-                        "profile_id": profile_id,
+                    version = int(
+                        (
+                            await session.execute(
+                                text(
+                                    "SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"
+                                ),
+                                {"asset": asset},
+                            )
+                        ).scalar()
+                        or 1
+                    )
+                    profile_id = f"{asset}:adaptive:{fingerprint[:12]}"
+                    metadata = {
+                        **evidence_summary,
+                        "evidence_source": "chronological_outcomes_and_sequence_references",
                         "dataset_version": manifest.dataset_version,
                         "feature_version": feature_version,
-                        "config": json.dumps(
-                            {
-                                "chronological": True,
-                                "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0),
-                            }
+                        "sequence_coverage": manifest.sequence_coverage,
+                        "profile_fingerprint": fingerprint,
+                        "walk_forward": wfo.to_dict(),
+                        "requires_sequence_wfo": not bool(wfo.fold_count),
+                        "automatic_live_promotion": False,
+                        "human_approval_required": True,
+                        "brier_score": None,
+                        "research_experiment_id": experiment_id,
+                        "evidence_category": evidence_category,
+                    }
+                    counts = await trial_counts(session, hypothesis_id)
+                    research_evidence = {
+                        "hypothesis_id": hypothesis_id, "experiment_id": experiment_id,
+                        "dataset_version": manifest.dataset_version, "feature_version": feature_version,
+                        "code_commit": code_commit, "trial_counts": counts,
+                        "integrity": audit_adaptive_dataset(asset_rows, wfo),
+                        "return_diagnostics": return_diagnostics([row.r_multiple for row in asset_rows]),
+                        "multiple_testing": {"status": "UNVERIFIED", "deflated_sharpe_probability": None,
+                                             "reason": "irregular_trade_R_and_incomplete_historical_trial_coverage"},
+                        "survival": block_bootstrap_survival([row.r_multiple for row in asset_rows], risk_fraction=0.005,
+                                                            block_size=min(10, len(asset_rows)), horizon=100, runs=100, seed=0),
+                        "promotion_eligible": False,
+                        "walk_forward": wfo.to_dict(), "evidence_category": evidence_category,
+                    }
+                    await complete_experiment(session, experiment_id, research_evidence)
+                    metadata["research_validation"] = research_evidence
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO adaptive_asset_profiles(
+                                profile_id, asset, asset_class, version, state, source_scope, is_current,
+                                family_weights, regime_weights, minimum_confidence, minimum_reward_risk,
+                                maximum_score_multiplier, minimum_score_multiplier, data_sufficiency_score,
+                                sample_size, metadata, created_at, updated_at
+                            ) VALUES(
+                                :profile_id, :asset, :asset_class, :version, 'SHADOW', 'asset', FALSE,
+                                CAST(:family_weights AS JSONB), CAST(:regime_weights AS JSONB), 0.70, 1.5,
+                                1.15, 0.85, :sufficiency, :sample_size, CAST(:metadata AS JSONB), NOW(), NOW()
+                            ) ON CONFLICT(profile_id) DO NOTHING
+                            """
                         ),
-                        "metrics": json.dumps({key: value for key, value in wfo.to_dict().items() if key != "folds"}),
-                        "folds": json.dumps(
-                            [asdict(fold) for fold in wfo.folds]
+                        {
+                            "profile_id": profile_id,
+                            "asset": asset,
+                            "asset_class": asset_class,
+                            "version": version,
+                            "family_weights": json.dumps(family_weights),
+                            "regime_weights": json.dumps(regime_weights),
+                            "sufficiency": min(1.0, len(asset_rows) / max(minimum_samples * 4, 1)),
+                            "sample_size": len(asset_rows),
+                            "metadata": json.dumps(metadata),
+                        },
+                    )
+                    wfo_run_id = str(uuid4())
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO adaptive_walk_forward_runs(
+                                run_id, profile_id, dataset_version, feature_version, status,
+                                started_at, completed_at, config, metrics, folds
+                            ) VALUES(
+                                :run_id, :profile_id, :dataset_version, :feature_version, 'COMPLETED',
+                                NOW(), NOW(), CAST(:config AS JSONB), CAST(:metrics AS JSONB), CAST(:folds AS JSONB)
+                            )
+                            """
                         ),
-                    },
-                )
-                created += 1
-                wfo_runs += 1
+                        {
+                            "run_id": wfo_run_id,
+                            "profile_id": profile_id,
+                            "dataset_version": manifest.dataset_version,
+                            "feature_version": feature_version,
+                            "config": json.dumps(
+                                {
+                                    "chronological": True,
+                                    "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0),
+                                }
+                            ),
+                            "metrics": json.dumps({key: value for key, value in wfo.to_dict().items() if key != "folds"}),
+                            "folds": json.dumps(
+                                [asdict(fold) for fold in wfo.folds]
+                            ),
+                        },
+                    )
+                    created += 1
+                    wfo_runs += 1
 
             await session.execute(
                 text(
@@ -649,6 +700,8 @@ class AdaptiveLearningWorker:
                             "assets": len(by_asset),
                             "candidates": created,
                             "duplicates_skipped": duplicates,
+                            "terminal_trials_skipped": terminal_trials_skipped,
+                            "failed_trials_skipped": failed_trials_skipped,
                             "walk_forward_runs": wfo_runs,
                             "dataset_version": manifest.dataset_version,
                             "feature_version": feature_version,
@@ -673,6 +726,8 @@ class AdaptiveLearningWorker:
             "published": published,
             "candidates": created,
             "duplicates_skipped": duplicates,
+            "terminal_trials_skipped": terminal_trials_skipped,
+            "failed_trials_skipped": failed_trials_skipped,
             "walk_forward_runs": wfo_runs,
             "rows": len(dataset_rows),
             "run_id": run_id,

@@ -143,21 +143,9 @@ async def test_actual_health_reads_canonical_probabilities_and_a_bounded_unique_
             assert report["brier_score"] is None and report["calibration_status"] == "UNAVAILABLE"
 
 
-@pytest.mark.asyncio
-async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial(monkeypatch, worker_database):
+async def seed_research_outcomes(get_session, asset):
     from db.models import Signal, Outcome
     from utils.timeutils import now_utc_naive
-    from engine.adaptive import learning, repository
-    get_session = use_database(monkeypatch, worker_database)
-    class State:
-        def get_sync(self, key):
-            return None
-        def set_sync(self, *args, **kwargs):
-            return True
-    monkeypatch.setattr(learning, "state", State())
-    monkeypatch.setattr(repository, "state", State())
-    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
-    asset = ("AUDITRESEARCH_" + uuid4().hex[:12]).upper()
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
         assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0049_research_trial_ledger"
@@ -172,6 +160,22 @@ async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial
                                 r_multiple=0.4 if i % 5 else -0.5, provenance="shadow",
                                 closed_at=start + timedelta(hours=i, minutes=30), performance_inclusion_status="eligible"))
         await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    get_session = use_database(monkeypatch, worker_database)
+    class State:
+        def get_sync(self, key):
+            return None
+        def set_sync(self, *args, **kwargs):
+            return True
+    monkeypatch.setattr(learning, "state", State())
+    monkeypatch.setattr(repository, "state", State())
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    asset = ("AUDITRESEARCH_" + uuid4().hex[:12]).upper()
+    await seed_research_outcomes(get_session, asset)
     result = await learning.AdaptiveLearningWorker().run_once()
     assert result["candidates"] == 1 and result["walk_forward_runs"] == 1
     retry = await learning.AdaptiveLearningWorker().run_once()
@@ -185,6 +189,98 @@ async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial
         assert not evidence["promotion_eligible"] and not evidence["integrity"]["passed"]
         assert evidence["multiple_testing"]["status"] == "UNVERIFIED"
         assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["objective_exception", "aborted_database_transaction"])
+async def test_actual_failed_worker_keeps_immutable_terminal_evidence_and_skips_closed_trials(monkeypatch, worker_database, mode):
+    from sqlalchemy.exc import DBAPIError
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITFAILURE")
+    original_complete = learning.complete_experiment
+    if mode == "objective_exception":
+        def failed_objective(*args, **kwargs):
+            raise RuntimeError("sensitive diagnostic must not enter persisted failure evidence")
+        monkeypatch.setattr(learning, "walk_forward_evaluate", failed_objective)
+        expected_error = RuntimeError
+    else:
+        async def failed_persistence(session, experiment_id, result, **kwargs):
+            if kwargs.get("status", "COMPLETED") == "COMPLETED":
+                await session.execute(text("SELECT 1 / 0"))
+            await original_complete(session, experiment_id, result, **kwargs)
+        monkeypatch.setattr(learning, "complete_experiment", failed_persistence)
+        expected_error = DBAPIError
+    with pytest.raises(expected_error):
+        await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        evidence = (await session.execute(text("SELECT status,result,evidence_hash FROM research_experiment_results"))).mappings().one()
+        assert evidence["status"] == "FAILED" and not evidence["result"]["promotion_eligible"]
+        assert evidence["result"]["error_type"] == expected_error.__name__
+        assert "sensitive" not in json.dumps(evidence["result"])
+        assert (await session.execute(text("SELECT status FROM adaptive_optimisation_runs"))).scalar_one() == "FAILED"
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles"))).scalar_one() == 0
+    retry = await learning.AdaptiveLearningWorker().run_once()
+    assert retry["candidates"] == 0 and retry["failed_trials_skipped"] == retry["terminal_trials_skipped"] == 1
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 1
+        assert (await session.execute(text("SELECT evidence_hash FROM research_experiment_results"))).scalar_one() == evidence["evidence_hash"]
+
+
+@pytest.mark.asyncio
+async def test_new_trial_with_an_existing_profile_is_rejected_instead_of_left_pending(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITDUPLICATE")
+    monkeypatch.setenv("GITHUB_SHA", "1" * 40)
+    assert (await learning.AdaptiveLearningWorker().run_once())["candidates"] == 1
+    monkeypatch.setenv("GITHUB_SHA", "2" * 40)
+    retry = await learning.AdaptiveLearningWorker().run_once()
+    assert retry["candidates"] == 0 and retry["duplicates_skipped"] == 1
+    async with sessions() as session:
+        rows = (await session.execute(text("SELECT status,result FROM research_experiment_results"))).mappings().all()
+        assert sorted(row["status"] for row in rows) == ["COMPLETED", "REJECTED"]
+        rejected = next(row for row in rows if row["status"] == "REJECTED")
+        assert rejected["result"]["reason"] == "existing_profile_fingerprint"
+        assert not rejected["result"]["promotion_eligible"]
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 2
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles"))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_failure_recording_outage_keeps_the_durable_pending_definition_and_original_error(monkeypatch, worker_database, caplog):
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITRECORDINGOUTAGE")
+    @asynccontextmanager
+    async def unavailable_recording(**kwargs):
+        if kwargs.get("label") == "adaptive.record_failure":
+            raise ConnectionError("synthetic persistence outage")
+        async with sessions() as session:
+            yield session
+    def failed_objective(*args, **kwargs):
+        raise RuntimeError("original objective failure")
+    monkeypatch.setattr(learning, "get_session", unavailable_recording)
+    monkeypatch.setattr(learning, "walk_forward_evaluate", failed_objective)
+    with pytest.raises(RuntimeError, match="original objective failure"):
+        await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 1
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 0
+    assert "failure_recording_failed" in caplog.text
+    assert "synthetic persistence outage" not in caplog.text
 
 
 @pytest.mark.asyncio

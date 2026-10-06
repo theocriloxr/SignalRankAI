@@ -64,6 +64,12 @@ delivery evidence, not broker fills or approved per-instrument baseline proof.
 The existing availability monitor has a retained 43,745-second observation gap
 and is DEGRADED; elapsed hours cannot certify a clean release soak.
 
+The following ledger repair records handled adaptive-evaluation failures after
+rolling back an aborted transaction. It preserves closed results on retries and
+records duplicate-profile trials as REJECTED. Actual PostgreSQL checks cover an
+objective exception, a division-by-zero transaction failure and unavailable
+failure recording. Pending crash/outage definitions remain visible and counted.
+
 Hosted `6a720660` passed critical typing (zero errors), the legacy typing budget,
 Ruff, Bandit and the browser gate. Python dependency scanning then found
 Werkzeug CVE-2026-102598; the next security refresh pins the official patched

@@ -6627,11 +6627,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 80,
+      "line_count": 86,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a7bfc77e31429d72d0f7cf793b770c201d1adcbab70c924ef6c017461b566c9f",
-      "size_bytes": 6230
+      "sha256": "866cad22aaf7a729ea1ffdfeb17cad8767a8eea76885791cbe6c197de1168682",
+      "size_bytes": 6626
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6859,11 +6859,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 205,
+      "line_count": 223,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "824660ffab68d67aa3c471089bd419b5dc7a4cbb91bcccf30723fa9027dd1e85",
-      "size_bytes": 12657
+      "sha256": "855fd7dfd34af2f6500d6b1969e3290c8b53e0414459a009ee96135e64761939",
+      "size_bytes": 13877
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7219,11 +7219,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 683,
+      "line_count": 738,
       "path": "engine/adaptive/learning.py",
       "reason": "production/build source",
-      "sha256": "b9c24760e35666ce0c0d61479e8809b6ff1c9e53e71eaa7a9cfd0f0dc3a549cd",
-      "size_bytes": 34480
+      "sha256": "cbf115196303133d0adea2c175481b0b07824e449d265168a44234a9d53e41d5",
+      "size_bytes": 38618
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9622,7 +9622,7 @@
       "line_count": 16137,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "28988668b4bd4ddcd8a3e7f1494d541766e2c6b8e42d3b54ba37a13e5bbf9633",
+      "sha256": "0f9911d32ea852921b4972dc188336f9e2fe1b82c6542351bbd0bd3263741e88",
       "size_bytes": 473487
     },
     {
@@ -12915,11 +12915,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 382,
+      "line_count": 478,
       "path": "tests/test_adaptive_worker_research_postgres.py",
       "reason": "automated test evidence",
-      "sha256": "6bc0b5f579293d02dd3d0e14761af7a06236535e170b61253714ff8febd8b2cb",
-      "size_bytes": 22156
+      "sha256": "6cd8461f10f8c329810c03919eefc6571b8f8b85d25c2e60e411c491d5fdf3de",
+      "size_bytes": 28090
     },
     {
       "disposition": "TEST_ONLY",

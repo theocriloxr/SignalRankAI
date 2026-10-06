@@ -62,6 +62,24 @@ Definitions/results reject updates, deletion and truncation at the database
 level. This protects ordinary application/database writes; a privileged
 database administrator can still alter the database or disable its triggers.
 
+The adaptive worker checks for terminal ledger evidence before reevaluating an
+identical trial. Closed failures are preserved and counted as skipped failures;
+successful/rejected retries cannot create or overwrite another terminal result.
+A changed code/configuration identity may produce a new trial. A new trial that
+matches an existing profile is explicitly REJECTED, with its evaluated WFO
+report, rather than left falsely pending.
+
+Handled exceptions during WFO and candidate persistence roll back the evaluation
+transaction, then record FAILED evidence and the optimization-run failure through
+a separate transaction. Each rollback/recording attempt has an eight-second
+deadline. Persisted failure diagnostics include the bounded exception class and
+stage, never the exception message. A concurrently committed terminal result
+is preserved. If failure recording itself is unavailable, the worker rethrows
+the original error, emits a recording-failure diagnostic and retains the already
+committed definition as pending. Process termination/cancellation can also leave
+pending definitions; no synthetic terminal result is manufactured. This handler
+does not certify recovery from every runtime or database failure.
+
 The existing grid optimizer and Optuna tuner require a trial recorder. Use
 `engine.adaptive.research_ledger.run_recorded_search` around a callable that
 supplies its recorder to the optimizer. It runs the existing optimizer in a
