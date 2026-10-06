@@ -46,7 +46,7 @@ with sync_playwright() as p:
                 assert page.evaluate('window.injected') is None
                 assert page.locator('#operatorResearch img').count() == 0, 'hypothesis text must not execute HTML'
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'page must fit viewport'
-                page.locator('#toast').wait_for(state='hidden')
+                page.wait_for_function("getComputedStyle(document.querySelector('#toast')).opacity === '0'")
                 page.screenshot(path=str(out / f'{label}-{theme}.png'), full_page=True)
                 page.locator('#operatorResearch').screenshot(path=str(out / f'research-{label}-{theme}.png'))
                 page.locator('#operatorResearchAsset').fill('AAPL')
