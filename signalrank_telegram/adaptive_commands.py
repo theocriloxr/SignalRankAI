@@ -12,6 +12,7 @@ from core.redis_state import state
 from db.session import get_session
 from engine.adaptive.promotion import evaluate_profile_promotion
 from engine.adaptive.repository import invalidate_profile_cache, publish_approved_profiles
+from engine.adaptive.lifecycle import lock_profile_lifecycle
 from engine.adaptive.research_ledger import research_snapshot
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,7 @@ async def adaptive_promote_command(update: Any, context: Any) -> None:
     promoted = False
 
     async with get_session(priority="interactive", label="adaptive.command.promote", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         row = (
             await session.execute(
                 text(
@@ -318,9 +320,10 @@ async def adaptive_suspend_command(update: Any, context: Any) -> None:
     actor = _actor_id(update)
     asset: str | None = None
     async with get_session(priority="interactive", label="adaptive.command.suspend", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         row = (
             await session.execute(
-                text("SELECT asset,state FROM adaptive_asset_profiles WHERE profile_id=:profile_id FOR UPDATE"),
+                text("SELECT asset,state,is_current FROM adaptive_asset_profiles WHERE profile_id=:profile_id FOR UPDATE"),
                 {"profile_id": profile_id},
             )
         ).mappings().first()
@@ -337,10 +340,12 @@ async def adaptive_suspend_command(update: Any, context: Any) -> None:
             text("INSERT INTO adaptive_promotion_events(profile_id,from_state,to_state,decision,reasons,metrics,actor_telegram_user_id,idempotency_key) VALUES(:profile_id,:from_state,'SUSPENDED','SUSPENDED',CAST(:reasons AS JSONB),'{}'::jsonb,:actor,:key) ON CONFLICT(idempotency_key) DO NOTHING"),
             {"profile_id": profile_id, "from_state": row["state"], "reasons": json.dumps([reason]), "actor": actor, "key": key},
         )
+        was_current = bool(row["is_current"])
+        if was_current:
+            invalidate_profile_cache(asset)
         await session.commit()
-    if asset:
-        invalidate_profile_cache(asset)
-    await _reply(update, f"🛑 {profile_id} suspended. Runtime uses the neutral baseline until a replacement passes revalidation.")
+    detail = "Runtime uses the neutral baseline until a replacement passes revalidation." if was_current else "The active profile was not changed."
+    await _reply(update, f"🛑 {profile_id} suspended. {detail}")
 
 
 async def adaptive_rollback_command(update: Any, context: Any) -> None:
@@ -355,6 +360,7 @@ async def adaptive_rollback_command(update: Any, context: Any) -> None:
     target_profile: str | None = None
     current_profile: str | None = None
     async with get_session(priority="interactive", label="adaptive.command.rollback", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         current = (
             await session.execute(
                 text("SELECT profile_id,state,rollback_profile_id FROM adaptive_asset_profiles WHERE asset=:asset AND is_current=TRUE FOR UPDATE"),
@@ -385,7 +391,6 @@ async def adaptive_rollback_command(update: Any, context: Any) -> None:
             text("INSERT INTO adaptive_promotion_events(profile_id,from_state,to_state,decision,reasons,metrics,actor_telegram_user_id,idempotency_key) VALUES(:profile_id,:from_state,'ROLLED_BACK','ROLLED_BACK',CAST(:reasons AS JSONB),'{}'::jsonb,:actor,:key) ON CONFLICT(idempotency_key) DO NOTHING"),
             {"profile_id": current_profile, "from_state": current["state"], "reasons": json.dumps(["neutral_baseline_restored", f"previous_profile_requires_revalidation:{target_profile}"]), "actor": actor, "key": key},
         )
+        invalidate_profile_cache(asset)
         await session.commit()
-    await publish_approved_profiles()
-    invalidate_profile_cache(asset)
     await _reply(update, f"↩️ {asset} returned to the neutral baseline. Previous profile {target_profile or 'unavailable'} requires revalidation before activation.")

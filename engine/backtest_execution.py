@@ -78,7 +78,9 @@ def simulate_signals(
         if source is None:
             source, mode = frame, "ohlc"
         # Strictly after the decision: no same-decision or earlier price replay.
-        events = source[(source["timestamp"] > lower) & (source["timestamp"] <= upper)].sort_values("timestamp")
+        events = source.loc[(source["timestamp"] > lower) & (source["timestamp"] <= upper), :].sort_values(
+            by="timestamp", kind="mergesort"
+        )
         filled = remaining = pnl = fees = 0.0
         fill_entry = None
         filled_targets = [0.0] * len(target_prices)
@@ -104,7 +106,7 @@ def simulate_signals(
             fees += fee
             remaining -= quantity
 
-        for _, event in events.iterrows():
+        for event in events.to_dict(orient="records"):
             if mode == "orderbook":
                 asks, bids = sorted(levels(event.get("asks"))), sorted(levels(event.get("bids")), reverse=True)
                 entry_levels, exit_levels = (asks, bids) if long else (bids, asks)
@@ -116,7 +118,7 @@ def simulate_signals(
             elif mode == "ticks":
                 start_price = market_price = float(event["price"])
                 raw_size = next((event.get(name) for name in ("size", "qty", "volume") if event.get(name) is not None), 0)
-                capacity = max(0.0, float(raw_size))
+                capacity = max(0.0, float(raw_size if raw_size is not None else 0))
                 high = low = market_price
                 exit_levels = [[market_price, capacity]]
             else:

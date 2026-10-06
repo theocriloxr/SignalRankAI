@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.redis_state import state
 from db.session import get_session
+from .lifecycle import approval_lease, lock_profile_lifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ async def publish_approved_profiles() -> int:
         label="adaptive.publish_profiles",
         timeout_seconds=float(os.getenv("ADAPTIVE_DB_TIMEOUT_SECONDS", "4") or 4),
     ) as session:
+        await lock_profile_lifecycle(session)
         rows = (
             (
                 await session.execute(
@@ -79,20 +81,18 @@ async def publish_approved_profiles() -> int:
             .mappings()
             .all()
         )
-    for row in rows:
-        payload = dict(row)
-        for key in (
-            "preferred_families",
-            "penalised_families",
-            "disabled_families",
-            "preferred_timeframes",
-            "preferred_sessions",
-            "avoided_sessions",
-        ):
-            payload[key] = payload.get(key) or []
-        state.set_sync(
-            f"adaptive:profile:approved:{str(payload['asset']).upper()}", json.dumps(payload, default=str), ex=21600
-        )
+        for row in rows:
+            payload = dict(row)
+            for key in (
+                "preferred_families", "penalised_families", "disabled_families",
+                "preferred_timeframes", "preferred_sessions", "avoided_sessions",
+            ):
+                payload[key] = payload.get(key) or []
+            payload["health_lease"] = approval_lease(str(payload["profile_id"]))
+            lease_seconds = int(payload["health_lease"]["expires_at"] - payload["health_lease"]["issued_at"])
+            state.set_sync(f"adaptive:profile:approved:{str(payload['asset']).upper()}",
+                           json.dumps(payload, default=str), ex=lease_seconds)
+        await session.commit()
     return len(rows)
 
 

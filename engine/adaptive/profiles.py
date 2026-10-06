@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 from core.redis_state import state
 from .types import AssetStrategyProfile, ProfileState
+from .lifecycle import approval_lease_valid
 
 
 def _profile_from_mapping(payload: Mapping[str, Any], *, asset: str, asset_class: str) -> AssetStrategyProfile:
@@ -43,15 +44,16 @@ class ProfileResolver:
 
     def resolve(self, asset: str, asset_class: str) -> AssetStrategyProfile:
         key = f"adaptive:profile:approved:{str(asset).upper()}"
-        raw = state.get_sync(key)
-        if raw:
-            try:
+        try:
+            raw = state.get_sync(key)
+            if raw:
                 payload = json.loads(raw) if isinstance(raw, str) else dict(raw)
                 profile = _profile_from_mapping(payload, asset=asset, asset_class=asset_class)
-                if profile.approved_for_runtime:
+                if (profile.approved_for_runtime and approval_lease_valid(payload)
+                        and profile.asset.upper() == str(asset).upper()):
                     return profile
-            except Exception:
-                pass
+        except Exception:
+            pass
         return AssetStrategyProfile(
             profile_id=f"baseline:{str(asset).upper()}",
             asset=str(asset).upper(),

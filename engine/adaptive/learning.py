@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 from dataclasses import asdict
 from collections import defaultdict
@@ -119,9 +120,11 @@ def _derive_weights(
 async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     """Suspend degraded runtime profiles using confirmed live-delivery evidence only."""
     minimum_live = max(20, int(os.getenv("ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES", "30") or 30))
-    drawdown_limit = max(1.0, float(os.getenv("ADAPTIVE_DRIFT_MAX_DRAWDOWN_R", "10") or 10))
-    brier_limit = max(0.05, min(1.0, float(os.getenv("ADAPTIVE_DRIFT_MAX_BRIER", "0.35") or 0.35)))
+    drawdown_limit = float(os.getenv("ADAPTIVE_DRIFT_MAX_DRAWDOWN_R", "10") or 10)
+    brier_limit = float(os.getenv("ADAPTIVE_DRIFT_MAX_BRIER", "0.35") or 0.35)
     expectancy_floor = float(os.getenv("ADAPTIVE_DRIFT_MIN_EXPECTANCY_R", "-0.10") or -0.10)
+    if minimum_live > 250 or not all(math.isfinite(v) for v in (drawdown_limit, brier_limit, expectancy_floor)) or drawdown_limit < 1 or not 0.05 <= brier_limit <= 1:
+        raise ValueError("invalid_adaptive_health_thresholds")
     rows = (
         (
             await session.execute(
@@ -165,23 +168,30 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     suspended: list[str] = []
     restored: list[str] = []
     for profile_id, evidence_rows in grouped.items():
-        if len(evidence_rows) < minimum_live:
-            continue
-        returns = [float(row["r_multiple"]) for row in reversed(evidence_rows)]
-        expectancy = sum(returns) / len(returns)
-        drawdown = _max_drawdown(returns)
-        brier = sum(
-            (max(0.0, min(1.0, float(row.get("confidence") or 0.0))) - (1.0 if float(row["r_multiple"]) > 0 else 0.0))
-            ** 2
+        invalid_evidence = any(
+            isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float)) or not math.isfinite(float(row["r_multiple"]))
+            or isinstance(row.get("confidence"), bool) or not isinstance(row.get("confidence"), (int, float)) or not math.isfinite(float(row["confidence"]))
+            or not 0 <= float(row["confidence"]) <= 1
             for row in evidence_rows
-        ) / len(evidence_rows)
+        )
+        if len(evidence_rows) < minimum_live and not invalid_evidence:
+            continue
+        expectancy = drawdown = brier = None
         reasons: list[str] = []
-        if expectancy < expectancy_floor:
-            reasons.append("live_expectancy_below_floor")
-        if drawdown > drawdown_limit:
-            reasons.append("live_drawdown_above_limit")
-        if brier > brier_limit:
-            reasons.append("live_calibration_drift")
+        if invalid_evidence:
+            reasons.append("invalid_delivery_health_observations")
+        else:
+            returns = [float(row["r_multiple"]) for row in reversed(evidence_rows)]
+            expectancy = sum(returns) / len(returns)
+            drawdown = _max_drawdown(returns)
+            brier = sum((float(row["confidence"]) - (1.0 if float(row["r_multiple"]) > 0 else 0.0)) ** 2
+                        for row in evidence_rows) / len(evidence_rows)
+            if expectancy < expectancy_floor:
+                reasons.append("live_expectancy_below_floor")
+            if drawdown > drawdown_limit:
+                reasons.append("live_drawdown_above_limit")
+            if brier > brier_limit:
+                reasons.append("live_calibration_drift")
         if not reasons:
             continue
         meta = profile_meta[profile_id]
@@ -235,20 +245,26 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     return {"suspended_assets": suspended, "restored_profiles": restored}
 
 
+async def monitor_profile_health() -> dict[str, Any]:
+    """Commit health decisions independently from research; invalidate under lock."""
+    from .lifecycle import lock_profile_lifecycle
+    from .repository import invalidate_profile_cache
+
+    async with get_session(priority="critical", label="adaptive.monitor", timeout_seconds=4) as session:
+        await lock_profile_lifecycle(session)
+        drift = await _monitor_runtime_profiles(session)
+        for asset in drift.get("suspended_assets", []):
+            invalidate_profile_cache(asset)
+        await session.commit()
+    published = await publish_approved_profiles()
+    return {**drift, "published": published}
+
+
 class AdaptiveLearningWorker:
     async def run_once(self) -> dict[str, Any]:
-        # Research pauses must not disable health surveillance. Commit health
-        # decisions independently so a later optimisation failure cannot undo a
-        # suspension or leave a stale cached approval active.
-        async with get_session(priority="background", label="adaptive.monitor", timeout_seconds=4) as monitor_session:
-            await monitor_session.execute(text("SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_health'))"))
-            drift_result = await _monitor_runtime_profiles(monitor_session)
-            await monitor_session.commit()
-        if drift_result.get("suspended_assets"):
-            from .repository import invalidate_profile_cache
-            for asset in drift_result["suspended_assets"]:
-                invalidate_profile_cache(asset)
-        published = await publish_approved_profiles()
+        # Pausing research never pauses the independent health loop.
+        drift_result = await monitor_profile_health()
+        published = int(drift_result["published"])
         paused = str(state.get_sync("adaptive:optimisation:paused") or "0").strip().lower() in {
             "1",
             "true",
@@ -346,7 +362,7 @@ class AdaptiveLearningWorker:
                 .all()
             )
 
-            dataset_rows, manifest = build_dataset(raw_rows)
+            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows])
             await session.execute(
                 text(
                     """
@@ -622,13 +638,6 @@ class AdaptiveLearningWorker:
                 },
             )
             await session.commit()
-
-        if drift_result.get("suspended_assets"):
-            for suspended_asset in drift_result["suspended_assets"]:
-                from .repository import invalidate_profile_cache
-
-                invalidate_profile_cache(suspended_asset)
-            published = await publish_approved_profiles()
 
         logger.info(
             "[adaptive_learning] run=%s rows=%s candidates=%s duplicates=%s wfo=%s dataset=%s",

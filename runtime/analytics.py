@@ -5,7 +5,6 @@ does not own Telegram delivery or live outcome computation.
 """
 from __future__ import annotations
 import asyncio
-import contextlib
 import logging
 import os
 logger=logging.getLogger(__name__)
@@ -412,72 +411,90 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
     stop=stop_event or asyncio.Event()
     tasks=[]
     shadow=None
-    if _enabled("OPENAI_STARTUP_PROBE_ENABLED", False):
-        tasks.append(asyncio.create_task(_openai_startup_probe(), name="openai-startup-probe"))
-    if _enabled("SHADOW_TRACKING_ENABLED", True):
-        from engine.shadow_outcome_worker import shadow_outcome_worker
-        shadow=shadow_outcome_worker
-        await shadow.start()
-    if _enabled("ASSET_LEARNING_ENABLED", True):
-        from worker.asset_learning_worker import asset_learning_worker
-        tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
-    if _enabled("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
-        from services.instrument_catalogue_refresh import instrument_catalogue_refresh_loop
-        tasks.append(
-            asyncio.create_task(
-                instrument_catalogue_refresh_loop(stop),
-                name="instrument-catalogue-refresh",
-            )
-        )
-    if _enabled("ML_DRIFT_MONITOR_ENABLED", False):
-        tasks.append(asyncio.create_task(_ml_drift_loop(stop),name="analytics-ml-drift"))
-    if _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
-        async def _ml_loop() -> None:
-            delay=max(60, int(os.getenv("ANALYTICS_ML_TRAIN_STARTUP_DELAY_SECONDS", "900") or 900))
-            interval=max(3600, int(os.getenv("ML_TRAIN_INTERVAL_SECONDS", "86400") or 86400))
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=delay)
-                return
-            except asyncio.TimeoutError:
-                pass
-            while not stop.is_set():
-                ok=await _run_ml_training_serialized(
-                    reason="scheduled",
-                    lookback_days=max(
-                        1,
-                        int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90),
-                    ),
+    stop_task=None
+    try:
+        from engine.adaptive.lifecycle import adaptive_learning_loop, profile_health_loop
+        health_task=asyncio.create_task(profile_health_loop(stop), name="adaptive-health")
+        tasks.append(health_task)
+        if _enabled("ADAPTIVE_LEARNING_WORKER_ENABLED", True):
+            tasks.append(asyncio.create_task(adaptive_learning_loop(stop), name="adaptive-learning"))
+        if _enabled("OPENAI_STARTUP_PROBE_ENABLED", False):
+            tasks.append(asyncio.create_task(_openai_startup_probe(), name="openai-startup-probe"))
+        if _enabled("SHADOW_TRACKING_ENABLED", True):
+            from engine.shadow_outcome_worker import shadow_outcome_worker
+            shadow=shadow_outcome_worker
+            await shadow.start()
+        if _enabled("ASSET_LEARNING_ENABLED", True):
+            from worker.asset_learning_worker import asset_learning_worker
+            tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
+        if _enabled("DYNAMIC_INSTRUMENT_DISCOVERY_ENABLED", True):
+            from services.instrument_catalogue_refresh import instrument_catalogue_refresh_loop
+            tasks.append(
+                asyncio.create_task(
+                    instrument_catalogue_refresh_loop(stop),
+                    name="instrument-catalogue-refresh",
                 )
-                logger.info("[analytics] ml_train status=%s", "success" if ok else "skipped_or_failed")
+            )
+        if _enabled("ML_DRIFT_MONITOR_ENABLED", False):
+            tasks.append(asyncio.create_task(_ml_drift_loop(stop),name="analytics-ml-drift"))
+        if _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
+            async def _ml_loop() -> None:
+                delay=max(60, int(os.getenv("ANALYTICS_ML_TRAIN_STARTUP_DELAY_SECONDS", "900") or 900))
+                interval=max(3600, int(os.getenv("ML_TRAIN_INTERVAL_SECONDS", "86400") or 86400))
                 try:
-                    await asyncio.wait_for(stop.wait(), timeout=interval)
+                    await asyncio.wait_for(stop.wait(), timeout=delay)
+                    return
                 except asyncio.TimeoutError:
                     pass
-        tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
-    if _enabled("LEARNING_HISTORY_RETENTION_ENABLED", False):
-        from db.storage_maintenance import learning_history_maintenance_loop
-        tasks.append(
-            asyncio.create_task(
-                learning_history_maintenance_loop(),
-                name="learning-history-retention",
+                while not stop.is_set():
+                    ok=await _run_ml_training_serialized(
+                        reason="scheduled",
+                        lookback_days=max(
+                            1,
+                            int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90),
+                        ),
+                    )
+                    logger.info("[analytics] ml_train status=%s", "success" if ok else "skipped_or_failed")
+                    try:
+                        await asyncio.wait_for(stop.wait(), timeout=interval)
+                    except asyncio.TimeoutError:
+                        pass
+            tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
+        if _enabled("LEARNING_HISTORY_RETENTION_ENABLED", False):
+            from db.storage_maintenance import learning_history_maintenance_loop
+            tasks.append(
+                asyncio.create_task(
+                    learning_history_maintenance_loop(),
+                    name="learning-history-retention",
+                )
             )
-        )
-    if _enabled("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
-        from services.continuous_improvement.scheduler import continuous_improvement_loop
-        tasks.append(
-            asyncio.create_task(
-                continuous_improvement_loop(stop),
-                name="continuous-improvement-review",
+        if _enabled("CONTINUOUS_IMPROVEMENT_REVIEW_ENABLED", True):
+            from services.continuous_improvement.scheduler import continuous_improvement_loop
+            tasks.append(
+                asyncio.create_task(
+                    continuous_improvement_loop(stop),
+                    name="continuous-improvement-review",
+                )
             )
-        )
-    logger.info("[analytics] started shadow=%s tasks=%s",bool(shadow),[task.get_name() for task in tasks])
-    try:
-        await stop.wait()
+        logger.info("[analytics] started shadow=%s tasks=%s",bool(shadow),[task.get_name() for task in tasks])
+        stop_task=asyncio.create_task(stop.wait(), name="analytics-stop")
+        supervised=[task for task in tasks if task.get_name() != "openai-startup-probe"]
+        done,_=await asyncio.wait([stop_task, *supervised], return_when=asyncio.FIRST_COMPLETED)
+        if not stop.is_set():
+            for task in sorted(done, key=lambda item: item.get_name()):
+                if task is stop_task:
+                    continue
+                if task.cancelled():
+                    raise RuntimeError(f"analytics_task_cancelled_unexpectedly:{task.get_name()}")
+                raise RuntimeError(f"analytics_task_stopped_unexpectedly:{task.get_name()}") from task.exception()
     finally:
-        if shadow is not None: await shadow.stop()
-        for task in tasks: task.cancel()
-        for task in tasks:
-            with contextlib.suppress(asyncio.CancelledError): await task
+        stop.set()
+        cleanup=[*tasks, *([stop_task] if stop_task is not None else [])]
+        for task in cleanup:
+            task.cancel()
+        await asyncio.gather(*cleanup, return_exceptions=True)
+        if shadow is not None:
+            await shadow.stop()
 
 def run() -> None: asyncio.run(run_async())
 start=run

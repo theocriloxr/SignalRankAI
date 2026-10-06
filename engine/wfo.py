@@ -58,7 +58,13 @@ class WalkForwardOptimizer:
         if df is None or df.empty or "volume" not in df.columns:
             return 0.0
         try:
-            avg_bar_volume = float(pd.to_numeric(df["volume"], errors="coerce").dropna().tail(1000).mean() or 0.0)
+            volume = df["volume"]
+            if not isinstance(volume, pd.Series):
+                raise ValueError("ambiguous_volume_column")
+            numeric_volume = pd.to_numeric(volume, errors="coerce")
+            if not isinstance(numeric_volume, pd.Series):
+                raise ValueError("invalid_volume_series")
+            avg_bar_volume = float(numeric_volume.dropna().tail(1000).mean() or 0.0)
         except Exception:
             avg_bar_volume = 0.0
         if avg_bar_volume <= 0:
@@ -129,8 +135,8 @@ class WalkForwardOptimizer:
             tp = float(tps[0].get("price") if isinstance(tps[0], dict) else tps[0])
             start_ts = pd.to_datetime(sig.get("timestamp") or df["timestamp"].iloc[0], utc=True)
             end_ts = start_ts + pd.Timedelta(minutes=lookahead_minutes)
-            rows = df[(df["timestamp"] > start_ts) & (df["timestamp"] <= end_ts)]
-            for _, row in rows.iterrows():
+            rows = df.loc[(df["timestamp"] > start_ts) & (df["timestamp"] <= end_ts), :]
+            for row in rows.to_dict(orient="records"):
                 high = float(row["high"])
                 low = float(row["low"])
                 dirn = str(sig.get("direction") or "long").lower()
@@ -168,7 +174,12 @@ class WalkForwardOptimizer:
             decision = pd.to_datetime(sig["timestamp"], utc=True)
             cached = sig.get("_research_features")
             if cached is not None:
-                available_at = pd.to_datetime(sig.get("_research_feature_available_at"), utc=True)
+                availability_value = sig.get("_research_feature_available_at")
+                if availability_value is None:
+                    raise ValueError("research_feature_availability_invalid")
+                available_at = pd.to_datetime(availability_value, utc=True)
+                if not isinstance(available_at, pd.Timestamp):
+                    raise ValueError("research_feature_availability_invalid")
                 if pd.isna(available_at) or available_at > decision:
                     raise ValueError("research_feature_availability_invalid")
                 return dict(cached)
@@ -183,7 +194,7 @@ class WalkForwardOptimizer:
                 availability = frame["timestamp"] + pd.Timedelta(minutes=self._timeframe_minutes(parts[1]))
                 if prediction and (frame.empty or availability.max() < decision):
                     raise ValueError("research_prediction_feature_snapshot_required")
-                closed = frame[availability <= decision].tail(300)
+                closed = frame.loc[availability <= decision, :].tail(300)
                 context[parts[1]] = {"candles": closed.to_dict("records")}
             if not context:
                 raise ValueError("research_feature_context_missing")

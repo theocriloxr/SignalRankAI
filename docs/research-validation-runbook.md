@@ -2,11 +2,28 @@
 
 ## Runtime integration
 
-`AdaptiveLearningWorker` monitors current approved/canary profiles before checking
-whether optimization is paused or disabled. A suspension commits independently
-of candidate research and invalidates the cached approval. It restores the
-neutral baseline; it never activates a previously approved profile automatically.
-The owner rollback command follows the same revalidation requirement.
+The analytics role and legacy worker own an independent profile-health loop
+(`ADAPTIVE_HEALTH_INTERVAL_SECONDS`, default 60, allowed 15–300 seconds).
+Pausing or disabling research does not pause health surveillance.
+`AdaptiveLearningWorker` also checks health before starting research. Analytics
+supervises its recurring tasks and exits if a task unexpectedly stops; startup
+failures cancel and await every task already created.
+
+Publication and suspension share a PostgreSQL transaction advisory lock.
+Suspension invalidates the cached approval before releasing that lock and commits
+independently of research. Cache approvals carry profile-bound short leases
+(150 seconds at the default cadence); outages, invalid leases and expired leases
+resolve to neutral weights. This bounds stale cache use during an outage; it
+does not prove instantaneous cross-process cache invalidation or Redis write
+acknowledgement. Rollback also restores the neutral baseline and requires
+revalidation before reactivation.
+
+The operator diagnostics expose the last check as COMPLETED, ERROR, STALE or
+UNAVAILABLE. COMPLETED reports a successful monitor iteration, not certified
+edge. The current evidence is confirmed signal-delivery outcomes, not broker
+fills or account equity. Invalid/nonfinite observations suspend a profile even
+below the ordinary sample minimum. Validated per-profile health baselines,
+instrument execution evidence and funded-account constraints remain unfinished.
 
 Candidate outcome datasets include the timestamp at which an outcome or later
 correction became available. Unresolved labels are excluded, rather than

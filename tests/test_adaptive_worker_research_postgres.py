@@ -1,11 +1,14 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
 import asyncio
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 from uuid import uuid4
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -124,7 +127,8 @@ async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["paused", "disabled"])
-async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch, worker_database, mode):
+@pytest.mark.parametrize("observations", ["degraded", "nonfinite"])
+async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch, worker_database, mode, observations):
     from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
     from engine.adaptive import learning, repository
     from utils.timeutils import now_utc_naive
@@ -152,14 +156,14 @@ async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch
             AdaptiveAssetProfile(profile_id=current, asset=asset, asset_class="crypto", version=2,
                                  state="CANARY", is_current=True, rollback_profile_id=old)])
         await session.flush()
-        for i in range(35):
+        for i in range(2 if observations == "nonfinite" else 35):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
                                entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
                                strategy_name="audit", strategy_group="trend", regime="trend", status="closed",
                                created_at=start + timedelta(hours=i)))
             await session.flush()
-            session.add(Outcome(signal_id=signal_id, status="loss", r_multiple=-1, provenance="delivered",
+            session.add(Outcome(signal_id=signal_id, status="loss", r_multiple=float("nan") if observations == "nonfinite" else -1, provenance="delivered",
                                 closed_at=start + timedelta(hours=i, minutes=30), performance_inclusion_status="eligible"))
             session.add(SignalDelivery(user_id=user.id, signal_id=signal_id, sent_ok=True, delivery_state="CONFIRMED"))
             session.add(AdaptiveSignalEvidence(signal_id=signal_id, asset=asset, timeframe="1h", strategy_id="audit",
@@ -240,3 +244,77 @@ async def test_same_named_guard_on_the_wrong_relation_cannot_pass_admission(monk
         await session.commit()
     assert (await railway_main._database_readiness_check())["detail"] == "research_evidence_immutability_guards_missing"
     assert "research_append_only_triggers" in schema_gate.check_schema()["missing"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["suspend", "rollback"])
+async def test_inflight_profile_publication_cannot_undo_deactivation(monkeypatch, worker_database, action):
+    from db.models import AdaptiveAssetProfile
+    from engine.adaptive import repository, profiles
+    from signalrank_telegram import adaptive_commands as commands
+
+    async with worker_database() as session:
+        session.add_all([
+            AdaptiveAssetProfile(profile_id="cache-old", asset="AUDITCACHE", asset_class="crypto", version=1,
+                                 state="APPROVED", is_current=False),
+            AdaptiveAssetProfile(profile_id="cache-current", asset="AUDITCACHE", asset_class="crypto", version=2,
+                                 state="CANARY", is_current=True, rollback_profile_id="cache-old")])
+        await session.commit()
+    read = asyncio.Event()
+    release = asyncio.Event()
+    contender = asyncio.Event()
+    values = {}
+    fake_state = SimpleNamespace(get_sync=values.get,
+        set_sync=lambda key, value, **kwargs: values.__setitem__(key, value))
+
+    class SessionProxy:
+        def __init__(self, session, label):
+            self.session, self.label = session, label
+        def __getattr__(self, name):
+            return getattr(self.session, name)
+        async def execute(self, statement, parameters=None):
+            sql = str(statement)
+            if self.label.startswith("adaptive.command.") and "pg_advisory_xact_lock" in sql:
+                contender.set()
+            result = await self.session.execute(statement, parameters or {})
+            if self.label == "adaptive.publish_profiles" and "FROM adaptive_asset_profiles" in sql:
+                read.set()
+                await release.wait()
+            return result
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield SessionProxy(session, kwargs.get("label", ""))
+
+    monkeypatch.setattr(repository, "get_session", sessions)
+    monkeypatch.setattr(commands, "get_session", sessions)
+    monkeypatch.setattr(repository, "state", fake_state)
+    monkeypatch.setattr(profiles, "state", fake_state)
+    monkeypatch.setattr(commands, "_require_owner", AsyncMock(return_value=True))
+    monkeypatch.setattr(commands, "_reply", AsyncMock())
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    command = commands.adaptive_suspend_command if action == "suspend" else commands.adaptive_rollback_command
+    context = SimpleNamespace(args=["cache-current" if action == "suspend" else "AUDITCACHE"])
+    publisher = asyncio.create_task(repository.publish_approved_profiles())
+    deactivation = None
+    try:
+        await asyncio.wait_for(read.wait(), timeout=5)
+        deactivation = asyncio.create_task(command(update, context))
+        await asyncio.wait_for(contender.wait(), timeout=5)
+        done, _ = await asyncio.wait({deactivation}, timeout=0.05)
+        assert not done, "deactivation must serialize with the in-flight publisher"
+        release.set()
+        await asyncio.wait_for(asyncio.gather(publisher, deactivation), timeout=10)
+        cached = json.loads(values["adaptive:profile:approved:AUDITCACHE"])
+        assert cached["state"] == "SUSPENDED"
+        assert profiles.ProfileResolver().resolve("AUDITCACHE", "crypto").metadata["neutral_fallback"]
+        async with worker_database() as session:
+            assert not (await session.execute(text("SELECT EXISTS(SELECT 1 FROM adaptive_asset_profiles WHERE is_current)"))).scalar_one()
+            assert (await session.execute(text("SELECT state FROM adaptive_asset_profiles WHERE profile_id='cache-old'"))).scalar_one() == "APPROVED"
+    finally:
+        release.set()
+        for task in (publisher, deactivation):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.gather(*(task for task in (publisher, deactivation) if task is not None), return_exceptions=True)

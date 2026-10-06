@@ -21,9 +21,16 @@ those saved sources.
 - The Google Doc referenced by directive 1 remains inaccessible. Its independent
   review is unverified until readable source content is available.
 - The published branch and production release must be reported separately from
-  the isolated research candidates. The foundation is `9f73d7d1`; its complete
-  suite found stale schema/command fixtures and Windows sandbox subprocess
-  failures. Those failures are retained while the next candidate is verified.
+  the isolated research candidates. Published `2c67a93e` passed 2,940 local tests
+  and its five browser checks. Hosted CI passed both backend Python versions and
+  the research browser job, but failed critical typing and frontend/mobile
+  security. Those failures are retained. The next candidate corrects the type
+  boundaries and adds independently scheduled health monitoring, lifecycle
+  serialization, expiring cache approvals and worker supervision.
+- A restricted Windows process environment prevented Pyright from discovering
+  installed runtime packages, producing an incomplete local result. Verification
+  now permits interpreter discovery and checks the actual locked runtime; a
+  zero-error result with missing package resolution is not equivalent evidence.
 - The original production availability monitor continues. As of 02:13 UTC on
   6 October, it had 919 samples over 45.90 hours and status `DEGRADED`, observing
   `8f8583933a853a54ba1b3585610ee466903c08fc`, schema 0045. It is not the new

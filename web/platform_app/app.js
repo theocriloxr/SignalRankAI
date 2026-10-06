@@ -180,6 +180,7 @@ function renderOperatorDiagnostics(){
     ['Redis',d.redis?.configured?'CONNECTED':'UNAVAILABLE',d.redis?.configured?'positive':'negative'],
     ['Performance ledger',performance.ok?'PASS':'BLOCKED',performance.ok?'positive':'negative'],
     ['Outcome projections',outcomes.ok?'PASS':'BLOCKED',outcomes.ok?'positive':'negative'],
+    ['Adaptive health check',d.adaptive_health?.status||'UNAVAILABLE',d.adaptive_health?.fresh&&d.adaptive_health?.status==='COMPLETED'?'positive':'warning'],
     ['Provider circuits',Object.values(providers.circuits||{}).some(x=>x?.open)?'OPEN':'CLEAR',Object.values(providers.circuits||{}).some(x=>x?.open)?'warning':'positive'],
     ['Payment receipt gap',payments.receipt_gap??'—',Number(payments.receipt_gap||0)>0?'warning':'positive']
   ];

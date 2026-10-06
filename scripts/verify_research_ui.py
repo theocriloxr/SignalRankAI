@@ -36,6 +36,12 @@ with sync_playwright() as p:
                 else:
                     page.locator('#sessionNav [data-view=ops]').click()
                 page.locator('#operatorResearch').get_by_text('2 trials · 2 terminal results').wait_for()
+                diagnostics = context.request.get(base + '/api/v1/platform/operator/diagnostics')
+                assert diagnostics.status == 200
+                health = diagnostics.json()['adaptive_health']
+                assert health['status'] == 'UNAVAILABLE' and health['fresh'] is False
+                assert health['broker_fills_certified'] is False
+                page.locator('#operatorDiagnostics').get_by_text('Adaptive health check', exact=True).wait_for()
                 assert page.locator('#operatorKillSwitchOn').is_hidden()
                 assert page.locator('#operatorKillSwitchOff').is_hidden()
                 assert not any('/operator/maintenance' in url for url in requests), 'admin must not request owner-only maintenance'

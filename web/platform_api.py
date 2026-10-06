@@ -1109,6 +1109,7 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
     from data import fetcher
     from services.outcome_reconciliation import outcome_projection_health
     from services.performance_ledger import performance_ledger_health
+    from engine.adaptive.lifecycle import health_monitor_snapshot
 
     environment = str(runtime_environment_name("development") or "development").lower()
     unhealthy = []
@@ -1228,6 +1229,7 @@ async def operator_diagnostics(user: dict[str, Any] = Depends(current_user)) -> 
             "circuits": provider_circuits,
         },
         "engine": engine_cycle,
+        "adaptive_health": health_monitor_snapshot(redis_state),
         "performance": performance,
         "outcomes": outcomes,
         "payments": payment,

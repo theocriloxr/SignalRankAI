@@ -285,6 +285,10 @@ class Worker:
                 config.CRYPTO_WS_ENABLED,
             )
 
+        # Health surveillance runs even when analytics/research is disabled.
+        from engine.adaptive.lifecycle import profile_health_loop
+        _register_task("adaptive_health", lambda: profile_health_loop(self._stop), restart_on_failure=True)
+
         # Adaptive strategy learning is analytics-only and produces SHADOW candidates.
         if _analytics_work_allowed_in_worker() and _env_bool("ADAPTIVE_LEARNING_WORKER_ENABLED", True):
             try:
@@ -963,32 +967,8 @@ class Worker:
 
     async def _adaptive_learning_loop(self) -> None:
         """Publish approved profiles and build bounded SHADOW challengers."""
-        from engine.adaptive.learning import AdaptiveLearningWorker
-
-        worker = AdaptiveLearningWorker()
-        interval = max(3600, int(os.getenv("ADAPTIVE_LEARNING_INTERVAL_SECONDS", "21600") or 21600))
-        initial_delay = _env_float(
-            "ADAPTIVE_LEARNING_STARTUP_DELAY_SECONDS",
-            300.0 if _is_railway_runtime() else 0.0,
-            minimum=0.0,
-        )
-        if initial_delay > 0:
-            logger.info("[worker] adaptive learning delayed %.1fs to avoid startup DB pressure", initial_delay)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
-                return
-            except asyncio.TimeoutError:
-                pass
-        while not self._stop.is_set():
-            try:
-                result = await worker.run_once()
-                logger.info("[adaptive_learning] completed result=%s", result)
-            except Exception as exc:
-                logger.warning("[adaptive_learning] iteration failed: %s", exc, exc_info=True)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                continue
+        from engine.adaptive.lifecycle import adaptive_learning_loop
+        await adaptive_learning_loop(self._stop)
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""
