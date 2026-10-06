@@ -10659,11 +10659,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 78,
+      "line_count": 84,
       "path": "scripts/verify_research_ui.py",
       "reason": "production/build source",
-      "sha256": "469d5cec7fe2014e56218c956e16b8bed4da647b7d2aa6c28f6c23cfbb512eed",
-      "size_bytes": 5169
+      "sha256": "56832012362859d569a496d0b5b2967978b7808cacd3581d322183745d9212d5",
+      "size_bytes": 5668
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15798,8 +15798,8 @@
       "line_count": 1223,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "00beec54a77e0c83aad04b54a132b0e66aba7ccfaf3846b1a21a315e273bc754",
-      "size_bytes": 149667
+      "sha256": "4880edfa0b62c277e52ed5f19db41dedb7f85120c5032c9ea4eb0b8f2ae16f41",
+      "size_bytes": 149679
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
