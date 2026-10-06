@@ -61,6 +61,10 @@ Its lag-one serial-dependence screen is only a screen, not proof of independent
 observations. CSCV PBO requires aligned common observations for all candidates,
 equally sized partitions and nonconstant trial series. It supplements, rather
 than replaces, chronological validation.
+CSCV also rejects oversized matrix/partition workloads before copying the
+observations (at most two million candidate-observation visits). Boolean
+observations cannot masquerade as numeric trade returns. The report records
+its work count and method version; it never drops candidates to fit the budget.
 
 Irregular trade R is not daily equity return. Its descriptive report therefore
 does not invent annualized Sharpe. Drawdown duration is measured in observations

@@ -114,6 +114,42 @@ def test_cscv_has_no_overfitting_for_consistently_dominant_candidate():
     matrix = [[0.1 + 0.01 * (i % 2), 0.005 + 0.1 * (-1) ** i] for i in range(16)]
     result = probability_backtest_overfitting(matrix, blocks=4)
     assert result["pbo"] == 0 and result["partitions"] == 6
+    assert result["sample_visits"] == 16 * 2 * 6
+
+
+def test_cscv_large_shapes_fail_before_copying_or_scoring_observations(monkeypatch):
+    from engine.adaptive import statistics
+    class LargeMatrix:
+        def __len__(self):
+            return 1280
+        def __getitem__(self, index):
+            return [0.1] * 32
+        def __iter__(self):
+            pytest.fail("oversized matrix must not be consumed")
+    monkeypatch.setattr(statistics, "_values", lambda *args: pytest.fail("oversized data must not be normalized"))
+    with pytest.raises(ValueError, match="cscv_compute_budget_exceeded"):
+        statistics.probability_backtest_overfitting(LargeMatrix(), blocks=8)
+
+
+@pytest.mark.parametrize("blocks", [True, 8.0, "8"])
+def test_cscv_invalid_partition_types_cannot_start_work(blocks):
+    with pytest.raises(ValueError, match="invalid_cscv_partition"):
+        probability_backtest_overfitting([[0.1, -0.1]] * 16, blocks=blocks)
+
+
+def test_boolean_trade_returns_cannot_become_performance_evidence():
+    with pytest.raises(ValueError, match="boolean_research_observation"):
+        return_diagnostics([True, False])
+
+
+def test_oversized_return_series_fail_before_iteration():
+    class OversizedSeries:
+        def __len__(self):
+            return 100_001
+        def __iter__(self):
+            pytest.fail("oversized return series must not be consumed")
+    with pytest.raises(ValueError, match="invalid_research_sample"):
+        return_diagnostics(OversizedSeries())
 
 
 def test_cscv_refuses_unaligned_or_silently_truncated_partitions():

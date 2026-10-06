@@ -13,11 +13,16 @@ from statistics import NormalDist, mean, median, stdev
 from typing import Sequence
 
 METHOD_VERSION = "research-statistics-v1"
+MAXIMUM_CSCV_SAMPLE_VISITS = 2_000_000
 
 
 def _values(values: Sequence[float], minimum: int = 2) -> list[float]:
+    if not minimum <= len(values) <= 100_000:
+        raise ValueError("invalid_research_sample")
+    if any(isinstance(value, bool) for value in values):
+        raise ValueError("boolean_research_observation")
     parsed = [float(value) for value in values]
-    if len(parsed) < minimum or len(parsed) > 100_000 or not all(math.isfinite(value) for value in parsed):
+    if not all(math.isfinite(value) for value in parsed):
         raise ValueError("invalid_research_sample")
     return parsed
 
@@ -81,14 +86,19 @@ def probability_backtest_overfitting(matrix: Sequence[Sequence[float]], *, block
 
     This selection diagnostic does not replace chronological validation. Full
     equally sized partitions are required; no rows or unsuccessful trials may
-    be dropped silently. Computation is bounded at 924 combinations.
+    be dropped silently. Both partition count and matrix work are bounded.
     """
-    rows = [_values(row) for row in matrix]
-    if blocks not in {4, 6, 8, 10, 12} or len(rows) < blocks * 2 or len(rows) % blocks:
+    if type(blocks) is not int or blocks not in {4, 6, 8, 10, 12} or len(matrix) < blocks * 2 or len(matrix) % blocks:
         raise ValueError("invalid_cscv_partition")
-    width = len(rows[0])
-    if width > 256 or any(len(row) != width for row in rows):
+    width = len(matrix[0])
+    partitions = math.comb(blocks, blocks // 2)
+    sample_visits = len(matrix) * width * partitions
+    # Reject from shape metadata before allocating/copying the sample matrix.
+    if sample_visits > MAXIMUM_CSCV_SAMPLE_VISITS:
+        raise ValueError("cscv_compute_budget_exceeded")
+    if not 2 <= width <= 256 or any(len(row) != width for row in matrix):
         raise ValueError("unaligned_trial_matrix")
+    rows = [_values(row) for row in matrix]
     size = len(rows) // blocks
     all_blocks = set(range(blocks))
     ranks: list[float] = []
@@ -113,7 +123,9 @@ def probability_backtest_overfitting(matrix: Sequence[Sequence[float]], *, block
         ranks.append(mean(candidate_ranks))
     return {"pbo": sum(rank <= 0.5 for rank in ranks) / len(ranks),
             "partitions": len(ranks), "trial_count": width, "observations": len(rows),
-            "blocks": blocks, "method_version": "cscv-v1", "evidence_class": "research"}
+            "blocks": blocks, "sample_visits": sample_visits,
+            "maximum_sample_visits": MAXIMUM_CSCV_SAMPLE_VISITS,
+            "method_version": "cscv-v2", "evidence_class": "research"}
 
 
 def profit_factor(returns_r: Sequence[float]) -> float | None:
