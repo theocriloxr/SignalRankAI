@@ -5651,11 +5651,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 44,
+      "line_count": 60,
       "path": "docs/RELEASE_ACCEPTANCE_HANDOFF_20261008.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "5f7dcca80ba8fe4a0d5d73602a2be8068fcf76f8ca502a7d52850b5721158245",
-      "size_bytes": 5516
+      "sha256": "75a2dabc8fdda2c9c9a7ac608258a09f9f89ec4c2c5a59ff069f0259735bb33f",
+      "size_bytes": 8346
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
