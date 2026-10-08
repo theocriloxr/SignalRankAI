@@ -44,7 +44,7 @@ export function PasswordRecovery({ initialToken = "" }: { initialToken?: string 
     <p>Recovery changes sign-in credentials only. Broker connections, risk controls and trading permissions remain governed by their existing verification policies.</p>
     {!finished&&<form onSubmit={submit}>
       {stage==="request"?<label>Email address<input type="email" name="email" required autoComplete="email" maxLength={255}/></label>:
-      <><label>New password<input name="password" type="password" required autoComplete="new-password"/></label><label>Confirm password<input name="confirmation" type="password" required autoComplete="new-password"/></label></>}
+      <><label>New password<input name="password" type="password" required minLength={10} maxLength={256} autoComplete="new-password"/></label><label>Confirm password<input name="confirmation" type="password" required autoComplete="new-password"/></label></>}
       <button className="button" type="submit" disabled={busy}>{busy?"Processing…":stage==="request"?"Send recovery instructions":"Update password"}</button>
     </form>}
     {message&&<p className="sr-form-message" role="status">{message}</p>}
