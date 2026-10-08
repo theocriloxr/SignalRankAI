@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { AccountCreation } from "./AccountCreation";
+import { SignalEvidence } from "./SignalEvidence";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -102,7 +103,7 @@ function SignalView({ data, detail = false }: { data: Row; detail?: boolean }) {
   if (detail) {
     const candidate = record(data.signal);
     return <div className="sr-view-stack"><p className="sr-risk-note">Detail is delivered for your account only. A signal is not broker authorization or an order.</p>
-      {Object.keys(candidate).length ? <SignalRecord signal={candidate} /> : <Panel title="Signal detail"><p className="sr-muted">No entitled signal detail was returned.</p></Panel>}
+      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} /><SignalEvidence data={data} /></> : <Panel title="Signal detail"><p className="sr-muted">No entitled signal detail was returned.</p></Panel>}
       <Link className="sr-secondary-action" href="/app/signals">← Back to delivered signals</Link>
     </div>;
   }
