@@ -2,8 +2,10 @@ import createClient from "openapi-fetch";
 import type { paths } from "./api";
 import { platformFetch } from "./transport";
 
-const configured = process.env.NEXT_PUBLIC_SIGNALRANK_API_BASE_URL?.trim();
-const baseUrl = configured ? configured.replace(/\/$/, "") : "";
+// Always use same-origin API paths so the readable sr_csrf cookie and
+// HttpOnly session cookies have the same origin as the browser workspace.
+// Next rewrites forward these paths to the configured, trusted server API.
+const baseUrl = "";
 
 const client = createClient<paths>({
   baseUrl,
