@@ -1,5 +1,5 @@
 {
-  "file_count": 2052,
+  "file_count": 2053,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8547,11 +8547,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 512,
+      "line_count": 525,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "df9d8bed47e70da2efc30d95f5de38f973ab82fa9d62a6d52db92629f461beaf",
-      "size_bytes": 22118
+      "sha256": "0b8d6b04ab71e007915ec026bab6fa659b5db809b9176b6a07b65f2cd9b97c1d",
+      "size_bytes": 22967
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8675,6 +8675,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 124,
+      "path": "frontend/src/components/TradingPreferences.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "8200d8386db703312b3a577f892ac04e0f088176ac8c496790fe36b037a8c469",
+      "size_bytes": 6919
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 79,
       "path": "frontend/src/components/WatchlistsView.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8683,11 +8691,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 302,
+      "line_count": 304,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "742495b5525710806d3c612537c4491fe73b739b3827fdd90d12b1346d70cffe",
-      "size_bytes": 24333
+      "sha256": "2f6dbd9b1ebcaa48bec7008f1d188689e545ebc1b01e564e2f1168d570107f37",
+      "size_bytes": 24499
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16431,7 +16439,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
-    "PRESERVE_BEHAVIOUR": 1221,
+    "PRESERVE_BEHAVIOUR": 1222,
     "TEST_ONLY": 356
   }
 }
