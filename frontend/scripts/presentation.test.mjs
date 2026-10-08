@@ -87,3 +87,13 @@ test("magic link request is non-enumerating and never persists proof",()=>{
   assert.match(source,/If this address has an active account/);
   assert.doesNotMatch(source,/localStorage|sessionStorage|client\.(PUT|DELETE|PATCH)\(/);
 });
+
+test("operations navigation checks server-issued operator authority",()=>{
+  const nav=readFileSync(new URL("../src/components/AppShell.tsx",import.meta.url),"utf8");
+  const control=readFileSync(new URL("../src/components/OperationsNavLink.tsx",import.meta.url),"utf8");
+  assert.ok(nav.includes("<OperationsNavLink"));
+  assert.ok(control.includes('client.GET("/api/v1/platform/me")'));
+  assert.ok(control.includes('authority==="OWNER"||authority==="ADMIN"'));
+  assert.doesNotMatch(nav,/\["Operations","\/app\/operations"\]/);
+  assert.doesNotMatch(control,/localStorage|sessionStorage|client\.(POST|PUT|DELETE|PATCH)\(/);
+});
