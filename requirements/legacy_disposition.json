@@ -1,5 +1,5 @@
 {
-  "file_count": 2051,
+  "file_count": 2052,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4971,11 +4971,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 40,
+      "line_count": 52,
       "path": "docs/DESIGN_COMPLETION_REPORT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "653d763a58fb5382992aad853346115ac84392a45fb6f37bbe43bb7162e4a4c6",
-      "size_bytes": 6354
+      "sha256": "873871f0b8a0834bbdfe68062ba738db92d09fe0dde725e357e740c70a89decf",
+      "size_bytes": 8639
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8427,11 +8427,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 162,
+      "line_count": 173,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "ca793bd5f96a007622c4deb8d0fc10cb39b220e12b27e738b5ee7c5a18f58e26",
-      "size_bytes": 8653
+      "sha256": "f9e4e25167a067ba05fa380b1a54aff38b30deaa445ba6308c7b4b0151707d01",
+      "size_bytes": 9213
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8547,11 +8547,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 501,
+      "line_count": 512,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a58f9ec3717a5cc5055dff95708f4b59c6ebd9456c150cdae490cf5694e28f4c",
-      "size_bytes": 21221
+      "sha256": "df9d8bed47e70da2efc30d95f5de38f973ab82fa9d62a6d52db92629f461beaf",
+      "size_bytes": 22118
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8584,6 +8584,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "9b225d50fe7ad6b8831b64a30ed99413c8fb8c801e256bb6d2d249352ec10d67",
       "size_bytes": 2962
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 54,
+      "path": "frontend/src/components/JournalView.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "ee58b899587277e5759280fc1292a5575081398644428e99ef99a1f6ed02aa5f",
+      "size_bytes": 3824
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8675,11 +8683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 300,
+      "line_count": 302,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "4982b17e5af20be22c51420f61c44cde25ba09a808248dadb4ccda908ace8319",
-      "size_bytes": 24076
+      "sha256": "742495b5525710806d3c612537c4491fe73b739b3827fdd90d12b1346d70cffe",
+      "size_bytes": 24333
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16423,7 +16431,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
-    "PRESERVE_BEHAVIOUR": 1220,
+    "PRESERVE_BEHAVIOUR": 1221,
     "TEST_ONLY": 356
   }
 }
