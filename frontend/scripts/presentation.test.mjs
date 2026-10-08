@@ -185,3 +185,16 @@ test("personal signal preferences use authoritative tier limits and never alter 
   assert.match(app,/<TradingPreferences data=\{state\.data\}/);
   assert.doesNotMatch(code,/client\.(POST|DELETE|PATCH)\(|\/broker\/|\/signal\/execute|kill.switch|localStorage|sessionStorage/);
 });
+
+
+test("support conversations require an entitled ticket and server-confirmed reply",()=>{
+  const s=readFileSync(new URL("../src/components/SupportCenter.tsx",import.meta.url),"utf8");
+  const view=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(s.includes('client.GET("/api/v1/platform/support/tickets/{ticket_id}"'));
+  assert.ok(s.includes('client.POST("/api/v1/platform/support/tickets/{ticket_id}/messages"'));
+  assert.ok(s.includes('detail.ticket.status==="closed"'));
+  assert.ok(s.includes('response.response.ok && response.data'));
+  assert.ok(s.includes('params:{path:{ticket_id:selected}}'));
+  assert.match(view,/<SupportCenter data=\{state\.data\}/);
+  assert.doesNotMatch(s,/localStorage|sessionStorage|client\.(PUT|PATCH|DELETE)\(|\/execute|\/broker\//);
+});
