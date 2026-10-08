@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { AccountCreation } from "./AccountCreation";
+import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
   probabilityLabel, record, rows, statusText, timeLabel,
@@ -29,13 +30,13 @@ export const workspaceTitles = titles;
 
 /* Every request passes through the typed, cookie-authenticated canonical client.
    No workspace response is cached in browser storage and no broker order is issued. */
-async function readSection(section: Section, signalId?: string): Promise<Outcome> {
+async function readSection(section: Section, signalId?: string, filters: SignalQuery = {}): Promise<Outcome> {
   const outcome = (() => {
     switch (section) {
       case "overview": return client.GET("/api/v1/platform/dashboard");
       case "signals": return signalId
         ? client.GET("/api/v1/platform/signals/{signal_id}", { params: { path: { signal_id: signalId } } })
-        : client.GET("/api/v1/platform/signals", { params: { query: { limit: 30, offset: 0 } } });
+        : client.GET("/api/v1/platform/signals", { params: { query: { limit: 30, offset: 0, ...filters } } });
       case "markets": return client.GET("/api/v1/platform/quality");
       case "research": return client.GET("/api/v1/platform/strategy-leaderboard");
       case "watchlists": return client.GET("/api/v1/platform/watchlists");
@@ -232,6 +233,7 @@ function GeneralView({ section, data }: { section: Section; data: Row }) {
 export function WorkspaceLive({ section, signalId }: { section: Section; signalId?: string }) {
   const [state, setState] = useState<State>({kind:"loading",data:null});
   const [epoch,setEpoch] = useState(0);
+  const [filters,setFilters] = useState<SignalQuery>({});
 
   useEffect(()=>{
     let cancelled=false;
@@ -247,7 +249,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
         if(section==="operations"&&user.authority!=="OWNER"&&user.authority!=="ADMIN"){
           setState({kind:"error",data:null,status:403});return;
         }
-        const result=await readSection(section,signalId);
+        const result=await readSection(section,signalId,filters);
         if(cancelled)return;
         setState(result.success?{kind:"ready",data:result.data}:{kind:result.status===401?"auth":"error",data:null,status:result.status});
       }catch{
@@ -256,10 +258,11 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
     };
     void load();
     return ()=>{cancelled=true};
-  },[section,signalId,epoch]);
+  },[section,signalId,filters,epoch]);
 
   return <div className="sr-workspace-content">
     <header className="sr-workspace-heading"><div><p className="sr-overline">Canonical account workspace / Read-only</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
+    {section==="signals"&&!signalId&&<SignalFilters onApply={setFilters} />}
     {state.kind==="loading"&&<div className="sr-loading" role="status" aria-live="polite">Checking your session and retrieving authorized records…</div>}
     {state.kind==="auth"&&<div className="sr-access-state" role="alert"><h2>Sign in required</h2><p>Account-specific market, signal and broker information is never shown without a valid session.</p><Link className="button" href="/login">Sign in securely</Link></div>}
     {state.kind==="error"&&<div className="sr-access-state" role="alert"><h2>{state.status===403?"Access restricted":"Data could not be verified"}</h2><p>{statusText(state.status)}</p><button className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)}>Retry</button></div>}
