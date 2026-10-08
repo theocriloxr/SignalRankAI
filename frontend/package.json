@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:transport": "node --test scripts/transport.test.mjs",
+    "test:transport": "node --experimental-strip-types --test scripts/transport.test.mjs scripts/presentation.test.mjs",
     "test:dependencies": "node --test scripts/dependency-contract.test.mjs",
     "test:presentation": "node --experimental-strip-types --test scripts/presentation.test.mjs"
   },
