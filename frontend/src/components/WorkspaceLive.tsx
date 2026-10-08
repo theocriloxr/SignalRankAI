@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { AccountCreation } from "./AccountCreation";
 import { SignalEvidence } from "./SignalEvidence";
+import { NotificationCenter } from "./NotificationCenter";
+import { NotificationPreferences } from "./NotificationPreferences";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -277,6 +279,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="markets"?<QualityView data={state.data}/>: 
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
+      section==="alerts"?<div className="sr-view-stack"><NotificationCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><NotificationPreferences/></div>:
       <div className="sr-view-stack">
         <GeneralView section={section} data={state.data}/>
         {(section==="watchlists"||section==="support"||section==="journal")&&
