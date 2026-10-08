@@ -5,7 +5,7 @@ import { SessionExit } from "./SessionExit";
 import { OperationsNavLink } from "./OperationsNavLink";
 
 const groups = [
-  { label:"Decisions",items:[["Overview","/app"],["Signals","/app/signals"],["Markets","/app/markets"],["Research","/app/research"],["Watchlists","/app/watchlists"],["Alerts","/app/alerts"]] },
+  { label:"Decisions",items:[["Overview","/app"],["Signals","/app/signals"],["Markets","/app/markets"],["Research","/app/research"],["Watchlists","/app/watchlists"],["Alerts","/app/alerts"],["Notifications","/app/notifications"]] },
   { label:"Portfolio",items:[["Paper","/app/paper"],["Portfolio","/app/portfolio"],["Performance","/app/performance"],["Journal","/app/journal"]] },
   { label:"Account & control",items:[["Brokers","/app/brokers"],["Billing","/app/billing"],["Support","/app/support"],["Settings","/app/settings"]] },
 ] as const;
