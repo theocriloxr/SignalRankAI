@@ -276,7 +276,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
   },[section,signalId,filters,signalOffset,epoch]);
 
   return <div className="sr-workspace-content">
-    <header className="sr-workspace-heading"><div><p className="sr-overline">Canonical account workspace / Read-only</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
+    <header className="sr-workspace-heading"><div><p className="sr-overline">Canonical account workspace / {["settings","watchlists","alerts","support","journal"].includes(section)?"Account-owned controls":"Read-only records"}</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
     {section==="signals"&&!signalId&&<SignalFilters onApply={next=>{setSignalOffset(0);setFilters(next);}} />}
     {state.kind==="loading"&&<div className="sr-loading" role="status" aria-live="polite">Checking your session and retrieving authorized records…</div>}
     {state.kind==="auth"&&<div className="sr-access-state" role="alert"><h2>Sign in required</h2><p>Account-specific market, signal and broker information is never shown without a valid session.</p><Link className="button" href="/login">Sign in securely</Link></div>}
