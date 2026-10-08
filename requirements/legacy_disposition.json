@@ -1,5 +1,5 @@
 {
-  "file_count": 2042,
+  "file_count": 2046,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -67,11 +67,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 51,
+      "line_count": 58,
       "path": ".github/workflows/regenerate-ui-branch-governance.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "68f5e29c4ad758917bfa6aed94fbe42799b4d43885a6cd5bc71df50287576062",
-      "size_bytes": 1865
+      "sha256": "c2f04eb2043ea8f80b2c128c2080ceaf6dada5d2c92b6e4021f7798d446dffda",
+      "size_bytes": 2004
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5651,6 +5651,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 44,
+      "path": "docs/RELEASE_ACCEPTANCE_HANDOFF_20261008.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "5f7dcca80ba8fe4a0d5d73602a2be8068fcf76f8ca502a7d52850b5721158245",
+      "size_bytes": 5516
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 35,
       "path": "docs/RELEASE_NOTES_V1.3.6.8.md",
       "reason": "documentation/specification/evidence",
@@ -8411,11 +8419,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 89,
+      "line_count": 99,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "594771b5ef65a41f216742417f917ba9b11e4897202b670ca92f31f6a23996b2",
-      "size_bytes": 4334
+      "sha256": "13ae1772d50d260c4dbeebb1697894f34130b8259c0e25fe6305d82bb3f04414",
+      "size_bytes": 4966
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8542,7 +8550,7 @@
       "line_count": 77,
       "path": "frontend/src/components/AccountCreation.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "fa0ddf4b1f69693301c933979dae3faea70592e015efefd4bc092107d2394c28",
+      "sha256": "bc49b8d9a09cbb4a8be968e110292ebf6f34726f2aa4d012e68a71f47f1acfd9",
       "size_bytes": 4014
     },
     {
@@ -8558,16 +8566,16 @@
       "line_count": 103,
       "path": "frontend/src/components/AccountEntry.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "4d925f30a7524ea6c28fc9b03712ceeb4d0358b165a03a0019aa0f588ddb4dee",
-      "size_bytes": 5776
+      "sha256": "704db7d96b0169191ef1811ce2958ced465931105d9ccb1ce1f50fd2d3a64d01",
+      "size_bytes": 5819
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 42,
+      "line_count": 44,
       "path": "frontend/src/components/AppShell.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9c0f7d55665f90bacf09443f1c516c778d9586a20c1e3941ab566036cd1e48c2",
-      "size_bytes": 2844
+      "sha256": "9b225d50fe7ad6b8831b64a30ed99413c8fb8c801e256bb6d2d249352ec10d67",
+      "size_bytes": 2962
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8579,11 +8587,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 24,
+      "path": "frontend/src/components/OperationsNavLink.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "ea1d5cebaef3c7acda4f9133426f76604163cf47c705b66f38a7f8dafc6b6c2f",
+      "size_bytes": 977
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/PasswordRecovery.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "752e24b623f7fd8eae86c9dea26e2ad78a212718c5ff6fad52835b30d4410b54",
-      "size_bytes": 3484
+      "sha256": "d6996fe8b1f5ebc77b5ff220ba03326df5436eda8b64374d9d5b9482cd4c802c",
+      "size_bytes": 3515
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11251,11 +11267,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 177,
+      "line_count": 65,
+      "path": "services/broker_routing_policy.py",
+      "reason": "production/build source",
+      "sha256": "7c5ef6aaac249300bddfd003e774546f3ebfcde28a2c7a2c2e41e1ac025bb28c",
+      "size_bytes": 2994
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 188,
       "path": "services/broker_signal_router.py",
       "reason": "production/build source",
-      "sha256": "88ee8fdd0e98fcc1c536627089c735aefce233e03595a20205411c5752b064e1",
-      "size_bytes": 7240
+      "sha256": "f4e3e044e53920bdac682323f238ce58ffd523fc8980a3cbdfbe0af22777205c",
+      "size_bytes": 7826
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13427,6 +13451,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 104,
+      "path": "tests/test_canonical_broker_destination_admission.py",
+      "reason": "automated test evidence",
+      "sha256": "296e9659386374ed00a19d51a3d04d6c3d7325c3ddc47db92be996c0b3246074",
+      "size_bytes": 3718
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 364,
       "path": "tests/test_canonical_broker_entrypoints.py",
       "reason": "automated test evidence",
@@ -15507,11 +15539,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 365,
+      "line_count": 372,
       "path": "tests/test_trade_tracker.py",
       "reason": "automated test evidence",
-      "sha256": "676f422c891880e2588c39079e0b39fe82cdc8791a42ec1e52aff53b33f3a787",
-      "size_bytes": 12197
+      "sha256": "9c8dd6fc5242a5630ada2cebf41612be7ade62ab987fc2a4e10f9a33a08d4284",
+      "size_bytes": 12668
     },
     {
       "disposition": "TEST_ONLY",
@@ -16350,8 +16382,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 472,
-    "PRESERVE_BEHAVIOUR": 1214,
-    "TEST_ONLY": 355
+    "DOCUMENTATION_ONLY": 473,
+    "PRESERVE_BEHAVIOUR": 1216,
+    "TEST_ONLY": 356
   }
 }
