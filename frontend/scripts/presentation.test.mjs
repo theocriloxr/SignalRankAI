@@ -160,3 +160,14 @@ test("signal filters paginate canonical delivered receipts without changing gene
   assert.ok(src.includes("total count not reported"));
   assert.doesNotMatch(src,/client\.(POST|PATCH|PUT|DELETE)\(/);
 });
+
+
+test("journal deletion needs explicit user confirmation and a verified account-owned response",()=>{
+  const src=readFileSync(new URL("../src/components/JournalView.tsx",import.meta.url),"utf8");
+  assert.ok(src.includes('client.DELETE("/api/v1/platform/journal/{journal_entry_id}"'));
+  assert.match(src,/if\(!id\|\|busy\|\|!confirming\)return/);
+  assert.match(src,/result\.data\.deleted===true/);
+  assert.match(src,/Confirm deletion/);
+  assert.match(src,/Keep entry/);
+  assert.doesNotMatch(src,/localStorage|sessionStorage|\/execute|kill.switch/);
+});
