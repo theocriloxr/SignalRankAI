@@ -375,3 +375,26 @@ html { scroll-padding-top: 1rem; }
   .sr-public-nav .appearanceControl { margin-inline-start:auto; }
   .sr-public-mobile-menu { margin-inline-start:0; }
 }
+
+
+/* Route-level recovery is kept independent from a potentially broken shell. */
+.sr-global-state {
+  width:min(100% - 32px,880px);
+  min-height:80svh;
+  margin:auto;
+  padding:clamp(48px,9vw,100px) 0;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:22px;
+}
+.sr-global-state h1 { font-size:clamp(38px,6vw,70px); line-height:1.03; letter-spacing:-.055em; margin:0; max-width:18ch; }
+.sr-global-state>p:not(.sr-overline) { color:var(--muted); max-width:58ch; line-height:1.75; }
+.sr-global-actions { display:flex; flex-wrap:wrap; gap:12px; }
+.sr-global-skeleton { width:min(100%,600px); display:grid; gap:14px; margin-block-start:18px; }
+.sr-global-skeleton span { display:block; height:12px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; }
+.sr-global-skeleton span:first-child { width:70%; height:34px; }
+.sr-global-skeleton span:last-child { width:48%; }
+.sr-recovery-card { width:min(100%,560px); margin-inline:auto; }
+.sr-recovery-card h1 { font-size:clamp(27px,3vw,40px); margin:0; letter-spacing:-.04em; line-height:1.12; }
