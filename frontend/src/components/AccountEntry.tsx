@@ -83,7 +83,7 @@ export function AccountEntry() {
       <h2 id="sr-auth-title">{stage==="mfa"?"Verify your identity":mode==="register"?"Create your SignalRank account":"Welcome back"}</h2>
       <p>Credentials are sent to the canonical account service. No session token is stored in browser local storage.</p>
       <form onSubmit={submit}>
-        {stage==="mfa"?<label>Authenticator code<input name="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={8} required autoFocus /></label>:
+        {stage==="mfa"?<label>Authenticator code<input name="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={8} required /></label>:
         <>
           {mode==="register"&&<label>Display name<input name="name" autoComplete="name" maxLength={100}/></label>}
           <label>Email address<input name="email" type="email" autoComplete="email" required maxLength={255}/></label>
@@ -95,6 +95,7 @@ export function AccountEntry() {
       </form>
       {stage==="mfa"?<button className="sr-auth-switch" type="button" onClick={()=>reset("login")}>Use another account</button>:
       <button className="sr-auth-switch" type="button" onClick={()=>reset(mode==="login"?"register":"login")}>{mode==="login"?"New to SignalRank? Create an account":"Already have an account? Sign in"}</button>}
+      {stage==="credentials"&&<Link href="/recover" className="sr-auth-switch">Forgot your password?</Link>}
       <p className="sr-auth-disclaimer">Trading carries risk. Market data, execution eligibility and financial records must be verified independently.</p>
     </section>
   </div></main>;
