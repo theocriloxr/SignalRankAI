@@ -39,6 +39,15 @@ not replace native build or physical-device testing.
 
 ## Installation and evidence
 
+Use Node 22.13+ (22.x) or Node 24+, and npm 11.17.0. CI installs that exact npm
+version; both projects enforce npm >=11.10.0 with `engine-strict=true` so older
+clients cannot silently ignore the policy. Both `.npmrc` files set
+`min-release-age=7` (days), without package exclusions. This constrains new
+dependency resolution; reviewed lockfiles still define reproducible installs.
+The setting does not waive vulnerability findings or approve install scripts.
+See [npm's version introducing release age](https://github.com/npm/cli/releases/tag/v11.10.0)
+and [the configuration contract](https://docs.npmjs.com/cli/v11/using-npm/config/#min-release-age).
+
 Both projects set `install-links=true` so npm installs the local packages as
 packages rather than mutable external links. Their spec references in
 `overrides` point to the declared local dependency. `npm ci` must succeed on a

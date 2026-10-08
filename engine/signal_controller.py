@@ -393,67 +393,32 @@ class SignalController:
             return False
         s = self._normalize_signal(signal)
         key = (str(s.get("asset")), str(s.get("timeframe")), str(s.get("direction")))
-        # Optional correlation avoidance: don't emit if correlates too highly
-        try:
-            if os.getenv("ENABLE_CORRELATION_CHECK", "false").lower() in ("1", "true", "yes"):
-                try:
-                    from core.redis_state import state
-                    from engine.risk_manager import CorrelationManager
-                    from utils.async_runner import run_sync
-                    from data.market_data import fetch_market_data
+        # When enabled, unavailable exposure or market evidence blocks admission.
+        if os.getenv("ENABLE_CORRELATION_CHECK", "false").lower() in ("1", "true", "yes"):
+            try:
+                from core.redis_state import state
+                from engine.risk import check_correlation_gate, correlation_positions
+                from utils.async_runner import run_sync
+                from data.market_data import fetch_market_data_cached
 
-                    new_asset = str(s.get("asset") or "").upper().strip()
-                    tf = str(s.get("timeframe") or "").lower().strip()
-
-                    active = state.get_active_trades_sync() or {}
-                    existing_pairs = []
-                    for payload in (active or {}).values():
-                        try:
-                            asset = (
-                                str(payload.get("symbol") or payload.get("asset") or payload.get("symbol") or "")
-                                .upper()
-                                .strip()
-                            )
-                            if asset and asset != new_asset:
-                                existing_pairs.append(asset)
-                        except Exception:
-                            continue
-
-                    if existing_pairs:
-                        # Fetch recent market data for new and existing pairs in a thread
-                        def _fetch():
-                            return fetch_market_data(new_asset, [tf])
-
-                        data = run_sync(_fetch)
-                        # Build returns_data mapping symbol -> ndarray of pct returns
-                        returns_data = {}
-                        try:
-                            import numpy as np
-
-                            for asset in [new_asset] + existing_pairs:
-                                md = run_sync(lambda a=asset: fetch_market_data(a, [tf]))
-                                indicators = md.get(tf, {}).get("indicators") if md else None
-                                candles = md.get(tf, {}).get("candles") if md else None
-                                if candles and isinstance(candles, list) and len(candles) >= 5:
-                                    closes = [float(c.get("close") or c[4]) for c in candles if c]
-                                    if len(closes) >= 3:
-                                        rets = np.diff(closes) / closes[:-1]
-                                        returns_data[asset] = rets
-                        except Exception:
-                            returns_data = {}
-
-                        cm = CorrelationManager()
-                        ok, reason = cm.can_add_correlated_position(
-                            new_asset, existing_pairs, returns_data=returns_data
-                        )
-                        if not ok:
-                            self.audit_logger.info("Correlation block: %s -> %s", new_asset, reason)
-                            return False
-                except Exception:
-                    # On error, be permissive
-                    pass
-        except Exception:
-            pass
+                new_asset = str(s.get("asset") or "").upper().strip()
+                tf = str(s.get("timeframe") or "").lower().strip()
+                existing_pairs = correlation_positions(state.get_active_trades_sync(require_complete=True))
+                candles_by_asset = {}
+                if existing_pairs:
+                    for asset in sorted({new_asset, *existing_pairs}):
+                        md = run_sync(fetch_market_data_cached(asset, [tf]), timeout=20.0)
+                        candles_by_asset[asset] = md.get(tf, {}).get("candles", [])
+                ok, reason = check_correlation_gate(
+                    new_asset, existing_pairs, candles_by_asset,
+                    max_correlation=float(os.getenv("MAX_PORTFOLIO_CORRELATION", "0.7")),
+                )
+                if not ok:
+                    self.audit_logger.info("Correlation block: %s -> %s", new_asset, reason)
+                    return False
+            except Exception:
+                self.audit_logger.warning("Correlation evidence unavailable; emission blocked")
+                return False
 
         return key not in self._cycle_seen
 

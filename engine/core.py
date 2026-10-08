@@ -3827,19 +3827,13 @@ def main_loop(DRY_RUN: bool = False):
                         # risk gate
                         account_state = type("AccountState", (), {"drawdown": 0.0})()
                         try:
-                            active_trades = state.get_active_trades_sync() or {}
-                            active_positions = []
-                            for payload in (active_trades or {}).values():
-                                try:
-                                    sym = str(payload.get("symbol") or payload.get("asset") or "").upper().strip()
-                                    if sym:
-                                        active_positions.append(sym)
-                                except Exception:
-                                    continue
-                            if active_positions:
-                                sig["active_positions"] = list(dict.fromkeys(active_positions))
+                            from engine.risk import correlation_positions
+
+                            sig["active_positions"] = correlation_positions(
+                                state.get_active_trades_sync(require_complete=True)
+                            )
                         except Exception:
-                            pass
+                            sig["active_positions"] = None
                         if not risk_check(sig, account_state):
                             sig["rejection_reason"] = "risk/volatility"
                             pipeline_stats["risk_failed"] += 1

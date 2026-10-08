@@ -29,5 +29,10 @@
   },
   "overrides": {
     "fast-glob": "$@signalrank/next-root-glob"
-  }
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0",
+    "npm": ">=11.10.0"
+  },
+  "packageManager": "npm@11.17.0"
 }

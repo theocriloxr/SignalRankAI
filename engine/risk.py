@@ -549,55 +549,110 @@ def hard_stop_active(account_state: Any) -> bool:
     return drawdown is None or drawdown >= DD_HARD_LIMIT
 
 
+def correlation_positions(active_trades: Any) -> list[str]:
+    """Preserve unknown exposure as an error, never an empty portfolio."""
+    if not isinstance(active_trades, dict):
+        raise ValueError("invalid_active_trades")
+    positions = set()
+    for payload in active_trades.values():
+        if not isinstance(payload, dict):
+            raise ValueError("invalid_active_trade")
+        symbol = payload.get("symbol") or payload.get("asset")
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise ValueError("invalid_active_symbol")
+        positions.add(symbol.upper().strip())
+    return sorted(positions)
+
+
+def _correlation_returns(candles: Any) -> dict[tuple[int, int], float]:
+    """Keep the complete interval identity; never align unrelated rows by length."""
+    if not isinstance(candles, (list, tuple)) or len(candles) < 11:
+        raise ValueError("insufficient_timestamped_history")
+    points: list[tuple[int, float]] = []
+    for candle in candles:
+        if not isinstance(candle, dict):
+            raise ValueError("timestamped_candles_required")
+        close = finite_number(candle.get("close"))
+        raw_time = candle.get("timestamp", candle.get("time"))
+        if (close is None or close <= 0 or isinstance(raw_time, bool)
+                or not isinstance(raw_time, (str, int, float, datetime))):
+            raise ValueError("invalid_correlation_candle")
+        if isinstance(raw_time, (int, float)):
+            stamp = pd.to_datetime(raw_time, unit="ms" if abs(raw_time) >= 1e11 else "s", utc=True)
+        else:
+            stamp = pd.to_datetime(raw_time, utc=True)
+        if pd.isna(stamp):
+            raise ValueError("invalid_correlation_timestamp")
+        timestamp = int(stamp.value)
+        if points and timestamp <= points[-1][0]:
+            raise ValueError("unordered_correlation_history")
+        points.append((timestamp, close))
+    result = {}
+    for (start, previous), (end, close) in zip(points, points[1:]):
+        change = close / previous - 1.0
+        if not math.isfinite(change):
+            raise ValueError("nonfinite_correlation_return")
+        result[(start, end)] = change
+    return result
+
+
 def check_correlation_gate(
     new_symbol: str,
     active_positions: list[str] | None,
-    price_series_by_symbol: dict[str, list[float]] | None = None,
+    price_series_by_symbol: dict[str, list[dict[str, Any]]] | None = None,
     max_correlation: float = 0.85,
 ) -> tuple[bool, str]:
-    """Block new entries that are too correlated with existing open positions.
+    """Compare returns on matching candle intervals, rejecting unavailable evidence.
 
-    price_series_by_symbol should map symbols to close-price series of equal-ish length.
+    Histories must contain ordered timestamp/close records. Untimestamped prices
+    cannot establish that two returns occurred over the same market interval.
+    Absolute correlation is a conservative exposure constraint, not a claim
+    about a hedge's direction or an account's aggregate portfolio risk.
     """
     try:
-        new_symbol_norm = str(new_symbol or "").upper().strip()
-        active_norm = [str(s or "").upper().strip() for s in (active_positions or []) if str(s or "").strip()]
-        if not new_symbol_norm or not active_norm:
+        threshold = finite_number(max_correlation)
+        if threshold is None or not 0 < threshold <= 1:
+            return False, "invalid_correlation_threshold"
+        if not isinstance(new_symbol, str) or not new_symbol.strip():
+            return False, "invalid_correlation_symbol"
+        if not isinstance(active_positions, (list, tuple, set)) or any(
+            not isinstance(symbol, str) or not symbol.strip() for symbol in active_positions
+        ):
+            return False, "invalid_active_positions"
+        new_symbol_norm = new_symbol.upper().strip()
+        active_norm = {symbol.upper().strip() for symbol in active_positions}
+        if not active_norm:
             return True, "no_correlation_check_needed"
-
-        series_map = {k: v for k, v in (price_series_by_symbol or {}).items() if v}
-        if new_symbol_norm not in series_map:
-            return True, "missing_price_series"
-
-        new_series = pd.Series(series_map.get(new_symbol_norm, []), dtype="float64").dropna()
-        if len(new_series) < 10:
-            return True, "insufficient_price_history"
-
-        for existing in active_norm:
-            if existing == new_symbol_norm:
-                continue
-            existing_series = pd.Series(series_map.get(existing, []), dtype="float64").dropna()
-            if len(existing_series) < 10:
-                continue
-            length = min(len(new_series), len(existing_series))
-            if length < 10:
-                continue
-            corr = float(np.corrcoef(new_series.iloc[-length:], existing_series.iloc[-length:])[0, 1])
-            if np.isnan(corr):
-                continue
-            if abs(corr) >= float(max_correlation):
-                logger.info(
-                    "[risk] Correlation block: %s vs %s corr=%.2f threshold=%.2f",
-                    new_symbol_norm,
-                    existing,
-                    corr,
-                    max_correlation,
-                )
+        if new_symbol_norm in active_norm:
+            return False, "existing_symbol_exposure"
+        if not isinstance(price_series_by_symbol, dict):
+            return False, "missing_price_series"
+        series_map = {}
+        for symbol, candles in price_series_by_symbol.items():
+            if not isinstance(symbol, str) or not symbol.strip():
+                return False, "invalid_correlation_symbol"
+            normalized = symbol.upper().strip()
+            if normalized in series_map:
+                return False, "duplicate_correlation_symbol"
+            series_map[normalized] = candles
+        new_returns = _correlation_returns(series_map.get(new_symbol_norm))
+        for existing in sorted(active_norm):
+            existing_returns = _correlation_returns(series_map.get(existing))
+            intervals = sorted(new_returns.keys() & existing_returns.keys())
+            if len(intervals) < 10:
+                return False, "insufficient_aligned_returns"
+            left = np.array([new_returns[interval] for interval in intervals])
+            right = np.array([existing_returns[interval] for interval in intervals])
+            if np.std(left) <= np.finfo(float).eps or np.std(right) <= np.finfo(float).eps:
+                return False, "undefined_correlation"
+            corr = float(np.corrcoef(left, right)[0, 1])
+            if not math.isfinite(corr):
+                return False, "undefined_correlation"
+            if abs(corr) >= threshold:
                 return False, f"high correlation with {existing}: {corr:.2f}"
         return True, "ok"
-    except Exception as exc:
-        logger.debug("[risk] correlation gate failed open: %s", exc)
-        return True, "correlation_check_failed_open"
+    except (TypeError, ValueError, OverflowError):
+        return False, "invalid_correlation_evidence"
 
 
 def calculate_dynamic_risk(
@@ -683,7 +738,9 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     # Correlation gate: block when new trade is too correlated with existing open positions.
     if _env_bool("ENABLE_CORRELATION_GATE", True):
         try:
-            active_positions = signal.get("active_positions") or []
+            active_positions = signal.get("active_positions", [])
+            if not isinstance(active_positions, (list, tuple, set)):
+                return False
             price_series_by_symbol = signal.get("correlation_prices") or {}
             if not price_series_by_symbol and active_positions:
                 try:
@@ -694,33 +751,28 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
                     symbols = [str(signal.get("asset") or signal.get("symbol") or "").upper().strip()] + [
                         str(sym or "").upper().strip() for sym in active_positions
                     ]
-                    series_map: dict[str, list[float]] = {}
+                    series_map: dict[str, list[dict[str, Any]]] = {}
                     for sym in symbols:
                         if not sym:
                             continue
                         md = run_sync(fetch_market_data_cached(sym, [timeframe]), timeout=20.0)
                         candles = (md or {}).get(timeframe, {}).get("candles", []) if isinstance(md, dict) else []
-                        closes = []
-                        for candle in candles or []:
-                            try:
-                                closes.append(float(candle.get("close")))
-                            except Exception:
-                                continue
-                        if closes:
-                            series_map[sym] = closes
+                        # Preserve timestamps and invalid records for the validator.
+                        series_map[sym] = candles
                     price_series_by_symbol = series_map
                 except Exception:
                     price_series_by_symbol = {}
             ok, _reason = check_correlation_gate(
                 str(signal.get("asset") or signal.get("symbol") or ""),
-                list(active_positions) if isinstance(active_positions, (list, tuple, set)) else [],
+                list(active_positions),
                 price_series_by_symbol if isinstance(price_series_by_symbol, dict) else {},
-                max_correlation=float(os.getenv("MAX_PORTFOLIO_CORRELATION", "0.85") or 0.85),
+                max_correlation=float(os.getenv("MAX_PORTFOLIO_CORRELATION", "0.85")),
             )
             if not ok:
                 return False
         except Exception:
-            pass
+            logger.warning("[risk] correlation evidence unavailable; entry blocked")
+            return False
 
     return True
 
