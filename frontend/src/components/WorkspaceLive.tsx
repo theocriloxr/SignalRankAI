@@ -11,6 +11,7 @@ import { WatchlistsView } from "./WatchlistsView";
 import { JournalView } from "./JournalView";
 import { TradingPreferences } from "./TradingPreferences";
 import { SupportCenter } from "./SupportCenter";
+import { AlertRules } from "./AlertRules";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -19,7 +20,7 @@ import {
 } from "../lib/presentation";
 
 type Section =
-  | "overview" | "signals" | "markets" | "research" | "watchlists" | "alerts"
+  | "overview" | "signals" | "markets" | "research" | "watchlists" | "alerts" | "notifications"
   | "paper" | "portfolio" | "performance" | "journal" | "brokers"
   | "billing" | "support" | "settings" | "operations";
 
@@ -27,7 +28,7 @@ type Outcome = { data: Row | null; status: number; success: boolean };
 type State = { kind: "loading" | "ready" | "error" | "auth"; data: Row | null; status?: number };
 const titles: Record<Section, string> = {
   overview: "Decision overview", signals: "Delivered signals", markets: "Market intelligence",
-  research: "Research", watchlists: "Watchlists", alerts: "Notifications", paper: "Paper trading",
+  research: "Research", watchlists: "Watchlists", alerts: "Custom alerts", notifications: "Notifications", paper: "Paper trading",
   portfolio: "Portfolio exposure", performance: "Performance evidence", journal: "Journal",
   brokers: "Broker connections", billing: "Subscription and billing", support: "Support",
   settings: "Account and trading policy", operations: "Owner operations",
@@ -47,7 +48,8 @@ async function readSection(section: Section, signalId?: string, filters: SignalQ
       case "markets": return client.GET("/api/v1/platform/quality");
       case "research": return client.GET("/api/v1/platform/strategy-leaderboard");
       case "watchlists": return client.GET("/api/v1/platform/watchlists");
-      case "alerts": return client.GET("/api/v1/platform/notifications");
+      case "alerts": return client.GET("/api/v1/platform/alerts");
+      case "notifications": return client.GET("/api/v1/platform/notifications");
       case "paper": return client.GET("/api/v1/platform/paper");
       case "portfolio": return client.GET("/api/v1/platform/portfolio");
       case "performance": return client.GET("/api/v1/platform/performance");
@@ -276,7 +278,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
   },[section,signalId,filters,signalOffset,epoch]);
 
   return <div className="sr-workspace-content">
-    <header className="sr-workspace-heading"><div><p className="sr-overline">Canonical account workspace / {["settings","watchlists","alerts","support","journal"].includes(section)?"Account-owned controls":"Read-only records"}</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
+    <header className="sr-workspace-heading"><div><p className="sr-overline">Canonical account workspace / {["settings","watchlists","alerts","notifications","support","journal"].includes(section)?"Account-owned controls":"Read-only records"}</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
     {section==="signals"&&!signalId&&<SignalFilters onApply={next=>{setSignalOffset(0);setFilters(next);}} />}
     {state.kind==="loading"&&<div className="sr-loading" role="status" aria-live="polite">Checking your session and retrieving authorized records…</div>}
     {state.kind==="auth"&&<div className="sr-access-state" role="alert"><h2>Sign in required</h2><p>Account-specific market, signal and broker information is never shown without a valid session.</p><Link className="button" href="/login">Sign in securely</Link></div>}
@@ -291,7 +293,8 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="markets"?<QualityView data={state.data}/>: 
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
-      section==="alerts"?<div className="sr-view-stack"><NotificationCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><NotificationPreferences/></div>:
+      section==="notifications"?<div className="sr-view-stack"><NotificationCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><NotificationPreferences/></div>:
+      section==="alerts"?<AlertRules data={state.data} onChanged={()=>setEpoch(value=>value+1)}/>:
       section==="watchlists"?<div className="sr-view-stack"><WatchlistsView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="watchlists" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       section==="journal"?<div className="sr-view-stack"><JournalView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="journal" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       section==="settings"?<TradingPreferences data={state.data} onSaved={()=>setEpoch(value=>value+1)}/>:
