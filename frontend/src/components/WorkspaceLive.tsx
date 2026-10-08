@@ -7,6 +7,7 @@ import { AccountCreation } from "./AccountCreation";
 import { SignalEvidence } from "./SignalEvidence";
 import { NotificationCenter } from "./NotificationCenter";
 import { NotificationPreferences } from "./NotificationPreferences";
+import { WatchlistsView } from "./WatchlistsView";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -280,6 +281,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
       section==="alerts"?<div className="sr-view-stack"><NotificationCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><NotificationPreferences/></div>:
+      section==="watchlists"?<div className="sr-view-stack"><WatchlistsView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="watchlists" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       <div className="sr-view-stack">
         <GeneralView section={section} data={state.data}/>
         {(section==="watchlists"||section==="support"||section==="journal")&&
