@@ -37,22 +37,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Generate the real deterministic evidence on the checked-out source
+      - name: Regenerate from the latest remote source, never stale detached evidence
+        shell: bash
         run: |
-          python scripts/build_v7_governance.py
-          python scripts/build_v7_governance.py --check
-          git diff --check
-      - name: Commit only generator-owned requirements evidence
-        run: |
-          if git diff --quiet -- requirements/; then
-            echo "Governance is already current."
-            exit 0
-          fi
+          set -euo pipefail
           git config user.name "signalrank-governance-bot"
           git config user.email "signalrank-governance-bot@users.noreply.github.com"
-          git add -- requirements/
-          git diff --cached --check
-          git commit -m "chore(governance): regenerate UI candidate evidence from real source [skip ci]"
-          git push origin HEAD:design/signalrank-ui-rebuild-20261008
-      - name: Verify generated evidence again
+          target="design/signalrank-ui-rebuild-20261008"
+          for attempt in 1 2 3 4; do
+            echo "Governance attempt ${attempt}: fetch latest candidate and regenerate from source."
+            git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
+            git reset --hard "refs/remotes/origin/${target}"
+            python scripts/build_v7_governance.py
+            python scripts/build_v7_governance.py --check
+            git diff --check
+            if git diff --quiet -- requirements/; then
+              echo "Governance already matches the fetched candidate source."
+              exit 0
+            fi
+            git add -- requirements/
+            git diff --cached --check
+            git commit -m "chore(governance): regenerate UI candidate evidence from real source [skip ci]"
+            if git push origin "HEAD:refs/heads/${target}"; then
+              echo "Governance published as a fast-forward, based on the latest source."
+              exit 0
+            fi
+            echo "Candidate advanced concurrently; rerun generator after fetching newest source."
+            sleep 2
+          done
+          echo "::error::Governance evidence could not be published without a stale write."
+          exit 1
+      - name: Verify published evidence remains deterministic
         run: python scripts/build_v7_governance.py --check
