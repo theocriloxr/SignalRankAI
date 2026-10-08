@@ -97,3 +97,20 @@ test("operations navigation checks server-issued operator authority",()=>{
   assert.doesNotMatch(nav,/\["Operations","\/app\/operations"\]/);
   assert.doesNotMatch(control,/localStorage|sessionStorage|client\.(POST|PUT|DELETE|PATCH)\(/);
 });
+
+
+test("entitled signal details render receipt lifecycle and outcome proof, never claim broker fills",()=>{
+  const evidence=readFileSync(new URL("../src/components/SignalEvidence.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.match(evidence,/proof\.access_proven/);
+  assert.match(evidence,/proof\.delivery_proven/);
+  assert.match(evidence,/proof\.web_delivery_proven/);
+  assert.match(evidence,/signal\.ml_probability_calibrated/);
+  assert.match(evidence,/signal\.lifecycle_state/);
+  assert.match(evidence,/signal\.canonical_outcome/);
+  assert.match(evidence,/events\.map/);
+  assert.match(evidence,/broker order or trade fill/);
+  assert.match(evidence,/Not determined by signal evidence/);
+  assert.match(workspace,/<SignalEvidence data=\{data\}/);
+  assert.doesNotMatch(evidence,/client\.(POST|PUT|DELETE|PATCH)\(|localStorage|sessionStorage/);
+});
