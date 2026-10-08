@@ -1,0 +1,51 @@
+name: Regenerate UI branch governance evidence
+
+# The generator is repository-owned and deterministic. This workflow can only
+# update this design branch; it never touches production/staging release refs.
+on:
+  push:
+    branches:
+      - design/signalrank-ui-rebuild-20261008
+    paths:
+      - .github/workflows/regenerate-ui-branch-governance.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: signalrank-ui-governance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    if: github.repository == 'theocriloxr/SignalRankAI' && github.ref == 'refs/heads/design/signalrank-ui-rebuild-20261008'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: design/signalrank-ui-rebuild-20261008
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate the real deterministic evidence on the checked-out source
+        run: |
+          python scripts/build_v7_governance.py
+          python scripts/build_v7_governance.py --check
+          git diff --check
+      - name: Commit only generator-owned requirements evidence
+        run: |
+          if git diff --quiet -- requirements/; then
+            echo "Governance is already current."
+            exit 0
+          fi
+          git config user.name "signalrank-governance-bot"
+          git config user.email "signalrank-governance-bot@users.noreply.github.com"
+          git add -- requirements/
+          git diff --cached --check
+          git commit -m "chore(governance): regenerate UI candidate evidence from real source [skip ci]"
+          git push origin HEAD:design/signalrank-ui-rebuild-20261008
+      - name: Verify generated evidence again
+        run: python scripts/build_v7_governance.py --check
