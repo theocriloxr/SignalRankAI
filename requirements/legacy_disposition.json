@@ -8331,11 +8331,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 23,
+      "line_count": 52,
       "path": "frontend/next.config.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "6de06c7f020c0e2c7056b0afc90d1f1156fd520dd88f01e90d0695f18ab40d69",
-      "size_bytes": 817
+      "sha256": "911bac7a816f99fee00617712d827df4d5f39925e8e6b5e029368cdb11cac0d3",
+      "size_bytes": 2174
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8419,11 +8419,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 116,
+      "line_count": 131,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "df9c63ca4a812d2c254f2b6fcb309c7b7de4cca798d23a2ec336a1b45ff9d16c",
-      "size_bytes": 5920
+      "sha256": "d0da9895196a3cb74bc828b040579e83a698bbb29746fac8983ec0796cb0cdc2",
+      "size_bytes": 6724
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8659,11 +8659,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 15,
+      "line_count": 17,
       "path": "frontend/src/lib/client.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5dffd971d2790e28d625b899a787ccaedbc8fe7894cc36e0e4506aaead9dd348",
-      "size_bytes": 442
+      "sha256": "b52ef1fa1acd8fa6ccc6a887fc1ec01d4241489a6283cfaf2dc8817f42e806a8",
+      "size_bytes": 543
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
