@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PublicNav } from "../../components/PublicNav";
 import { notFound } from "next/navigation";
 
 const pages: Record<string, { title: string; eyebrow: string; paragraphs: string[] }> = {
@@ -19,7 +20,7 @@ export default async function PublicPage({ params }: { params: Promise<{ slug: s
   if (!page) notFound();
   return (
     <main><section className="hero">
-      <nav className="topbar"><Link className="brand" href="/">SignalRank<span>AI</span></Link><Link className="button secondary" href="/app">Open platform</Link></nav>
+      <PublicNav />
       <div style={{ padding: "92px 0", maxWidth: 800 }}>
         <p className="eyebrow">{page.eyebrow}</p><h1 style={{ fontSize: "clamp(44px,7vw,78px)" }}>{page.title}</h1>
         {page.paragraphs.map((p) => <p className="lede" key={p}>{p}</p>)}
