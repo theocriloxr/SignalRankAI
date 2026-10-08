@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import client from "../lib/client";
-import { display, finite, record, rows, numberLabel, type Row } from "../lib/presentation";
+import { display, finite, record, numberLabel, type Row } from "../lib/presentation";
 
 function allowedValues(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
