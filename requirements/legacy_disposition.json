@@ -1,5 +1,5 @@
 {
-  "file_count": 2046,
+  "file_count": 2047,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8419,11 +8419,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 99,
+      "line_count": 116,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "13ae1772d50d260c4dbeebb1697894f34130b8259c0e25fe6305d82bb3f04414",
-      "size_bytes": 4966
+      "sha256": "df9c63ca4a812d2c254f2b6fcb309c7b7de4cca798d23a2ec336a1b45ff9d16c",
+      "size_bytes": 5920
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8539,11 +8539,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 458,
+      "line_count": 472,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "caaec7a85b869c9cbdec66bbaebb38ac21cab13cc7b622ecddea5e1f6c4fddd7",
-      "size_bytes": 17508
+      "sha256": "a6fabd6e5fbeb1ebf3f5a29d6c442bf604fbe94de3eddbf5d1a0e52777bc20d6",
+      "size_bytes": 18521
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8619,6 +8619,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 94,
+      "path": "frontend/src/components/SignalEvidence.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "37dab1fe941a4a279f212ae445ab132bbee636500d970e8ec37216b15dd6a79d",
+      "size_bytes": 5744
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 47,
       "path": "frontend/src/components/SignalFilters.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8635,11 +8643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 286,
+      "line_count": 287,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ef90ca2b538ba3362d764958e11658442235e765701b9f04e0d1b70e7175e10d",
-      "size_bytes": 22594
+      "sha256": "4550913d5539b7c6f2c8f57e5d035a61fe2dee5a0167f48f0f3aad91d4374f14",
+      "size_bytes": 22680
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16383,7 +16391,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 473,
-    "PRESERVE_BEHAVIOUR": 1216,
+    "PRESERVE_BEHAVIOUR": 1217,
     "TEST_ONLY": 356
   }
 }
