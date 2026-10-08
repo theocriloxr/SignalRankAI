@@ -171,3 +171,17 @@ test("journal deletion needs explicit user confirmation and a verified account-o
   assert.match(src,/Keep entry/);
   assert.doesNotMatch(src,/localStorage|sessionStorage|\/execute|kill.switch/);
 });
+
+
+test("personal signal preferences use authoritative tier limits and never alter execution controls",()=>{
+  const code=readFileSync(new URL("../src/components/TradingPreferences.tsx",import.meta.url),"utf8");
+  const app=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(code.includes('client.PUT("/api/v1/platform/trading-profile"'));
+  assert.ok(code.includes('minimum_signal_score'));
+  assert.ok(code.includes('daily_signal_limit'));
+  assert.ok(code.includes('response.data.preferences'));
+  assert.match(code,/classes\.length === 0/);
+  assert.match(code,/allowedClasses\.includes/);
+  assert.match(app,/<TradingPreferences data=\{state\.data\}/);
+  assert.doesNotMatch(code,/client\.(POST|DELETE|PATCH)\(|\/broker\/|\/signal\/execute|kill.switch|localStorage|sessionStorage/);
+});
