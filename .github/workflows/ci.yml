@@ -256,4 +256,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RAILWAY_PRODUCTION_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
-        run: python scripts/approve_production_release.py
+        run: python -m scripts.approve_production_release

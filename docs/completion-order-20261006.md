@@ -1,10 +1,14 @@
 # Ordered completion record — 6 October 2026
 
+Latest continuation: [8 October recovery and release repair](RECOVERY_HANDOFF_20261008.md).
+This preserves the unpublished 7 October changes and records current evidence;
+it does not mark the remaining directives or production certification complete.
+
 This record preserves the user's requested order. An implemented component is
 not a claim that its entire directive, deployment, financial certification or
 required observation window is complete. The source prompts remain in
-`docs/specs/20261005/`; the newer attachments were verified byte-for-byte against
-those saved sources.
+`docs/specs/20261005/`; the newer attachments match the saved content after
+normalizing line endings and surrounding whitespace.
 
 | Order | Work | Current state |
 | --- | --- | --- |

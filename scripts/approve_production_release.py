@@ -18,6 +18,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from scripts.production_backup_receipt import BackupReceiptError, read_backup_receipt
+
 REPOSITORY = "theocriloxr/SignalRankAI"
 BRANCH = "fix/provider-discovery-readiness-20260923"
 PROJECT = "5baa1c14-a748-4dc8-8eb6-411c621e56c3"
@@ -170,6 +172,7 @@ def validate_ci(api, env):
 
 def approve(api, env):
     sha = validate_ci(api, env)
+    frontdoor_variables = None
     # Confirm all automatic deployments will wait for the complete workflow.
     for role, service in SERVICES.items():
         data = api.railway("""query($project: String!, $environment: String!, $service: String!) {
@@ -184,6 +187,17 @@ def approve(api, env):
                 or triggers[0].get("checkSuites") is not True):
             raise PromotionBlocked(f"{role}: source branch / Wait for CI configuration differs")
         require_paper_release_state(data.get("variables"), role)
+        if role == "frontdoor":
+            frontdoor_variables = data["variables"]
+    # Restore receipts are read from our pinned, audited backup job. Never carry
+    # a months-old manually entered backup assertion into a new migration.
+    previous_head = (frontdoor_variables or {}).get("EXPECTED_ALEMBIC_HEAD")
+    if not isinstance(previous_head, str) or not re.fullmatch(r"[a-zA-Z0-9_]+", previous_head):
+        raise PromotionBlocked("Frontdoor's current approved schema identity is unavailable")
+    try:
+        backup_variables = read_backup_receipt(api, ENVIRONMENT, previous_head)
+    except BackupReceiptError as exc:
+        raise PromotionBlocked(str(exc)) from None
     # Recheck after the remote reads and immediately before the sole pin mutation.
     if api.github(f"git/ref/heads/{quote(BRANCH, safe='')}").get("object", {}).get("sha") != sha:
         raise PromotionBlocked("Branch advanced during release approval")
@@ -193,14 +207,18 @@ def approve(api, env):
         "EXPECTED_RELEASE_BRANCH": {"value": BRANCH},
         "EXPECTED_ALEMBIC_HEAD": {"value": schema_head},
     }} for service in SERVICES.values()}}
+    patch["services"][SERVICES["frontdoor"]]["variables"].update({
+        key: {"value": value} for key, value in backup_variables.items()
+    })
     for role, service in SERVICES.items():
         if role != "frontdoor":
             patch["services"][service]["deploy"] = {"preDeployCommand": [
                 "python scripts/assert_release_source.py && "
                 "python scripts/assert_database_schema.py --wait-seconds 600"
             ], "preDeployTimeoutSeconds": 900}
-    # An explicit patch does not commit unrelated staged settings. Financial,
-    # backup and storage evidence variables are deliberately absent.
+    # An explicit patch does not commit unrelated staged settings. Financial
+    # flags and storage settings are absent; backup values come from verified
+    # restore provenance, not from the source certification alone.
     result = api.railway("""mutation($environment:String!, $patch:EnvironmentConfig!) {
       environmentPatchCommit(environmentId:$environment, patch:$patch, skipDeploys:true,
         commitMessage:"Approve exact CI-certified application source")

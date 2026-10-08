@@ -1,5 +1,5 @@
 {
-  "file_count": 2001,
+  "file_count": 2013,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -46,7 +46,7 @@
       "line_count": 259,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f5356a07665d061e236c6225c67012e8989c2d9425accb0113297ebf3a484319",
+      "sha256": "08a87e5d01d871c1f6bd9a033e35c70a5ed704e82f9e3037c3565d06f52867ac",
       "size_bytes": 9287
     },
     {
@@ -78,8 +78,8 @@
       "line_count": null,
       "path": ".gitignore",
       "reason": "production/build source",
-      "sha256": "38ca6c3c468eecf38576bb8f7aae39fbb3cbf01411cc281e8ecb088b1dc108f0",
-      "size_bytes": 581
+      "sha256": "c3e9eeb7b59b774216c34caad10d8b34bb628f44a1be89a2fe9812d2ec9f096a",
+      "size_bytes": 697
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2638,8 +2638,8 @@
       "line_count": 543,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b2926977e44d7b6a018382f9754508b0c4724d48fd78c907139b45ab26fbdbe9",
-      "size_bytes": 18022
+      "sha256": "c7e5fe9a748e8b3335c941a90e1058c03f0fb911ec028657f13fbfd14809ac0b",
+      "size_bytes": 18051
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5571,6 +5571,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 81,
+      "path": "docs/RECOVERY_HANDOFF_20261008.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "19786243dd15b4067b75f056c2b37b334a4fc33133c862111dfad1d370f648bb",
+      "size_bytes": 4802
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 35,
       "path": "docs/RELEASE_NOTES_V1.3.6.8.md",
       "reason": "documentation/specification/evidence",
@@ -6643,11 +6651,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 157,
+      "line_count": 161,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "caed2ac66210100996a4f42ea4dbdd9f3aed141c1900bf99349f40d5f0891320",
-      "size_bytes": 11410
+      "sha256": "a7c4cebb0cd1e01efb6161af9351b6c13e399da256b498d8ef74c41d29d1bd91",
+      "size_bytes": 11688
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6912,6 +6920,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "2206b31688c35e28e169677f258b19d7e196648aaead1cc8a2642a2fbc3df54e",
       "size_bytes": 5111
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 69,
+      "path": "docs/runbooks/node-dependency-replacements.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "6d493c7cebe86981c9eb576c40736856a8fbea86a8f9b322f6fa395551c54b4a",
+      "size_bytes": 3839
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8186,6 +8202,14 @@
       "size_bytes": 480
     },
     {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": "frontend/.npmrc",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "0ed44e7d606cd7a9eba915a10f13a13a09ea85e4b2bb4415bb0c481dbdcded51",
+      "size_bytes": 19
+    },
+    {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 9,
       "path": "frontend/AGENTS.md",
@@ -8211,11 +8235,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 18,
+      "line_count": 23,
       "path": "frontend/eslint.config.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "870f1adccecf3051cbcd9fd307cef51d7633cf510979c181a81f4b1797273493",
-      "size_bytes": 465
+      "sha256": "3efde2e6aeeea0259f1768a889ce5ec0b7649617835dc422cd253661cf8aec58",
+      "size_bytes": 664
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8227,19 +8251,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6797,
+      "line_count": 6597,
       "path": "frontend/package-lock.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9a84fa5cdc53b99125f2440ff90535c39d1c92027566442928eb77b4918ce05c",
-      "size_bytes": 235901
+      "sha256": "4d520ad78124ebd6e070c1facfedfda8bf75ba557eeab575f8bccdc43787eca5",
+      "size_bytes": 229129
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 28,
+      "line_count": 33,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "94b4489ba2d32c6f359e8a05d6051a42e4c367d88882d584ed7b74264ed34afb",
-      "size_bytes": 626
+      "sha256": "b1a38928ea7452f225209f8e080a1c6667dce3a4e4a11a2f4cfab08fd71f3d9a",
+      "size_bytes": 836
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8296,6 +8320,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "644768c4aaeb4767bce293344eeb0c125fb804a94d801440424072202d85e3a1",
       "size_bytes": 385
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 65,
+      "path": "frontend/scripts/dependency-contract.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "0e6e51cfc128a0fc370f6fcd391cfd456799def0230615ddcfef67c57bb691dd",
+      "size_bytes": 3411
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8408,6 +8440,22 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "5c51df4c59f4510d8c7dadf07a5c32132228826a3b331da5e286207b4df7ef9c",
       "size_bytes": 670
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 34,
+      "path": "frontend/vendor/next-root-glob/index.cjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "e53889e44d3241f45dc95ac7948f1126d517d8a48ba8773bdee8063119838ced",
+      "size_bytes": 1353
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 11,
+      "path": "frontend/vendor/next-root-glob/package.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "e4dd9dec0f969b5a22386ecc05cae63d88a7af5d68afe0c622e63d503eb35ebe",
+      "size_bytes": 265
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8723,6 +8771,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": null,
+      "path": "mobile/.npmrc",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "0ed44e7d606cd7a9eba915a10f13a13a09ea85e4b2bb4415bb0c481dbdcded51",
+      "size_bytes": 19
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 106,
       "path": "mobile/App.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8787,19 +8843,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6222,
+      "line_count": 6061,
       "path": "mobile/package-lock.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bbb37d6a7e462f20fb4e9b9c873d87df7bbd5e0d413de1f266c1fb418d5cfbb0",
-      "size_bytes": 235485
+      "sha256": "0e4ac2800f1245e1b622f8e6797f116904c7a34f89ecf6dfee0840977132badf",
+      "size_bytes": 229083
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 37,
+      "line_count": 39,
       "path": "mobile/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8746bf505e04c0083a89fd2e3f03e34218ef87028b3aa347769bab92f91eea48",
-      "size_bytes": 926
+      "sha256": "1b6bc24527e44dac4ff1e316f7016f63eab33251930e0de30f9973b4d2110d2b",
+      "size_bytes": 1047
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8827,6 +8883,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 45,
+      "path": "mobile/scripts/watcher-contract.test.cjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "5c8584f7cd22eb86deefea563b1be501d41d3f7355110dd2f96aaffb7a4f55ef",
+      "size_bytes": 2706
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 340,
       "path": "mobile/src/api.ts",
       "reason": "configuration, data, or product asset retained",
@@ -8838,8 +8902,24 @@
       "line_count": 1,
       "path": "mobile/tsconfig.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3f3d9330e30a3452c0d60dafc21c53c297ad759b1e7f7a69762c62266fbcf6c4",
-      "size_bytes": 152
+      "sha256": "708097ab1fcffe9dcf2219b8e9bf694e5c2acf9eea017da69a3ed4af952fde58",
+      "size_bytes": 138
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 38,
+      "path": "mobile/vendor/metro-watch-glob/index.cjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "bde759fb5e801b4ebf36a937a444f4f0207c5b25ae2ac81ec701c50d08267beb",
+      "size_bytes": 1519
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 9,
+      "path": "mobile/vendor/metro-watch-glob/package.json",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "5c749184ed4f2c21bafdc3878fdf5c35eab3f8df6eaf29b3392b8dd45a81206b",
+      "size_bytes": 244
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9491,11 +9571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 72,
+      "line_count": 73,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "97c0e36f0ad8f539fd617bb2fc61658515e84bec30e6fbd03e4d78ac74edaff1",
-      "size_bytes": 2346
+      "sha256": "0639c88bf29bea97b77d67d28f88e9f2659729759d0062f72331d3f3f4b174c0",
+      "size_bytes": 2390
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9875,11 +9955,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 234,
+      "line_count": 252,
       "path": "scripts/approve_production_release.py",
       "reason": "production/build source",
-      "sha256": "bd8dffc969487e1a2576555c71280561c2fe6a5aa0177420c312cb8a24450f59",
-      "size_bytes": 11548
+      "sha256": "8e2af849a0531603eb3a59daf3933d705a6c455c4fdd6549d72d8528e1295d73",
+      "size_bytes": 12573
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10232,6 +10312,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "051730ee3288b09f2e3a055453ef45225838c8640eb0f6ac55fe3909ab2c40f7",
       "size_bytes": 3071
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 145,
+      "path": "scripts/production_backup_receipt.py",
+      "reason": "production/build source",
+      "sha256": "f4495319fd02aa5b4f3f5677d5142f8e29338d42adfa6f6de0638b60ff18bb5d",
+      "size_bytes": 7670
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14355,6 +14443,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 134,
+      "path": "tests/test_production_backup_receipt.py",
+      "reason": "automated test evidence",
+      "sha256": "060546f8c3cc19753e0c1059433bfb4923713ad958407009253b608eceb9cb03",
+      "size_bytes": 6364
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 103,
       "path": "tests/test_production_backup_restore_script.py",
       "reason": "automated test evidence",
@@ -14403,11 +14499,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 220,
+      "line_count": 287,
       "path": "tests/test_production_release_approval.py",
       "reason": "automated test evidence",
-      "sha256": "b1339011182586584aeb8a75790cb97af4313f0310453020ce16810473cc629c",
-      "size_bytes": 8450
+      "sha256": "52f712e388c0eff43eaadfcf6cdf88623dc1e7c1f0418bd60f049b034a5c7503",
+      "size_bytes": 12609
     },
     {
       "disposition": "TEST_ONLY",
@@ -16022,8 +16118,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 461,
-    "PRESERVE_BEHAVIOUR": 1186,
-    "TEST_ONLY": 353
+    "DOCUMENTATION_ONLY": 463,
+    "PRESERVE_BEHAVIOUR": 1195,
+    "TEST_ONLY": 354
   }
 }

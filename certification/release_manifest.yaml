@@ -280,7 +280,7 @@
       "id": "frontend-session-transport",
       "group": "frontend",
       "description": "Cookie session and CSRF transport contracts",
-      "command": "cd frontend && npm run test:transport",
+      "command": "cd frontend && npm run test:transport && npm run test:dependencies",
       "severity": "critical",
       "required": true,
       "environments": [

@@ -59,6 +59,7 @@
     "scripts/controlled_migrate.py",
     "scripts/assert_database_schema.py",
     "scripts/approve_production_release.py",
+    "scripts/production_backup_receipt.py",
     "scripts/verify_release_chain.py",
     "scripts/staging_backup_restore_drill.py",
     "scripts/demo_account_preflight.py",

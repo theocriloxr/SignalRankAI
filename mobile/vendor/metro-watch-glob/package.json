@@ -1,0 +1,9 @@
+{
+  "name": "@signalrank/metro-watch-glob",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bounded Metro watcher matching backed by picomatch",
+  "main": "index.cjs",
+  "license": "MIT",
+  "dependencies": { "picomatch": "4.0.4" }
+}
