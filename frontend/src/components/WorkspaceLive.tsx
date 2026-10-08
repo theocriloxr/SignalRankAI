@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
+import { AccountCreation } from "./AccountCreation";
 import {
   brokerMode, display, moneyLabel, numberLabel,
   probabilityLabel, record, rows, statusText, timeLabel,
@@ -272,7 +273,11 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="markets"?<QualityView data={state.data}/>: 
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
-      <GeneralView section={section} data={state.data}/>
+      <div className="sr-view-stack">
+        <GeneralView section={section} data={state.data}/>
+        {(section==="watchlists"||section==="support"||section==="journal")&&
+          <AccountCreation kind={section} onCreated={()=>setEpoch(value=>value+1)} />}
+      </div>
     )}
   </div>;
 }
