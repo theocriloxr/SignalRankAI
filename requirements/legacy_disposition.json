@@ -1,5 +1,5 @@
 {
-  "file_count": 2047,
+  "file_count": 2048,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5696,6 +5696,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "a0c29d8255f2b859b22fe0be5dfe0626152e800259a79470c257e600abbc6bea",
       "size_bytes": 1118
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 28,
+      "path": "docs/SAME_ORIGIN_SESSION_DEPLOYMENT.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "3c8b45f2f198ef2bcbe1ae16b931ec08757b9ed502aa0b716c522ed1af44ec5a",
+      "size_bytes": 3700
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16390,7 +16398,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 473,
+    "DOCUMENTATION_ONLY": 474,
     "PRESERVE_BEHAVIOUR": 1217,
     "TEST_ONLY": 356
   }
