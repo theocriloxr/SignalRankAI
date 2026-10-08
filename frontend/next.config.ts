@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
       { source:"/app/:path*", headers:protectedHeaders },
       { source:"/login", headers:protectedHeaders },
       { source:"/recover", headers:protectedHeaders },
+      { source:"/magic-login", headers:protectedHeaders },
     ];
   },
 };
