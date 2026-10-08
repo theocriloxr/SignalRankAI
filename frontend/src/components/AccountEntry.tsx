@@ -87,7 +87,7 @@ export function AccountEntry() {
         <>
           {mode==="register"&&<label>Display name<input name="name" autoComplete="name" maxLength={100}/></label>}
           <label>Email address<input name="email" type="email" autoComplete="email" required maxLength={255}/></label>
-          <label>Password<input name="password" type="password" autoComplete={mode==="register"?"new-password":"current-password"} required/></label>
+          <label>Password<input name="password" type="password" autoComplete={mode==="register"?"new-password":"current-password"} minLength={mode==="register"?10:undefined} required/></label>
           {mode==="register"&&<label>Confirm password<input name="confirm_password" type="password" autoComplete="new-password" required/></label>}
         </>}
         {message&&<p className="sr-form-message" role="status">{message}</p>}
