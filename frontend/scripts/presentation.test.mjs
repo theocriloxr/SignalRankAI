@@ -69,3 +69,13 @@ test("safe account form actions are limited to owned watchlists support and jour
   ]);
   assert.doesNotMatch(source,/\/broker\/|\/execute|kill-switch|\/billing\/checkout|localStorage|sessionStorage/);
 });
+
+test("one-time email links only consume tokens after explicit confirmation", () => {
+  const source=readFileSync(new URL("../src/components/AccountEmailLink.tsx", import.meta.url),"utf8");
+  assert.match(source,/onClick=\{consume\}/);
+  assert.match(source,/onSubmit=\{verifyMfa\}/);
+  assert.ok(source.includes('client.POST("/api/v1/platform/auth/email-verification/complete"'));
+  assert.ok(source.includes('client.POST("/api/v1/platform/auth/magic-link/complete"'));
+  assert.ok(source.includes('client.POST("/api/v1/platform/auth/mfa/complete"'));
+  assert.doesNotMatch(source,/localStorage|sessionStorage/);
+});
