@@ -2,11 +2,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { ThemeControl } from "./ThemeControl";
 import { SessionExit } from "./SessionExit";
+import { OperationsNavLink } from "./OperationsNavLink";
 
 const groups = [
   { label:"Decisions",items:[["Overview","/app"],["Signals","/app/signals"],["Markets","/app/markets"],["Research","/app/research"],["Watchlists","/app/watchlists"],["Alerts","/app/alerts"]] },
   { label:"Portfolio",items:[["Paper","/app/paper"],["Portfolio","/app/portfolio"],["Performance","/app/performance"],["Journal","/app/journal"]] },
-  { label:"Account & control",items:[["Brokers","/app/brokers"],["Billing","/app/billing"],["Support","/app/support"],["Settings","/app/settings"],["Operations","/app/operations"]] },
+  { label:"Account & control",items:[["Brokers","/app/brokers"],["Billing","/app/billing"],["Support","/app/support"],["Settings","/app/settings"]] },
 ] as const;
 
 function Navigation({ active }: { active: string }) {
@@ -15,6 +16,7 @@ function Navigation({ active }: { active: string }) {
     {group.items.map(([label,href])=><Link key={href} href={href}
       aria-current={label.toLowerCase()===active.toLowerCase()?"page":undefined}
       className={label.toLowerCase()===active.toLowerCase()?"active":undefined}>{label}</Link>)}
+    {group.label==="Account & control"&&<OperationsNavLink active={active==="Operations"} />}
   </section>)}</>;
 }
 
