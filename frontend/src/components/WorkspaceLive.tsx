@@ -172,6 +172,36 @@ function BrokersView({ data }: { data: Row }) {
   </div>;
 }
 
+function BillingView({ data }: { data: Row }) {
+  const subscriptions=rows(data.subscriptions), receipts=rows(data.receipts);
+  return <div className="sr-view-stack">
+    <p className="sr-risk-note">Subscription and receipt records are server-owned. Opening this page does not create a checkout or charge your account.</p>
+    <Panel title="Automatic renewal"><dl><KeyValue label="Auto renew" value={data.auto_renew===true?"Enabled":data.auto_renew===false?"Disabled":"Unavailable"}/><KeyValue label="Provider subscription" value={data.provider_subscription_linked===true?"Linked":data.provider_subscription_linked===false?"Not linked":"Unavailable"}/></dl></Panel>
+    <Panel title="Subscriptions">{subscriptions.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable subscription history"><table><thead><tr><th>Plan</th><th>State</th><th>Start</th><th>Expires</th></tr></thead><tbody>{subscriptions.map((p,i)=><tr key={display(p.id,String(i))}><th>{display(p.tier)}</th><td>{display(p.status)}</td><td>{timeLabel(p.started_at)}</td><td>{timeLabel(p.expires_at)}</td></tr>)}</tbody></table></div>:<ListEmpty name="subscriptions"/>}</Panel>
+    <Panel title="Confirmed receipt records">{receipts.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable payment receipts"><table><thead><tr><th>Receipt</th><th>Plan</th><th>Amount</th><th>Payment state</th><th>Date</th></tr></thead><tbody>{receipts.map((r,i)=><tr key={display(r.receipt_number,String(i))}><th>{display(r.receipt_number)}</th><td>{display(r.plan)}</td><td>{moneyLabel(r.amount,r.currency)}</td><td>{display(r.status)}</td><td>{timeLabel(r.payment_date)}</td></tr>)}</tbody></table></div>:<ListEmpty name="receipts"/>}</Panel>
+  </div>;
+}
+
+function QualityView({ data }: { data: Row }) {
+  const bucket=record(data.reject_buckets),reasons=rows(data.top_reasons);
+  return <div className="sr-view-stack">
+    <p className="sr-risk-note">These are quality decisions over the backend-reported {numberLabel(data.window_hours,0)}-hour window, not an account return or a promised signal volume.</p>
+    <div className="sr-metrics"><Metric label="Issued decisions" value={numberLabel(data.issued,0)}/><Metric label="Rejected or skipped" value={numberLabel(data.rejected_or_skipped,0)}/><Metric label="Acceptance fraction" value={probabilityLabel(data.acceptance_rate)}/></div>
+    <Panel title="Gate rejection categories"><dl>{Object.entries(bucket).filter(([key])=>["ml","score","news","stale","slippage","other"].includes(key)).map(([key,value])=><KeyValue key={key} label={key} value={numberLabel(value,0)}/>)}</dl></Panel>
+    <Panel title="Most frequent rejection reasons">{reasons.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable rejection breakdown"><table><thead><tr><th>Reason</th><th>Decisions</th></tr></thead><tbody>{reasons.map((r,i)=><tr key={display(r.reason,String(i))}><th>{display(r.reason)}</th><td>{numberLabel(r.rows,0)}</td></tr>)}</tbody></table></div>:<ListEmpty name="rejection reasons"/>}</Panel>
+  </div>;
+}
+
+function OperationsView({ data }: { data: Row }) {
+  const release=record(data.release),execution=record(data.execution);
+  const flag=(value:unknown)=>value===true?"On":value===false?"Off":"Unavailable";
+  return <div className="sr-view-stack"><p className="sr-risk-note">Owner-authorized read-only release posture. A healthy process is not evidence of trading readiness. No kill-switch or live-money state is changed here.</p>
+    <div className="sr-grid-two">
+      <Panel title="Deployed source"><dl><KeyValue label="Environment" value={display(release.environment)}/><KeyValue label="Branch" value={display(release.branch)}/><KeyValue label="Commit" value={display(release.commit)}/></dl></Panel>
+      <Panel title="Execution controls"><dl><KeyValue label="Live financial features" value={flag(execution.live_financial_features_enabled)}/><KeyValue label="Real execution" value={flag(execution.real_execution_enabled)}/><KeyValue label="Automated execution" value={flag(execution.auto_execution_enabled)}/><KeyValue label="Global kill switch" value={flag(execution.kill_switch)}/></dl></Panel>
+    </div></div>;
+}
+
 function GeneralView({ section, data }: { section: Section; data: Row }) {
   const list = (
     section === "watchlists" ? rows(data.watchlists) :
@@ -192,7 +222,7 @@ function GeneralView({ section, data }: { section: Section; data: Row }) {
     <p className="sr-risk-note">Read-only canonical information. Unreported fields remain unavailable; no settings, payments or execution permissions change here.</p>
     {allowed.some(key=>Object.hasOwn(facts,key))&&<Panel title={titles[section]}><dl>{allowed.filter(key=>Object.hasOwn(facts,key)).map(key=><KeyValue key={key} label={key.replaceAll("_"," ")} value={display(facts[key])}/>)}</dl></Panel>}
     {list.length?<div className="sr-record-grid">{list.map((item,i)=><article className="sr-data-panel" key={display(item.id,String(i))}>
-      <h2>{display(item.title,display(item.name,display(item.asset,"Item "+(i+1))))}</h2>
+      <h2>{display(item.title,display(item.name,display(item.asset,display(item.strategy_name,display(item.subject,"Item "+(i+1))))))}</h2>
       <dl><KeyValue label="State" value={display(item.status)}/><KeyValue label="Updated" value={timeLabel(item.updated_at ?? item.created_at)}/></dl>
     </article>)}</div>:<ListEmpty name={titles[section].toLowerCase()+" entries"}/>}
   </div>;
@@ -238,7 +268,10 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="paper"?<PaperView data={state.data}/>:
       section==="portfolio"?<PortfolioView data={state.data}/>:
       section==="performance"?<PerformanceView data={state.data}/>:
-      section==="brokers"?<BrokersView data={state.data}/>:
+      section==="brokers"?<BrokersView data={state.data}/>: 
+      section==="markets"?<QualityView data={state.data}/>: 
+      section==="billing"?<BillingView data={state.data}/>: 
+      section==="operations"?<OperationsView data={state.data}/>:
       <GeneralView section={section} data={state.data}/>
     )}
   </div>;
