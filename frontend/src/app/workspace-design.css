@@ -499,3 +499,14 @@ html { scroll-padding-top: 1rem; }
 
 .sr-pagination-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .sr-pagination-actions button:disabled { opacity:.52; cursor:not-allowed; }
+
+
+/* User-owned journal records: no implicit trading actions or performance claims. */
+.sr-journal-entry { gap:16px; }
+.sr-journal-top { display:flex; justify-content:space-between; align-items:start; flex-wrap:wrap; gap:12px; }
+.sr-journal-top h2 { margin-block-start:7px; }
+.sr-journal-notes { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text)!important; }
+.sr-journal-entry .sr-watchlist-symbols span { display:inline-flex; padding:6px 10px; border-radius:7px; border:1px solid var(--line); background:var(--panel2); font-size:12px; }
+.sr-journal-entry footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; border-top:1px solid var(--line); padding-top:16px; }
+.sr-journal-delete-confirm { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.sr-journal-delete-confirm>span { width:100%; font-size:13px; color:var(--text); }
