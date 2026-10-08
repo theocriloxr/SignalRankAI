@@ -150,3 +150,13 @@ test("watchlist search uses backend-returned instrument identity, not freeform b
   assert.match(view,/r\.data\.added===true/);
   assert.doesNotMatch(view,/client\.(DELETE|PATCH|PUT)\(|localStorage|sessionStorage|\/execute/);
 });
+
+
+test("signal filters paginate canonical delivered receipts without changing generation thresholds",()=>{
+  const src=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(src.includes('limit: 30, offset, ...filters'));
+  assert.ok(src.includes("setSignalOffset(0)"));
+  assert.ok(src.includes("setSignalOffset"));
+  assert.ok(src.includes("total count not reported"));
+  assert.doesNotMatch(src,/client\.(POST|PATCH|PUT|DELETE)\(/);
+});
