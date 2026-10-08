@@ -1,6 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
-import { ThemeControl } from "../components/ThemeControl";
+import { PublicNav } from "../components/PublicNav";
 
 const markets = ["Crypto", "FX", "Indices", "Equities", "Commodities"];
 const principles = [
@@ -13,14 +12,7 @@ export default function Home() {
   return (
     <main>
       <section className="hero">
-        <nav className="topbar">
-          <Link className="brand" href="/"><Image src="/brand/icon.svg" alt="" width={32} height={32} unoptimized />SignalRank<span>AI</span></Link>
-          <div className="navlinks">
-            <Link href="/methodology">Methodology</Link><Link href="/risk">Risk</Link><Link href="/security">Security</Link><Link href="/providers">Providers</Link><Link href="/docs">Docs</Link>
-          </div>
-          <ThemeControl />
-          <Link className="button secondary" href="/app">Open platform</Link>
-        </nav>
+        <PublicNav />
         <div className="heroGrid">
           <div>
             <p className="eyebrow">Multi-asset decision intelligence</p>
