@@ -67,7 +67,7 @@ export function AccountCreation({ kind, onCreated }: {
         </select></label>
         <label>Details<textarea name="message" required minLength={10} maxLength={5000} rows={5}/></label>
       </>:<>
-        <label>Title (optional)<input name="title" maxLength={200}/></label>
+        <label>Title (optional)<input name="title" maxLength={180}/></label>
         <label>Notes<textarea name="notes" required minLength={2} maxLength={5000} rows={6}/></label>
       </>}
       <button type="submit" className="button" disabled={saving}>{saving?"Saving…":kind==="watchlists"?"Create watchlist":kind==="support"?"Send ticket":"Save journal entry"}</button>
