@@ -53,7 +53,7 @@ test("denied, expired and unavailable API responses are separate states", () => 
 test("workspace never calls an order or high-risk mutation from a read-only view", () => {
   const src = readFileSync(new URL("../src/components/WorkspaceLive.tsx", import.meta.url), "utf8");
   assert.match(src, /api\/v1\/platform\/me/);
-  assert.match(src, /api\\/v1\\/platform\\/signals/);
+  assert.ok(src.includes('client.GET("/api/v1/platform/signals"'));
   assert.doesNotMatch(src, /client\.(POST|PUT|DELETE|PATCH)\(/);
   assert.doesNotMatch(src, /localStorage|sessionStorage/);
 });
