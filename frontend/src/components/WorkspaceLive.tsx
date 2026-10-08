@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
 import {
-  brokerMode, display, finite, moneyLabel, numberLabel,
+  brokerMode, display, moneyLabel, numberLabel,
   probabilityLabel, record, rows, statusText, timeLabel,
   type Row,
 } from "../lib/presentation";
@@ -118,7 +118,7 @@ function OverviewView({ data }: { data: Row }) {
     <div className="sr-metrics">
       <Metric label="Delivered signals" value={numberLabel(summary.delivered_signals, 0)} detail="Receipt-backed history" />
       <Metric label="Open paper positions" value={numberLabel(summary.open_positions, 0)} detail="Simulated orders only" />
-      <Metric label="Paper cash" value={moneyLabel(summary.paper_cash, "USD")} detail="Paper account — NOT live broker funds" />
+      <Metric label="Paper cash (currency not reported)" value={numberLabel(summary.paper_cash)} detail="Paper account — NOT live broker funds; currency is not supplied by this endpoint" />
       <Metric label="Watchlists" value={numberLabel(summary.watchlists, 0)} detail="Account-owned" />
     </div>
     <div className="sr-grid-two">
