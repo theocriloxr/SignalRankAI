@@ -15,3 +15,13 @@
 | Full release/soak | BLOCKED_EXTERNAL | PR #189 staged recovery source; broker and provider readiness not yet certified | Hosted CI, real demo fills, props, 24–72h soak, two audits |
 
 **No production deploy, merge, broker connection, live execution or claim of passing full Next/mobile/browser tests.** This report deliberately does not label incomplete engineering BLOCKED_EXTERNAL unless a genuine outside requirement is established.
+
+
+## Continued authentication/QA progress — 8 October
+
+- **IMPLEMENTED**: `frontend/src/components/PasswordRecovery.tsx`, `/recover` and direct handling of backend-issued `/app?password_reset=TOKEN`. This matches the **existing** backend link builder in `services/platform/identity.py`. No reset token is placed in local storage.
+- **IMPLEMENTED**: `frontend/src/app/error.tsx`, `loading.tsx` and `not-found.tsx` provide safe route fallback text without disclosing order, trade or identity information.
+- **IMPLEMENTED**: Pure UI presentation tests are part of the existing required `frontend` transport test script; CI will run them without relaxing release certification or modifying recovery policy.
+- **VERIFIED FOR AN EARLIER HEAD ONLY**: GitHub Actions run `37782585165` frontend job `113329216604` completed successfully, including lint, TypeScript, existing transport/dependency tests, security audit policy and Next production build. This run did **not** include the later password-recovery and presentation-test-script changes, and does not certify current PR head.
+- **BLOCKED_EXTERNAL / DEPLOYMENT CONTRACT**: Check `NEXT_PUBLIC_SIGNALRANK_API_BASE_URL` and same-site session cookie/CSRF routing in the deployed Next frontend; source alone cannot establish cross-origin browser policy. No trading execution or account mutation was tested live.
+- **RELEASE STATUS**: draft PR `#190` remains layered above the recovery work in draft PR `#189`; no merge or production/staging promotion.
