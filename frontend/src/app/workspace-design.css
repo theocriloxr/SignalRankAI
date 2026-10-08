@@ -496,3 +496,6 @@ html { scroll-padding-top: 1rem; }
 .sr-watchlist-result button { flex:0 0 auto; }
 @media(max-width:680px){.sr-preference-grid{grid-template-columns:1fr}.sr-notification-head{flex-wrap:wrap}}
 @media(forced-colors:active){.sr-notification-record,.sr-preference-row,.sr-watchlist-symbols li{border:1px solid CanvasText}}
+
+.sr-pagination-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.sr-pagination-actions button:disabled { opacity:.52; cursor:not-allowed; }
