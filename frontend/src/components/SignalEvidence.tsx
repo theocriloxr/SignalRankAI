@@ -1,4 +1,4 @@
-import { display, numberLabel, probabilityLabel, record, rows, timeLabel, type Row } from "../lib/presentation";
+import { display, finite, numberLabel, probabilityLabel, record, rows, timeLabel, type Row } from "../lib/presentation";
 
 /** Source of truth is one entitled canonical signal detail response. No fills or delivery
  * confirmations are inferred from the presence of a signal, event or channel alone. */
@@ -33,7 +33,7 @@ export function SignalEvidence({ data }: { data: Row }) {
     <div className="sr-evidence-status">
       <EvidenceStatus value="Account access" proven={delivered}/>
       <EvidenceStatus value="Channel receipt" proven={channelProof}/>
-      <EvidenceStatus value="Execution approval" proven={false} unknown="Not evaluated"/>
+      <EvidenceStatus value="Execution approval" proven={undefined} unknown="Not determined by signal evidence"/>
     </div>
     <div className="sr-grid-two">
       <section className="sr-evidence-sub">
@@ -42,7 +42,7 @@ export function SignalEvidence({ data }: { data: Row }) {
           <Fact name="Channel">{display(proof.delivery_channel, "Not reported")}</Fact>
           <Fact name="Delivery state">{display(proof.delivery_state)}</Fact>
           <Fact name="Receipt confirmation">{timeLabel(proof.delivery_confirmed_at)}</Fact>
-          <Fact name="Signal age on delivery">{numberLabel(proof.signal_age_at_delivery_seconds, 0)} seconds</Fact>
+          <Fact name="Signal age on delivery">{finite(proof.signal_age_at_delivery_seconds) === null ? "Unavailable" : `${numberLabel(proof.signal_age_at_delivery_seconds, 0)} seconds`}</Fact>
           <Fact name="Access confirmed">{delivered === true ? "Yes" : delivered === false ? "No" : "Unavailable"}</Fact>
         </dl>
       </section>
@@ -77,7 +77,7 @@ export function SignalEvidence({ data }: { data: Row }) {
           <Fact name="Canonical outcome">{display(signal.canonical_outcome)}</Fact>
           <Fact name="Outcome status">{display(signal.outcome_status)}</Fact>
           <Fact name="Realized R multiple">{numberLabel(signal.r_multiple, 3)}</Fact>
-          <Fact name="PnL percentage">{numberLabel(signal.pnl_pct, 3)}%</Fact>
+          <Fact name="PnL percentage">{finite(signal.pnl_pct) === null ? "Unavailable" : `${numberLabel(signal.pnl_pct, 3)}%`}</Fact>
           <Fact name="Signal generated">{timeLabel(signal.created_at)}</Fact>
           <Fact name="Signal expiry">{timeLabel(signal.expires_at)}</Fact>
         </dl>
