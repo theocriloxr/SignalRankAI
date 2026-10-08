@@ -57,3 +57,15 @@ test("workspace never calls an order or high-risk mutation from a read-only view
   assert.doesNotMatch(src, /client\.(POST|PUT|DELETE|PATCH)\(/);
   assert.doesNotMatch(src, /localStorage|sessionStorage/);
 });
+
+
+test("safe account form actions are limited to owned watchlists support and journal", () => {
+  const source=readFileSync(new URL("../src/components/AccountCreation.tsx", import.meta.url),"utf8");
+  const targets=[...source.matchAll(/client\.POST\("([^"]+)"/g)].map(match=>match[1]).sort();
+  assert.deepEqual(targets, [
+    "/api/v1/platform/journal",
+    "/api/v1/platform/support/tickets",
+    "/api/v1/platform/watchlists",
+  ]);
+  assert.doesNotMatch(source,/\/broker\/|\/execute|kill-switch|\/billing\/checkout|localStorage|sessionStorage/);
+});
