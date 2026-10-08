@@ -114,3 +114,18 @@ test("entitled signal details render receipt lifecycle and outcome proof, never 
   assert.match(workspace,/<SignalEvidence data=\{data\}/);
   assert.doesNotMatch(evidence,/client\.(POST|PUT|DELETE|PATCH)\(|localStorage|sessionStorage/);
 });
+
+
+test("browser account API uses same-origin CSRF and server-owned trusted rewrite",()=>{
+  const client = readFileSync(new URL("../src/lib/client.ts", import.meta.url),"utf8");
+  const config = readFileSync(new URL("../next.config.ts", import.meta.url),"utf8");
+  const transport = readFileSync(new URL("../src/lib/transport.ts", import.meta.url),"utf8");
+  assert.match(client,/const baseUrl = ""/);
+  assert.doesNotMatch(client,/NEXT_PUBLIC_SIGNALRANK_API_BASE_URL/);
+  assert.match(config,/SIGNALRANK_PLATFORM_API_ORIGIN/);
+  assert.match(config,/url\.protocol === "https:"/);
+  assert.ok(config.includes('source: "/api/v1/platform/:path*"'));
+  assert.match(config,/return origin/);
+  assert.match(transport,/csrfCookie\(document\.cookie\)/);
+  assert.match(transport,/credentials: "include"/);
+});
