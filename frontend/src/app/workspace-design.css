@@ -352,3 +352,26 @@ html { scroll-padding-top: 1rem; }
 @media (forced-colors:active) {
   .sr-state,.sr-risk-note,.sr-metric,.sr-data-panel,.sr-signal-record { border:1px solid CanvasText; }
 }
+
+
+/* Marketing navigation stays available on touch and small windows. */
+.sr-public-nav { display:flex; flex-wrap:wrap; align-items:center; gap:14px; min-height:82px; }
+.sr-public-links { display:flex; gap:clamp(10px,1.4vw,20px); align-items:center; margin-inline-start:auto; font-size:13px; color:var(--muted); }
+.sr-public-links a { min-height:44px; display:inline-flex; align-items:center; }
+.sr-public-links a:hover { color:var(--text); }
+.sr-public-nav .button { min-height:42px; white-space:nowrap; }
+.sr-public-mobile-menu { display:none; position:relative; }
+.sr-public-mobile-menu summary { display:flex; min-height:44px; align-items:center; padding:9px 15px; border:1px solid var(--line); border-radius:9px; font-weight:700; cursor:pointer; }
+.sr-public-mobile-menu>div { position:absolute; top:calc(100% + 8px); right:0; z-index:100; min-width:min(80vw,280px); max-height:70svh; overflow:auto; padding:12px; border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:0 20px 45px #0004; display:grid; gap:4px; }
+.sr-public-mobile-menu a { display:flex; align-items:center; min-height:44px; border-radius:7px; padding:8px 10px; }
+.sr-public-mobile-menu a:hover { background:var(--panel2); }
+@media (max-width:1120px) {
+  .sr-public-links { display:none; }
+  .sr-public-mobile-menu { display:block; margin-inline-start:auto; }
+}
+@media (max-width:640px) {
+  .sr-public-nav { gap:9px; }
+  .sr-public-nav .button { display:none; }
+  .sr-public-nav .appearanceControl { margin-inline-start:auto; }
+  .sr-public-mobile-menu { margin-inline-start:0; }
+}
