@@ -129,3 +129,24 @@ test("browser account API uses same-origin CSRF and server-owned trusted rewrite
   assert.match(transport,/csrfCookie\(document\.cookie\)/);
   assert.match(transport,/credentials: "include"/);
 });
+
+
+test("notification actions require canonical read receipts and preserve unselected channel settings",()=>{
+  const view=readFileSync(new URL("../src/components/NotificationCenter.tsx",import.meta.url),"utf8");
+  const preferences=readFileSync(new URL("../src/components/NotificationPreferences.tsx",import.meta.url),"utf8");
+  assert.ok(view.includes('client.POST("/api/v1/platform/notifications/{notification_id}/read"'));
+  assert.ok(view.includes("r.data.read===true") || view.includes("result.data.read===true"));
+  assert.ok(preferences.includes('client.GET("/api/v1/platform/notifications/preferences"'));
+  assert.ok(preferences.includes('client.PUT("/api/v1/platform/notifications/preferences"'));
+  assert.match(preferences,/choices\[c\.key\]!=="keep"/);
+  assert.doesNotMatch(view+preferences,/\/broker\/|\/execute|kill.switch|localStorage|sessionStorage/);
+});
+
+test("watchlist search uses backend-returned instrument identity, not freeform broker symbols",()=>{
+  const view=readFileSync(new URL("../src/components/WatchlistsView.tsx",import.meta.url),"utf8");
+  assert.ok(view.includes('client.GET("/api/v1/platform/instruments/search"'));
+  assert.ok(view.includes('client.POST("/api/v1/platform/watchlists/{watchlist_id}/items"'));
+  assert.match(view,/instrument\.instrument_id/);
+  assert.match(view,/r\.data\.added===true/);
+  assert.doesNotMatch(view,/client\.(DELETE|PATCH|PUT)\(|localStorage|sessionStorage|\/execute/);
+});
