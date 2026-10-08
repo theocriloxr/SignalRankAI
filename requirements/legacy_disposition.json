@@ -67,11 +67,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 58,
+      "line_count": 71,
       "path": ".github/workflows/regenerate-ui-branch-governance.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c2f04eb2043ea8f80b2c128c2080ceaf6dada5d2c92b6e4021f7798d446dffda",
-      "size_bytes": 2004
+      "sha256": "616f610edecbd84ee0c0995e066441a6d7f26a424bd2a5f85be461f77a800335",
+      "size_bytes": 2752
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4971,11 +4971,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 52,
+      "line_count": 63,
       "path": "docs/DESIGN_COMPLETION_REPORT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "873871f0b8a0834bbdfe68062ba738db92d09fe0dde725e357e740c70a89decf",
-      "size_bytes": 8639
+      "sha256": "d0a92b1f2519ff39fa92a0e93bc099ba68243c544d09fb9b653cf8d26d833242",
+      "size_bytes": 11459
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
