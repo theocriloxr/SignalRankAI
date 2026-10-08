@@ -538,3 +538,9 @@ html { scroll-padding-top: 1rem; }
 .sr-support-message .sr-list-actions small {color:var(--muted);font-size:11px}
 @media(max-width:760px){.sr-support-layout{grid-template-columns:1fr}.sr-support-list{grid-template-columns:1fr}.sr-support-messages{max-height:none}}
 @media(forced-colors:active){.sr-support-ticket,.sr-support-message{border:1px solid CanvasText}}
+
+
+/* Entitled custom market alerts, separate from the delivery notification inbox */
+.sr-confirm-action{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:13px}
+.sr-confirm-action>p{width:100%;margin:0;color:var(--text);font-size:13px}
+.sr-confirm-action button:disabled{opacity:.6;cursor:wait}
