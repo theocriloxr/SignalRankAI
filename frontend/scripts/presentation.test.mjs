@@ -198,3 +198,20 @@ test("support conversations require an entitled ticket and server-confirmed repl
   assert.match(view,/<SupportCenter data=\{state\.data\}/);
   assert.doesNotMatch(s,/localStorage|sessionStorage|client\.(PUT|PATCH|DELETE)\(|\/execute|\/broker\//);
 });
+
+
+test("market-alert rules and notification receipts are separate canonical services",()=>{
+  const rule=readFileSync(new URL("../src/components/AlertRules.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  const shell=readFileSync(new URL("../src/components/AppShell.tsx",import.meta.url),"utf8");
+  assert.ok(workspace.includes('case "alerts": return client.GET("/api/v1/platform/alerts")'));
+  assert.ok(workspace.includes('case "notifications": return client.GET("/api/v1/platform/notifications")'));
+  assert.ok(shell.includes('["Alerts","/app/alerts"]'));
+  assert.ok(shell.includes('["Notifications","/app/notifications"]'));
+  assert.ok(rule.includes('client.POST("/api/v1/platform/alerts"'));
+  assert.ok(rule.includes('client.DELETE("/api/v1/platform/alerts/{alert_id}"'));
+  assert.ok(rule.includes('response.data.disabled===true'));
+  assert.match(rule,/confirmId!==id/);
+  assert.ok(rule.includes('condition:needsPrice(kind)?{value:price}:{}'));
+  assert.doesNotMatch(rule,/\/broker\/|\/execute|client\.PUT\(|localStorage|sessionStorage/);
+});
