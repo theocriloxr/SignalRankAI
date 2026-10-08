@@ -1,5 +1,47 @@
 # Shared-chat recovery and release repair — 8 October 2026
 
+## Continuation after hosted CI
+
+Draft PR [189](https://github.com/theocriloxr/SignalRankAI/pull/189) published the
+recovery as `ae6a6fb4aab968187a4a3aa5e9a8fde807fc33f2`. Its hosted run
+`37746622470` passed frontend and research-browser checks. Backend failed
+because a test demanded a tilde range instead of accepting the exact Expo 57
+pin; the retry additionally loaded persisted trades from an earlier process.
+The test now verifies the locked SDK and manifest agree, and tracker unit tests
+isolate persistence as well as memory. The failing 106-test batch now passes
+locally. This is not yet a new hosted backend certificate.
+
+Static analysis found the new mobile `.npmrc` lacked a minimum release age.
+Both Node projects now require a seven-day resolution age, enforce compatible
+Node/npm engines, and use npm 11.17.0 in CI. Clean installs, the frontend lint
+and production build, mobile type checking, three frontend dependency tests
+and all 44 mobile dependency tests passed with this npm version. The npm config
+scan passed with zero findings; the full scan passed on 498 files. Frontend's
+full dependency audit still reports zero vulnerabilities.
+
+The research continuation repairs actual correlation admission paths:
+
+- Compare percentage returns for identical start/end timestamp intervals,
+  rather than raw price levels or unrelated equal-length tails.
+- Reject missing, malformed, constant, short, duplicate or unordered histories,
+  invalid thresholds and existing-symbol exposure. Never drop invalid rows to
+  manufacture sufficient evidence.
+- Use the current market-data coroutine in the optional controller gate. The
+  old import did not exist, and its exception handler silently admitted signals.
+- Require complete shared trade snapshots in the engine and optional controller.
+  Redis errors, unavailable shared state and corrupt records cannot become an
+  empty portfolio. Existing non-admission callers retain their compatibility
+  fallback; the new strict read is explicit.
+
+The focused risk/state/tracker selection passes 179 tests; critical Pyright
+reports zero errors and targeted Ruff passes. These checks use synthetic
+evidence, not live account or broker certification. Untimestamped correlation
+input now blocks admission when exposure exists. Absolute correlation remains
+a conservative constraint; it does not establish portfolio netting, account
+drawdown, stale-market-data acceptance or per-venue sizing readiness. The
+engine's existing synthetic drawdown state is still not real account evidence.
+The remaining ordered directives and financial release gates remain open.
+
 ## Source identity
 
 The shared chat `cx_6ac748fc2cfc8191993747df1966a449` was retrieved in full.

@@ -172,6 +172,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Install release-age-aware npm
+        run: npm install --global npm@11.17.0
       - run: python scripts/run_release_manifest.py --environment ci --group frontend
 
   mobile:
@@ -188,6 +190,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+      - name: Install release-age-aware npm
+        run: npm install --global npm@11.17.0
       - run: python scripts/run_release_manifest.py --environment ci --group mobile
 
   railway-credential-preflight:

@@ -21,7 +21,20 @@ def _utcnow_naive_iso() -> str:
 
 class TestTradeTracker(unittest.TestCase):
     def setUp(self):
-        """Clear open trades before each test."""
+        """Isolate both caches and persistence, including fresh-process retries."""
+        for target, value in (
+            ("state.get_active_trades_sync", {}),
+            ("state.set_active_trade_sync", None),
+            ("state.remove_active_trade_sync", None),
+        ):
+            patcher = patch(f"core.trade_tracker.{target}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        loaded = patch("core.trade_tracker._ACTIVE_TRADES_LOADED", False)
+        loaded.start()
+        self.addCleanup(loaded.stop)
+        self.addCleanup(open_trades_list.clear)
+        self.addCleanup(_PRICE_FAILURE_STATE.clear)
         open_trades_list.clear()
         _PRICE_FAILURE_STATE.clear()
 
