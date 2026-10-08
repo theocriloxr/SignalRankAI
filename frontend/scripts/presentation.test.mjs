@@ -79,3 +79,11 @@ test("one-time email links only consume tokens after explicit confirmation", () 
   assert.ok(source.includes('client.POST("/api/v1/platform/auth/mfa/complete"'));
   assert.doesNotMatch(source,/localStorage|sessionStorage/);
 });
+
+
+test("magic link request is non-enumerating and never persists proof",()=>{
+  const source=readFileSync(new URL("../src/components/MagicSignIn.tsx",import.meta.url),"utf8");
+  assert.ok(source.includes('client.POST("/api/v1/platform/auth/magic-link/request"'));
+  assert.match(source,/If this address has an active account/);
+  assert.doesNotMatch(source,/localStorage|sessionStorage|client\.(PUT|DELETE|PATCH)\(/);
+});
