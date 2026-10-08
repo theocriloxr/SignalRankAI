@@ -8,6 +8,13 @@ on:
       - design/signalrank-ui-rebuild-20261008
     paths:
       - .github/workflows/regenerate-ui-branch-governance.yml
+      - "DESIGN.md"
+      - "docs/**"
+      - "frontend/**"
+      - "services/**"
+      - "tests/**"
+      - "core/**"
+      - "engine/**"
 
 permissions:
   contents: write
