@@ -523,3 +523,18 @@ html { scroll-padding-top: 1rem; }
 .sr-pref-classes input {width:18px;height:18px;accent-color:var(--accent)}
 .sr-preferences-panel .sr-metric {min-height:115px}
 @media(max-width:640px){.sr-form-grid{grid-template-columns:1fr}}
+
+
+/* Entitled support tickets and conversations */
+.sr-support-layout {display:grid;grid-template-columns:minmax(215px,.8fr) minmax(0,2fr);gap:16px;align-items:start}
+.sr-support-list {display:grid;gap:8px;min-width:0}
+.sr-support-ticket {display:grid;text-align:left;gap:7px;width:100%;min-height:76px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:14px;cursor:pointer;overflow-wrap:anywhere}
+.sr-support-ticket.active {border-color:var(--accent);background:var(--panel2)}
+.sr-support-ticket span,.sr-support-ticket small {color:var(--muted);font-size:12px}
+.sr-support-detail {min-width:0}
+.sr-support-messages {display:grid;gap:12px;max-height:72svh;overflow:auto;overscroll-behavior:contain}
+.sr-support-message {border:1px solid var(--line);background:var(--panel2);padding:16px;border-radius:9px;min-width:0}
+.sr-support-message p {white-space:pre-wrap;color:var(--text);overflow-wrap:anywhere;font-size:13px;line-height:1.65}
+.sr-support-message .sr-list-actions small {color:var(--muted);font-size:11px}
+@media(max-width:760px){.sr-support-layout{grid-template-columns:1fr}.sr-support-list{grid-template-columns:1fr}.sr-support-messages{max-height:none}}
+@media(forced-colors:active){.sr-support-ticket,.sr-support-message{border:1px solid CanvasText}}
