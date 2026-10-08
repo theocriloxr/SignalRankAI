@@ -22,6 +22,13 @@ def _utcnow_naive_iso() -> str:
 class TestTradeTracker(unittest.TestCase):
     def setUp(self):
         """Isolate both caches and persistence, including fresh-process retries."""
+        # These legacy trade-outcome unit tests exercise the in-memory fallback.
+        # Hosted CI configures REDIS_URL, which correctly makes Redis authoritative
+        # and clears locally-only trades. Do not weaken that production behavior:
+        # remove Redis authority only for this explicit in-memory test fixture.
+        redis_mode = patch.dict(os.environ, {"REDIS_URL": ""}, clear=False)
+        redis_mode.start()
+        self.addCleanup(redis_mode.stop)
         for target, value in (
             ("state.get_active_trades_sync", {}),
             ("state.set_active_trade_sync", None),
