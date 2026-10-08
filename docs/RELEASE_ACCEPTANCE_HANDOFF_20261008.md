@@ -42,3 +42,19 @@ Railway project `trading-bot-account2` (`5baa1c14-a748-4dc8-8eb6-411c621e56c3`):
 - Keep PR #189 and #190 in DRAFT pending complete evidence and reconciliation.
 - Do **not** merge a red CI, change a kill switch, enable live trading, promote unverified DB migrations or label synthetic paper outcomes as broker fills.
 - Once a compatible audited mobile dependency remediation exists, rerun lock+audit+native builds and the immutable full release pipeline. Revisit provider/demo blockers with owned sandbox access and explicit owner approvals.
+
+
+## Follow-up read-only audit and frontend safety source (8 October)
+
+**Signal detail provenance:** `frontend/src/components/SignalEvidence.tsx` renders the backend's entitled `proof`, `signal` and `events` structures from `/api/v1/platform/signals/{signal_id}`; it explicitly distinguishes authenticated signal delivery receipts, optional lifecycle tracking and outcomes from **broker order execution**. No broker order is placed by this screen. Current branch awaits exact-head frontend validation.
+
+**Same-origin account transport:** `frontend/src/lib/client.ts` no longer reads a public cross-origin API base; browser account calls resolve to same-origin `/api/v1/platform`. `frontend/next.config.ts` proxies only that prefix through a validated, server-only `SIGNALRANK_PLATFORM_API_ORIGIN`. Missing origin fails closed. Details and required **staging cookie/CSRF proof** are recorded in `docs/SAME_ORIGIN_SESSION_DEPLOYMENT.md`; no live deployment validation is claimed.
+
+**Railway evidence (read-only, no credentials or DB inspection):**
+- `environment_status` for `trading-bot-account2/production` reports the **main app ONLINE**, one running replica, serving an older successful deployment created **2026-10-03 16:55Z**. The *latest attempted* deployment on **2026-10-06** is separately **FAILED**. Do not confuse online fallback with successful promotion.
+- `signalrankai-analytics-prod` is also currently reported online on an older deployment; the latest failed attempt emitted `[release_source_gate] BLOCKED runtime commit c7684b34178b does not match expected 8f8583933a85`. This is **correct fail-closed release protection**, not an invitation to disable the source gate or substitute an unreviewed SHA.
+- Candidate frontend/mobile/static verification services have no active online deployment, and no independent Railway staging environment was enumerated. Verification projects located inside the production environment are **not** production-isolated staging by name alone.
+- Four mobile audit high findings remain traced to unpatched `node-forge` and Expo's transitively affected packages. Source-only UI progress cannot waive this security gate.
+- Deterministic governance regeneration for this design branch has succeeded in its separate GitHub workflow, but the **entire immutable candidate CI** and native-device/prod runtime certification have not passed.
+
+**Remediation ownership:** First provision a real isolated staging project/environment and source-aligned secrets with separate DB/Redis; verify cookie proxy behavior and exact SHA, then repair supported mobile dependencies when a trusted patch is released, run all backend/native/research gates, prove demo fills/retries/kill switch, 24–72h soak and two independent audits. Keep production execution controls unchanged until all evidence exists.
