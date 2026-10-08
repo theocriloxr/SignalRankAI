@@ -96,6 +96,7 @@ export function AccountEntry() {
       {stage==="mfa"?<button className="sr-auth-switch" type="button" onClick={()=>reset("login")}>Use another account</button>:
       <button className="sr-auth-switch" type="button" onClick={()=>reset(mode==="login"?"register":"login")}>{mode==="login"?"New to SignalRank? Create an account":"Already have an account? Sign in"}</button>}
       {stage==="credentials"&&<Link href="/recover" className="sr-auth-switch">Forgot your password?</Link>}
+      {stage==="credentials"&&<Link href="/magic-login" className="sr-auth-switch">Sign in with an email link</Link>}
       <p className="sr-auth-disclaimer">Trading carries risk. Market data, execution eligibility and financial records must be verified independently.</p>
     </section>
   </div></main>;
