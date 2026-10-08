@@ -510,3 +510,16 @@ html { scroll-padding-top: 1rem; }
 .sr-journal-entry footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; border-top:1px solid var(--line); padding-top:16px; }
 .sr-journal-delete-confirm { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .sr-journal-delete-confirm>span { width:100%; font-size:13px; color:var(--text); }
+
+
+/* Trading signal preference controls: never imply permission to broker-trade. */
+.sr-preferences-panel {max-width:1080px}
+.sr-form-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.sr-pref-classes {border:1px solid var(--line);border-radius:10px;min-width:0;padding:16px}
+.sr-pref-classes legend {font-weight:700;padding:0 7px}
+.sr-pref-classes>p {margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.5}
+.sr-pref-classes>div {display:flex;flex-wrap:wrap;gap:10px}
+.sr-pref-classes label {display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:8px}
+.sr-pref-classes input {width:18px;height:18px;accent-color:var(--accent)}
+.sr-preferences-panel .sr-metric {min-height:115px}
+@media(max-width:640px){.sr-form-grid{grid-template-columns:1fr}}
