@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 
-export type MobileScreen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account';
+export type MobileScreen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account'|'brokers'|'notifications'|'watchlists';
 const primary: {label:string;screen:MobileScreen;index:string}[] = [
   {label:'Overview',screen:'overview',index:'01'},
   {label:'Signals',screen:'signals',index:'02'},
@@ -14,6 +14,10 @@ const secondary: {label:string;screen:MobileScreen;description:string}[] = [
   {label:'Journal',screen:'journal',description:'Personal reflections'},
   {label:'Support',screen:'support',description:'Account assistance'},
   {label:'Account',screen:'account',description:'Identity, security and billing'},
+  {label:'Brokers',screen:'brokers',description:'Connection inventory'},
+  {label:'Watchlists',screen:'watchlists',description:'Canonical instruments'},
+  {label:'Notifications',screen:'notifications',description:'Account message receipts'},
+
 ];
 
 export function MobileNavigation({active,onSelect}:{active:MobileScreen;onSelect:(screen:MobileScreen)=>void}) {
@@ -23,7 +27,7 @@ export function MobileNavigation({active,onSelect}:{active:MobileScreen;onSelect
   return <View style={styles.container}>
     {more&&<View style={styles.menu}>
       <Text style={styles.menuTitle}>MORE WORKSPACE SECTIONS</Text>
-      <View style={styles.menuGrid}>{secondary.map(item=><Pressable
+      <ScrollView nestedScrollEnabled contentContainerStyle={styles.menuGrid} showsVerticalScrollIndicator>{secondary.map(item=><Pressable
         key={item.screen}
         accessibilityRole="button"
         accessibilityState={{selected:active===item.screen}}
@@ -31,7 +35,7 @@ export function MobileNavigation({active,onSelect}:{active:MobileScreen;onSelect
         onPress={()=>navigate(item.screen)}>
         <Text style={styles.menuName}>{item.label}</Text>
         <Text style={styles.menuDetail}>{item.description}</Text>
-      </Pressable>)}</View>
+      </Pressable>)}</ScrollView>
     </View>}
     <View style={styles.tabs} accessibilityRole="tablist">
       {primary.map(item=><Pressable
