@@ -1,8 +1,10 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import client from "../lib/client";
 
 export function SessionExit() {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   async function signOut() {
@@ -10,7 +12,7 @@ export function SessionExit() {
     setBusy(true);setError(false);
     try {
       const result = await client.POST("/api/v1/platform/auth/logout");
-      if (result.response.ok) { window.location.assign("/login"); return; }
+      if (result.response.ok) { router.replace("/login"); router.refresh(); return; }
     } catch { /* Keep user in place; never misrepresent a failed logout. */ }
     setError(true);setBusy(false);
   }
