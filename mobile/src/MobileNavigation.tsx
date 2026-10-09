@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
+import {Pressable, ScrollView, StyleSheet, Text, View, useColorScheme} from 'react-native';
 
 export type MobileScreen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account'|'brokers'|'notifications'|'watchlists';
 const primary: {label:string;screen:MobileScreen;index:string}[] = [
@@ -21,6 +21,7 @@ const secondary: {label:string;screen:MobileScreen;description:string}[] = [
 ];
 
 export function MobileNavigation({active,onSelect}:{active:MobileScreen;onSelect:(screen:MobileScreen)=>void}) {
+  const styles=useAppStyles();
   const [more,setMore]=useState(false);
   const selectedSecondary=secondary.some(s=>s.screen===active);
   function navigate(screen:MobileScreen){onSelect(screen);setMore(false);}
@@ -57,7 +58,7 @@ export function MobileNavigation({active,onSelect}:{active:MobileScreen;onSelect
     </View>
   </View>;
 }
-const styles=StyleSheet.create({
+const darkStyles=StyleSheet.create({
   container:{backgroundColor:'#101e19',borderTopColor:'#294036',borderTopWidth:1,paddingTop:6},
   tabs:{flexDirection:'row',alignItems:'stretch',justifyContent:'space-between',gap:3,paddingBottom:3},
   tab:{flex:1,minWidth:0,alignItems:'center',justifyContent:'center',paddingVertical:7,borderRadius:9,minHeight:51,gap:2},
@@ -72,3 +73,15 @@ const styles=StyleSheet.create({
   menuName:{color:'#e6eeea',fontSize:13,fontWeight:'700'},
   menuDetail:{color:'#a5b8ad',fontSize:10,marginTop:5},
 });
+
+const lightPalette:Record<string,string> = {
+ '#101e19':'#ffffff','#14251d':'#eaf1ed','#294036':'#d1dfd6',
+ '#a5b8ad':'#52685c','#4ce0a4':'#08754e','#bcf4d7':'#085c3f',
+ '#e6eeea':'#152a21',
+};
+const lightStyles=Object.fromEntries(Object.entries(darkStyles).map(([key,style])=>[
+ key,Object.fromEntries(Object.entries(style).map(([prop,value])=>[
+ prop,typeof value==='string'?(lightPalette[value]||value):value
+ ])),
+])) as typeof darkStyles;
+function useAppStyles(){return useColorScheme()==='light'?lightStyles:darkStyles;}
