@@ -17,8 +17,9 @@ function useData(route:string){
 }
 function ErrorState({busy,error,retry}:{busy:boolean;error:string;retry:()=>void}){
   const styles=useStyles();
+  const scheme=useColorScheme();
   return <View style={styles.card}>
-    {busy?<ActivityIndicator color={useColorScheme()==='light'?'#08754e':'#4ce0a4'}/>:<Text accessibilityRole="alert" style={styles.body}>{error||'No confirmed records returned.'}</Text>}
+    {busy?<ActivityIndicator color={scheme==='light'?'#08754e':'#4ce0a4'}/>:<Text accessibilityRole="alert" style={styles.body}>{error||'No confirmed records returned.'}</Text>}
     {!busy&&<Pressable accessibilityRole="button" style={styles.secondary} onPress={retry}><Text style={styles.body}>Retry account data</Text></Pressable>}
   </View>;
 }
