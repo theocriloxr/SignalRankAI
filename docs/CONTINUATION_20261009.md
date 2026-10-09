@@ -46,3 +46,25 @@ the two runtime files passed with no findings or errors. Hosted verification on
 the successor remains required. Portfolio aggregation, instrument-specific costs,
 native and broker acceptance, source-document review and new release observation
 are not certified by these synthetic tests.
+
+Hosted run `37888251253` on published `fc3d0a1` passed both backend Python
+versions, frontend, static quality, manifest and research browser. Mobile again
+failed its dependency audit with the four known high rows after 44 tests passed.
+Release certification failed and production source approval was skipped.
+
+## Missing health-evidence continuation
+
+The health query previously used an inner lateral join, silently dropping active
+profiles with no eligible signal-delivery outcomes. It now retains those profiles
+and reports UNAVAILABLE/INSUFFICIENT/OBSERVED/INVALID evidence explicitly. Empty
+and undersized windows retain null metrics. Missing observations do not fabricate
+losses or trigger a synthetic suspension. Existing invalid/degraded observations
+still suspend, including profiles beyond the first 20 displayed diagnostics.
+
+Coverage counts include every queried current CANARY/LIMITED_LIVE/APPROVED
+profile. The operator view exposes per-profile samples, evidence reasons and
+staleness, and explains that a completed monitor iteration is not certified health
+or broker/baseline evidence. Unit checks pass locally; actual PostgreSQL coverage
+and desktop/mobile light/dark display checks remain required on the successor
+hosted commit. This closes a surveillance visibility bug, not approved baseline,
+decay-analysis, alert-retention or complete strategy-health acceptance.

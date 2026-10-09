@@ -172,6 +172,24 @@ $('#mfaForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await
 $('#passwordResetForm').onsubmit=async e=>{e.preventDefault();try{await request('/auth/password-reset/complete',{method:'POST',body:JSON.stringify(formData(e.target))});history.replaceState({},'',location.pathname);setAuthTab('login');toast('Password reset. Sign in again.')}catch(err){toast(err.message,true)}};
 $('#magicLinkButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/magic-link/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, a sign-in link was queued.')}catch(err){toast(err.message,true)}};
 $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, reset instructions were queued.')}catch(err){toast(err.message,true)}};
+function renderAdaptiveHealthEvidence(health){
+  const counts=health.delivery_evidence_counts||{};
+  const statuses=['UNAVAILABLE','INSUFFICIENT','OBSERVED','INVALID'];
+  const validCount=value=>Number.isInteger(value)&&value>=0;
+  const coverageKnown=validCount(health.evaluated_profile_count)&&statuses.every(key=>validCount(counts[key]))&&statuses.reduce((sum,key)=>sum+counts[key],0)===health.evaluated_profile_count;
+  const labels={UNAVAILABLE:'Unavailable',INSUFFICIENT:'Insufficient',OBSERVED:'Observed',INVALID:'Invalid'};
+  const rows=Array.isArray(health.profile_diagnostics)?health.profile_diagnostics.slice(0,20):[];
+  const current=health.fresh===true&&health.status==='COMPLETED';
+  const coverage=coverageKnown?`${health.evaluated_profile_count} active profiles checked`:'Profile coverage unavailable';
+  const metric=value=>typeof value==='number'&&Number.isFinite(value)?fmt(value,3):'—';
+  return `<section id="adaptiveHealthEvidence" class="signal-funnel-panel"><div class="panel-heading"><div><p class="eyebrow">STRATEGY MONITORING</p><h3>Adaptive profile evidence</h3></div><span class="status-pill ${current?'':'warning'}">${esc(current?'Monitor current':`Monitor ${health.status||'UNAVAILABLE'}`)}</span></div>
+    <p class="muted">A completed monitor run does not certify strategy health. These are signal-delivery outcomes; broker fills and approved baseline comparisons remain unverified.</p>
+    <p>${esc(coverage)}${!current?' · Last reported evidence may be stale.':''}</p>
+    <div class="mini-metrics">${statuses.map(key=>`<div><small>${esc(labels[key])}</small><strong class="${key==='OBSERVED'?'':'warning'}">${esc(coverageKnown?counts[key]:'—')}</strong></div>`).join('')}</div>
+    ${rows.length?`<div class="table-wrap"><table><thead><tr><th>Profile / asset</th><th>State</th><th>Samples</th><th>Delivery evidence</th><th>Expectancy R</th><th>Drawdown R</th><th>Brier loss</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.asset||'Unknown asset')}<br><small>${esc(row.profile_id||'Unknown profile')}</small></td><td>${esc(row.profile_state||'Unknown')}</td><td>${esc(validCount(row.sample_size)?row.sample_size:'—')}</td><td>${esc(labels[row.delivery_evidence_status]||'Unavailable')}${row.coverage_reason?`<br><small>${esc(String(row.coverage_reason).replaceAll('_',' '))}</small>`:''}${Array.isArray(row.reasons)&&row.reasons.length?`<br><small class="warning">${esc(row.reasons.join(' · '))}</small>`:''}</td><td>${esc(metric(row.expectancy_r))}</td><td>${esc(metric(row.max_drawdown_r))}</td><td>${esc(metric(row.brier_score))}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No profile details reported.</p>'}
+    ${health.diagnostics_truncated===true?`<p class="muted">Showing ${esc(rows.length)} profiles. Coverage counts and suspension checks include every queried active profile.</p>`:''}
+  </section>`;
+}
 function renderOperatorDiagnostics(){
   const target=$('#operatorDiagnostics');if(!target)return;
   const d=state.operatorDiagnostics||{};const providers=d.providers||{};const performance=d.performance||{};const outcomes=d.outcomes||{};const payments=d.payments||{};const engine=d.engine||{};
@@ -198,6 +216,7 @@ function renderOperatorDiagnostics(){
   const rejectionRows=Object.entries(rejectionGroups).flatMap(([stage,rows])=>(rows||[]).map(row=>({stage,...row}))).slice(0,12);
   const mlLine=`ML raw max ${engine.ml_raw_probability_max==null?'—':Number(engine.ml_raw_probability_max).toFixed(3)} · threshold ${engine.ml_threshold_raw==null?'—':Number(engine.ml_threshold_raw).toFixed(3)} · calibrated max ${engine.ml_calibrated_probability_max==null?'—':Number(engine.ml_calibrated_probability_max).toFixed(3)}`;
   target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v,cls])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong class="${cls}">${esc(v)}</strong></div>`).join('')}</div>
+    ${renderAdaptiveHealthEvidence(d.adaptive_health||{})}
     <section class="signal-funnel-panel"><div class="panel-heading"><div><p class="eyebrow">LATEST ENGINE CYCLE</p><h3>Signal admission funnel</h3></div><span class="status-pill">${esc(String(engine.status||'unknown').toUpperCase())}</span></div>
       <div class="signal-funnel-grid">${funnel.map(([k,v])=>`<div><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
       <p class="muted signal-funnel-ml">${esc(mlLine)}</p>

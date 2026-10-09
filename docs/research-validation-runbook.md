@@ -88,6 +88,14 @@ remain explicit on each replay record.
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply
 an observation; future closes and closes preceding the decision are excluded.
+The read retains every current CANARY/LIMITED_LIVE/APPROVED profile, including
+profiles with no eligible outcomes. Coverage is explicitly UNAVAILABLE,
+INSUFFICIENT, OBSERVED or INVALID. Missing and undersized samples retain null
+delivery metrics; they are neither invented losses nor certified health. Coverage
+counts include all queried profiles, even when the diagnostic display is limited
+to 20 rows. Invalid observations still trigger suspension beyond that display
+limit. The operator diagnostics show coverage, sample sizes, null metrics and
+stale-monitor warnings, with signal-delivery and approved-baseline limits visible.
 Component confidence is not a probability and is no longer used for Brier loss.
 The monitor reuses the canonical calibration-evidence validator and the existing
 Brier implementation, with the training target `r_multiple > 0`. Missing or
