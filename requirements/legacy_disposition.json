@@ -1,5 +1,5 @@
 {
-  "file_count": 2068,
+  "file_count": 2069,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8619,6 +8619,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 184,
+      "path": "frontend/src/components/BrokerAccounts.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "e7c757f8a5a7e1a434c04bcdb5aa1bf748f1f6b645a02b292ee5e4005b13fbfe",
+      "size_bytes": 13338
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/JournalView.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -16559,7 +16567,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1234,
+    "PRESERVE_BEHAVIOUR": 1235,
     "TEST_ONLY": 357
   }
 }
