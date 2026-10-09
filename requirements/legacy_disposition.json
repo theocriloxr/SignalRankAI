@@ -8443,11 +8443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 345,
+      "line_count": 356,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "116ad9754564fcc6996e7949a06ad7bb9f001441a9634463cd393637f0630b51",
-      "size_bytes": 19985
+      "sha256": "ecd99a2340cfc892861c295cfe528d3dbfc2daba2e758dd2c75309cb295313a2",
+      "size_bytes": 20506
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8630,8 +8630,8 @@
       "line_count": 184,
       "path": "frontend/src/components/BrokerAccounts.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a7c71945f76940f5859868fec653bf23231f26568f88467c65b5131a5e9dc98e",
-      "size_bytes": 13343
+      "sha256": "1e381889c296b4ba38849bff17da22789e73b6fbf5adbb5a73714529e0398992",
+      "size_bytes": 13177
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
