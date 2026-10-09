@@ -8443,11 +8443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 30,
+      "line_count": 29,
       "path": "frontend/src/app/[slug]/page.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "06b6f6847b6bd40d94b4b20fe8479582547b1aaaab8d0fbfc6b23e7ae45d17ca",
-      "size_bytes": 3219
+      "sha256": "9c475d1797f709526f0261f222ab229f96534bd040d9385c689987725be52a82",
+      "size_bytes": 3189
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8614,8 +8614,8 @@
       "line_count": 54,
       "path": "frontend/src/components/NotificationCenter.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "7de5681eab7acfc5924f46a77bfcc5cb4d72012a00d366bed7723ea11d80e2da",
-      "size_bytes": 3203
+      "sha256": "2cc9375fa6db9f43f02641ec36f3863adc42fdb7daa88464b6f432d2f41188a2",
+      "size_bytes": 3208
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
