@@ -74,8 +74,9 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
         const id=display(connection.connection_id,"");
         const url=externalHttpsUrl(data.configuration_link);
         if(id){
+          // Keep the provider link rendered until the user explicitly returns:
+          // refreshing WorkspaceLive here would unmount this one-time link.
           setConnectionId(id);
-          onChanged();
           if(url){setLink(url);setProviderMessage("A demo account configuration request was created. Complete credentials on the provider site, then return here and verify the connection.");}
           else {setError("A connection was created but its provider link was missing or unsafe. Do not enter credentials at an unverified address. Contact support with the connection reference.");}
         }else setError("The provider response had no canonical connection identity. No completed connection is confirmed.");
@@ -119,7 +120,8 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
       <strong>Provider link available</strong>
       <p>Check that the destination host belongs to the expected provider before entering your demo credentials: <code>{link.hostname}</code>.</p>
       <a className="sr-secondary-action" href={link.href} target="_blank" rel="noopener noreferrer">Open provider secure setup ↗</a>
-      <p>Return to SignalRankAI after provider setup. Use **read-only verification** on the matching broker account before proceeding with any certification.</p>
+      <p>Return to SignalRankAI after provider setup. Use read-only verification on the matching broker account before proceeding with any certification.</p>
+      <button type="button" className="sr-secondary-action" onClick={onChanged}>I finished provider setup — refresh broker accounts</button>
     </div>}
     {connectionId&&<p className="sr-overline">Connection reference: {connectionId}</p>}
     {error&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{error}</p>}
