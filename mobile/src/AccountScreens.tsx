@@ -1,5 +1,5 @@
 import React, {useEffect,useState} from 'react';
-import {ActivityIndicator,FlatList,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {ActivityIndicator,FlatList,Pressable,ScrollView,StyleSheet,Text,TextInput,View,useColorScheme} from 'react-native';
 import {api} from './api';
 import {safeLabel,quantityLabel} from './presentation';
 
@@ -17,15 +17,18 @@ function useResource(path:string) {
 }
 
 function ResponseState({loading,error,retry}:{loading:boolean;error:string;retry:()=>void}){
+  const styles=useAppStyles();
   if(loading)return <View style={styles.panel}><ActivityIndicator color="#4ce0a4"/><Text style={styles.muted}>Retrieving account records…</Text></View>;
   return <View style={styles.panel} accessibilityRole="alert">
     <Text style={styles.title}>Records unavailable</Text><Text style={styles.muted}>{error||'No confirmed response was returned.'}</Text>
     <Pressable accessibilityRole="button" style={styles.action} onPress={retry}><Text style={styles.actionText}>Retry</Text></Pressable>
   </View>;
 }
-function Disclosure({text}:{text:string}){return <View style={styles.disclosure}><Text style={styles.muted}>{text}</Text></View>;}
+function Disclosure({text}:{text:string}){
+  const styles=useAppStyles();return <View style={styles.disclosure}><Text style={styles.muted}>{text}</Text></View>;}
 
 export function NativeBrokers(){
+  const styles=useAppStyles();
   const state=useResource('/broker/connections');
   if(!state.data)return <ResponseState {...state}/>;
   const connections=Array.isArray(state.data.connections)?state.data.connections:[];
@@ -44,6 +47,7 @@ export function NativeBrokers(){
 }
 
 export function NativeNotifications(){
+  const styles=useAppStyles();
   const state=useResource('/notifications?limit=50');
   const [pending,setPending]=useState('');
   const [message,setMessage]=useState('');
@@ -79,6 +83,7 @@ export function NativeNotifications(){
 }
 
 export function NativeWatchlists(){
+  const styles=useAppStyles();
   const state=useResource('/watchlists');
   const [name,setName]=useState('');
   const [query,setQuery]=useState('');
@@ -146,7 +151,7 @@ export function NativeWatchlists(){
   </ScrollView>;
 }
 
-const styles=StyleSheet.create({
+const darkStyles=StyleSheet.create({
   panel:{backgroundColor:'#101e19',borderColor:'#294036',borderWidth:1,borderRadius:14,padding:17,gap:11,marginBottom:13},
   disclosure:{padding:14,borderLeftWidth:3,borderLeftColor:'#4ce0a4',backgroundColor:'#14251d',borderRadius:9,marginBottom:13},
   overline:{color:'#bcf4d7',fontSize:10,letterSpacing:1,fontWeight:'800'},
@@ -162,3 +167,15 @@ const styles=StyleSheet.create({
   selected:{borderColor:'#4ce0a4'},
   warning:{color:'#e6eeea',backgroundColor:'#14251d',padding:12,borderRadius:9,marginBottom:12},
 });
+
+const lightPalette:Record<string,string> = {
+ '#08120f':'#f1f5f3','#101e19':'#ffffff','#14251d':'#eaf1ed',
+ '#e6eeea':'#152a21','#a5b8ad':'#52685c','#294036':'#d1dfd6',
+ '#4ce0a4':'#08754e','#bcf4d7':'#085c3f','#071c12':'#ffffff',
+};
+const lightStyles=Object.fromEntries(Object.entries(darkStyles).map(([key,style])=>[
+ key,Object.fromEntries(Object.entries(style).map(([prop,value])=>[
+ prop,typeof value==='string'?(lightPalette[value]||value):value
+ ])),
+])) as typeof darkStyles;
+function useAppStyles(){return useColorScheme()==='light'?lightStyles:darkStyles;}
