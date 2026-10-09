@@ -354,3 +354,19 @@ test("broker percentage risk fields are decimal fractions, never raw percent val
     assert.ok(broker.includes(`probabilityLabel(policy.${field})`),field);
   }
 });
+
+
+test("demo broker setup uses provider-hosted credentials and never starts live execution",()=>{
+  const source=readFileSync(new URL("../src/components/DemoBrokerConnection.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(source.includes('client.GET("/api/v1/platform/broker/metatrader/servers"'));
+  assert.ok(source.includes('client.POST("/api/v1/platform/broker/metatrader/secure-link"'));
+  assert.ok(source.includes('environment:"demo",ttl_days:3'));
+  assert.ok(source.includes('data.configuration_link'));
+  assert.ok(source.includes('url.hostname'));
+  assert.ok(source.includes('uri.protocol!=="https:"'));
+  assert.ok(source.includes('rel="noopener noreferrer"'));
+  assert.ok(source.includes('execution disabled') || source.includes('does not turn on auto-execution'));
+  assert.ok(workspace.includes("<DemoBrokerConnection onChanged="));
+  assert.doesNotMatch(source,/password\s*[:=]|api_secret|api_key|localStorage|sessionStorage|\/execution"|\/orders|enable.execution/);
+});
