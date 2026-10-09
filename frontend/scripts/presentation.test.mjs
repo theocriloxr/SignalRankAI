@@ -282,3 +282,18 @@ test("portfolio chart never synthesizes missing broker balances or a fake equity
   assert.ok(workspace.includes("<PaperEquityChart ledger={rows(data.equity_curve)}"));
   assert.doesNotMatch(chart,/Math\.random|crypto\.random|client\.(POST|PUT|DELETE|PATCH)\(/);
 });
+
+
+test("public and private mobile disclosures close on route change outside touch and Escape",()=>{
+  const menu=readFileSync(new URL("../src/components/ResponsiveDisclosure.tsx",import.meta.url),"utf8");
+  const publicNav=readFileSync(new URL("../src/components/PublicNav.tsx",import.meta.url),"utf8");
+  const shell=readFileSync(new URL("../src/components/AppShell.tsx",import.meta.url),"utf8");
+  assert.match(menu,/usePathname\(\)/);
+  assert.match(menu,/document\.addEventListener\("pointerdown"/);
+  assert.match(menu,/event\.key!=="Escape"/);
+  assert.match(menu,/el\.closest\("a\[href\]"\)/);
+  assert.match(menu,/element\.open=false/);
+  assert.ok(publicNav.includes("<ResponsiveDisclosure"));
+  assert.ok(shell.includes("<ResponsiveDisclosure"));
+  assert.doesNotMatch(menu,/localStorage|sessionStorage|client\.(POST|PUT|DELETE|PATCH)\(/);
+});
