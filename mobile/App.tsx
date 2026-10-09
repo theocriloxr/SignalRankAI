@@ -12,6 +12,7 @@ import {
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import {amountTone, currencyLabel, finiteNumber, percentLabel, quantityLabel, safeLabel} from './src/presentation';
 
 type Screen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account';
 type AuthMode = 'login'|'register'|'activate'|'mfa'|'reset';
@@ -47,12 +48,164 @@ export default function App() {
 
 function Auth({mode,setMode,form,setForm,error,submit}:any){const magic=async()=>{if(!form.email)return setForm({...form});try{await requestMagicLink(form.email);Alert.alert('Check your email','If the account exists, a sign-in link was queued.')}catch(e){Alert.alert('Error',e instanceof Error?e.message:'Could not request link')}};const reset=async()=>{if(!form.email)return;try{await requestPasswordReset(form.email);Alert.alert('Check your email','If the account exists, reset instructions were queued.')}catch(e){Alert.alert('Error',e instanceof Error?e.message:'Could not request reset')}};return <SafeAreaView style={styles.root}><ScrollView contentContainerStyle={styles.auth}><Text style={styles.eyebrow}>ONE ACCOUNT. EVERY CHANNEL.</Text><Text style={styles.hero}>SignalRankAI follows you.</Text><Text style={styles.muted}>Keep Telegram signals, subscriptions, paper positions and preferences when you move into the app.</Text>{!['mfa','reset'].includes(mode)&&<View style={styles.tabs}>{(['login','register','activate'] as AuthMode[]).map(x=><Pressable key={x} onPress={()=>setMode(x)} style={[styles.tab,mode===x&&styles.tabActive]}><Text style={styles.navText}>{x}</Text></Pressable>)}</View>}{mode==='register'&&<TextInput style={styles.input} placeholder="Display name" placeholderTextColor="#75869a" value={form.displayName} onChangeText={(v)=>setForm({...form,displayName:v})}/>} {mode==='activate'&&<TextInput style={styles.input} placeholder="Telegram one-time code" placeholderTextColor="#75869a" value={form.code} onChangeText={(v)=>setForm({...form,code:v})}/>} {mode==='mfa'&&<><Text style={styles.rowTitle}>Two-factor authentication</Text><TextInput style={styles.input} placeholder="Authenticator or recovery code" placeholderTextColor="#75869a" value={form.code} onChangeText={(v)=>setForm({...form,code:v})}/></>} {mode==='reset'&&<Text style={styles.rowTitle}>Choose a new password</Text>} {!['mfa'].includes(mode)&&<TextInput style={styles.input} placeholder="Email" placeholderTextColor="#75869a" autoCapitalize="none" keyboardType="email-address" value={form.email} onChangeText={(v)=>setForm({...form,email:v})}/>} {!['mfa'].includes(mode)&&<TextInput style={styles.input} placeholder={mode==='reset'?'New password':'Password'} placeholderTextColor="#75869a" secureTextEntry value={form.password} onChangeText={(v)=>setForm({...form,password:v})}/>} {error?<Text style={styles.error}>{error}</Text>:null}<Pressable style={styles.primary} onPress={submit}><Text style={styles.primaryText}>{mode==='login'?'Log in':mode==='register'?'Create account':mode==='activate'?'Activate Telegram account':mode==='mfa'?'Verify code':'Reset password'}</Text></Pressable>{mode==='login'&&<View style={styles.inline}><Pressable onPress={magic}><Text style={styles.link}>Email sign-in link</Text></Pressable><Pressable onPress={reset}><Text style={styles.link}>Reset password</Text></Pressable></View>}</ScrollView><StatusBar style="light"/></SafeAreaView>}
 
-function Overview(){const [data,setData]=useState<any>(null);useEffect(()=>{api('/dashboard').then(setData).catch(()=>{})},[]);if(!data)return <ActivityIndicator color="#64f0b4"/>;const s=data.summary||{};return <ScrollView><View style={styles.grid}>{[['Delivered',s.delivered_signals],['Open paper',s.open_positions],['Paper cash',`$${Number(s.paper_cash||0).toFixed(2)}`],['Unrealized',`$${Number(s.unrealized_pnl||0).toFixed(2)}`]].map(([k,v])=><View style={styles.card} key={String(k)}><Text style={styles.muted}>{k}</Text><Text style={styles.metric}>{v}</Text></View>)}</View></ScrollView>}
-function Signals(){const [rows,setRows]=useState<any[]>([]);useEffect(()=>{api<any>('/signals?limit=50').then(x=>setRows(x.signals||[])).catch(()=>{})},[]);return <FlatList data={rows} keyExtractor={x=>x.signal_id} ListEmptyComponent={<Text style={styles.muted}>No delivery-proven signals yet.</Text>} renderItem={({item})=><View style={styles.row}><View><Text style={styles.rowTitle}>{item.asset} {String(item.direction).toUpperCase()}</Text><Text style={styles.muted}>{item.timeframe} · {item.strategy_name}</Text></View><Text style={styles.badge}>{item.outcome_status||'PENDING'}</Text></View>}/>} 
+
+type AccountData<T> = {data:T|null;loading:boolean;error:string;retry:()=>void};
+function useAccountData<T=any>(route:string):AccountData<T>{
+  const [version,setVersion]=useState(0);
+  const [state,setState]=useState<{data:T|null;loading:boolean;error:string}>({data:null,loading:true,error:''});
+  useEffect(()=>{
+    let active=true;
+    setState({data:null,loading:Boolean(route),error:''});
+    if(!route)return ()=>{active=false};
+    api<T>(route)
+      .then(value=>{if(active)setState({data:value,loading:false,error:''})})
+      .catch(e=>{if(active)setState({data:null,loading:false,error:e instanceof Error?e.message:'The service could not be verified.'})});
+    return()=>{active=false};
+  },[route,version]);
+  return {...state,retry:()=>setVersion(value=>value+1)};
+}
+function AccountDataState({loading,error,retry}:{loading:boolean;error:string;retry:()=>void}){
+  if(loading)return <View style={styles.feedbackPanel}><ActivityIndicator color="#4ce0a4"/><Text style={styles.muted}>Retrieving verified account data…</Text></View>;
+  if(error)return <View style={styles.feedbackPanel} accessibilityRole="alert">
+    <Text style={styles.rowTitle}>Account information unavailable</Text><Text style={styles.muted}>{error}</Text>
+    <Pressable accessibilityRole="button" style={styles.primary} onPress={retry}><Text style={styles.primaryText}>Retry securely</Text></Pressable>
+  </View>;
+  return null;
+}
+function MetricTile({title,value,detail}:{title:string;value:string;detail?:string}){
+  return <View style={styles.card}><Text style={styles.muted}>{title}</Text><Text style={styles.metric}>{value}</Text>
+    {detail?<Text style={styles.muted}>{detail}</Text>:null}</View>;
+}
+
+function Overview(){
+  const {data,loading,error,retry}=useAccountData<any>('/dashboard');
+  if(!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const summary=data.summary||{};
+  return <ScrollView showsVerticalScrollIndicator={false}>
+    <Text style={styles.sectionLabel}>ACCOUNT / DECISION OVERVIEW</Text>
+    <Text style={styles.body}>Canonical receipts and simulated balances. This screen never authorizes broker execution.</Text>
+    <View style={styles.grid}>
+      <MetricTile title="Delivered signals" value={quantityLabel(summary.delivered_signals,0)} detail="Receipt-backed history"/>
+      <MetricTile title="Open paper positions" value={quantityLabel(summary.open_positions,0)} detail="Simulated"/>
+      <MetricTile title="Paper cash (currency not reported)" value={quantityLabel(summary.paper_cash)} detail="Not live broker funds"/>
+      <MetricTile title="Unrealized paper P&L (currency not reported)" value={quantityLabel(summary.unrealized_pnl)} detail="Unverified currency"/>
+    </View>
+    <View style={styles.disclosure}><Text style={styles.muted}>Missing market or account data is unavailable—not zero. Brokerage eligibility must be verified independently.</Text></View>
+  </ScrollView>;
+}
+
+function Signals(){
+  const {data,loading,error,retry}=useAccountData<any>('/signals?limit=50');
+  const [selected,setSelected]=useState('');
+  if(selected)return <NativeSignalEvidence id={selected} back={()=>setSelected('')}/>;
+  if(!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const list=Array.isArray(data.signals)?data.signals:[];
+  return <FlatList
+    data={list}
+    keyExtractor={(row,i)=>String(row.signal_id||i)}
+    ListHeaderComponent={<View style={styles.disclosure}><Text style={styles.muted}>Delivered account signals only. A signal receipt is not proof of an order, fill or future return.</Text></View>}
+    ListEmptyComponent={<Text style={styles.muted}>No delivered signals were returned. No trade can be a valid outcome.</Text>}
+    renderItem={({item})=><Pressable accessibilityRole="button" onPress={()=>{if(item.signal_id)setSelected(String(item.signal_id))}} style={styles.row}>
+      <View style={{flex:1,minWidth:0}}><Text style={styles.rowTitle}>{safeLabel(item.asset,'Instrument')} · {safeLabel(item.direction,'Direction').toUpperCase()}</Text>
+        <Text style={styles.muted}>{safeLabel(item.timeframe)} / {safeLabel(item.strategy_name)}</Text>
+        <Text style={styles.muted}>Calibrated probability: {percentLabel(item.ml_probability_calibrated)}</Text>
+      </View><Text style={styles.badge}>{safeLabel(item.outcome_status,'Unreported')}</Text>
+    </Pressable>}/>;
+}
+function NativeSignalEvidence({id,back}:{id:string;back:()=>void}){
+  const {data,loading,error,retry}=useAccountData<any>('/signals/'+encodeURIComponent(id));
+  if(!data)return <View style={{flex:1}}><Pressable accessibilityRole="button" onPress={back}><Text style={styles.link}>← Back to signals</Text></Pressable><AccountDataState loading={loading} error={error} retry={retry}/></View>;
+  const signal=data.signal||{}, proof=data.proof||{}, events=Array.isArray(data.events)?data.events:[];
+  const confirmed=proof.access_proven===true?'Receipt confirmed':proof.access_proven===false?'Not confirmed':'Unavailable';
+  return <ScrollView showsVerticalScrollIndicator={false}>
+    <Pressable accessibilityRole="button" onPress={back}><Text style={styles.link}>← Delivered signals</Text></Pressable>
+    <Text style={styles.eyebrow}>SIGNAL / ENTITLED EVIDENCE</Text>
+    <Text style={styles.heroTitle}>{safeLabel(signal.asset,'Instrument')} · {safeLabel(signal.direction)}</Text>
+    <View style={styles.disclosure}><Text style={styles.muted}>Delivery proof does not certify broker execution or real-money results.</Text></View>
+    <MetricTile title="Account delivery proof" value={confirmed} detail={safeLabel(proof.delivery_channel,'Channel unknown')}/>
+    <View style={styles.grid}>
+      <MetricTile title="Entry" value={quantityLabel(signal.entry,6)}/>
+      <MetricTile title="Stop" value={quantityLabel(signal.stop_loss,6)}/>
+      <MetricTile title="First target" value={quantityLabel(signal.take_profit,6)}/>
+      <MetricTile title="Calibrated probability" value={percentLabel(signal.ml_probability_calibrated)}/>
+      <MetricTile title="Lifecycle state" value={safeLabel(signal.lifecycle_state)}/>
+      <MetricTile title="Recorded outcome" value={safeLabel(signal.canonical_outcome)}/>
+    </View>
+    <Text style={styles.sectionLabel}>LIFECYCLE EVENTS / {events.length}</Text>
+    {events.length?events.map((event:any,i:number)=><View key={i} style={styles.row}>
+      <Text style={styles.rowTitle}>{safeLabel(event.event_type,'Observation')}</Text>
+      <Text style={styles.muted}>{quantityLabel(event.price,6)}</Text>
+    </View>):<Text style={styles.muted}>No events returned. Do not infer a fill or closure.</Text>}
+  </ScrollView>;
+}
+
 function Markets(){const [q,setQ]=useState('');const [rows,setRows]=useState<any[]>([]);const search=()=>api<any>(`/instruments/search?q=${encodeURIComponent(q)}&limit=50`).then(x=>setRows(x.instruments||[])).catch(()=>{});useEffect(()=>{search()},[]);return <View style={{flex:1}}><View style={styles.searchRow}><TextInput style={[styles.input,{flex:1,marginBottom:0}]} placeholder="Search markets" placeholderTextColor="#75869a" value={q} onChangeText={setQ}/><Pressable style={styles.primary} onPress={search}><Text style={styles.primaryText}>Search</Text></Pressable></View><FlatList data={rows} keyExtractor={x=>x.instrument_id} renderItem={({item})=><View style={styles.row}><View><Text style={styles.rowTitle}>{item.display_symbol||item.canonical_symbol}</Text><Text style={styles.muted}>{item.asset_class} · {item.instrument_type}</Text></View><Text style={styles.muted}>{(item.providers||[]).join(', ')}</Text></View>}/></View>}
-function Paper(){const [data,setData]=useState<any>(null);useEffect(()=>{api('/paper').then(setData).catch(()=>{})},[]);if(!data)return <ActivityIndicator color="#64f0b4"/>;return <FlatList data={data.positions||[]} keyExtractor={x=>x.position_id} ListHeaderComponent={<View style={styles.card}><Text style={styles.muted}>Paper cash</Text><Text style={styles.metric}>${Number(data.account?.cash_balance||0).toFixed(2)}</Text></View>} ListEmptyComponent={<Text style={styles.muted}>No paper positions.</Text>} renderItem={({item})=><View style={styles.row}><View><Text style={styles.rowTitle}>{item.asset} {String(item.direction).toUpperCase()}</Text><Text style={styles.muted}>{item.status} · entry {item.fill_entry}</Text></View><Text style={Number(item.unrealized_pnl)>=0?styles.gain:styles.loss}>${Number(item.unrealized_pnl||0).toFixed(2)}</Text></View>}/>} 
-function Portfolio(){const [data,setData]=useState<any>(null);useEffect(()=>{api('/portfolio').then(setData).catch(()=>{})},[]);if(!data)return <ActivityIndicator color="#64f0b4"/>;return <FlatList data={data.exposures||[]} keyExtractor={(x,i)=>`${x.asset}:${x.direction}:${i}`} ListHeaderComponent={<View style={styles.grid}><View style={styles.card}><Text style={styles.muted}>Equity</Text><Text style={styles.metric}>${Number(data.equity||0).toFixed(2)}</Text></View><View style={styles.card}><Text style={styles.muted}>Cash</Text><Text style={styles.metric}>${Number(data.account?.cash_balance||0).toFixed(2)}</Text></View></View>} ListEmptyComponent={<Text style={styles.muted}>No open exposure.</Text>} renderItem={({item})=><View style={styles.row}><View><Text style={styles.rowTitle}>{item.asset} {String(item.direction).toUpperCase()}</Text><Text style={styles.muted}>{item.asset_class} · {item.positions} position(s)</Text></View><Text style={Number(item.unrealized_pnl)>=0?styles.gain:styles.loss}>${Number(item.unrealized_pnl||0).toFixed(2)}</Text></View>}/>} 
-function Performance(){const [data,setData]=useState<any>(null);useEffect(()=>{api('/performance').then(setData).catch(()=>{})},[]);if(!data)return <ActivityIndicator color="#64f0b4"/>;const s=data.summary||{};return <ScrollView><View style={styles.grid}>{[['Signals',s.signals||0],['Wins',s.wins||0],['Losses',s.losses||0],['Win rate',s.win_rate==null?'N/A':`${(Number(s.win_rate)*100).toFixed(1)}%`],['Average R',Number(s.average_r||0).toFixed(2)],['Total R',Number(s.total_r||0).toFixed(2)]].map(([k,v])=><View style={styles.card} key={String(k)}><Text style={styles.muted}>{k}</Text><Text style={styles.metric}>{v}</Text></View>)}</View><Text style={styles.muted}>Proof-backed history is not a guarantee of future results.</Text></ScrollView>}
+function Paper(){
+  const {data,loading,error,retry}=useAccountData<any>('/paper');
+  if(!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const account=data.account||{}, snapshot=data.snapshot||{};
+  const currency=account.currency;
+  const positions=Array.isArray(data.positions)?data.positions:[];
+  return <FlatList
+    data={positions}
+    keyExtractor={(row,i)=>String(row.position_id||i)}
+    ListHeaderComponent={<View>
+      <View style={styles.disclosure}><Text style={styles.muted}>SIMULATED FUNDS ONLY — paper positions do not establish live broker fills.</Text></View>
+      <View style={styles.grid}>
+        <MetricTile title="Paper cash" value={currencyLabel(account.cash_balance??snapshot.cash_balance,currency)}/>
+        <MetricTile title="Paper equity" value={currencyLabel(snapshot.equity,currency)}/>
+        <MetricTile title="Open paper positions" value={quantityLabel(snapshot.open_positions,0)}/>
+      </View>
+    </View>}
+    ListEmptyComponent={<Text style={styles.muted}>No paper positions were returned.</Text>}
+    renderItem={({item})=><View style={styles.row}>
+      <View style={{flex:1,minWidth:0}}><Text style={styles.rowTitle}>{safeLabel(item.asset,'Instrument')} · {safeLabel(item.direction)}</Text>
+        <Text style={styles.muted}>{safeLabel(item.status)} · entry {quantityLabel(item.fill_entry,6)}</Text>
+      </View>
+      <Text style={amountTone(item.unrealized_pnl)==='positive'?styles.gain:amountTone(item.unrealized_pnl)==='negative'?styles.loss:styles.muted}>{currencyLabel(item.unrealized_pnl,currency)}</Text>
+    </View>}/>;
+}
+
+function Portfolio(){
+  const {data,loading,error,retry}=useAccountData<any>('/portfolio');
+  if(!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const account=data.account||{},currency=account.currency;
+  const exposures=Array.isArray(data.exposures)?data.exposures:[];
+  return <FlatList
+    data={exposures}
+    keyExtractor={(item,i)=>String(item.asset)+':'+String(item.direction)+':'+i}
+    ListHeaderComponent={<View>
+      <View style={styles.disclosure}><Text style={styles.muted}>This is paper-account exposure. It is not consolidated real broker equity.</Text></View>
+      <View style={styles.grid}><MetricTile title="Paper equity" value={currencyLabel(data.equity,currency)}/>
+      <MetricTile title="Paper cash" value={currencyLabel(account.cash_balance,currency)}/></View>
+    </View>}
+    ListEmptyComponent={<Text style={styles.muted}>No paper exposure was returned.</Text>}
+    renderItem={({item})=><View style={styles.row}>
+      <View style={{flex:1,minWidth:0}}><Text style={styles.rowTitle}>{safeLabel(item.asset,'Instrument')} · {safeLabel(item.direction)}</Text>
+        <Text style={styles.muted}>{safeLabel(item.asset_class)} · {quantityLabel(item.positions,0)} positions</Text>
+      </View>
+      <Text style={amountTone(item.unrealized_pnl)==='positive'?styles.gain:amountTone(item.unrealized_pnl)==='negative'?styles.loss:styles.muted}>{currencyLabel(item.unrealized_pnl,currency)}</Text>
+    </View>}/>;
+}
+
+function Performance(){
+  const {data,loading,error,retry}=useAccountData<any>('/performance');
+  if(!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const stats=data.summary||{};
+  return <ScrollView showsVerticalScrollIndicator={false}>
+    <View style={styles.disclosure}><Text style={styles.muted}>{safeLabel(stats.disclaimer,'Historical performance cannot guarantee a future outcome.')} Claim certified: {stats.claim_certified===true?'Yes':'No'}.</Text></View>
+    <View style={styles.grid}>
+      <MetricTile title="Evaluated signals" value={quantityLabel(stats.signals,0)}/>
+      <MetricTile title="Wins" value={quantityLabel(stats.wins,0)}/>
+      <MetricTile title="Losses" value={quantityLabel(stats.losses,0)}/>
+      <MetricTile title="Historical win ratio" value={percentLabel(stats.win_rate)}/>
+      <MetricTile title="Average R" value={quantityLabel(stats.average_r,3)}/>
+      <MetricTile title="Total R" value={quantityLabel(stats.total_r,3)}/>
+    </View>
+    <Text style={styles.body}>Backtests, simulations and historical ledgers must not be presented as guaranteed or forward performance.</Text>
+  </ScrollView>;
+}
+
 function Journal(){const [entries,setEntries]=useState<any[]>([]);const [title,setTitle]=useState('');const [notes,setNotes]=useState('');const [error,setError]=useState('');const load=()=>api<any>('/journal?limit=100').then(data=>setEntries(data.entries||[])).catch(e=>setError(e instanceof Error?e.message:'Could not load journal'));useEffect(()=>{load()},[]);const save=async()=>{if(!notes.trim())return;setError('');try{await createJournalEntry({title:title||undefined,notes});setTitle('');setNotes('');load()}catch(e){setError(e instanceof Error?e.message:'Could not save journal')}};return <ScrollView><View style={styles.card}><Text style={styles.rowTitle}>Trading journal</Text><TextInput style={styles.input} placeholder="Title" placeholderTextColor="#75869a" value={title} onChangeText={setTitle}/><TextInput style={[styles.input,{minHeight:120}]} multiline placeholder="Plan, execution, emotion and lessons" placeholderTextColor="#75869a" value={notes} onChangeText={setNotes}/>{error?<Text style={styles.error}>{error}</Text>:null}<Pressable style={styles.primary} onPress={save}><Text style={styles.primaryText}>Save entry</Text></Pressable></View>{entries.map(entry=><View key={entry.journal_entry_id} style={styles.card}><Text style={styles.rowTitle}>{entry.title||'Journal entry'}</Text><Text style={styles.muted}>{new Date(entry.occurred_at).toLocaleString()}</Text><Text style={styles.body}>{entry.notes}</Text></View>)}</ScrollView>}
 function Support(){const [rows,setRows]=useState<any[]>([]);const [subject,setSubject]=useState('');const [message,setMessage]=useState('');const load=()=>api<any>('/support/tickets').then(x=>setRows(x.tickets||[])).catch(()=>{});useEffect(()=>{load()},[]);const create=async()=>{if(!subject.trim()||!message.trim())return;await api('/support/tickets',{method:'POST',body:JSON.stringify({subject,category:'general',message})});setSubject('');setMessage('');load()};return <ScrollView><View style={styles.card}><Text style={styles.rowTitle}>Contact support</Text><TextInput style={styles.input} placeholder="Subject" placeholderTextColor="#75869a" value={subject} onChangeText={setSubject}/><TextInput style={[styles.input,{minHeight:100}]} multiline placeholder="How can we help?" placeholderTextColor="#75869a" value={message} onChangeText={setMessage}/><Pressable style={styles.primary} onPress={create}><Text style={styles.primaryText}>Create ticket</Text></Pressable></View>{rows.map(t=><View key={t.ticket_id} style={styles.row}><View><Text style={styles.rowTitle}>{t.subject}</Text><Text style={styles.muted}>{t.category} · {t.priority}</Text></View><Text style={styles.badge}>{t.status}</Text></View>)}</ScrollView>}
 function Account({user,setUser,onRefresh,onLogout}:any){
@@ -103,4 +256,4 @@ function Account({user,setUser,onRefresh,onLogout}:any){
   </ScrollView>
 }
 
-const styles=StyleSheet.create({root:{flex:1,backgroundColor:'#080b10',padding:16},center:{flex:1,backgroundColor:'#080b10',alignItems:'center',justifyContent:'center'},header:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:12},eyebrow:{color:'#64f0b4',fontSize:11,fontWeight:'800',letterSpacing:2},title:{color:'#edf3fb',fontSize:28,fontWeight:'800'},hero:{color:'#edf3fb',fontSize:44,lineHeight:48,fontWeight:'900',marginVertical:16},muted:{color:'#8fa0b5',lineHeight:20},body:{color:'#edf3fb',lineHeight:22,marginTop:10},badge:{color:'#64f0b4',borderColor:'#2c7b60',borderWidth:1,paddingHorizontal:10,paddingVertical:5,borderRadius:20,fontSize:11,fontWeight:'800'},nav:{flexDirection:'row',gap:5,marginVertical:12},navItem:{paddingHorizontal:10,paddingVertical:8,borderRadius:9},navActive:{backgroundColor:'#151d28'},navText:{color:'#c7d4e3',textTransform:'capitalize'},content:{flex:1,paddingTop:10},auth:{padding:24,justifyContent:'center',minHeight:'100%'},tabs:{flexDirection:'row',backgroundColor:'#10161f',padding:4,borderRadius:12,marginVertical:24},tab:{flex:1,padding:10,alignItems:'center'},tabActive:{backgroundColor:'#263242',borderRadius:9},input:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:12,color:'#edf3fb',padding:14,marginBottom:12},primary:{backgroundColor:'#64f0b4',paddingHorizontal:18,paddingVertical:14,borderRadius:12,alignItems:'center',marginTop:8},primaryText:{color:'#04120d',fontWeight:'900'},link:{color:'#64f0b4',padding:12},inline:{flexDirection:'row',justifyContent:'space-between',marginTop:10},error:{color:'#ff6b75',marginBottom:12},grid:{flexDirection:'row',flexWrap:'wrap',gap:10},card:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:16,padding:18,marginBottom:12,minWidth:'47%'},metric:{color:'#edf3fb',fontSize:24,fontWeight:'800',marginTop:8},row:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:14,padding:15,marginBottom:9,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10},rowTitle:{color:'#edf3fb',fontWeight:'800',fontSize:16},gain:{color:'#64f0b4'},loss:{color:'#ff6b75'},danger:{borderColor:'#ff6b75',borderWidth:1,borderRadius:12,padding:15,alignItems:'center',marginTop:12},searchRow:{flexDirection:'row',gap:8,marginBottom:14}});
+const styles=StyleSheet.create({feedbackPanel:{backgroundColor:'#101e19',borderColor:'#294036',borderWidth:1,borderRadius:14,padding:20,alignItems:'flex-start',gap:12,marginBottom:14},disclosure:{padding:14,borderColor:'#294036',borderWidth:1,borderLeftColor:'#4ce0a4',borderLeftWidth:3,backgroundColor:'#14251d',borderRadius:10,marginBottom:15},sectionLabel:{color:'#bcf4d7',fontSize:11,fontWeight:'800',letterSpacing:1.3,marginBottom:10},heroTitle:{color:'#e6eeea',fontSize:26,fontWeight:'800',lineHeight:31,marginVertical:13},root:{flex:1,backgroundColor:'#080b10',padding:16},center:{flex:1,backgroundColor:'#080b10',alignItems:'center',justifyContent:'center'},header:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:12},eyebrow:{color:'#64f0b4',fontSize:11,fontWeight:'800',letterSpacing:2},title:{color:'#edf3fb',fontSize:28,fontWeight:'800'},hero:{color:'#edf3fb',fontSize:44,lineHeight:48,fontWeight:'900',marginVertical:16},muted:{color:'#8fa0b5',lineHeight:20},body:{color:'#edf3fb',lineHeight:22,marginTop:10},badge:{color:'#64f0b4',borderColor:'#2c7b60',borderWidth:1,paddingHorizontal:10,paddingVertical:5,borderRadius:20,fontSize:11,fontWeight:'800'},nav:{flexDirection:'row',gap:5,marginVertical:12},navItem:{paddingHorizontal:10,paddingVertical:8,borderRadius:9},navActive:{backgroundColor:'#151d28'},navText:{color:'#c7d4e3',textTransform:'capitalize'},content:{flex:1,paddingTop:10},auth:{padding:24,justifyContent:'center',minHeight:'100%'},tabs:{flexDirection:'row',backgroundColor:'#10161f',padding:4,borderRadius:12,marginVertical:24},tab:{flex:1,padding:10,alignItems:'center'},tabActive:{backgroundColor:'#263242',borderRadius:9},input:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:12,color:'#edf3fb',padding:14,marginBottom:12},primary:{backgroundColor:'#64f0b4',paddingHorizontal:18,paddingVertical:14,borderRadius:12,alignItems:'center',marginTop:8},primaryText:{color:'#04120d',fontWeight:'900'},link:{color:'#64f0b4',padding:12},inline:{flexDirection:'row',justifyContent:'space-between',marginTop:10},error:{color:'#ff6b75',marginBottom:12},grid:{flexDirection:'row',flexWrap:'wrap',gap:10},card:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:16,padding:18,marginBottom:12,minWidth:'47%'},metric:{color:'#edf3fb',fontSize:24,fontWeight:'800',marginTop:8},row:{backgroundColor:'#10161f',borderColor:'#263242',borderWidth:1,borderRadius:14,padding:15,marginBottom:9,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10},rowTitle:{color:'#edf3fb',fontWeight:'800',fontSize:16},gain:{color:'#64f0b4'},loss:{color:'#ff6b75'},danger:{borderColor:'#ff6b75',borderWidth:1,borderRadius:12,padding:15,alignItems:'center',marginTop:12},searchRow:{flexDirection:'row',gap:8,marginBottom:14}});
