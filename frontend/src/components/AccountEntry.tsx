@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import client from "../lib/client";
@@ -9,13 +10,14 @@ export function AccountEntry() {
   const [mode, setMode] = useState<"login"|"register">("login");
   const [stage, setStage] = useState<"credentials"|"mfa">("credentials");
   const [token, setToken] = useState("");
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
   async function verifyAuthenticatedSession() {
     const me = await client.GET("/api/v1/platform/me");
     if (me.response.ok && record(me.data).user) {
-      window.location.assign("/app");
+      router.replace("/app"); router.refresh();
       return true;
     }
     setMessage("The session could not be verified. Check your connection and sign in again.");
