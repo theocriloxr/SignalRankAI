@@ -8771,11 +8771,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 308,
+      "line_count": 298,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "4f8d0e55298201d1d5b1e8bce48797357a77b245f82e3b0bb95795d9126a2d68",
-      "size_bytes": 25214
+      "sha256": "73e36868ac3c033555d65c5ad47d77a0bae2cfdabb5bd7de39fcfffee2989853",
+      "size_bytes": 24196
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
