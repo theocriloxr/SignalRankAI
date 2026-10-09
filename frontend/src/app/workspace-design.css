@@ -637,3 +637,23 @@ html { scroll-padding-top: 1rem; }
 @media(max-width:1050px){.sr-market-search{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-market-results{grid-template-columns:1fr}}
 @media(max-width:560px){.sr-market-search{grid-template-columns:1fr}.sr-market-title{display:grid}.sr-market-title .sr-state{justify-self:start}}
 @media(forced-colors:active){.sr-market-instrument,.sr-market-chips span{border:1px solid CanvasText}}
+
+
+/* Account identity and MFA: confidential proof is never animated or cached. */
+.sr-security-center .sr-data-panel{gap:18px}
+.sr-security-center .sr-form-grid label{display:grid;gap:9px;font-size:13px}
+.sr-security-center .sr-form-grid input{min-height:44px;max-width:100%;width:100%;min-width:0;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+.sr-security-errors{display:grid;gap:5px;padding:14px;border:1px solid var(--line);border-radius:9px}
+.sr-security-errors p{margin:0;color:var(--muted);font-size:13px}
+.sr-session-list{display:grid;gap:0;max-height:520px;overflow-y:auto;overscroll-behavior:contain}
+.sr-session-list .sr-history-row{grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.sr-session-list .sr-history-row>button{grid-column:1/-1;justify-self:start}
+.sr-mfa-enrollment{min-width:0}
+.sr-mfa-secret{display:block;padding:16px;border:1px solid var(--line);border-radius:9px;background:var(--bg);overflow-wrap:anywhere;user-select:text;font-size:clamp(14px,1.4vw,18px);letter-spacing:.03em}
+.sr-mfa-recovery{display:grid;gap:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:18px}
+.sr-mfa-recovery>h3{font-size:19px;margin:0}
+.sr-mfa-recovery ul{list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0}
+.sr-mfa-recovery li{min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);overflow-wrap:anywhere}
+.sr-mfa-recovery code{font-size:12px}
+@media(max-width:600px){.sr-mfa-recovery ul{grid-template-columns:1fr}.sr-security-center .sr-grid-two{grid-template-columns:1fr}}
+@media(forced-colors:active){.sr-mfa-secret,.sr-mfa-recovery,.sr-security-errors{border:1px solid CanvasText}}
