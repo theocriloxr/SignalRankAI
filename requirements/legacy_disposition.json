@@ -1,5 +1,5 @@
 {
-  "file_count": 2071,
+  "file_count": 2072,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8635,6 +8635,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 127,
+      "path": "frontend/src/components/DemoBrokerConnection.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "13bcdd2cc16a4821c56f453898df6d58ddb72a8c0ae61b7d28ebad307e11829e",
+      "size_bytes": 8305
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/JournalView.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -16583,7 +16591,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1237,
+    "PRESERVE_BEHAVIOUR": 1238,
     "TEST_ONLY": 357
   }
 }
