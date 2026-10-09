@@ -110,3 +110,18 @@ the full backend certification reported PASS. Its tested PR-merge tree matches
 the published source tree `a5ab3dc7b8440e06f98b6ab987a8c79c4898c589` exactly.
 Browser and mobile audit failures still blocked release; production source
 approval was skipped. New checks must verify the final display-test correction.
+
+PR run `37890414676` on `da5b692d` passed both backend versions, frontend,
+static quality, manifest and all nine browser checks (desktop/mobile, light/dark,
+real ledger reads, synthetic health display, staleness, XSS and customer denial).
+The browser's tested merge tree equals published source
+`386205b9dc92b02e17ffcf6f85c853988f6a0e17`. Owned HTTP/database cleanup was
+verified. The push run also verifies the actual published head separately from
+the PR merge. Mobile audit still blocks release; production approval was skipped.
+
+Visual review of those artifacts showed that mobile profile rows needed sideways
+scrolling to reach evidence and metrics. The successor uses labelled cards on
+small screens, preserving table headings for assistive access and the desktop
+table. Its browser gate checks every cell fits horizontally within its card.
+This is a focused research diagnostics improvement; broader customer/mobile
+design and native acceptance remain queued. New hosted verification is required.

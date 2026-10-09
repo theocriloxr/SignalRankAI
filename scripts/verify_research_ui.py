@@ -97,6 +97,14 @@ with sync_playwright() as p:
                 panel.get_by_text('Monitor current', exact=True).wait_for()
                 assert 'HEALTHY' not in panel.inner_text().upper()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'health table must fit viewport'
+                if label == 'mobile':
+                    bounds = panel.locator('.adaptive-health-table-wrap').bounding_box()
+                    assert bounds is not None
+                    for row in panel.locator('tbody tr').all():
+                        for cell in row.locator('td').all():
+                            box = cell.bounding_box()
+                            assert box is not None and box['x'] >= bounds['x'] - 2
+                            assert box['x'] + box['width'] <= bounds['x'] + bounds['width'] + 2, 'every health metric must fit the mobile card'
                 panel.screenshot(path=str(out / f'health-{label}-{theme}.png'))
                 (out / f'health-{label}-{theme}.json').write_text(json.dumps({
                     'scope': 'SYNTHETIC_HEALTH_DISPLAY_FIXTURE', 'rendered_text': panel.inner_text(),
