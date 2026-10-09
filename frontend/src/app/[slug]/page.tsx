@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { PublicNav } from "../../components/PublicNav";
 import { notFound } from "next/navigation";
 
