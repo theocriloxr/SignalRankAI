@@ -363,7 +363,7 @@ test("demo broker setup uses provider-hosted credentials and never starts live e
   assert.ok(source.includes('client.POST("/api/v1/platform/broker/metatrader/secure-link"'));
   assert.ok(source.includes('environment:"demo",ttl_days:3'));
   assert.ok(source.includes('data.configuration_link'));
-  assert.ok(source.includes('url.hostname'));
+  assert.ok(source.includes('uri.hostname') && source.includes('link.hostname'));
   assert.ok(source.includes('uri.protocol!=="https:"'));
   assert.ok(source.includes('rel="noopener noreferrer"'));
   assert.ok(source.includes('execution disabled') || source.includes('does not turn on auto-execution'));
