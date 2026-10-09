@@ -143,6 +143,68 @@ async def test_actual_health_reads_canonical_probabilities_and_a_bounded_unique_
             assert report["brier_score"] is None and report["calibration_status"] == "UNAVAILABLE"
 
 
+@pytest.mark.asyncio
+async def test_health_coverage_retains_empty_profiles_and_checks_beyond_display_limit(monkeypatch, worker_database):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from engine.adaptive import learning
+    from utils.timeutils import now_utc_naive
+
+    modes = ["no_outcome", "unresolved", "ineligible", "unconfirmed", "future_close",
+             "backwards_close", "stale", "wrong_profile", "no_evidence"] + ["empty"] * 12 + ["small", "invalid"]
+    now = now_utc_naive()
+    async with worker_database() as session:
+        user = User(telegram_user_id=987654319)
+        session.add(user)
+        session.add_all([
+            AdaptiveAssetProfile(profile_id="excluded-old", asset="OLD", asset_class="crypto", version=1,
+                                 state="APPROVED", is_current=False),
+            AdaptiveAssetProfile(profile_id="excluded-shadow", asset="SHADOW", asset_class="crypto", version=1,
+                                 state="SHADOW", is_current=True)])
+        for i, mode in enumerate(modes):
+            profile_id, asset = f"coverage-{i:02d}", f"AUDITCOVERAGE{i}"
+            session.add(AdaptiveAssetProfile(profile_id=profile_id, asset=asset, asset_class="crypto", version=1,
+                state=("CANARY", "LIMITED_LIVE", "APPROVED")[i % 3], is_current=True))
+            if mode == "empty":
+                continue
+            created = now - timedelta(days=130 if mode == "stale" else 1)
+            closed = created + timedelta(minutes=30)
+            if mode == "future_close":
+                closed = now + timedelta(days=1)
+            elif mode == "backwards_close":
+                closed = created - timedelta(minutes=1)
+            identifier = str(uuid4())
+            session.add(Signal(signal_id=identifier, asset=asset, asset_class="crypto", timeframe="1h",
+                direction="long", entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                strategy_name="coverage-audit", strategy_group="trend", regime="trend", status="closed",
+                created_at=created))
+            await session.flush()
+            if mode != "no_outcome":
+                session.add(Outcome(signal_id=identifier, status="pending" if mode == "unresolved" else "win",
+                    r_multiple=None if mode == "unresolved" else float("nan") if mode == "invalid" else 0.5,
+                    provenance="delivered", closed_at=None if mode == "unresolved" else closed,
+                    performance_inclusion_status="excluded" if mode == "ineligible" else "eligible"))
+            session.add(SignalDelivery(user_id=user.id, signal_id=identifier, sent_ok=True,
+                delivery_state="PENDING" if mode == "unconfirmed" else "CONFIRMED"))
+            if mode != "no_evidence":
+                session.add(AdaptiveSignalEvidence(signal_id=identifier, asset=asset, timeframe="1h", strategy_id="audit",
+                    strategy_version="1", family="trend", direction="long", setup_type="audit", confidence=0.8,
+                    raw_score=80, profile_id="excluded-old" if mode == "wrong_profile" else profile_id,
+                    profile_version=1, duplicate_fingerprint=uuid4().hex))
+        await session.commit()
+        report = await learning._monitor_runtime_profiles(session)
+        await session.commit()
+        assert report["evaluated_profile_count"] == 23
+        assert report["delivery_evidence_counts"] == {"UNAVAILABLE": 21, "INSUFFICIENT": 1, "OBSERVED": 0, "INVALID": 1}
+        assert report["diagnostics_truncated"] is True and len(report["profile_diagnostics"]) == 20
+        assert all(row["sample_size"] == 0 and row["delivery_evidence_status"] == "UNAVAILABLE"
+                   for row in report["profile_diagnostics"])
+        assert report["suspended_assets"] == ["AUDITCOVERAGE22"], "display truncation must not truncate surveillance"
+        assert (await session.execute(text("SELECT state FROM adaptive_asset_profiles WHERE profile_id='coverage-22'"))).scalar_one() == "SUSPENDED"
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles WHERE is_current AND state IN ('CANARY','LIMITED_LIVE','APPROVED')"))).scalar_one() == 22
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_drift_events"))).scalar_one() == 1
+        json.dumps(report, allow_nan=False)
+
+
 async def seed_research_outcomes(get_session, asset):
     from db.models import Signal, Outcome
     from utils.timeutils import now_utc_naive

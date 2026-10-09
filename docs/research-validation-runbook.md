@@ -65,9 +65,49 @@ Correlation assumptions still require consolidation and qualification.
 These advice limits remain unqualified for
 broker contracts, commissions, spread/slippage, margin and funded-account rules.
 
+The primary engine and optional controller correlation gates now use ordered
+timestamped closes and compare percentage returns only over identical start/end
+intervals. Missing or invalid history, undefined correlation, invalid thresholds
+and existing-symbol exposure block admission when the check applies. Admission
+reads require a complete shared trade snapshot; Redis failures or corrupt
+records cannot be interpreted as an empty portfolio. The separate heuristic
+group filters and signal-delivery exposure counts remain advisory evidence,
+not calibrated account-level portfolio validation.
+
+Legacy WFO replay uses `wfo_conservative_fills_v4`. Requested spot units reuse
+the bounded adviser, including its 10% per-trade quote-notional limit. Entry
+sizing includes adverse entry and stop-exit slippage and fees on both notionals.
+Reports expose the configured `risk_budget`, `modeled_stop_risk` and observed
+`risk_budget_breached`; calendar-fold summaries retain the breach count. Market
+gaps keep their actual losses instead of being clipped to the modeled budget.
+Nonfinite policy inputs, impossible cost fractions and arithmetic overflow reject
+the research run. This does not model shared capital across concurrent positions,
+qualify venue costs or establish portfolio risk survival. Those limitations
+remain explicit on each replay record.
+
+OHLC replay uses only bars whose opening timestamp plus their declared fixed
+duration is at or before the validation cutoff. An unclosed bar cannot supply
+its future high, low, close or total volume, so it receives no optimistic fill.
+Timestamped ticks/orderbooks remain available at their own observation times.
+Records expose the last observation availability and excluded unclosed candles;
+fold exclusion totals count replay observations per signal, not unique candles.
+Training labels also respect whole-bar availability within their stated horizon.
+Unknown, nonpositive, monthly or overflowing durations reject rather than default
+to one minute. These fixed-duration bounds do not verify venue sessions, DST,
+historical provider revisions or publication delays; calendar qualification
+remains explicit and unfinished.
+
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply
 an observation; future closes and closes preceding the decision are excluded.
+The read retains every current CANARY/LIMITED_LIVE/APPROVED profile, including
+profiles with no eligible outcomes. Coverage is explicitly UNAVAILABLE,
+INSUFFICIENT, OBSERVED or INVALID. Missing and undersized samples retain null
+delivery metrics; they are neither invented losses nor certified health. Coverage
+counts include all queried profiles, even when the diagnostic display is limited
+to 20 rows. Invalid observations still trigger suspension beyond that display
+limit. The operator diagnostics show coverage, sample sizes, null metrics and
+stale-monitor warnings, with signal-delivery and approved-baseline limits visible.
 Component confidence is not a probability and is no longer used for Brier loss.
 The monitor reuses the canonical calibration-evidence validator and the existing
 Brier implementation, with the training target `r_multiple > 0`. Missing or

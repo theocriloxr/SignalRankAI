@@ -42,6 +42,7 @@ with sync_playwright() as p:
                 assert health['status'] == 'UNAVAILABLE' and health['fresh'] is False
                 assert health['broker_fills_certified'] is False
                 page.locator('#operatorDiagnostics').get_by_text('Adaptive health check', exact=True).wait_for()
+                page.locator('#adaptiveHealthEvidence').get_by_text('Profile coverage unavailable').wait_for()
                 assert page.locator('#operatorKillSwitchOn').is_hidden()
                 assert page.locator('#operatorKillSwitchOff').is_hidden()
                 assert not any('/operator/maintenance' in url for url in requests), 'admin must not request owner-only maintenance'
@@ -67,6 +68,53 @@ with sync_playwright() as p:
                 page.locator('#operatorResearchAsset').fill('BTCUSDT')
                 page.locator('#refreshOperatorResearch').click()
                 page.locator('#operatorResearch').get_by_text('2 trials · 2 terminal results').wait_for()
+                # Keep real HTTP authentication and other diagnostics; only
+                # this health report is an explicitly synthetic display fixture.
+                fixture = {**health, 'status': 'COMPLETED', 'fresh': True, 'evaluated_profile_count': 23,
+                    'delivery_evidence_counts': {'UNAVAILABLE': 21, 'INSUFFICIENT': 1, 'OBSERVED': 0, 'INVALID': 1},
+                    'diagnostics_truncated': True, 'profile_diagnostics': [
+                        {'profile_id': 'synthetic-empty', 'asset': 'Synthetic <img src=x onerror=window.healthInjected=true>',
+                         'profile_state': 'CANARY', 'sample_size': 0, 'delivery_evidence_status': 'UNAVAILABLE',
+                         'coverage_reason': 'no_eligible_delivery_outcomes', 'expectancy_r': None, 'reasons': []},
+                        {'profile_id': 'synthetic-small', 'asset': 'SMALL', 'profile_state': 'LIMITED_LIVE',
+                         'sample_size': 1, 'delivery_evidence_status': 'INSUFFICIENT',
+                         'coverage_reason': 'minimum_delivery_sample_not_met', 'reasons': []},
+                        {'profile_id': 'synthetic-invalid', 'asset': 'INVALID', 'profile_state': 'APPROVED',
+                         'sample_size': 2, 'delivery_evidence_status': 'INVALID',
+                         'reasons': ['invalid_delivery_health_observations']}]}
+                body = diagnostics.json()
+                page.route('**/api/v1/platform/operator/diagnostics', lambda route: route.fulfill(status=200,
+                    content_type='application/json', body=json.dumps({**body, 'adaptive_health': fixture})))
+                page.locator('#refreshOperatorDiagnostics').click()
+                panel = page.locator('#adaptiveHealthEvidence')
+                panel.get_by_text('23 active profiles checked', exact=True).wait_for()
+                assert 'no eligible delivery outcomes' in panel.inner_text()
+                assert 'minimum delivery sample not met' in panel.inner_text()
+                assert 'Showing 3 profiles' in panel.inner_text()
+                assert panel.locator('tbody tr').count() == 3 and panel.locator('img').count() == 0
+                assert page.evaluate('window.healthInjected') is None
+                assert 'certify strategy health' in panel.inner_text()
+                panel.get_by_text('Monitor current', exact=True).wait_for()
+                assert 'HEALTHY' not in panel.inner_text().upper()
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'health table must fit viewport'
+                if label == 'mobile':
+                    bounds = panel.locator('.adaptive-health-table-wrap').bounding_box()
+                    assert bounds is not None
+                    for row in panel.locator('tbody tr').all():
+                        for cell in row.locator('td').all():
+                            box = cell.bounding_box()
+                            assert box is not None and box['x'] >= bounds['x'] - 2
+                            assert box['x'] + box['width'] <= bounds['x'] + bounds['width'] + 2, 'every health metric must fit the mobile card'
+                panel.screenshot(path=str(out / f'health-{label}-{theme}.png'))
+                (out / f'health-{label}-{theme}.json').write_text(json.dumps({
+                    'scope': 'SYNTHETIC_HEALTH_DISPLAY_FIXTURE', 'rendered_text': panel.inner_text(),
+                    'monitor_text': panel.locator('.status-pill').text_content()}, indent=2) + '\n', encoding='utf-8')
+                fixture.update(status='STALE', fresh=False)
+                page.locator('#refreshOperatorDiagnostics').click()
+                panel.get_by_text('Monitor STALE', exact=True).wait_for()
+                assert 'Last reported evidence may be stale' in panel.inner_text()
+                page.unroute('**/api/v1/platform/operator/diagnostics')
+                report['checks'].append({'name': f'{label}_{theme}_synthetic_health_coverage_staleness_xss', 'pass': True})
                 assert not errors, errors
                 report['checks'].append({'name': f'{label}_{theme}_real_ledger_filter_error_retry_xss', 'pass': True})
                 context.close()

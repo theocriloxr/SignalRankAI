@@ -133,7 +133,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
                     """
                 SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,h.*
                 FROM adaptive_asset_profiles p
-                JOIN LATERAL (
+                LEFT JOIN LATERAL (
                     SELECT o.r_multiple,o.closed_at,s.created_at,s.signal_id,
                            s.ml_probability_calibrated,s.ml_calibration_version,
                            s.ml_calibration_validated,s.ml_calibration_validation_rows,
@@ -164,22 +164,29 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     profile_meta: dict[str, dict[str, Any]] = {}
     for row in rows:
         profile_id = str(row["profile_id"])
-        if len(grouped[profile_id]) < 250:
-            grouped[profile_id].append(dict(row))
+        evidence = grouped[profile_id]
+        # A LEFT JOIN placeholder is a profile with no eligible outcomes, not
+        # an invalid observed return. Keep it in coverage without inventing R.
+        if row["signal_id"] is not None and len(evidence) < 250:
+            evidence.append(dict(row))
         profile_meta[profile_id] = dict(row)
 
     suspended: list[str] = []
     restored: list[str] = []
     diagnostics: list[dict[str, Any]] = []
+    coverage = {status: 0 for status in ("UNAVAILABLE", "INSUFFICIENT", "OBSERVED", "INVALID")}
     for profile_id, evidence_rows in grouped.items():
         metrics = _runtime_health_metrics(evidence_rows, minimum_live=minimum_live,
             drawdown_limit=drawdown_limit, brier_limit=brier_limit, expectancy_floor=expectancy_floor)
+        coverage[metrics["delivery_evidence_status"]] += 1
+        meta = profile_meta[profile_id]
         if len(diagnostics) < 20:
-            diagnostics.append({"profile_id": profile_id, **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
+            diagnostics.append({"profile_id": profile_id, "asset": str(meta["asset"]),
+                "profile_state": str(meta["state"]),
+                **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
         reasons = metrics["reasons"]
         if not reasons:
             continue
-        meta = profile_meta[profile_id]
         asset = str(meta["asset"])
         await session.execute(
             text(
@@ -213,6 +220,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
         suspended.append(asset)
     return {"suspended_assets": suspended, "restored_profiles": restored,
             "evaluated_profile_count": len(grouped), "profile_diagnostics": diagnostics,
+            "delivery_evidence_counts": coverage,
             "diagnostics_truncated": len(grouped) > len(diagnostics)}
 
 
@@ -221,14 +229,19 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
     """Delivery outcome diagnostics; component confidence is never a probability."""
     result: dict[str, Any] = {"reasons": [], "sample_size": len(rows), "expectancy_r": None,
         "max_drawdown_r": None, "brier_score": None, "calibrated_sample_size": 0,
+        "delivery_evidence_status": "UNAVAILABLE" if not rows else "INSUFFICIENT",
+        "coverage_reason": "no_eligible_delivery_outcomes" if not rows else "minimum_delivery_sample_not_met",
         "calibration_status": "UNAVAILABLE", "calibration_versions": {},
         "qualified_calibration_version_count": 0, "brier_aggregation": "worst_qualified_version",
         "broker_fills_certified": False, "approved_baseline_comparison": "UNVERIFIED"}
-    if not 1 <= len(rows) <= 250:
-        raise ValueError("delivery_health_window_must_be_1_to_250")
+    if len(rows) > 250:
+        raise ValueError("delivery_health_window_must_be_0_to_250")
+    if not rows:
+        return result
     if any(isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float))
            or not math.isfinite(row["r_multiple"]) for row in rows):
         result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
         return result
     versions: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for row in rows:
@@ -236,6 +249,7 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
             continue
         if not calibration_evidence_valid(row):
             result["reasons"].append("invalid_calibrated_health_observations")
+            result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_calibrated_health_observations")
             return result
         versions[row["ml_calibration_version"]].append((int(row["r_multiple"] > 0), float(row["ml_probability_calibrated"])))
     result["calibrated_sample_size"] = sum(len(observations) for observations in versions.values())
@@ -257,8 +271,10 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
             raise ValueError("delivery_metric_overflow")
     except (OverflowError, ValueError):
         result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
         return result
-    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown)
+    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown,
+                  delivery_evidence_status="OBSERVED", coverage_reason=None)
     if expectancy < expectancy_floor:
         result["reasons"].append("live_expectancy_below_floor")
     if drawdown > drawdown_limit:
