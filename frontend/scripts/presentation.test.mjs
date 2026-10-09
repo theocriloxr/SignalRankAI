@@ -297,3 +297,19 @@ test("public and private mobile disclosures close on route change outside touch 
   assert.ok(shell.includes("<ResponsiveDisclosure"));
   assert.doesNotMatch(menu,/localStorage|sessionStorage|client\.(POST|PUT|DELETE|PATCH)\(/);
 });
+
+
+test("broker account inspection remains separate by canonical connection and never enables execution",()=>{
+  const source=readFileSync(new URL("../src/components/BrokerAccounts.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(source.includes("item.connection_id"));
+  assert.ok(source.includes('client.GET("/api/v1/platform/broker/connections/{connection_id}/policy"'));
+  assert.ok(source.includes('client.GET("/api/v1/platform/broker/connections/{connection_id}/ledger"'));
+  assert.ok(source.includes('client.POST("/api/v1/platform/broker/connections/{connection_id}/verify"'));
+  assert.ok(source.includes('client.POST("/api/v1/platform/broker/connections/{connection_id}/safety-freeze"'));
+  assert.ok(source.includes("FREEZE ACCOUNT"));
+  assert.ok(source.includes("frozen:true,confirm:true"));
+  assert.ok(source.includes("result.data.execution_enabled===false"));
+  assert.ok(workspace.includes("<BrokerAccounts data={state.data}"));
+  assert.doesNotMatch(source,/\/execution"|\/trade"|\/place.order|\/broker\/exchange|\/broker\/metatrader\//);
+});
