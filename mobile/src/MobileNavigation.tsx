@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View, useColorScheme} from 'react-native';
 
-export type MobileScreen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account'|'brokers'|'notifications'|'watchlists';
+export type MobileScreen = 'overview'|'signals'|'markets'|'paper'|'portfolio'|'performance'|'journal'|'support'|'account'|'brokers'|'notifications'|'watchlists'|'alerts'|'research';
 const primary: {label:string;screen:MobileScreen;index:string}[] = [
   {label:'Overview',screen:'overview',index:'01'},
   {label:'Signals',screen:'signals',index:'02'},
@@ -17,6 +17,8 @@ const secondary: {label:string;screen:MobileScreen;description:string}[] = [
   {label:'Brokers',screen:'brokers',description:'Connection inventory'},
   {label:'Watchlists',screen:'watchlists',description:'Canonical instruments'},
   {label:'Notifications',screen:'notifications',description:'Account message receipts'},
+  {label:'Alerts',screen:'alerts',description:'Monitoring rules'},
+  {label:'Research',screen:'research',description:'Entitlement-gated strategy counts'},
 
 ];
 
