@@ -85,7 +85,7 @@ This section distinguishes **committed source work**, **hosted code verification
 
 ### Hosted evidence to date
 - GitHub Actions run `37890291443` (commit `e78bb964...`) **frontend job PASS**: lint, TS, Next 16.3.8 production build, 28 transport/presentation tests, 3 dependency tests, 5 audit policy tests and zero frontend npm advisories. This does not include **every** later native commit.
-- Mobile run on the corresponding branch passed its then-current native TypeScript and 50 Node source tests but **failed** the unwaived npm audit for Expo/`node-forge`. Exact latest-head mobile tests, Android/iOS artifacts and light-mode screen-reader tests require current run evidence.
+- Mobile hosted run `37890335474` (commit `57adb611...`) passed native TypeScript and **53** source/dependency tests but **failed** the unwaived npm audit for Expo/`node-forge`. Exact latest-head mobile tests, Android/iOS artifacts and light-mode screen-reader tests require current run evidence.
 - The full CI release is **red**; design source completion cannot override mobile security or independent backend/governance/research gates. Do not declare "fully completed" based on unit or source tests.
 - Recovery PR #189 advanced independently after the design branch last incorporated it. Compare and reconcile new engine/research commits through a real merge with conflict and governance review; never forge a merge commit without integrating source.
 - Railway production currently serves an older accepted deployment; its newest failed redeploy and source-provenance gates remain. No isolated Railway staging environment, staging cookie/browser proof, broker demo certification, controlled restore, 24–72h soak or two complete audits have been established.
@@ -97,3 +97,10 @@ This section distinguishes **committed source work**, **hosted code verification
 4. Complete recovery, rollback, restoration, observability, 24–72h soak and two audits. Retain staging and production separation until all approval and evidence gates pass.
 
 **No production merge, Railway configuration change, live-money enablement or order submission occurred as part of this public/native design continuation.**
+
+
+### Verification update
+- After source changes, the first full CI job found a JSX apostrophe lint error, which was fixed. A subsequent frontend TypeScript issue came from unreachable duplicate branch checks and was removed, not suppressed.
+- Hosted run `37890291443` frontend then passed the **28 tests / 3 dependency tests / 5 audit policy tests / lint / TypeScript / Next production build** suite; an additional run `37890335474` also reported **frontend PASS** with mobile compile and **53 tests PASS**, and **mobile audit FAIL**.
+- The native research and alert components are included in the 53-test mobile run at commit `57adb611...`, with Expo `userInterfaceStyle=automatic`, current native source appearance mapping, and the 14-route bottom/More navigation present in that candidate.
+- All results are **source/build evidence only**. They are not screenshot/device, login/browser/cookie, broker fill, environment isolation or release soak certificates; newer documentation commits require fresh exact-SHA CI.
