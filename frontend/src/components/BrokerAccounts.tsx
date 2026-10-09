@@ -151,7 +151,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
               {Object.keys(recon||{}).length>0&&<p className="sr-risk-note">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
             </section>
             <section className="sr-data-panel"><h2>Broker ledger evidence</h2>
-              <p>Only the backend's provider-attributed ledger rows are shown. Missing deposits, fees, funding or swap values are never inferred.</p>
+              <p>Only the backend&apos;s provider-attributed ledger rows are shown. Missing deposits, fees, funding or swap values are never inferred.</p>
               {review.ledgerError&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{review.ledgerError}</p>}
               {review.entries!==null&&review.entries.length>0&&<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable account-specific broker ledger"><table>
                 <thead><tr><th>Timestamp</th><th>Entry type</th><th>Amount</th><th>Provider status</th></tr></thead>
