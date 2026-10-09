@@ -8606,8 +8606,8 @@
       "line_count": 189,
       "path": "frontend/src/components/AccountSecurity.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "80da35700db05082bbcc800a54aa8f70f2438804d30ede45a809924c57899534",
-      "size_bytes": 13414
+      "sha256": "bce236c463839f5fabb3f9e9a2f4884fe31d1164bd8e5d881bc5c51d0db9e551",
+      "size_bytes": 13419
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8630,8 +8630,8 @@
       "line_count": 184,
       "path": "frontend/src/components/BrokerAccounts.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "e7c757f8a5a7e1a434c04bcdb5aa1bf748f1f6b645a02b292ee5e4005b13fbfe",
-      "size_bytes": 13338
+      "sha256": "a7c71945f76940f5859868fec653bf23231f26568f88467c65b5131a5e9dc98e",
+      "size_bytes": 13343
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
