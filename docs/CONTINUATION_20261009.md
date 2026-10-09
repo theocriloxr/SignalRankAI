@@ -94,3 +94,19 @@ tests cover minute through weekly bars, exact cutoffs, future-bar mutation and
 tick/orderbook availability. Hosted checks on the successor remain required.
 This is a deterministic replay boundary repair; venue calendars, publication
 delays, instrument capacity/cost stress and portfolio qualification remain open.
+
+The browser job on `41c20a45` reached the populated synthetic health view, then
+failed a case-sensitive rendered-text assertion: the shared status badge uses
+uppercase CSS. The correction uses the DOM text locator and checks absence of a
+HEALTHY claim independently of casing. It retains current/stale, missing sample,
+XSS, authorization and viewport checks, and saves focused health screenshots and
+rendered-text evidence. Diagnostics use a bounded grid column so table contents
+can scroll within mobile screens, and the profile state is labelled "State at
+check". These failures are preserved; the successor browser gate must pass.
+
+Run `37889773961` passed both backend versions, frontend, static quality and
+manifest on `41c20a45`. The research gate passed 322 tests with actual PostgreSQL;
+the full backend certification reported PASS. Its tested PR-merge tree matches
+the published source tree `a5ab3dc7b8440e06f98b6ab987a8c79c4898c589` exactly.
+Browser and mobile audit failures still blocked release; production source
+approval was skipped. New checks must verify the final display-test correction.

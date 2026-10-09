@@ -94,9 +94,13 @@ with sync_playwright() as p:
                 assert panel.locator('tbody tr').count() == 3 and panel.locator('img').count() == 0
                 assert page.evaluate('window.healthInjected') is None
                 assert 'certify strategy health' in panel.inner_text()
-                assert 'Monitor current' in panel.inner_text() and 'HEALTHY' not in panel.inner_text()
+                panel.get_by_text('Monitor current', exact=True).wait_for()
+                assert 'HEALTHY' not in panel.inner_text().upper()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'health table must fit viewport'
                 panel.screenshot(path=str(out / f'health-{label}-{theme}.png'))
+                (out / f'health-{label}-{theme}.json').write_text(json.dumps({
+                    'scope': 'SYNTHETIC_HEALTH_DISPLAY_FIXTURE', 'rendered_text': panel.inner_text(),
+                    'monitor_text': panel.locator('.status-pill').text_content()}, indent=2) + '\n', encoding='utf-8')
                 fixture.update(status='STALE', fresh=False)
                 page.locator('#refreshOperatorDiagnostics').click()
                 panel.get_by_text('Monitor STALE', exact=True).wait_for()

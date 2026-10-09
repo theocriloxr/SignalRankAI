@@ -4843,11 +4843,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 96,
+      "line_count": 112,
       "path": "docs/CONTINUATION_20261009.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "7b2d1cc8968b98adaf6c8bbc596195dc51ac85000d5c67214796856a7b7ac44f",
-      "size_bytes": 5867
+      "sha256": "a1107cb87268abb11d2fa6b9cdd0b06b94f19e2da67c55a30a85744cb7b3a846",
+      "size_bytes": 6975
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10787,11 +10787,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 126,
+      "line_count": 130,
       "path": "scripts/verify_research_ui.py",
       "reason": "production/build source",
-      "sha256": "dc8d5bc24c2088b094b4ed4092e00050589559a83d2676cf693d4ae1424f67e1",
-      "size_bytes": 9358
+      "sha256": "989c5826be92a633634bb3e84afc1c2ca60e159a4a85b4764f2de0feb80e9b1b",
+      "size_bytes": 9698
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15974,8 +15974,8 @@
       "line_count": 1243,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "47134fa9e4504bee1ac495ee8f59a0b78606b57ff6aa243033c80cf865180c2b",
-      "size_bytes": 152781
+      "sha256": "72204c61547cc7c674a861319df5d2a62f5c7213ed131866c8ade157ee4ba06f",
+      "size_bytes": 152790
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16022,8 +16022,8 @@
       "line_count": 1214,
       "path": "web/platform_app/styles.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "7c079098534c9afaa079e2e2c55be1da31d61a292d5e373d88d08e8293e5dda5",
-      "size_bytes": 69408
+      "sha256": "30619f215144462b5316100866fe06f0e740b4c75474d9d9a10690e7e4c0229b",
+      "size_bytes": 69456
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
