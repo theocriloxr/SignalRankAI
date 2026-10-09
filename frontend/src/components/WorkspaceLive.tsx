@@ -16,6 +16,7 @@ import { PaperDesk } from "./PaperDesk";
 import { PaperEquityChart } from "./PaperEquityChart";
 import { BrokerAccounts } from "./BrokerAccounts";
 import { MarketDirectory } from "./MarketDirectory";
+import { AccountSecurity } from "./AccountSecurity";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   display, moneyLabel, numberLabel,
@@ -291,7 +292,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="alerts"?<AlertRules data={state.data} onChanged={()=>setEpoch(value=>value+1)}/>:
       section==="watchlists"?<div className="sr-view-stack"><WatchlistsView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="watchlists" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       section==="journal"?<div className="sr-view-stack"><JournalView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="journal" onCreated={()=>setEpoch(value=>value+1)}/></div>:
-      section==="settings"?<TradingPreferences data={state.data} onSaved={()=>setEpoch(value=>value+1)}/>:
+      section==="settings"?<div className="sr-view-stack"><TradingPreferences data={state.data} onSaved={()=>setEpoch(value=>value+1)}/><AccountSecurity onChanged={()=>setEpoch(value=>value+1)}/></div>:
       section==="support"?<div className="sr-view-stack"><SupportCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="support" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       <GeneralView section={section} data={state.data}/>
     )}
