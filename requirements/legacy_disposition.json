@@ -8571,11 +8571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 639,
+      "line_count": 659,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "76f1e5fe3921b88d0f5de0791cc71385746a9331f57ad5b5bda111de45c214e8",
-      "size_bytes": 32112
+      "sha256": "3a92b17009a1c68a3e7a858a2c10eb27f2bfadb47475d8e7f2397a00d4b354bb",
+      "size_bytes": 33882
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
