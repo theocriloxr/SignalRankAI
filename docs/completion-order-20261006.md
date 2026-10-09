@@ -1,6 +1,7 @@
 # Ordered completion record — 6 October 2026
 
-Latest continuation: [8 October recovery and release repair](RECOVERY_HANDOFF_20261008.md).
+Latest continuation: [9 October hosted-check follow-up](CONTINUATION_20261009.md).
+Previous recovery: [8 October recovery and release repair](RECOVERY_HANDOFF_20261008.md).
 This preserves the unpublished 7 October changes and records current evidence;
 it does not mark the remaining directives or production certification complete.
 

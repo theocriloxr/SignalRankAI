@@ -1,5 +1,5 @@
 {
-  "file_count": 2014,
+  "file_count": 2015,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4843,6 +4843,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 26,
+      "path": "docs/CONTINUATION_20261009.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "c01c8d3616e31f714af3f17801ed84ad082298c3e18fa547fbb35bd221e44c10",
+      "size_bytes": 1571
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 71,
       "path": "docs/CONTINUOUS_IMPROVEMENT.md",
       "reason": "documentation/specification/evidence",
@@ -6651,11 +6659,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 161,
+      "line_count": 162,
       "path": "docs/completion-order-20261006.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a7c4cebb0cd1e01efb6161af9351b6c13e399da256b498d8ef74c41d29d1bd91",
-      "size_bytes": 11688
+      "sha256": "6190cca8c142337c9bca7607fdc8d178052c92cdd7a21860ac93ec3c5f79adb6",
+      "size_bytes": 11769
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15283,11 +15291,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 365,
+      "line_count": 379,
       "path": "tests/test_trade_tracker.py",
       "reason": "automated test evidence",
-      "sha256": "676f422c891880e2588c39079e0b39fe82cdc8791a42ec1e52aff53b33f3a787",
-      "size_bytes": 12197
+      "sha256": "df41ec7c855a146ab0c8540ec953bbaaed7291dbd90e7680a49437c6eab20060",
+      "size_bytes": 12805
     },
     {
       "disposition": "TEST_ONLY",
@@ -16126,7 +16134,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 463,
+    "DOCUMENTATION_ONLY": 464,
     "PRESERVE_BEHAVIOUR": 1195,
     "TEST_ONLY": 355
   }
