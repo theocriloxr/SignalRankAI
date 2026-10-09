@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeControl } from "./ThemeControl";
+import { ResponsiveDisclosure } from "./ResponsiveDisclosure";
 import { SessionExit } from "./SessionExit";
 import { OperationsNavLink } from "./OperationsNavLink";
 
@@ -29,7 +30,7 @@ export function AppShell({ active, children }: { active: string; children: React
       </Link>
       <p className="sr-sidebar-caption">TRADING INTELLIGENCE / PRIVATE WORKSPACE</p>
       <nav className="sideNav sr-desktop-nav" aria-label="Desktop workspace navigation"><Navigation active={active}/></nav>
-      <details className="sr-mobile-drawer" id="workspace-mobile-sections"><summary>Browse all workspace sections</summary><nav aria-label="All mobile workspace sections"><Navigation active={active}/></nav></details>
+      <ResponsiveDisclosure className="sr-mobile-drawer" id="workspace-mobile-sections" label="Browse all workspace sections"><nav aria-label="All mobile workspace sections"><Navigation active={active}/></nav></ResponsiveDisclosure>
       <div className="sr-sidebar-foot"><ThemeControl/><SessionExit/><Link href="/" className="sr-secondary-link">Public website ↗</Link></div>
     </aside>
     <main className="workspace" id="sr-main">{children}</main>
