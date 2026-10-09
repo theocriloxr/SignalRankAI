@@ -8662,8 +8662,8 @@
       "line_count": 213,
       "path": "frontend/src/components/PaperDesk.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f729618424179082177bbad9a78245832252a9aabf8fd64f8ed71cc50169d0ee",
-      "size_bytes": 16036
+      "sha256": "a499a5f950db7f374a54156137d282003831e3b9eb6a49c7192f5cf6456c1059",
+      "size_bytes": 16027
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
