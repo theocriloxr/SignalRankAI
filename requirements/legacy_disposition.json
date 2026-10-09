@@ -8446,8 +8446,8 @@
       "line_count": 372,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "ad7f35b0e4d289dc8653230dca137f217a34a3493f61676ba586327c209a012b",
-      "size_bytes": 21593
+      "sha256": "de45d50fc759e313e8235d3e8b1fa16d1bf7978b979ab9b021692d25ed265d31",
+      "size_bytes": 21629
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
