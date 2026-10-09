@@ -7,6 +7,7 @@ Stops precede targets in ambiguous OHLC bars. Costs debit both notionals.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Iterable
 
 import pandas as pd
@@ -14,7 +15,22 @@ import pandas as pd
 from engine.risk_manager import RiskManager
 from engine.risk_advice import finite_number
 
-FILL_POLICY_VERSION = "wfo_conservative_fills_v3"
+FILL_POLICY_VERSION = "wfo_conservative_fills_v4"
+
+
+def fixed_bar_duration(timeframe: str) -> pd.Timedelta:
+    """Provider OHLC timestamps are opens; unknown durations cannot imply closes."""
+    match = re.fullmatch(r"([1-9][0-9]{0,4})(m|h|d|w)?", timeframe.strip()) if isinstance(timeframe, str) else None
+    if match is None:
+        raise ValueError("research_timeframe_must_have_fixed_positive_duration")
+    minutes = int(match.group(1)) * {"m": 1, "h": 60, "d": 1440, "w": 10080}[match.group(2) or "m"]
+    try:
+        duration = pd.Timedelta(minutes=minutes)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError("research_timeframe_duration_overflow") from exc
+    if not isinstance(duration, pd.Timedelta):
+        raise ValueError("research_timeframe_duration_invalid")
+    return duration
 
 
 def simulate_signals(
@@ -27,6 +43,10 @@ def simulate_signals(
             or slippage is None or not 0 <= slippage < 1):
         raise ValueError("invalid_backtest_execution_cost_or_equity")
     account_equity, commission_pct, slippage_pct = equity, commission, slippage
+    window_start, window_end = pd.to_datetime(test_start, utc=True), pd.to_datetime(test_end, utc=True)
+    if (not isinstance(window_start, pd.Timestamp) or not isinstance(window_end, pd.Timestamp)
+            or pd.isna(window_start) or pd.isna(window_end) or window_start >= window_end):
+        raise ValueError("invalid_backtest_execution_window")
     results = []
     risk_manager = RiskManager(account_equity)
     for signal in signals:
@@ -35,7 +55,9 @@ def simulate_signals(
         if frame is None or frame.empty or signal.get("timestamp") is None:
             continue
         decision = pd.to_datetime(signal["timestamp"], utc=True)
-        lower, upper = max(decision, pd.to_datetime(test_start, utc=True)), pd.to_datetime(test_end, utc=True)
+        if not isinstance(decision, pd.Timestamp) or pd.isna(decision):
+            raise ValueError("invalid_backtest_decision_timestamp")
+        lower, upper = max(decision, window_start), window_end
         direction = str(signal.get("direction") or "").upper()
         if direction not in {"LONG", "SHORT", "BUY", "SELL"}:
             continue
@@ -83,9 +105,17 @@ def simulate_signals(
         if source is None:
             source, mode = frame, "ohlc"
         # Strictly after the decision: no same-decision or earlier price replay.
-        events = source.loc[(source["timestamp"] > lower) & (source["timestamp"] <= upper), :].sort_values(
-            by="timestamp", kind="mergesort"
-        )
+        timestamps = pd.to_datetime(source["timestamp"], utc=True)
+        if timestamps.isna().any():
+            raise ValueError("invalid_backtest_execution_timestamp")
+        availability = timestamps + fixed_bar_duration(signal["timeframe"]) if mode == "ohlc" else timestamps
+        after_decision = (timestamps > lower) & (timestamps <= upper)
+        excluded_unclosed = int((after_decision & (availability > upper)).sum())
+        eligible = after_decision & (availability <= upper)
+        events = source.loc[eligible, :].copy()
+        events["timestamp"] = timestamps.loc[eligible]
+        events["_research_execution_available_at"] = availability.loc[eligible]
+        events = events.sort_values(by="timestamp", kind="mergesort")
         filled = remaining = pnl = fees = 0.0
         fill_entry = None
         filled_targets = [0.0] * len(target_prices)
@@ -94,6 +124,7 @@ def simulate_signals(
         ambiguous = 0
         last_price = None
         execution_at = None
+        last_observation_at = None
         stop_exit = stop * (1 - slippage_pct if long else 1 + slippage_pct)
 
         def levels(value) -> list[list[float]]:
@@ -113,6 +144,7 @@ def simulate_signals(
             remaining -= quantity
 
         for event in events.to_dict(orient="records"):
+            last_observation_at = event["_research_execution_available_at"].isoformat()
             if mode == "orderbook":
                 asks, bids = sorted(levels(event.get("asks"))), sorted(levels(event.get("bids")), reverse=True)
                 entry_levels, exit_levels = (asks, bids) if long else (bids, asks)
@@ -233,6 +265,8 @@ def simulate_signals(
                         "requested_quantity": requested, "filled_quantity": filled,
                         "remaining_quantity": remaining, "fill_entry": fill_entry,
                         "entry_execution_at": execution_at, "fee_cost": fees,
+                        "last_observation_available_at": last_observation_at,
+                        "excluded_unclosed_candles": excluded_unclosed,
                         "risk_budget": risk_budget,
                         "modeled_stop_risk": modeled_stop_risk,
                         "risk_budget_breached": -pnl > risk_budget + max(1e-10, risk_budget * 1e-12),
@@ -241,5 +275,6 @@ def simulate_signals(
                         "evidence_class": "simulation", "source": mode,
                         "limitations": ["spot_unit_sizing_only", "instrument_specific_costs_unverified",
                                         "queue_and_capacity_calibration_unverified",
-                                        "portfolio_aggregation_unverified", "gap_losses_not_bounded_by_stop"]})
+                                        "portfolio_aggregation_unverified", "gap_losses_not_bounded_by_stop",
+                                        "fixed_duration_bar_calendar_unverified"]})
     return results

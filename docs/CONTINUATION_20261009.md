@@ -68,3 +68,29 @@ or broker/baseline evidence. Unit checks pass locally; actual PostgreSQL coverag
 and desktop/mobile light/dark display checks remain required on the successor
 hosted commit. This closes a surveillance visibility bug, not approved baseline,
 decay-analysis, alert-retention or complete strategy-health acceptance.
+
+Hosted run `37889078327` on `d978f52d` passed both backend versions, manifest,
+frontend and static quality. Its research gate passed all 297 tests, including
+the real PostgreSQL coverage case with 23 profiles and suspension beyond the
+display limit. The browser job failed because the test demanded an exact text
+match on a paragraph that also contained the stale-monitor warning. The
+successor preserves the warning and checks the coverage text within that
+paragraph. Mobile retains the four high audit rows; production approval remains
+blocked. The failed browser evidence is retained.
+
+## Closed-bar replay continuation
+
+A reproduced hourly candle opened at 00:05 and became available at 01:05, but
+the legacy replay previously used its target/high/volume to report a closed
+winner in a window ending at 00:10. Version v4 excludes those unavailable OHLC
+bars and exposes their exclusion plus the last observed availability timestamp.
+Timestamped quote snapshots retain their instantaneous availability. Training
+labels likewise exclude bars closing beyond the label horizon. Unknown/monthly,
+zero and overflowing durations cannot become a default one-minute bar.
+
+The 198-test local research, risk, health, browser-safety, authorization and
+governance selection passes. Critical typing and targeted Ruff pass. Boundary
+tests cover minute through weekly bars, exact cutoffs, future-bar mutation and
+tick/orderbook availability. Hosted checks on the successor remain required.
+This is a deterministic replay boundary repair; venue calendars, publication
+delays, instrument capacity/cost stress and portfolio qualification remain open.

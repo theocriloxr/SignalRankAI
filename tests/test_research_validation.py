@@ -224,6 +224,85 @@ def test_execution_skips_predecision_bars_and_resolves_ambiguity_stop_first():
     assert result["status"] == "CLOSED"
 
 
+@pytest.mark.parametrize("timeframe,minutes", [("1m", 1), ("5m", 5), ("1h", 60),
+    ("4h", 240), ("1d", 1440), ("1w", 10080)])
+def test_ohlc_replay_requires_the_whole_bar_at_the_window_cutoff(timeframe, minutes):
+    from engine.backtest_execution import simulate_signals, FILL_POLICY_VERSION
+    decision = pd.Timestamp("2026-01-01T00:00Z")
+    opened = decision + pd.Timedelta(minutes=1)
+    available = opened + pd.Timedelta(minutes=minutes)
+    frame = pd.DataFrame([{"timestamp": opened, "open": 100, "high": 112,
+                           "low": 99, "close": 112, "volume": 1000}])
+    sig = {**signal(), "timeframe": timeframe, "timestamp": decision}
+    kwargs = dict(test_start=decision, account_equity=1000, commission_pct=0, slippage_pct=0)
+    missing = simulate_signals([sig], {f"TEST|{timeframe}": frame}, test_end=available-pd.Timedelta(nanoseconds=1), **kwargs)[0]
+    complete = simulate_signals([sig], {f"TEST|{timeframe}": frame}, test_end=available, **kwargs)[0]
+    assert missing["status"] == "NOT_FILLED" and missing["pnl"] == 0
+    assert missing["excluded_unclosed_candles"] == 1 and missing["last_observation_available_at"] is None
+    assert complete["status"] == "CLOSED" and complete["pnl"] > 0
+    assert complete["last_observation_available_at"] == available.isoformat()
+    assert complete["excluded_unclosed_candles"] == 0 and complete["fill_policy_version"] == FILL_POLICY_VERSION
+
+
+def test_unclosed_future_bar_cannot_change_an_existing_open_position():
+    from engine.backtest_execution import simulate_signals
+    decision = pd.Timestamp("2026-01-01T00:00Z")
+    cutoff = decision + pd.Timedelta(minutes=2)
+    frame = pd.DataFrame([
+        {"timestamp": decision+pd.Timedelta(minutes=1), "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000},
+        {"timestamp": cutoff, "open": 100, "high": 120, "low": 99, "close": 120, "volume": 1000}])
+    sig = {**signal(), "timestamp": decision}
+    kwargs = dict(test_start=decision, test_end=cutoff, account_equity=1000, commission_pct=0, slippage_pct=0)
+    before = simulate_signals([sig], {"TEST|1m": frame}, **kwargs)[0]
+    frame.loc[1, ["high", "low", "close", "volume"]] = [float("nan"), 1, 1, 1e9]
+    after = simulate_signals([sig], {"TEST|1m": frame}, **kwargs)[0]
+    assert before == after and before["status"] == "OPEN"
+    assert before["remaining_quantity"] > 0 and before["pnl"] == 0
+    assert pd.Timestamp(before["last_observation_available_at"]) == cutoff
+
+
+@pytest.mark.parametrize("mode", ["ticks", "orderbook"])
+def test_timestamped_quote_replay_is_available_at_the_inclusive_cutoff(mode):
+    from engine.backtest_execution import simulate_signals
+    decision = pd.Timestamp("2026-01-01T00:00Z")
+    entry_at, cutoff = decision+pd.Timedelta(minutes=1), decision+pd.Timedelta(minutes=2)
+    frame = pd.DataFrame([{"timestamp": entry_at, "open": 100, "high": 120, "low": 99, "close": 120, "volume": 1000}])
+    quotes = pd.DataFrame([
+        {"timestamp": entry_at, "price": 100, "size": 1000, "asks": [[100, 1000]], "bids": [[99, 1000]]},
+        {"timestamp": cutoff, "price": 112, "size": 1000, "asks": [[113, 1000]], "bids": [[112, 1000]]}])
+    sig = {**signal(), "timestamp": decision}
+    result = simulate_signals([sig], {"TEST|1m": frame, f"TEST|1m|{mode}": quotes},
+        test_start=decision, test_end=cutoff, account_equity=1000, commission_pct=0, slippage_pct=0)[0]
+    assert result["status"] == "CLOSED" and result["pnl"] > 0
+    assert result["source"] == mode and result["last_observation_available_at"] == cutoff.isoformat()
+    assert result["excluded_unclosed_candles"] == 0
+
+
+@pytest.mark.parametrize("timeframe", [None, True, 0, "", "0m", "-1h", "1M", "month", "100000m", "99999w"])
+def test_unknown_or_unbounded_candle_duration_cannot_become_one_minute(timeframe):
+    from engine.backtest_execution import fixed_bar_duration
+    with pytest.raises(ValueError, match="research_timeframe"):
+        fixed_bar_duration(timeframe)
+
+
+def test_training_label_cannot_use_a_bar_past_its_declared_horizon():
+    decision = pd.Timestamp("2026-01-01T00:00Z")
+    sig = {**signal(), "timestamp": decision, "timeframe": "1h"}
+    frame = pd.DataFrame([{"timestamp": decision+pd.Timedelta(minutes=1), "high": 120, "low": 99}])
+    optimizer = WalkForwardOptimizer(BacktestRunner())
+    assert optimizer._label_signals([sig], {"TEST|1h": frame}, lookahead_minutes=60) == {0: None}
+    assert optimizer._label_signals([sig], {"TEST|1h": frame}, lookahead_minutes=61) == {0: 1}
+
+
+@pytest.mark.parametrize("start,end", [(None, "2026-01-02"), ("NaT", "2026-01-02"),
+    ("2026-01-01", "NaT"), ("2026-01-02", "2026-01-01"), ("2026-01-01", "2026-01-01")])
+def test_invalid_replay_window_is_rejected_even_without_signals(start, end):
+    from engine.backtest_execution import simulate_signals
+    with pytest.raises(ValueError, match="invalid_backtest_execution_window"):
+        simulate_signals([], {}, test_start=start, test_end=end, account_equity=1000,
+                         commission_pct=0, slippage_pct=0)
+
+
 def test_exit_slippage_is_adverse_and_commission_uses_both_notionals():
     rows = [{"timestamp": "2026-01-01T00:03Z", "open": 100, "high": 111, "low": 99, "close": 110, "volume": 100}]
     costless = simulate(rows, commission_pct=0, slippage_pct=0)

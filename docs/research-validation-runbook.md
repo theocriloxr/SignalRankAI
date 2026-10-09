@@ -74,7 +74,7 @@ records cannot be interpreted as an empty portfolio. The separate heuristic
 group filters and signal-delivery exposure counts remain advisory evidence,
 not calibrated account-level portfolio validation.
 
-Legacy WFO replay uses `wfo_conservative_fills_v3`. Requested spot units reuse
+Legacy WFO replay uses `wfo_conservative_fills_v4`. Requested spot units reuse
 the bounded adviser, including its 10% per-trade quote-notional limit. Entry
 sizing includes adverse entry and stop-exit slippage and fees on both notionals.
 Reports expose the configured `risk_budget`, `modeled_stop_risk` and observed
@@ -84,6 +84,18 @@ Nonfinite policy inputs, impossible cost fractions and arithmetic overflow rejec
 the research run. This does not model shared capital across concurrent positions,
 qualify venue costs or establish portfolio risk survival. Those limitations
 remain explicit on each replay record.
+
+OHLC replay uses only bars whose opening timestamp plus their declared fixed
+duration is at or before the validation cutoff. An unclosed bar cannot supply
+its future high, low, close or total volume, so it receives no optimistic fill.
+Timestamped ticks/orderbooks remain available at their own observation times.
+Records expose the last observation availability and excluded unclosed candles;
+fold exclusion totals count replay observations per signal, not unique candles.
+Training labels also respect whole-bar availability within their stated horizon.
+Unknown, nonpositive, monthly or overflowing durations reject rather than default
+to one minute. These fixed-duration bounds do not verify venue sessions, DST,
+historical provider revisions or publication delays; calendar qualification
+remains explicit and unfinished.
 
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply

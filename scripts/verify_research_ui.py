@@ -42,7 +42,7 @@ with sync_playwright() as p:
                 assert health['status'] == 'UNAVAILABLE' and health['fresh'] is False
                 assert health['broker_fills_certified'] is False
                 page.locator('#operatorDiagnostics').get_by_text('Adaptive health check', exact=True).wait_for()
-                page.locator('#adaptiveHealthEvidence').get_by_text('Profile coverage unavailable', exact=True).wait_for()
+                page.locator('#adaptiveHealthEvidence').get_by_text('Profile coverage unavailable').wait_for()
                 assert page.locator('#operatorKillSwitchOn').is_hidden()
                 assert page.locator('#operatorKillSwitchOff').is_hidden()
                 assert not any('/operator/maintenance' in url for url in requests), 'admin must not request owner-only maintenance'
