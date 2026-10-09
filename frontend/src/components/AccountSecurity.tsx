@@ -105,7 +105,7 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
       const r=await client.POST("/api/v1/platform/security/mfa/enable",{body:{code:code.trim()}});
       if(r.response.ok&&r.data?.enabled===true){
         setRecoveryCodes(Array.isArray(r.data.recovery_codes)?r.data.recovery_codes.filter((v):v is string=>typeof v==="string"):[]);
-        setEnrollment(null);setCode("");respond("MFA enabled. Save the single-use recovery codes securely offline; they will not be shown again.");refresh();
+        setEnrollment(null);setCode("");setData(previous=>({...previous,mfa:{...previous.mfa,enabled:true}}));respond("MFA enabled. Save the single-use recovery codes securely offline; they will not be shown again.");
       }else respond("Authenticator code not verified. Check the code and retry.",true);
     }catch{respond("Authenticator enrollment could not be confirmed.",true);}
     finally{setBusy(false);}
@@ -152,7 +152,7 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
         {recoveryCodes&&<div className="sr-mfa-recovery" role="status"><h3>Recovery codes — shown once</h3>
           <p>Store these codes offline. Do not share them in support messages or screenshots.</p>
           <ul>{recoveryCodes.map((v,i)=><li key={i}><code>{v}</code></li>)}</ul>
-          <button className="sr-secondary-action" type="button" onClick={()=>setRecoveryCodes(null)}>I saved these codes — hide them</button>
+          <button className="sr-secondary-action" type="button" onClick={()=>{setRecoveryCodes(null);refresh();}}>I saved these codes — hide them</button>
         </div>}
       </section>
       <section className="sr-data-panel"><h2>Signed-in devices</h2>
