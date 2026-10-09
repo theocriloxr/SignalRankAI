@@ -233,6 +233,76 @@ def test_exit_slippage_is_adverse_and_commission_uses_both_notionals():
     assert costs["fee_cost"] == pytest.approx((100.1 + 109.89) * quantity * 0.001)
 
 
+@pytest.mark.parametrize("direction,stop,target", [("long", 99, 110), ("short", 101, 90)])
+def test_stop_replay_cannot_oversize_the_known_two_sided_execution_loss(direction, stop, target, monkeypatch):
+    monkeypatch.setattr("engine.risk_manager.BASE_RISK_PCT", 0.5)
+    sig = signal()
+    sig.update(direction=direction, stop_loss=stop, take_profit=[target])
+    result = simulate([{"timestamp": "2026-01-01T00:03Z", "open": 100, "high": 102,
+                        "low": 98, "close": 100, "volume": 1000}], sig,
+                      commission_pct=0.001, slippage_pct=0.02)
+    assert result["status"] == "CLOSED" and result["pnl"] < 0
+    assert result["risk_budget"] == pytest.approx(5)
+    assert -result["pnl"] <= 5 + 1e-10
+    assert result["modeled_stop_risk"] == pytest.approx(-result["pnl"])
+    assert result["filled_quantity"] * result["fill_entry"] <= 100 + 1e-10
+    assert result["risk_budget_breached"] is False
+
+
+@pytest.mark.parametrize("direction,stop,target,gap", [("long", 99, 110, 70), ("short", 101, 90, 130)])
+def test_market_gaps_retain_the_actual_loss_and_report_budget_breach(direction, stop, target, gap, monkeypatch):
+    monkeypatch.setattr("engine.risk_manager.BASE_RISK_PCT", 0.5)
+    sig = signal()
+    sig.update(direction=direction, stop_loss=stop, take_profit=[target])
+    result = simulate([
+        {"timestamp": "2026-01-01T00:03Z", "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 1000},
+        {"timestamp": "2026-01-01T00:04Z", "open": gap, "high": gap + 1, "low": gap - 1,
+         "close": gap, "volume": 1000},
+    ], sig, commission_pct=0.001, slippage_pct=0.02)
+    assert result["status"] == "CLOSED"
+    assert -result["pnl"] > result["risk_budget"]
+    assert result["risk_budget_breached"] is True
+    assert "gap_losses_not_bounded_by_stop" in result["limitations"]
+
+
+def test_calendar_wfo_report_keeps_observed_risk_breaches_and_current_fill_policy(monkeypatch):
+    from engine.backtest_execution import FILL_POLICY_VERSION
+    runner = BacktestRunner()
+    frame = pd.DataFrame([
+        {"timestamp": "2026-02-01T00:03Z", "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 1000},
+        {"timestamp": "2026-02-01T00:04Z", "open": 70, "high": 71, "low": 69, "close": 70, "volume": 1000},
+    ])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    runner.register_dataframe("TEST", "1m", frame)
+    sig = {**signal(), "timestamp": pd.Timestamp("2026-02-01T00:02Z"), "stop_loss": 99}
+    monkeypatch.setattr(runner, "run_backtest", lambda *args, **kwargs: {"TEST": [sig]})
+    reports = WalkForwardOptimizer(runner).run(["TEST"], ["1m"], train_months=1, test_months=1,
+        start=datetime(2026, 1, 1), end=datetime(2026, 3, 1))
+    assert len(reports) == 1 and reports[0]["completed_trades"] == 1
+    assert reports[0]["risk_budget_breaches"] == 1
+    assert reports[0]["fill_policy_version"] == FILL_POLICY_VERSION
+
+
+@pytest.mark.parametrize("field,value", [("account_equity", True), ("account_equity", 0),
+    ("commission_pct", True), ("commission_pct", 1), ("commission_pct", float("nan")),
+    ("slippage_pct", True), ("slippage_pct", 1), ("slippage_pct", float("inf")), ("slippage_pct", -0.1)])
+def test_invalid_execution_policy_is_not_a_usable_research_run(field, value):
+    from engine.backtest_execution import simulate_signals
+    policy = {"account_equity": 1000, "commission_pct": 0, "slippage_pct": 0, field: value}
+    with pytest.raises(ValueError, match="invalid_backtest_execution_cost_or_equity"):
+        simulate_signals([], {}, test_start=datetime(2026, 1, 1), test_end=datetime(2026, 1, 2), **policy)
+
+
+def test_extreme_gap_cannot_publish_nonfinite_execution_metrics():
+    sig = {**signal(), "direction": "short", "stop_loss": 101, "take_profit": [90]}
+    with pytest.raises(ValueError, match="backtest_execution_arithmetic_overflow"):
+        simulate([
+            {"timestamp": "2026-01-01T00:03Z", "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 1000},
+            {"timestamp": "2026-01-01T00:04Z", "open": 1.7e308, "high": 1.71e308, "low": 1.6e308,
+             "close": 1.7e308, "volume": 1000},
+        ], sig, commission_pct=0.001, slippage_pct=0.99)
+
+
 def test_target_allocation_cannot_refill_on_subsequent_bars():
     sig = signal()
     sig["take_profit"] = [{"price": 110, "exit_percent": 50}, {"price": 120, "exit_percent": 50}]

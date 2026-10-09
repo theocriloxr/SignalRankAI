@@ -24,3 +24,25 @@ inheriting Expo code-signing/CLI graph. Production approval was skipped.
 Continue the ordered directives in `docs/completion-order-20261006.md`.
 The research source Google Doc, instrument/account evidence, complete customer
 and native acceptance, and a fresh clean release observation remain open.
+
+## Execution-cost continuation
+
+The legacy WFO simulator sized for entry slippage and commissions but omitted
+stop-exit slippage from the loss denominator. With a tight stop, its own modeled
+stop loss could exceed the configured budget. It also used an independent 20%
+notional ceiling rather than the bounded adviser's 10% ceiling.
+
+Replay now reuses the bounded spot-unit adviser and includes slippage and fees
+at both ends when limiting the filled quantity. The versioned v3 records expose
+the configured budget, modeled stop risk and observed breaches; calendar-fold
+reports preserve breach counts. Gap losses remain uncapped and visible.
+Malformed costs/equity and arithmetic overflow reject the run rather than
+publishing nonfinite evidence.
+
+The 92-test research/execution/adviser selection passes, including long/short
+stop budgets, long/short gaps, invalid cost policies, overflow and calendar WFO
+reporting. Critical Pyright and targeted Ruff pass. A focused OpenGrep scan of
+the two runtime files passed with no findings or errors. Hosted verification on
+the successor remains required. Portfolio aggregation, instrument-specific costs,
+native and broker acceptance, source-document review and new release observation
+are not certified by these synthetic tests.

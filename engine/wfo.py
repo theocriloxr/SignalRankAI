@@ -6,6 +6,7 @@ import re
 from engine.backtest import BacktestRunner
 from typing import Callable
 from ml.features import extract_features
+from engine.backtest_execution import FILL_POLICY_VERSION
 
 try:
     import xgboost as xgb
@@ -328,7 +329,8 @@ class WalkForwardOptimizer:
                     "completed_trades": total,
                     "nonfills": sum(row["status"] == "NOT_FILLED" for row in sim),
                     "open_trades": sum(row["status"] == "OPEN" for row in sim),
-                    "fill_policy_version": "wfo_conservative_fills_v2",
+                    "risk_budget_breaches": sum(row["risk_budget_breached"] for row in sim),
+                    "fill_policy_version": FILL_POLICY_VERSION,
                     "evidence_class": "simulation",
                     "win_rate": win_rate,
                     "avg_return": avg,

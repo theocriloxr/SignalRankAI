@@ -12,8 +12,9 @@ from typing import Any, Iterable
 import pandas as pd
 
 from engine.risk_manager import RiskManager
+from engine.risk_advice import finite_number
 
-FILL_POLICY_VERSION = "wfo_conservative_fills_v2"
+FILL_POLICY_VERSION = "wfo_conservative_fills_v3"
 
 
 def simulate_signals(
@@ -21,8 +22,11 @@ def simulate_signals(
     test_start, test_end, account_equity: float, commission_pct: float,
     slippage_pct: float, train_predictor=None,
 ) -> list[dict]:
-    if not all(math.isfinite(value) and value >= 0 for value in (account_equity, commission_pct, slippage_pct)) or account_equity <= 0:
+    equity, commission, slippage = (finite_number(value) for value in (account_equity, commission_pct, slippage_pct))
+    if (equity is None or equity <= 0 or commission is None or not 0 <= commission < 1
+            or slippage is None or not 0 <= slippage < 1):
         raise ValueError("invalid_backtest_execution_cost_or_equity")
+    account_equity, commission_pct, slippage_pct = equity, commission, slippage
     results = []
     risk_manager = RiskManager(account_equity)
     for signal in signals:
@@ -49,7 +53,8 @@ def simulate_signals(
             if probability < 0.5:
                 continue
         risk_pct = min(1.0, max(0.0, float(risk_manager.get_dynamic_risk_pct(signal))))
-        requested = min(account_equity * risk_pct / 100 / abs(entry - stop), account_equity * 0.2 / entry)
+        risk_budget = account_equity * risk_pct / 100
+        requested = risk_manager.calculate_position_size(signal, account_equity)
         if not math.isfinite(requested) or requested <= 0:
             continue
         def target_price(item: Any) -> float:
@@ -89,6 +94,7 @@ def simulate_signals(
         ambiguous = 0
         last_price = None
         execution_at = None
+        stop_exit = stop * (1 - slippage_pct if long else 1 + slippage_pct)
 
         def levels(value) -> list[list[float]]:
             parsed = [[float(item[0]), float(item[1])] for item in (value or [])]
@@ -140,9 +146,16 @@ def simulate_signals(
                     break
                 worst_quote = (max(price for price, _ in entry_levels) if long else min(price for price, _ in entry_levels)) if mode == "orderbook" else start_price
                 adverse_entry = worst_quote * (1 + slippage_pct if long else 1 - slippage_pct)
-                cost_per_unit = abs(adverse_entry - stop) + commission_pct * (adverse_entry + stop)
-                filled = min(requested, capacity, account_equity * risk_pct / 100 / max(cost_per_unit, 1e-12),
-                             account_equity * 0.2 / adverse_entry)
+                # The loss budget includes adverse execution at BOTH ends and
+                # commission on both notionals. A later market gap can still
+                # exceed that modeled budget and must remain visible in PnL.
+                cost_per_unit = abs(adverse_entry - stop_exit) + commission_pct * (adverse_entry + stop_exit)
+                if not math.isfinite(cost_per_unit) or cost_per_unit <= 0 or adverse_entry <= 0:
+                    raise ValueError("invalid_backtest_stop_cost")
+                filled = min(requested, capacity, risk_budget / cost_per_unit,
+                             account_equity * 0.1 / adverse_entry)
+                if filled * cost_per_unit > risk_budget or filled * adverse_entry > account_equity * 0.1:
+                    filled = math.nextafter(filled, 0.0)
                 if filled <= 0:
                     break
                 if mode == "orderbook":
@@ -208,15 +221,25 @@ def simulate_signals(
                 break
         closed = filled > 0 and remaining <= 1e-12
         unrealized = remaining * ((last_price - fill_entry) if long else (fill_entry - last_price)) if fill_entry is not None and last_price else 0
-        results.append({"pnl": pnl, "unrealized_pnl": unrealized, "return": pnl / account_equity,
+        modeled_stop_risk = filled * (abs(fill_entry - stop_exit)
+            + commission_pct * (fill_entry + stop_exit)) if fill_entry is not None else 0.0
+        return_value = pnl / account_equity
+        if not all(math.isfinite(value) for value in (pnl, unrealized, return_value, fees,
+                                                     filled, remaining, risk_budget, modeled_stop_risk)):
+            raise ValueError("backtest_execution_arithmetic_overflow")
+        results.append({"pnl": pnl, "unrealized_pnl": unrealized, "return": return_value,
                         "win": pnl > 0 if closed else None, "n_trades": int(closed),
                         "win_count": int(closed and pnl > 0), "loss_count": int(closed and pnl <= 0),
                         "requested_quantity": requested, "filled_quantity": filled,
                         "remaining_quantity": remaining, "fill_entry": fill_entry,
                         "entry_execution_at": execution_at, "fee_cost": fees,
+                        "risk_budget": risk_budget,
+                        "modeled_stop_risk": modeled_stop_risk,
+                        "risk_budget_breached": -pnl > risk_budget + max(1e-10, risk_budget * 1e-12),
                         "same_bar_ambiguities": ambiguous, "fill_policy_version": FILL_POLICY_VERSION,
                         "status": "CLOSED" if closed else "OPEN" if filled else "NOT_FILLED",
                         "evidence_class": "simulation", "source": mode,
                         "limitations": ["spot_unit_sizing_only", "instrument_specific_costs_unverified",
-                                        "queue_and_capacity_calibration_unverified"]})
+                                        "queue_and_capacity_calibration_unverified",
+                                        "portfolio_aggregation_unverified", "gap_losses_not_bounded_by_stop"]})
     return results

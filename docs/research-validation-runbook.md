@@ -65,6 +65,26 @@ Correlation assumptions still require consolidation and qualification.
 These advice limits remain unqualified for
 broker contracts, commissions, spread/slippage, margin and funded-account rules.
 
+The primary engine and optional controller correlation gates now use ordered
+timestamped closes and compare percentage returns only over identical start/end
+intervals. Missing or invalid history, undefined correlation, invalid thresholds
+and existing-symbol exposure block admission when the check applies. Admission
+reads require a complete shared trade snapshot; Redis failures or corrupt
+records cannot be interpreted as an empty portfolio. The separate heuristic
+group filters and signal-delivery exposure counts remain advisory evidence,
+not calibrated account-level portfolio validation.
+
+Legacy WFO replay uses `wfo_conservative_fills_v3`. Requested spot units reuse
+the bounded adviser, including its 10% per-trade quote-notional limit. Entry
+sizing includes adverse entry and stop-exit slippage and fees on both notionals.
+Reports expose the configured `risk_budget`, `modeled_stop_risk` and observed
+`risk_budget_breached`; calendar-fold summaries retain the breach count. Market
+gaps keep their actual losses instead of being clipped to the modeled budget.
+Nonfinite policy inputs, impossible cost fractions and arithmetic overflow reject
+the research run. This does not model shared capital across concurrent positions,
+qualify venue costs or establish portfolio risk survival. Those limitations
+remain explicit on each replay record.
+
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply
 an observation; future closes and closes preceding the decision are excluded.
