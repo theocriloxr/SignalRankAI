@@ -8795,11 +8795,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 300,
+      "line_count": 301,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f426cdf62fcc526156d6a0638970c250fa7f5d23426c4d40d99459bbd65b7e77",
-      "size_bytes": 24453
+      "sha256": "394c7400a33b9537e24a3a6c461343fed7cdf3ad3cc1fcc266dd19bdd1a44758",
+      "size_bytes": 24617
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
