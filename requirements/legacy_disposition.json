@@ -1,5 +1,5 @@
 {
-  "file_count": 2055,
+  "file_count": 2056,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8643,6 +8643,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 63,
+      "path": "frontend/src/components/PublicEditorial.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "f55e68e143efdf75a34ac20fdb020744c44cf10f9ddd66e7110907d75d4bcd88",
+      "size_bytes": 2935
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 25,
       "path": "frontend/src/components/PublicNav.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -16455,7 +16463,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
-    "PRESERVE_BEHAVIOUR": 1224,
+    "PRESERVE_BEHAVIOUR": 1225,
     "TEST_ONLY": 356
   }
 }
