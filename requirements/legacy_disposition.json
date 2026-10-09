@@ -1,5 +1,5 @@
 {
-  "file_count": 2070,
+  "file_count": 2071,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8603,6 +8603,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 189,
+      "path": "frontend/src/components/AccountSecurity.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "80da35700db05082bbcc800a54aa8f70f2438804d30ede45a809924c57899534",
+      "size_bytes": 13414
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 122,
       "path": "frontend/src/components/AlertRules.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8779,11 +8787,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 299,
+      "line_count": 300,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "89dc61af7fb56fc0b88d3d001c8b7b30e5bd674456a895152c75ae6225ba3d42",
-      "size_bytes": 24304
+      "sha256": "f426cdf62fcc526156d6a0638970c250fa7f5d23426c4d40d99459bbd65b7e77",
+      "size_bytes": 24453
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16575,7 +16583,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1236,
+    "PRESERVE_BEHAVIOUR": 1237,
     "TEST_ONLY": 357
   }
 }
