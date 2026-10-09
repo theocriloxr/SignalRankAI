@@ -56,3 +56,25 @@ test('native broker, notification and watchlist views are authenticated and neve
   assert.match(pages,/encodeURIComponent\(selected\)/);
   assert.doesNotMatch(pages,/\/execute|\/broker\/order|localStorage|AsyncStorage|kill.switch/);
 });
+
+
+test('Expo automatic light and dark appearance is honored by native screens and tab navigation',()=>{
+  const tab=readFileSync(join(__dirname,'../src/MobileNavigation.tsx'),'utf8');
+  const aux=readFileSync(join(__dirname,'../src/AccountScreens.tsx'),'utf8');
+  const app=JSON.parse(readFileSync(join(__dirname,'../app.json'),'utf8'));
+  assert.equal(app.expo.userInterfaceStyle,'automatic');
+  for(const source of [native,tab,aux]){
+    assert.ok(source.includes('useColorScheme'),"missing OS appearance subscription");
+    assert.ok(source.includes("'light'?lightStyles:darkStyles"),"missing theme-aware style selection");
+    assert.ok(source.includes('#4ce0a4'),"approved dark-mode accent missing");
+    assert.ok(source.includes('#08754e'),"approved light-mode accent missing");
+  }
+  assert.ok(native.includes("scheme==='light'?'dark':'light'"));
+});
+
+test('mobile billing displays recorded currency and does not fabricate missing receipt amounts',()=>{
+  assert.ok(native.includes('currencyLabel(product.price_ngn,product.currency||"NGN")'));
+  assert.ok(native.includes('currencyLabel(receipt.amount,receipt.currency)'));
+  assert.doesNotMatch(native,/Number\(receipt\.amount\|\|0\)/);
+  assert.doesNotMatch(native,/Number\(product\.price_ngn\|\|0\)/);
+});
