@@ -132,7 +132,7 @@ export function PaperDesk({ onChanged }:{ onChanged:()=>void }) {
     {state.phase==="ready"&&<>
       <div className="sr-grid-two">
         <section className="sr-data-panel"><h2>Simulation performance</h2>
-          <p>Derived from the paper service only; not the account's certified broker performance.</p>
+          <p>Derived from the paper service only; not certified live-broker performance.</p>
           <dl><Value label="Simulated realized P&L" value={numberLabel(performance.realized_pnl,2)}/>
             <Value label="Paper closed positions" value={numberLabel(performance.total_trades ?? snapshot.closed_positions,0)}/>
             <Value label="Paper equity" value={numberLabel(snapshot.equity,2)}/>
