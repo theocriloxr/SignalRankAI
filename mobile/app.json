@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "plugins": [
       ["expo-secure-store", {"configureAndroidBackup": true, "faceIDPermission": "Allow SignalRankAI to protect your trading account with Face ID."}],
-      ["expo-notifications", {"color": "#64f0b4", "defaultChannel": "signals"}]
+      ["expo-notifications", {"color": "#4ce0a4", "defaultChannel": "signals"}]
     ],
     "ios": {
       "supportsTablet": true,
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "ai.signalrank.app",
-      "adaptiveIcon": {"backgroundColor": "#080b10"}
+      "adaptiveIcon": {"backgroundColor": "#08120f"}
     },
     "web": {"bundler": "metro"},
     "extra": {

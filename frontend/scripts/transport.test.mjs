@@ -11,7 +11,7 @@ function transport(fetch, cookie) {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},
   }).outputText;
   vm.runInNewContext(compiled, {
-    exports, Request, Response, Headers, fetch,
+    exports, Request, Response, Headers, URL, fetch,
     ...(cookie === undefined ? {} : {document: {cookie}}),
   });
   return exports;
@@ -65,4 +65,67 @@ test("server rendering never gains browser authority implicitly", async () => {
     return new Response("{}", {status: 401});
   });
   assert.equal((await api.platformFetch(new Request("https://local.test/api/v1/platform/profile", {method: "PATCH"}))).status, 401);
+});
+
+
+test("401 on canonical account GET rotates cookies once with CSRF and retries only that read",async()=>{
+  const calls=[];
+  let reads=0;
+  const api=transport(async request=>{
+    calls.push({path:new URL(request.url).pathname,method:request.method,csrf:request.headers.get("X-CSRF-Token"),credentials:request.credentials});
+    if(new URL(request.url).pathname.endsWith("/auth/refresh"))return new Response('{"authenticated":true}',{status:200});
+    reads++;
+    return reads===1?new Response("expired",{status:401}):new Response('{"user":{"id":1}}',{status:200});
+  },"sr_csrf=refresh-proof");
+  const result=await api.platformFetch(new Request("https://local.test/api/v1/platform/me"));
+  assert.equal(result.status,200);
+  assert.equal(reads,2);
+  assert.deepEqual(calls.map(x=>[x.path,x.method]),[
+    ["/api/v1/platform/me","GET"],["/api/v1/platform/auth/refresh","POST"],["/api/v1/platform/me","GET"],
+  ]);
+  assert.equal(calls[1].csrf,"refresh-proof");
+  assert.ok(calls.every(x=>x.credentials==="include"));
+});
+
+test("concurrent expired reads share one refresh request without local tokens",async()=>{
+  let refreshCount=0,reads=0;
+  let resolveRefresh;
+  const refreshGate=new Promise(resolve=>{resolveRefresh=resolve});
+  const api=transport(async request=>{
+    if(new URL(request.url).pathname.endsWith("/auth/refresh")){
+      refreshCount++;await refreshGate;
+      return new Response("{}",{status:200});
+    }
+    reads++;return reads<=2?new Response("expired",{status:401}):new Response("{}",{status:200});
+  },"sr_csrf=proof");
+  const p=Promise.all([
+    api.platformFetch(new Request("https://local.test/api/v1/platform/me")),
+    api.platformFetch(new Request("https://local.test/api/v1/platform/notifications")),
+  ]);
+  // Let both first reads arrive at the same in-flight refresh before resolving it.
+  await Promise.resolve(); await Promise.resolve(); resolveRefresh();
+  const res=await p;
+  assert.equal(refreshCount,1);
+  assert.equal(reads,4);
+  assert.deepEqual(res.map(x=>x.status),[200,200]);
+});
+
+test("never replay non-idempotent account writes or refresh auth bootstrap routes",async()=>{
+  const paths=[];
+  const api=transport(async request=>{
+    paths.push([new URL(request.url).pathname,request.method]);
+    return new Response("expired",{status:401});
+  },"sr_csrf=proof");
+  assert.equal((await api.platformFetch(new Request("https://local.test/api/v1/platform/paper/reset",{method:"POST",body:'{"confirm":true,"starting_balance":500}'}))).status,401);
+  assert.equal((await api.platformFetch(new Request("https://local.test/api/v1/platform/auth/login",{method:"POST",body:'{"email":"test"}'}))).status,401);
+  assert.deepEqual(paths,[
+    ["/api/v1/platform/paper/reset","POST"],["/api/v1/platform/auth/login","POST"]
+  ]);
+});
+
+test("missing refresh proof leaves expired account read unauthenticated",async()=>{
+  let count=0;
+  const api=transport(async()=>{count++;return new Response("expired",{status:401})},"");
+  assert.equal((await api.platformFetch(new Request("https://local.test/api/v1/platform/me"))).status,401);
+  assert.equal(count,1);
 });

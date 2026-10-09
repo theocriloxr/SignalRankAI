@@ -1224,3 +1224,53 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .research-checks{list-style:none;margin:0;padding:0}.research-checks li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border-top:1px solid var(--line);padding:12px 0;font-size:13px}.research-checks li p{grid-column:1/-1;color:var(--muted);margin:0;line-height:1.5}
 .research-lineage{display:grid;gap:12px}.research-lineage>div{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px}.research-lineage dd{margin:0;font:12px/1.6 ui-monospace,monospace}
 @media(max-width:800px){.research-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.research-experiment summary{align-items:flex-start;flex-direction:column}.research-lineage>div{grid-template-columns:1fr;gap:4px}.research-review-panel .filters label{width:100%;max-width:none}.research-experiment{padding:14px}}
+
+
+/* 2026-10-09 production workstation responsive polish.
+   Existing SPA view IDs, session flows, account authority and financial
+   controls stay unchanged: presentation-only adjustments. */
+:root{
+  --sr-safe-top:env(safe-area-inset-top,0px);
+  --sr-safe-left:env(safe-area-inset-left,0px);
+  --sr-safe-right:env(safe-area-inset-right,0px);
+}
+#appShell,.panel,.subpanel,.auth-shell,.hero-card,.data-list,.detail-list,
+.broker-account-grid,.account-profile-panel,.research-review-panel{min-width:0}
+.panel,.hero-card,.metric-card,.list-row,.detail-row,.notification-row{overflow-wrap:anywhere}
+.table-wrap,.diagnostic-details pre{max-width:100%;overscroll-behavior-inline:contain}
+.table-wrap{overflow-x:auto}
+.workspace-nav button,.account-jump-nav a,button,input,select,textarea{touch-action:manipulation}
+:where(button,a,input,select,textarea,summary):focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+@media(max-width:700px){
+  body.session-active .topbar{
+    position:sticky;top:0;z-index:90;
+    padding-top:max(10px,var(--sr-safe-top));
+    padding-left:max(12px,var(--sr-safe-left));
+    padding-right:max(12px,var(--sr-safe-right))
+  }
+  main{min-width:0}
+  #appShell{
+    width:100%;
+    padding-left:max(16px,var(--sr-safe-left));
+    padding-right:max(16px,var(--sr-safe-right))
+  }
+  .account-jump-nav{scrollbar-width:thin;scroll-padding-inline:16px}
+  .table-wrap:focus-within{outline:2px solid var(--cyan);outline-offset:2px}
+  .panel-heading,.workspace-title,.connect-section-head{gap:10px}
+  .row-actions button,.form-actions button{min-height:44px}
+}
+@media(max-width:390px){
+  .topbar{gap:7px}
+  #appShell{padding-inline:max(12px,var(--sr-safe-left))}
+  .card-grid,.mini-metrics{grid-template-columns:1fr}
+  .metric-card strong{font-size:clamp(20px,6vw,26px);overflow-wrap:anywhere}
+  .tier-badge,.status-pill{max-width:100%;white-space:normal;text-align:center}
+  .row-actions,.form-actions{align-items:stretch}
+  .row-actions>button,.form-actions>button{flex:1 1 auto}
+  .account-jump-nav a{flex:0 0 auto}
+}
+@media(forced-colors:active){
+  .panel,.metric-card,.market-card,.tool-card,.nav-search-wrap,
+  .table-wrap,.auth-card,.warning-panel,.account-jump-nav a{border:1px solid CanvasText}
+  .workspace-nav button.active,.workspace-nav button.active .nav-icon{color:Highlight}
+}
