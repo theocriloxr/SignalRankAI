@@ -32,7 +32,7 @@ test('mobile account reads have retry, loading and actual error states',()=>{
   assert.ok(native.includes('Account information unavailable'));
   assert.ok(native.includes('No delivered signals were returned'));
 });
-test('native bottom navigation retains all nine screens without unscrollable oversized tabs',()=>{
+test('native bottom navigation retains all twelve screens without unscrollable oversized tabs',()=>{
   assert.ok(native.includes('<MobileNavigation active={screen} onSelect={setScreen}/>'));
   for(const route of ['overview','signals','markets','paper','portfolio','performance','journal','support','account','brokers','notifications','watchlists'])
     assert.ok(tabs.includes("screen:'"+route+"'"),route);
