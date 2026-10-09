@@ -4971,11 +4971,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 99,
+      "line_count": 106,
       "path": "docs/DESIGN_COMPLETION_REPORT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e680976a6981ec4aff06b869b2fb8247051364dd36c3dacfff81e3b3e751b003",
-      "size_bytes": 16914
+      "sha256": "53ac22e4d527ab4de698e67c5ca0927a5b5efd377e44f050e0a784a6f8f822f2",
+      "size_bytes": 17942
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -5691,11 +5691,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 12,
+      "line_count": 21,
       "path": "docs/RESPONSIVE_SPEC.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a0c29d8255f2b859b22fe0be5dfe0626152e800259a79470c257e600abbc6bea",
-      "size_bytes": 1118
+      "sha256": "a7191c0cad9a39ca722e66d4a21de8e766378d125a699f06f92f5ca7c84efb8f",
+      "size_bytes": 2326
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9115,11 +9115,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 33,
+      "line_count": 46,
       "path": "mobile/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "98476a1681e47bca760ee4862f03c62cc304a34e79a3a0a18aa6253f69f93292",
-      "size_bytes": 1491
+      "sha256": "5f42739d0095cb18d01e2e37bc5ac643a28a38f773ba04c278ad749fe7c97625",
+      "size_bytes": 3524
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
