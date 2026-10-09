@@ -8491,11 +8491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 12,
+      "line_count": 13,
       "path": "frontend/src/app/layout.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "0431fd51bfd843e78fea5a116a9bd35ac5a0c75ca58ab7ac1596c9d57757cd6a",
-      "size_bytes": 738
+      "sha256": "a9a0c9fd69198f929de0368c412b7510ea981dc076f45e5466fbd7664c141655",
+      "size_bytes": 768
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8531,11 +8531,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 36,
+      "line_count": 85,
       "path": "frontend/src/app/page.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1c08c85ca9e388029ab8e571d349a69077fae866e399da9776be655c90fb280d",
-      "size_bytes": 2949
+      "sha256": "442ee9374a05656c172062eaf614bf3d97152227ca02e562c6518d00e0ecf3d0",
+      "size_bytes": 7249
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
