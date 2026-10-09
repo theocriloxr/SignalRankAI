@@ -8571,11 +8571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 103,
+      "line_count": 105,
       "path": "frontend/src/components/AccountEntry.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "704db7d96b0169191ef1811ce2958ced465931105d9ccb1ce1f50fd2d3a64d01",
-      "size_bytes": 5819
+      "sha256": "635d307745b60b81dd0ecf0027f1540d1b46f18d713b3c7edced9d16354f317e",
+      "size_bytes": 5904
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8651,11 +8651,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 18,
+      "line_count": 20,
       "path": "frontend/src/components/SessionExit.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b81d5ff4dc8e54d27116813ffadd26e6d5822f263f474e7158728728ddb3726e",
-      "size_bytes": 799
+      "sha256": "c2ee28c0cfa5664fe66e5a167f5ee9d3a2b8f09cc8a6e0b0bf7a6808374d1db7",
+      "size_bytes": 884
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
