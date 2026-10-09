@@ -590,3 +590,12 @@ html { scroll-padding-top: 1rem; }
 .sr-ledger-chart .sr-list-actions p {margin:0;max-width:58ch;line-height:1.6;}
 @media(max-width:680px){.sr-ledger-chart-metrics {grid-template-columns:1fr}.sr-ledger-plot{padding:12px 8px}.sr-ledger-plot svg{height:190px}}
 @media(forced-colors:active){.sr-ledger-plot,.sr-ledger-chart-metrics>div{border:1px solid CanvasText}.sr-ledger-line{stroke:CanvasText}.sr-ledger-gridline{stroke:GrayText}}
+
+
+/* Disclosure contents preserve their desktop/tablet responsive layout while
+ * remaining dismissible by keyboard, route change and outside touch. */
+.sr-public-mobile-menu>.sr-responsive-disclosure-content>nav {display:grid;gap:4px}
+.sr-public-mobile-menu>.sr-responsive-disclosure-content>nav a{display:flex;align-items:center;min-height:44px;padding-inline:10px}
+.sr-mobile-drawer>.sr-responsive-disclosure-content{min-width:0}
+.sr-mobile-drawer>.sr-responsive-disclosure-content nav{width:100%}
+@media(forced-colors:active){.sr-public-mobile-menu[open]>.sr-responsive-disclosure-content{border:1px solid CanvasText}}
