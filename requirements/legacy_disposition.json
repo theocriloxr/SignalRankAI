@@ -8451,11 +8451,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 372,
+      "line_count": 384,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "de45d50fc759e313e8235d3e8b1fa16d1bf7978b979ab9b021692d25ed265d31",
-      "size_bytes": 21629
+      "sha256": "0f40a00af0fd657b026b892b24de91da6e1dd7802dee2a5fa484d56625e44eed",
+      "size_bytes": 22218
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
