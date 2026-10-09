@@ -8443,11 +8443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 29,
+      "line_count": 152,
       "path": "frontend/src/app/[slug]/page.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9c475d1797f709526f0261f222ab229f96534bd040d9385c689987725be52a82",
-      "size_bytes": 3189
+      "sha256": "48c52f8d54ea1da75a7defbda3a45f8758700f724715d9942fe86c91ff83907b",
+      "size_bytes": 15138
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
