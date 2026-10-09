@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import client from "../lib/client";
-import { brokerMode, display, finite, moneyLabel, numberLabel, record, rows, statusText, timeLabel, type Row } from "../lib/presentation";
+import { brokerMode, display, moneyLabel, probabilityLabel, numberLabel, record, rows, statusText, timeLabel, type Row } from "../lib/presentation";
 
 type Review={policy:Row|null;reconciliation:Row|null;entries:Row[]|null;error:string;ledgerError:string;loading:boolean};
 const initial:Review={policy:null,reconciliation:null,entries:null,error:"",ledgerError:"",loading:false};
@@ -142,9 +142,9 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
                 <Fact name="Account mode" value={display(policy.account_mode)}/>
                 <Fact name="Execution permission" value={display(policy.execution_permission,"Not authorized")}/>
                 <Fact name="Policy status" value={display(policy.status,"Unavailable")}/>
-                <Fact name="Risk per trade" value={finite(policy.max_risk_per_trade_pct)===null?"Unavailable":`${numberLabel(policy.max_risk_per_trade_pct)}%`}/>
-                <Fact name="Daily loss cap" value={finite(policy.max_daily_loss_pct)===null?"Unavailable":`${numberLabel(policy.max_daily_loss_pct)}%`}/>
-                <Fact name="Maximum drawdown" value={finite(policy.max_total_drawdown_pct)===null?"Unavailable":`${numberLabel(policy.max_total_drawdown_pct)}%`}/>
+                <Fact name="Risk per trade" value={probabilityLabel(policy.max_risk_per_trade_pct)}/>
+                <Fact name="Daily loss cap" value={probabilityLabel(policy.max_daily_loss_pct)}/>
+                <Fact name="Maximum drawdown" value={probabilityLabel(policy.max_total_drawdown_pct)}/>
                 <Fact name="Frozen" value={policy.frozen===true?"Yes — no new execution":policy.frozen===false?"No freeze reported":"Unavailable"}/>
               </dl>}
               {!policy&&!review.error&&<p>Policy data was not provided. Execution approval cannot be assumed.</p>}
