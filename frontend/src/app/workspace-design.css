@@ -573,3 +573,20 @@ html { scroll-padding-top: 1rem; }
 .sr-paper-settings .sr-form-grid {grid-template-columns:1fr}
 }
 @media(forced-colors:active){.sr-paper-confirm,.sr-paper-danger{border:1px solid CanvasText}}
+
+
+/* Canonical historical paper equity, never market-price predictions. */
+.sr-ledger-chart { gap:20px; }
+.sr-ledger-chart-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.sr-ledger-chart-metrics>div {display:grid;align-content:start;gap:8px;min-width:0;border:1px solid var(--line);border-radius:9px;padding:16px;background:var(--panel2);}
+.sr-ledger-chart-metrics span {color:var(--muted);font-size:12px;}
+.sr-ledger-chart-metrics strong {font-size:clamp(18px,1.9vw,25px);letter-spacing:-.025em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.sr-ledger-chart-metrics small {font-size:11px;color:var(--muted);}
+.sr-ledger-plot {min-width:0;max-width:100%;padding:18px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);}
+.sr-ledger-plot svg {width:100%;height:clamp(185px,20vw,280px);display:block;overflow:visible;}
+.sr-ledger-gridline {stroke:var(--line);stroke-width:.75;vector-effect:non-scaling-stroke;stroke-dasharray:4 5;}
+.sr-ledger-line {stroke:var(--accent2);}
+.sr-ledger-chart .sr-list-actions {align-items:start;}
+.sr-ledger-chart .sr-list-actions p {margin:0;max-width:58ch;line-height:1.6;}
+@media(max-width:680px){.sr-ledger-chart-metrics {grid-template-columns:1fr}.sr-ledger-plot{padding:12px 8px}.sr-ledger-plot svg{height:190px}}
+@media(forced-colors:active){.sr-ledger-plot,.sr-ledger-chart-metrics>div{border:1px solid CanvasText}.sr-ledger-line{stroke:CanvasText}.sr-ledger-gridline{stroke:GrayText}}
