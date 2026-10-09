@@ -32,9 +32,9 @@ test('mobile account reads have retry, loading and actual error states',()=>{
   assert.ok(native.includes('Account information unavailable'));
   assert.ok(native.includes('No delivered signals were returned'));
 });
-test('native bottom navigation retains all twelve screens without unscrollable oversized tabs',()=>{
+test('native bottom navigation retains all fourteen screens without unscrollable oversized tabs',()=>{
   assert.ok(native.includes('<MobileNavigation active={screen} onSelect={setScreen}/>'));
-  for(const route of ['overview','signals','markets','paper','portfolio','performance','journal','support','account','brokers','notifications','watchlists'])
+  for(const route of ['overview','signals','markets','paper','portfolio','performance','journal','support','account','brokers','notifications','watchlists','alerts','research'])
     assert.ok(tabs.includes("screen:'"+route+"'"),route);
   assert.ok(tabs.includes('accessibilityState={{selected:active===item.screen}}'));
   assert.ok(tabs.includes('accessibilityState={{expanded:more}}'));
@@ -77,4 +77,16 @@ test('mobile billing displays recorded currency and does not fabricate missing r
   assert.ok(native.includes('currencyLabel(receipt.amount,receipt.currency)'));
   assert.doesNotMatch(native,/Number\(receipt\.amount\|\|0\)/);
   assert.doesNotMatch(native,/Number\(product\.price_ngn\|\|0\)/);
+});
+
+test('native custom alert creation and disabling use server-authorized monitoring contract only',()=>{
+  const pages=readFileSync(join(__dirname,'../src/ResearchAlerts.tsx'),'utf8');
+  assert.ok(pages.includes("useData('/alerts')"));
+  assert.ok(pages.includes("api<any>('/alerts'"));
+  assert.ok(pages.includes("condition:priceKind(kind)?{value:price}:{}"));
+  assert.ok(pages.includes("response.alert_id"));
+  assert.ok(pages.includes("response.disabled===true"));
+  assert.ok(pages.includes("confirmId!==id"));
+  assert.ok(pages.includes("useData('/strategy-leaderboard?days=30')"));
+  assert.doesNotMatch(pages,/\/broker\/order|\/execute|kill.switch|AsyncStorage|localStorage/);
 });
