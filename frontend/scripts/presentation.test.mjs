@@ -248,3 +248,23 @@ test("home page includes truthful market/workflow boundaries without fake live s
   assert.ok(css.includes(".sr-public-home"));
   assert.doesNotMatch(home,/Math.random|fakeSignal|livePrice|localStorage|sessionStorage/);
 });
+
+
+test("paper desk uses account-scoped simulation routes with explicit confirmations and bounded risk",()=>{
+  const src=readFileSync(new URL("../src/components/PaperDesk.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(src.includes('client.GET("/api/v1/platform/paper/detail"'));
+  assert.ok(src.includes('client.PUT("/api/v1/platform/paper/settings"'));
+  assert.ok(src.includes('client.POST("/api/v1/platform/paper/close-all"'));
+  assert.ok(src.includes('client.POST("/api/v1/platform/paper/reset"'));
+  assert.ok(src.includes('client.POST("/api/v1/platform/paper/retry"'));
+  assert.ok(src.includes("CLOSE PAPER POSITIONS"));
+  assert.ok(src.includes("RESET PAPER ACCOUNT"));
+  assert.ok(src.includes("RETRY PAPER SIGNAL"));
+  assert.ok(src.includes("n<0.1||n>10"));
+  assert.ok(src.includes("allow_last_mark_fallback:false"));
+  assert.match(src,/response\.data\.snapshot/);
+  assert.match(src,/response\.data\.accepted===true/);
+  assert.ok(workspace.includes("<PaperDesk onChanged="));
+  assert.doesNotMatch(src,/\/broker\/|live.financial|global.kill|\/operator\/|localStorage|sessionStorage/);
+});
