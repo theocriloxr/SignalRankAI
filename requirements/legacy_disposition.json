@@ -1,5 +1,5 @@
 {
-  "file_count": 2056,
+  "file_count": 2057,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8539,6 +8539,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 113,
+      "path": "frontend/src/app/public-design.css",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "7af83cd6039d936ce2c6755302dd1c786cf6d302ecc534e693fe5c338f97bdfd",
+      "size_bytes": 11592
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 8,
       "path": "frontend/src/app/recover/page.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -16463,7 +16471,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
-    "PRESERVE_BEHAVIOUR": 1225,
+    "PRESERVE_BEHAVIOUR": 1226,
     "TEST_ONLY": 356
   }
 }
