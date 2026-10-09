@@ -17,6 +17,7 @@ import { PaperEquityChart } from "./PaperEquityChart";
 import { BrokerAccounts } from "./BrokerAccounts";
 import { MarketDirectory } from "./MarketDirectory";
 import { AccountSecurity } from "./AccountSecurity";
+import { DemoBrokerConnection } from "./DemoBrokerConnection";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   display, moneyLabel, numberLabel,
@@ -284,7 +285,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="paper"?<div className="sr-view-stack"><PaperView data={state.data}/><PaperDesk onChanged={()=>setEpoch(value=>value+1)}/></div>:
       section==="portfolio"?<PortfolioView data={state.data}/>:
       section==="performance"?<PerformanceView data={state.data}/>:
-      section==="brokers"?<BrokerAccounts data={state.data} onChanged={()=>setEpoch(value=>value+1)}/>: 
+      section==="brokers"?<div className="sr-view-stack"><BrokerAccounts data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><DemoBrokerConnection onChanged={()=>setEpoch(value=>value+1)}/></div>: 
       section==="markets"?<div className="sr-view-stack"><MarketDirectory/><QualityView data={state.data}/></div>: 
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
