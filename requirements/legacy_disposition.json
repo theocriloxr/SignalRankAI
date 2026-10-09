@@ -1,5 +1,5 @@
 {
-  "file_count": 2072,
+  "file_count": 2073,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5656,6 +5656,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "3c36c787fe8ac8a31c8c638248a93b7cecc402b74756fc7dc30e2c79c32e2542",
       "size_bytes": 2014
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 49,
+      "path": "docs/REDESIGN_IMPLEMENTATION_DELTA_20261009.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "720e04eb3fc093b67e558ef3853d754beec2e55004b34783d84e4cc1aefd3655",
+      "size_bytes": 5952
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16590,7 +16598,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 476,
+    "DOCUMENTATION_ONLY": 477,
     "PRESERVE_BEHAVIOUR": 1238,
     "TEST_ONLY": 357
   }
