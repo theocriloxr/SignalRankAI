@@ -145,7 +145,7 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
         {enrollment&&<form className="sr-create-form sr-mfa-enrollment" onSubmit={finishMfa}>
           <p className="sr-risk-note">Enter this setup key manually in your authenticator. Keep it private. It is held only in this open page and is not saved in browser storage.</p>
           <code className="sr-mfa-secret">{enrollment.secret}</code><small>Expires: {timeLabel(enrollment.expires)}</small>
-          <label>Authenticator's current code<input value={code} onChange={e=>setCode(e.target.value)} autoComplete="one-time-code" minLength={6} maxLength={32} required inputMode="numeric"/></label>
+          <label>Authenticator&apos;s current code<input value={code} onChange={e=>setCode(e.target.value)} autoComplete="one-time-code" minLength={6} maxLength={32} required inputMode="numeric"/></label>
           <button className="button" type="submit" disabled={busy}>Enable MFA with this code</button>
           <button className="sr-secondary-action" type="button" disabled={busy} onClick={()=>{setEnrollment(null);setCode("");}}>Cancel enrollment</button>
         </form>}
