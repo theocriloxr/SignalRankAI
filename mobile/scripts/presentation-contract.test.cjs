@@ -34,7 +34,7 @@ test('mobile account reads have retry, loading and actual error states',()=>{
 });
 test('native bottom navigation retains all nine screens without unscrollable oversized tabs',()=>{
   assert.ok(native.includes('<MobileNavigation active={screen} onSelect={setScreen}/>'));
-  for(const route of ['overview','signals','markets','paper','portfolio','performance','journal','support','account'])
+  for(const route of ['overview','signals','markets','paper','portfolio','performance','journal','support','account','brokers','notifications','watchlists'])
     assert.ok(tabs.includes("screen:'"+route+"'"),route);
   assert.ok(tabs.includes('accessibilityState={{selected:active===item.screen}}'));
   assert.ok(tabs.includes('accessibilityState={{expanded:more}}'));
@@ -44,4 +44,15 @@ test('native uses approved emerald-slate identity for primary surfaces',()=>{
   for(const value of ['#08120f','#101e19','#294036','#4ce0a4','#e6eeea'])
     assert.ok(native.includes(value),value);
   assert.ok(tabs.includes('#4ce0a4'));
+});
+
+test('native broker, notification and watchlist views are authenticated and never enable trading',()=>{
+  const pages=readFileSync(join(__dirname,'../src/AccountScreens.tsx'),'utf8');
+  for(const path of ['/broker/connections','/notifications?limit=50','/watchlists','/instruments/search'])
+    assert.ok(pages.includes(path),'missing canonical account route: '+path);
+  assert.ok(pages.includes("result.read===true"));
+  assert.ok(pages.includes("result.added===true"));
+  assert.ok(pages.includes("result.watchlist_id"));
+  assert.match(pages,/encodeURIComponent\(selected\)/);
+  assert.doesNotMatch(pages,/\/execute|\/broker\/order|localStorage|AsyncStorage|kill.switch/);
 });
