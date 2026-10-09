@@ -299,11 +299,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="journal"?<div className="sr-view-stack"><JournalView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="journal" onCreated={()=>setEpoch(value=>value+1)}/></div>:
       section==="settings"?<TradingPreferences data={state.data} onSaved={()=>setEpoch(value=>value+1)}/>:
       section==="support"?<div className="sr-view-stack"><SupportCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="support" onCreated={()=>setEpoch(value=>value+1)}/></div>:
-      <div className="sr-view-stack">
-        <GeneralView section={section} data={state.data}/>
-        {(section==="watchlists"||section==="support"||section==="journal")&&
-          <AccountCreation kind={section} onCreated={()=>setEpoch(value=>value+1)} />}
-      </div>
+      <GeneralView section={section} data={state.data}/>
     )}
   </div>;
 }
