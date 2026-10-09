@@ -130,7 +130,7 @@ export function NativeWatchlists(){
       </Pressable>):<Text style={styles.muted}>No watchlists returned. Create one below.</Text>}
       <TextInput accessibilityLabel="New watchlist name" value={name} onChangeText={setName}
         style={styles.input} placeholder="New watchlist name" placeholderTextColor="#a5b8ad" maxLength={90}/>
-      <Pressable accessibilityRole="button" disabled={busy||name.trim().length<2} onPress={create} style={styles.action}><Text style={styles.actionText}>Create watchlist</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={busy||name.trim().length<2} onPress={create} style={styles.action}><Text style={styles.primaryText}>Create watchlist</Text></Pressable>
     </View>
     {selected?<View style={styles.panel}>
       <Text style={styles.title}>Add a canonical instrument</Text>
@@ -155,6 +155,7 @@ const styles=StyleSheet.create({
   line:{color:'#e6eeea',fontSize:13,lineHeight:20,flexShrink:1},
   action:{backgroundColor:'#4ce0a4',borderRadius:9,paddingVertical:13,paddingHorizontal:16,minHeight:44,justifyContent:'center',alignItems:'center'},
   secondary:{backgroundColor:'#14251d',borderColor:'#294036',borderWidth:1,borderRadius:9,paddingVertical:11,paddingHorizontal:12,minHeight:44,justifyContent:'center',alignItems:'center'},
+  primaryText:{color:'#071c12',fontSize:12,fontWeight:'800'},
   actionText:{color:'#e6eeea',fontSize:12,fontWeight:'800'},
   input:{borderColor:'#294036',borderWidth:1,backgroundColor:'#08120f',color:'#e6eeea',padding:12,minHeight:45,borderRadius:9},
   listItem:{backgroundColor:'#14251d',borderWidth:1,borderColor:'#294036',borderRadius:8,padding:11,gap:7,marginBottom:7},
