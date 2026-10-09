@@ -39,7 +39,7 @@ export function PublicEditorial({ page }: { page: EditorialPage }) {
         <div className="sr-editorial-heading">
           <p className="sr-overline">The underlying system</p>
           <h2 id="sr-editorial-heading">Designed to be examined.</h2>
-          <p>Explore the product's documented capabilities and safety boundaries. Features and readiness remain governed by deployed configuration and account entitlements.</p>
+          <p>Explore the product&apos;s documented capabilities and safety boundaries. Features and readiness remain governed by deployed configuration and account entitlements.</p>
         </div>
         <div className="sr-editorial-sections">{page.details.map(detail=><article className="sr-editorial-section" key={detail.index}>
           <div className="sr-editorial-index"><span>{detail.index}</span><span>{detail.eyebrow}</span></div>
