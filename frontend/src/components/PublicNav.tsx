@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeControl } from "./ThemeControl";
+import { ResponsiveDisclosure } from "./ResponsiveDisclosure";
 
 const links = [
   ["Methodology","/methodology"],
@@ -17,9 +18,9 @@ export function PublicNav() {
     <ThemeControl/>
     <Link className="button secondary" href="/login">Sign in</Link>
     <Link className="button" href="/app">Workspace</Link>
-    <details className="sr-public-mobile-menu"><summary>Explore</summary>
-      <div>{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}
-        <Link href="/login">Sign in</Link><Link href="/app">Workspace</Link></div>
-    </details>
+    <ResponsiveDisclosure className="sr-public-mobile-menu" label="Explore">
+      <nav aria-label="Mobile public navigation">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}
+        <Link href="/login">Sign in</Link><Link href="/app">Workspace</Link></nav>
+    </ResponsiveDisclosure>
   </nav>;
 }
