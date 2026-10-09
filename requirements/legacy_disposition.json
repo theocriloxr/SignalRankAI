@@ -8606,8 +8606,8 @@
       "line_count": 189,
       "path": "frontend/src/components/AccountSecurity.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bce236c463839f5fabb3f9e9a2f4884fe31d1164bd8e5d881bc5c51d0db9e551",
-      "size_bytes": 13419
+      "sha256": "b8c2b5862d3968afd6deb2a3c00b5118b0b8f8374f52bf245a672e20e9b19447",
+      "size_bytes": 13492
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
