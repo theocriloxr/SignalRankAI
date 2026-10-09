@@ -148,7 +148,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
                 <Fact name="Frozen" value={policy.frozen===true?"Yes — no new execution":policy.frozen===false?"No freeze reported":"Unavailable"}/>
               </dl>}
               {!policy&&!review.error&&<p>Policy data was not provided. Execution approval cannot be assumed.</p>}
-              {Object.keys(recon).length>0&&<p className="sr-risk-note">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
+              {Object.keys(recon||{}).length>0&&<p className="sr-risk-note">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
             </section>
             <section className="sr-data-panel"><h2>Broker ledger evidence</h2>
               <p>Only the backend's provider-attributed ledger rows are shown. Missing deposits, fees, funding or swap values are never inferred.</p>
