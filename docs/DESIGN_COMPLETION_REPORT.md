@@ -61,3 +61,39 @@
 - **TESTS ADDED:** `frontend/scripts/presentation.test.mjs` now asserts the backend score/daily limits, support ownership endpoints and success verification, separate alerts vs notifications endpoints, alert threshold wire format, and no broker order calls from these components.
 - **MOBILE SECURITY RELEASE BLOCK REMAINS:** GitHub reviewed advisory [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) (updated 1 October 2026) still marks `node-forge <= 1.4.0` affected and lists no patched version on 8 October. Expo dependencies transitively generate four high npm audit findings. No vulnerable dependency bypass, audit exception, or unaudited crypto fork has been accepted.
 - **NO RELEASE CERTIFICATION:** Exact latest-head frontend and integrated CI, isolated staging databases/queues, live cookie behavior, real demo broker fills, native-device parity, 24–72-hour staging soak and two clean independent audits remain absent. No production deploy or execution configuration change has been made by this design continuation.
+
+
+## Public and native redesign continuation — 9 October 2026
+
+This section distinguishes **committed source work**, **hosted code verification** and **financial release acceptance**. They are not interchangeable.
+
+### Implemented: full public Next.js informational experience
+- Rebuilt `frontend/src/app/page.tsx` with an original emerald/silver editorial layout, CSS-generated abstract systems visualization (explicitly conceptual, never live price data), market coverage, multi-stage qualification model, research/paper/broker boundaries and secure workspace CTA.
+- Replaced the original two-paragraph stubs on **all seven** public reference pages: `pricing`, `methodology`, `risk`, `security`, `status`, `docs`, `providers`. Each now has a structured hero, three substantive sections, bulletproof explicit claims, a relevant next page, and clear non-certification note.
+- Added `PublicEditorial.tsx` and responsive `public-design.css`. Approved brand colors and light/system/dark tokens preserved; original layout does not import Framer assets or template licenses. Coverage at 320px, forced-colors, reduced-motion still requires actual device/browser review.
+- Fixed one hosted JSX lint error and the old unreachable workspace renderer comparisons; removed internal full reloads on web sign-in/sign-out.
+- Added source-level public-route and truthfulness regression tests in the mandatory frontend transport suite.
+
+### Implemented: native UI redesign and safety
+- Added `mobile/src/presentation.ts`: honest money formatting from **recorded currency**, fractional percentages, missing-value preservation, explicit non-zero tone. Removed fabricated USD assumptions and `0` substitutes from dashboard, paper, portfolio, performance, plans and receipts.
+- Rebuilt native overview, delivered signals with entitled detail/evidence, paper, portfolio and historical performance using retryable account reads and read-only trading disclosures.
+- Replaced nine crowded horizontally scrolling tabs with **four primary destinations plus a scrollable More panel**, currently exposing **14 native screens**: overview, signals, markets, paper, portfolio, performance, journal, support, account, brokers, notifications, watchlists, custom alerts and research.
+- Added `AccountScreens.tsx` for broker connection inventory (strictly no trading control), confirmed notification reads, and user-owned watchlists with canonical instrument search/addition.
+- Added `ResearchAlerts.tsx` for entitlement-gated research frequency diagnostics and confirmation-based monitoring alerts. Monitoring rules are **not** broker orders.
+- Updated dark/native brand colors, push notification accent and Android adaptive-icon background. Existing `userInterfaceStyle: automatic` is now matched by system-driven dark/light styles across the native shell, tab bar and added account/alert components. No manual per-account theme override is claimed.
+- Added native source contract tests to the required mobile dependency test suite.
+
+### Hosted evidence to date
+- GitHub Actions run `37890291443` (commit `e78bb964...`) **frontend job PASS**: lint, TS, Next 16.3.8 production build, 28 transport/presentation tests, 3 dependency tests, 5 audit policy tests and zero frontend npm advisories. This does not include **every** later native commit.
+- Mobile run on the corresponding branch passed its then-current native TypeScript and 50 Node source tests but **failed** the unwaived npm audit for Expo/`node-forge`. Exact latest-head mobile tests, Android/iOS artifacts and light-mode screen-reader tests require current run evidence.
+- The full CI release is **red**; design source completion cannot override mobile security or independent backend/governance/research gates. Do not declare "fully completed" based on unit or source tests.
+- Recovery PR #189 advanced independently after the design branch last incorporated it. Compare and reconcile new engine/research commits through a real merge with conflict and governance review; never forge a merge commit without integrating source.
+- Railway production currently serves an older accepted deployment; its newest failed redeploy and source-provenance gates remain. No isolated Railway staging environment, staging cookie/browser proof, broker demo certification, controlled restore, 24–72h soak or two complete audits have been established.
+
+### Remaining work that must not be marked verified
+1. Run exact-head full CI after recovery-branch reconciliation and regenerate source evidence against the immutable candidate. Fix code/type regressions, but **never suppress** high-severity mobile audit or relax risk/kill-switch tests.
+2. Test public and signed-in web routes at responsive widths and zoom with real screenshots, keyboard/a11y and session/CSRF integration. Test Expo native Android+iOS, system light/dark, alerts/watchlists, deep links, push and device logout.
+3. Provision independently isolated staging services, Postgres and Redis. Certify broker accounts and market data during real sessions; prove actual demo fills/partial exits/breakeven and safe multi-broker account selection.
+4. Complete recovery, rollback, restoration, observability, 24–72h soak and two audits. Retain staging and production separation until all approval and evidence gates pass.
+
+**No production merge, Railway configuration change, live-money enablement or order submission occurred as part of this public/native design continuation.**
