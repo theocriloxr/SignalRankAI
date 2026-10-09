@@ -1,5 +1,5 @@
 {
-  "file_count": 2065,
+  "file_count": 2066,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8571,11 +8571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 546,
+      "line_count": 575,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8516522810c77e3f5a654b85185a8c0dd7c347ea9beb49a30ad52e7a4e77cb84",
-      "size_bytes": 24624
+      "sha256": "8c6458ad07054586798b0e208395d0c5277adce5636311836b58f605f566cbb2",
+      "size_bytes": 26675
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8659,6 +8659,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 213,
+      "path": "frontend/src/components/PaperDesk.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "f729618424179082177bbad9a78245832252a9aabf8fd64f8ed71cc50169d0ee",
+      "size_bytes": 16036
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/PasswordRecovery.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8739,11 +8747,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 305,
+      "line_count": 306,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "864dbd21207263909440d9437549df0ded44963f1accc734732423af9d4f19a1",
-      "size_bytes": 24943
+      "sha256": "05b7713a5e5ed3e12c65d8876e22a46d705605dd83b3de340196160690171c37",
+      "size_bytes": 25074
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16535,7 +16543,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1231,
+    "PRESERVE_BEHAVIOUR": 1232,
     "TEST_ONLY": 357
   }
 }
