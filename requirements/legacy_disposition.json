@@ -1,5 +1,5 @@
 {
-  "file_count": 2066,
+  "file_count": 2067,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8667,6 +8667,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 72,
+      "path": "frontend/src/components/PaperEquityChart.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "8b7025aae652c5f6baa725c13349bca7fa6417e7790c00117abf5318f10bb42e",
+      "size_bytes": 5233
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/PasswordRecovery.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8747,11 +8755,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 306,
+      "line_count": 308,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "05b7713a5e5ed3e12c65d8876e22a46d705605dd83b3de340196160690171c37",
-      "size_bytes": 25074
+      "sha256": "4f8d0e55298201d1d5b1e8bce48797357a77b245f82e3b0bb95795d9126a2d68",
+      "size_bytes": 25214
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16543,7 +16551,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1232,
+    "PRESERVE_BEHAVIOUR": 1233,
     "TEST_ONLY": 357
   }
 }
