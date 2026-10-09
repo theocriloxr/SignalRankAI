@@ -1,5 +1,5 @@
 {
-  "file_count": 2057,
+  "file_count": 2061,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -43,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 263,
+      "line_count": 264,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "10f8d04ac135762ff8cce678b153f2ef0732e7a3230beeaa831b3a8120a8d16c",
-      "size_bytes": 9467
+      "sha256": "8252a749358caef848c036e23cd44182e095e3d3d1d7eb709623b71f4a86b9c9",
+      "size_bytes": 9513
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8654,8 +8654,8 @@
       "line_count": 63,
       "path": "frontend/src/components/PublicEditorial.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f55e68e143efdf75a34ac20fdb020744c44cf10f9ddd66e7110907d75d4bcd88",
-      "size_bytes": 2935
+      "sha256": "7ed68b512473cc858f81599b94ce01a3f2b341bdf29528e17ad4572148b44e27",
+      "size_bytes": 2940
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9107,11 +9107,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 106,
+      "line_count": 292,
       "path": "mobile/App.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "2217d155339cf4d6ea36b6ca206d0b46ca23902aeb773c57a73e9f7c80280caf",
-      "size_bytes": 26574
+      "sha256": "e5aac240830f95b022ff711549847078207964140e5449cc297e39756178d4da",
+      "size_bytes": 35746
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9126,7 +9126,7 @@
       "line_count": 29,
       "path": "mobile/app.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "256780c466c5841c6b69d95e46fba266daed90224d89bc86b24dee2048a41e34",
+      "sha256": "35ceb6ecef7c447349268ddf4be182873a66f8811204b88d9d9c8d7e3bd71897",
       "size_bytes": 921
     },
     {
@@ -9203,6 +9203,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 58,
+      "path": "mobile/scripts/presentation-contract.test.cjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "16ff3e4a5ae1801d6f4d1f31c991a446b9fa5e89c836916914dd3dbcea6d69be",
+      "size_bytes": 3398
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 199,
       "path": "mobile/scripts/session-concurrency.test.cjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
@@ -9219,11 +9227,35 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 181,
+      "path": "mobile/src/AccountScreens.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "cef13d81919d060e29aa853a3d8b89fc6c8e27c39f86ae3af6ac53d132b51019",
+      "size_bytes": 11984
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 87,
+      "path": "mobile/src/MobileNavigation.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "31f4f0e82244c0df4c3f289091767f91289c090b7395c2298e79728a366cfa20",
+      "size_bytes": 5016
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 340,
       "path": "mobile/src/api.ts",
       "reason": "configuration, data, or product asset retained",
       "sha256": "b0d47929a8f84fe5b92287ff55ad12618790cf1477409e4f3d3d6201693a6b98",
       "size_bytes": 14469
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 49,
+      "path": "mobile/src/presentation.ts",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "64708f14918c9272447d5ea3dd10ed2f28ebe7c680a1856814e8b6c700108da1",
+      "size_bytes": 1839
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16471,7 +16503,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
-    "PRESERVE_BEHAVIOUR": 1226,
+    "PRESERVE_BEHAVIOUR": 1230,
     "TEST_ONLY": 356
   }
 }
