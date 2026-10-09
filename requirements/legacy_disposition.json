@@ -1,5 +1,5 @@
 {
-  "file_count": 2062,
+  "file_count": 2063,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14779,6 +14779,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 64,
+      "path": "tests/test_platform_app_design_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "2a21ccf3ca5ff155b382f7fb39e43107237efd82dcce2b3976d128a3568a2837",
+      "size_bytes": 2457
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 25,
       "path": "tests/test_portal_asset_generation.py",
       "reason": "automated test evidence",
@@ -16366,7 +16374,7 @@
       "line_count": 751,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "8614f5bf9cced74c672669447c6dc928d78ca289cebd7e01c9321395e260dd95",
+      "sha256": "be28dbafaff9f9f66ac7cad16a8a76b4cbc369950e82f429cf9d1f9358843cfa",
       "size_bytes": 70060
     },
     {
@@ -16382,7 +16390,7 @@
       "line_count": null,
       "path": "web/platform_app/manifest.webmanifest",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "8cf041b2d515220731cc328cdfce13be0f501ba240f673072089de3036f8bc97",
+      "sha256": "94ecade14940c13621e24805224ad68943ea5792e77d56e433fa5aa91c642c72",
       "size_bytes": 461
     },
     {
@@ -16390,16 +16398,16 @@
       "line_count": 36,
       "path": "web/platform_app/service-worker.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b5f2c84e01abc147266b9f737605311ea00d42c735654457aa4690005a7fbb55",
+      "sha256": "9e28fa913f8ab9cd35bde0627b830ffccb0febee87e4a5cf4816bdd5244c5e25",
       "size_bytes": 1715
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1214,
+      "line_count": 1264,
       "path": "web/platform_app/styles.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "7c079098534c9afaa079e2e2c55be1da31d61a292d5e373d88d08e8293e5dda5",
-      "size_bytes": 69408
+      "sha256": "b103c4c71e4f6c9ba5bb24e4de8a497fa7c851675a2a56a00c88e57e9aaab4f8",
+      "size_bytes": 71726
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16512,6 +16520,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 474,
     "PRESERVE_BEHAVIOUR": 1231,
-    "TEST_ONLY": 356
+    "TEST_ONLY": 357
   }
 }
