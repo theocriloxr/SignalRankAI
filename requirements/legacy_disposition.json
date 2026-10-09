@@ -8827,11 +8827,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 21,
+      "line_count": 55,
       "path": "frontend/src/lib/transport.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "d3d512da8dcf9400d1e3e478140b18379b52791f371007f6ce94a5ad60af8f6b",
-      "size_bytes": 1048
+      "sha256": "02dd07914fb233c4bddc627334db92b0f7af35e722fde34e2f1c4f436895af0f",
+      "size_bytes": 2606
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
