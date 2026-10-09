@@ -370,3 +370,15 @@ test("demo broker setup uses provider-hosted credentials and never starts live e
   assert.ok(workspace.includes("<DemoBrokerConnection onChanged="));
   assert.doesNotMatch(source,/password\s*[:=]|api_secret|api_key|localStorage|sessionStorage|\/execution"|\/orders|enable.execution/);
 });
+
+
+test("demo provider configuration link survives initial request until explicit refresh",()=>{
+  const source=readFileSync(new URL("../src/components/DemoBrokerConnection.tsx",import.meta.url),"utf8");
+  const start=source.indexOf('if(id){');
+  const end=source.indexOf('if(url){setLink(url)',start);
+  assert.ok(start>0&&end>start);
+  assert.doesNotMatch(source.slice(start,end),/onChanged\(\)/);
+  assert.ok(source.includes('I finished provider setup — refresh broker accounts'));
+  assert.ok(source.includes('onClick={onChanged}'));
+  assert.ok(source.includes('setLink(url)'));
+});
