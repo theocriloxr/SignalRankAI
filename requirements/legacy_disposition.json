@@ -8443,11 +8443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 315,
+      "line_count": 329,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "8772420376a7538cade010704dbd6c8027b55a109cea919fec7a7c5b809bfcb1",
-      "size_bytes": 17938
+      "sha256": "b91b1e741974f803b1d089086f1c3c6be4bed7570da2a4bbe12f0808fefb3765",
+      "size_bytes": 18837
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8571,11 +8571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 619,
+      "line_count": 639,
       "path": "frontend/src/app/workspace-design.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "83635b1291b699f9cebcc5d6a781fc67bda7fc98f5822e17eadbdbae700461ae",
-      "size_bytes": 30233
+      "sha256": "76f1e5fe3921b88d0f5de0791cc71385746a9331f57ad5b5bda111de45c214e8",
+      "size_bytes": 32112
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
