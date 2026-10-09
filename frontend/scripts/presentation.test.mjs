@@ -268,3 +268,17 @@ test("paper desk uses account-scoped simulation routes with explicit confirmatio
   assert.ok(workspace.includes("<PaperDesk onChanged="));
   assert.doesNotMatch(src,/\/broker\/|live.financial|global.kill|\/operator\/|localStorage|sessionStorage/);
 });
+
+
+test("portfolio chart never synthesizes missing broker balances or a fake equity curve",()=>{
+  const chart=readFileSync(new URL("../src/components/PaperEquityChart.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(chart.includes("finite(row.balance_after)"));
+  assert.ok(chart.includes("Date.parse(row.created_at)"));
+  assert.ok(chart.includes("samples.length<2"));
+  assert.ok(chart.includes("ledger.slice")||chart.includes("series.slice(-250)"));
+  assert.ok(chart.includes('role="img"'));
+  assert.ok(chart.includes("Inspect ledger rows"));
+  assert.ok(workspace.includes("<PaperEquityChart ledger={rows(data.equity_curve)}"));
+  assert.doesNotMatch(chart,/Math\.random|crypto\.random|client\.(POST|PUT|DELETE|PATCH)\(/);
+});
