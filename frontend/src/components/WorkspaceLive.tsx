@@ -13,6 +13,7 @@ import { TradingPreferences } from "./TradingPreferences";
 import { SupportCenter } from "./SupportCenter";
 import { AlertRules } from "./AlertRules";
 import { PaperDesk } from "./PaperDesk";
+import { PaperEquityChart } from "./PaperEquityChart";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -169,6 +170,7 @@ function PortfolioView({ data }: { data: Row }) {
     <p className="sr-risk-note">These values describe the canonical paper-account portfolio returned by the API, not a consolidated balance across brokers.</p>
     <div className="sr-metrics"><Metric label="Paper equity" value={moneyLabel(data.equity,account.currency)}/><Metric label="Exposures" value={numberLabel(exposures.length,0)}/></div>
     <Panel title="Instrument exposure">{exposures.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable position exposure"><table><thead><tr><th>Asset</th><th>Class</th><th>Direction</th><th>Positions</th><th>Notional</th><th>Unrealized P&amp;L</th></tr></thead><tbody>{exposures.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.asset_class)}</td><td>{display(p.direction)}</td><td>{numberLabel(p.positions,0)}</td><td>{moneyLabel(p.notional,account.currency)}</td><td>{moneyLabel(p.unrealized_pnl,account.currency)}</td></tr>)}</tbody></table></div>:<ListEmpty name="exposures"/>}</Panel>
+    <PaperEquityChart ledger={rows(data.equity_curve)} currency={account.currency}/>
   </div>;
 }
 
