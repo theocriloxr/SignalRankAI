@@ -327,3 +327,19 @@ test("market directory searches all entitled asset classes without fabricating l
   assert.ok(workspace.includes("<MarketDirectory/>"));
   assert.doesNotMatch(source,/client\.(POST|PUT|DELETE|PATCH)\(|\/broker\/|\/execute|Math\.random/);
 });
+
+
+test("settings security center keeps identity, devices, MFA and session revocation server-owned",()=>{
+  const source=readFileSync(new URL("../src/components/AccountSecurity.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  for(const route of ["/api/v1/platform/me","/api/v1/platform/devices","/api/v1/platform/security/mfa","/api/v1/platform/security/mfa/setup","/api/v1/platform/security/mfa/enable","/api/v1/platform/profile","/api/v1/platform/auth/logout-all","/api/v1/platform/devices/{session_id}","/api/v1/platform/auth/email-verification/request"]){
+    assert.ok(source.includes(route),route);
+  }
+  assert.ok(source.includes("REVOKE SESSION"));
+  assert.ok(source.includes("SIGN OUT ALL DEVICES"));
+  assert.ok(source.includes('r.data?.revoked===true'));
+  assert.ok(source.includes('r.data?.logged_out===true'));
+  assert.ok(source.includes("setRecoveryCodes(null)"));
+  assert.ok(workspace.includes("<AccountSecurity onChanged="));
+  assert.doesNotMatch(source,/localStorage|sessionStorage|\/broker\/|\/operator\/|auto.execution|kill.switch/);
+});
