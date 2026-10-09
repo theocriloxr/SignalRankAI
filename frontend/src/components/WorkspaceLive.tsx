@@ -14,9 +14,10 @@ import { SupportCenter } from "./SupportCenter";
 import { AlertRules } from "./AlertRules";
 import { PaperDesk } from "./PaperDesk";
 import { PaperEquityChart } from "./PaperEquityChart";
+import { BrokerAccounts } from "./BrokerAccounts";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
-  brokerMode, display, moneyLabel, numberLabel,
+  display, moneyLabel, numberLabel,
   probabilityLabel, record, rows, statusText, timeLabel,
   type Row,
 } from "../lib/presentation";
@@ -182,17 +183,6 @@ function PerformanceView({ data }: { data: Row }) {
   </div>;
 }
 
-function BrokersView({ data }: { data: Row }) {
-  const connections = rows(data.connections);
-  return <div className="sr-view-stack"><p className="sr-risk-note">Connecting a broker does not authorize any order. A verified account, bounded risk policy and operator release gates are required independently.</p>
-    <div className="sr-record-grid">{connections.map((c,i)=><article className="sr-data-panel" key={display(c.id,String(i))}>
-      <p className="sr-overline">{display(c.platform,display(c.provider))}</p><h2>{display(c.account_label, "Broker account")}</h2>
-      <dl><KeyValue label="Environment" value={brokerMode(c)}/><KeyValue label="Provider status" value={display(c.status)}/><KeyValue label="Permission verification" value={c.permissions_verified===true?"Verified":c.permissions_verified===false?"Not verified":"Not reported"}/><KeyValue label="Execution" value={c.execution_enabled===true?"Enabled according to API — confirm release eligibility":"Not confirmed enabled"}/></dl>
-    </article>)}</div>
-    {!connections.length&&<ListEmpty name="broker connections"/>}
-  </div>;
-}
-
 function BillingView({ data }: { data: Row }) {
   const subscriptions=rows(data.subscriptions), receipts=rows(data.receipts);
   return <div className="sr-view-stack">
@@ -292,7 +282,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="paper"?<div className="sr-view-stack"><PaperView data={state.data}/><PaperDesk onChanged={()=>setEpoch(value=>value+1)}/></div>:
       section==="portfolio"?<PortfolioView data={state.data}/>:
       section==="performance"?<PerformanceView data={state.data}/>:
-      section==="brokers"?<BrokersView data={state.data}/>: 
+      section==="brokers"?<BrokerAccounts data={state.data} onChanged={()=>setEpoch(value=>value+1)}/>: 
       section==="markets"?<QualityView data={state.data}/>: 
       section==="billing"?<BillingView data={state.data}/>: 
       section==="operations"?<OperationsView data={state.data}/>:
