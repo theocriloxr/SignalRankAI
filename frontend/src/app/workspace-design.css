@@ -657,3 +657,23 @@ html { scroll-padding-top: 1rem; }
 .sr-mfa-recovery code{font-size:12px}
 @media(max-width:600px){.sr-mfa-recovery ul{grid-template-columns:1fr}.sr-security-center .sr-grid-two{grid-template-columns:1fr}}
 @media(forced-colors:active){.sr-mfa-secret,.sr-mfa-recovery,.sr-security-errors{border:1px solid CanvasText}}
+
+
+/* Demo broker entry: selected provider data only, never unverified credentials. */
+.sr-demo-link {gap:22px}
+.sr-demo-link .sr-risk-note strong {color:var(--text)}
+.sr-demo-link .sr-form-grid :is(input,select) {max-width:100%;min-width:0;min-height:44px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:11px 12px;border-radius:9px}
+.sr-demo-servers {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.sr-demo-broker {display:grid;align-content:start;gap:11px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:18px;background:var(--panel2)}
+.sr-demo-broker h3 {font-size:17px;margin:0;overflow-wrap:anywhere}
+.sr-demo-server-choices {display:flex;flex-wrap:wrap;gap:8px}
+.sr-demo-server-choices button {font-size:12px;white-space:normal;overflow-wrap:anywhere;min-height:44px;text-align:left}
+.sr-demo-server-choices button.active {border-color:var(--accent2);color:var(--accent2);background:var(--panel)}
+.sr-demo-confirm {max-width:740px;border:1px solid var(--line);padding:20px;border-radius:10px}
+.sr-demo-confirm>p {font-size:13px;color:var(--muted);line-height:1.7;margin:0}
+.sr-demo-confirm>p strong{color:var(--text)}
+.sr-demo-link-result {display:grid;justify-items:start;gap:13px;padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.sr-demo-link-result p {margin:0;font-size:13px;line-height:1.6;max-width:75ch}
+.sr-demo-link-result code {overflow-wrap:anywhere;color:var(--text);font-size:13px}
+@media(max-width:680px){.sr-demo-servers{grid-template-columns:1fr}.sr-demo-confirm{padding:14px}}
+@media(forced-colors:active){.sr-demo-broker,.sr-demo-confirm,.sr-demo-link-result{border:1px solid CanvasText}}
