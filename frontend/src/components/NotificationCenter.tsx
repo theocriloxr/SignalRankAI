@@ -49,6 +49,6 @@ export function NotificationCenter({data,onChanged}:{data:Row;onChanged:()=>void
       <button className="sr-secondary-action" type="button" onClick={()=>setUnreadOnly(v=>!v)} aria-pressed={unreadOnly}>{unreadOnly?"Show recent notifications":"Show unread in this view"}</button>
     </div>
     {visible.length?<div className="sr-record-grid">{visible.map((item,i)=><NotificationRecord key={display(item.notification_id,String(i))} item={item} refresh={onChanged}/>)}</div>
-     : <div className="sr-empty"><strong>No {unreadOnly?"unread":"recent"} notifications returned.</strong><p>This display is based on the backend's latest returned records, not a global audit of notification delivery.</p></div>}
+     : <div className="sr-empty"><strong>No {unreadOnly?"unread":"recent"} notifications returned.</strong><p>This display is based on the backend&apos;s latest returned records, not a global audit of notification delivery.</p></div>}
   </section>;
 }
