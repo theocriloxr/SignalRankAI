@@ -544,3 +544,32 @@ html { scroll-padding-top: 1rem; }
 .sr-confirm-action{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:13px}
 .sr-confirm-action>p{width:100%;margin:0;color:var(--text);font-size:13px}
 .sr-confirm-action button:disabled{opacity:.6;cursor:wait}
+
+
+/* Paper desk: bounded virtual-account controls, never brokerage actions. */
+.sr-section-head {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+.sr-section-head h2 {margin-top:8px}
+.sr-paper-settings,.sr-paper-danger {gap:19px}
+.sr-paper-settings form {max-width:1050px}
+.sr-paper-settings .sr-form-grid label {display:grid;gap:8px;font-size:13px}
+.sr-paper-settings .sr-form-grid :is(input,select) {background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px;min-height:44px;min-width:0;width:100%;padding:11px}
+.sr-paper-action-row {display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sr-paper-action-row button {min-height:44px}
+.sr-paper-danger {border-color:color-mix(in srgb,var(--line) 60%,var(--text) 40%)}
+.sr-paper-confirm {max-width:680px;border:1px solid var(--line);border-radius:10px;padding:clamp(14px,2vw,24px);background:var(--panel2)}
+.sr-paper-confirm h3 {margin:0;font-size:18px}
+.sr-paper-confirm label {display:grid;gap:8px;font-size:13px}
+.sr-paper-confirm input {max-width:100%;width:100%;min-height:44px;padding:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:9px}
+.sr-paper-confirm .sr-risk-note {margin:0}
+.sr-history-list {display:grid;gap:1px;margin-top:14px;max-height:540px;overflow-y:auto;overscroll-behavior:contain}
+.sr-history-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:start;border-bottom:1px solid var(--line);padding-block:12px;font-size:13px;overflow-wrap:anywhere}
+.sr-history-row>span {color:var(--accent2);text-align:right;font-size:11px}
+.sr-history-row>small {color:var(--muted);grid-column:1/-1;font-size:11px}
+.sr-history-row:last-child {border:0}
+@media(max-width:640px) {
+.sr-history-list{max-height:none}
+.sr-paper-action-row {align-items:stretch}
+.sr-paper-action-row>button {flex:1 1 200px}
+.sr-paper-settings .sr-form-grid {grid-template-columns:1fr}
+}
+@media(forced-colors:active){.sr-paper-confirm,.sr-paper-danger{border:1px solid CanvasText}}
