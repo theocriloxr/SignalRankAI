@@ -8643,11 +8643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 127,
+      "line_count": 129,
       "path": "frontend/src/components/DemoBrokerConnection.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "13bcdd2cc16a4821c56f453898df6d58ddb72a8c0ae61b7d28ebad307e11829e",
-      "size_bytes": 8305
+      "sha256": "50534679c8a2901ff82ecdab36cba9703161aa1090126a417db2c858666061f5",
+      "size_bytes": 8578
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
