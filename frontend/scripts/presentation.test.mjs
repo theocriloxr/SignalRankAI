@@ -343,3 +343,14 @@ test("settings security center keeps identity, devices, MFA and session revocati
   assert.ok(workspace.includes("<AccountSecurity onChanged="));
   assert.doesNotMatch(source,/localStorage|sessionStorage|\/broker\/|\/operator\/|auto.execution|kill.switch/);
 });
+
+
+test("broker percentage risk fields are decimal fractions, never raw percent values",()=>{
+  assert.equal(probabilityLabel("0.005"),"0.5%");
+  assert.equal(probabilityLabel("0.02"),"2.0%");
+  assert.equal(probabilityLabel("0.06"),"6.0%");
+  const broker=readFileSync(new URL("../src/components/BrokerAccounts.tsx",import.meta.url),"utf8");
+  for(const field of ["max_risk_per_trade_pct","max_daily_loss_pct","max_total_drawdown_pct"]){
+    assert.ok(broker.includes(`probabilityLabel(policy.${field})`),field);
+  }
+});
