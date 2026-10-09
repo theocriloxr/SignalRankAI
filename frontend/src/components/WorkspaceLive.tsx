@@ -12,6 +12,7 @@ import { JournalView } from "./JournalView";
 import { TradingPreferences } from "./TradingPreferences";
 import { SupportCenter } from "./SupportCenter";
 import { AlertRules } from "./AlertRules";
+import { PaperDesk } from "./PaperDesk";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import {
   brokerMode, display, moneyLabel, numberLabel,
@@ -286,7 +287,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
     {state.kind==="ready"&&state.data&&(
       section==="overview"?<OverviewView data={state.data}/>:
       section==="signals"?<SignalView data={state.data} detail={Boolean(signalId)} offset={signalOffset} onPage={signalId?undefined:setSignalOffset}/>:
-      section==="paper"?<PaperView data={state.data}/>:
+      section==="paper"?<div className="sr-view-stack"><PaperView data={state.data}/><PaperDesk onChanged={()=>setEpoch(value=>value+1)}/></div>:
       section==="portfolio"?<PortfolioView data={state.data}/>:
       section==="performance"?<PerformanceView data={state.data}/>:
       section==="brokers"?<BrokersView data={state.data}/>: 
