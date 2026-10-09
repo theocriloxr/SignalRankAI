@@ -313,3 +313,17 @@ test("broker account inspection remains separate by canonical connection and nev
   assert.ok(workspace.includes("<BrokerAccounts data={state.data}"));
   assert.doesNotMatch(source,/\/execution"|\/trade"|\/place.order|\/broker\/exchange|\/broker\/metatrader\//);
 });
+
+
+test("market directory searches all entitled asset classes without fabricating live market data",()=>{
+  const source=readFileSync(new URL("../src/components/MarketDirectory.tsx",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../src/components/WorkspaceLive.tsx",import.meta.url),"utf8");
+  assert.ok(source.includes('client.GET("/api/v1/platform/instruments/search"'));
+  assert.ok(source.includes("instrument.provider_count"));
+  assert.ok(source.includes("instrument.discovery_status"));
+  assert.ok(source.includes("instrument.tradable===true"));
+  assert.ok(source.includes("global universe count not provided"));
+  for(const kind of ["crypto","fx","stock","index","commodity"]) assert.ok(source.includes(kind));
+  assert.ok(workspace.includes("<MarketDirectory/>"));
+  assert.doesNotMatch(source,/client\.(POST|PUT|DELETE|PATCH)\(|\/broker\/|\/execute|Math\.random/);
+});
