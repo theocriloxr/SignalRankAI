@@ -1,5 +1,5 @@
 {
-  "file_count": 2069,
+  "file_count": 2070,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8643,6 +8643,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 86,
+      "path": "frontend/src/components/MarketDirectory.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "01dcec3e153e12940d8dfabc56e6cad8973482ca9d7fd4e222743dcb75690078",
+      "size_bytes": 6158
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "frontend/src/components/NotificationCenter.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -8771,11 +8779,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 298,
+      "line_count": 299,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "73e36868ac3c033555d65c5ad47d77a0bae2cfdabb5bd7de39fcfffee2989853",
-      "size_bytes": 24196
+      "sha256": "89dc61af7fb56fc0b88d3d001c8b7b30e5bd674456a895152c75ae6225ba3d42",
+      "size_bytes": 24304
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16567,7 +16575,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
-    "PRESERVE_BEHAVIOUR": 1235,
+    "PRESERVE_BEHAVIOUR": 1236,
     "TEST_ONLY": 357
   }
 }
