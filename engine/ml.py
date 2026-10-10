@@ -602,6 +602,7 @@ def score_shadow_signal(
 
 
 _CANDIDATE_FORWARD_SEEN: dict[str, float] = {}
+_CANDIDATE_FORWARD_LOCK = threading.Lock()
 
 
 def _candidate_forward_observation_key(
@@ -636,6 +637,11 @@ def _persist_candidate_forward_observation(
     """Queue one outcome-trackable challenger observation without affecting serving."""
     if not candidate.get("available"):
         return
+    if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        candidate["observation_status"] = "disabled_by_configuration"
+        return
     artifact_hash = str(candidate.get("artifact_hash_sha256") or "").strip()
     if not artifact_hash:
         logger.warning("[ml-shadow] candidate forward observation skipped: artifact hash missing")
@@ -659,15 +665,20 @@ def _persist_candidate_forward_observation(
             or 21600
         ),
     )
-    last_seen = float(_CANDIDATE_FORWARD_SEEN.get(observation_key) or 0.0)
-    if last_seen and now_mono - last_seen < dedup_ttl:
-        return
-    _CANDIDATE_FORWARD_SEEN[observation_key] = now_mono
-    if len(_CANDIDATE_FORWARD_SEEN) > 4096:
-        cutoff = now_mono - dedup_ttl
-        for key, stamp in list(_CANDIDATE_FORWARD_SEEN.items()):
-            if float(stamp or 0.0) < cutoff:
-                _CANDIDATE_FORWARD_SEEN.pop(key, None)
+    with _CANDIDATE_FORWARD_LOCK:
+        last_seen = float(_CANDIDATE_FORWARD_SEEN.get(observation_key) or 0.0)
+        if last_seen and now_mono - last_seen < dedup_ttl:
+            candidate["observation_status"] = "duplicate_in_process"
+            return
+        _CANDIDATE_FORWARD_SEEN[observation_key] = now_mono
+        # A busy market can fill the cap before any entry expires.
+        while len(_CANDIDATE_FORWARD_SEEN) > 4096:
+            _CANDIDATE_FORWARD_SEEN.pop(next(iter(_CANDIDATE_FORWARD_SEEN)))
+
+    def release_claim():
+        with _CANDIDATE_FORWARD_LOCK:
+            if _CANDIDATE_FORWARD_SEEN.get(observation_key) == now_mono:
+                _CANDIDATE_FORWARD_SEEN.pop(observation_key, None)
 
     try:
         from engine.signal_deduplicator import get_ml_rejection_tracker
@@ -727,17 +738,22 @@ def _persist_candidate_forward_observation(
                 persist_coro.close()
             except Exception:
                 pass
-            _CANDIDATE_FORWARD_SEEN.pop(observation_key, None)
+            release_claim()
             raise
 
         def _release_dedup_on_failure(done_future):
             try:
-                done_future.result()
+                queued = done_future.result()
+                if queued is not True:
+                    release_claim()
             except BaseException:
-                _CANDIDATE_FORWARD_SEEN.pop(observation_key, None)
+                release_claim()
 
         future.add_done_callback(_release_dedup_on_failure)
+        candidate["observation_status"] = "submitted_not_yet_durable"
     except Exception as exc:
+        release_claim()
+        candidate["observation_status"] = "submission_failed"
         logger.warning(
             "[ml-shadow] candidate forward observation persist failed error=%s",
             type(exc).__name__,

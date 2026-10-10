@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import asyncio
 
 import pytest
 
@@ -37,17 +38,17 @@ def test_candidate_outcome_normalization_excludes_ambiguous_results():
 def test_candidate_forward_decision_stats_use_realized_r():
     rows = [
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": True},
             "win",
         ),
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": True},
             "loss",
         ),
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": False},
             "win",
         ),
@@ -83,6 +84,98 @@ def test_candidate_observation_key_is_stable_and_artifact_scoped():
     )
     assert first == again
     assert first != other
+
+
+def test_no_loss_forward_cohort_has_undefined_profit_factor():
+    rows = [(SimpleNamespace(entry=100, stop_loss=95, take_profit="110", direction="long"), {"candidate_passed": True}, "win")]
+    assert _decision_stats(rows, "candidate_passed")["profit_factor"] is None
+
+
+@pytest.mark.parametrize("direction,stop,target", [("long", 105, 110), ("short", 95, 90), ("",95,110), ("long",95,"nan"), ("long",95,"inf")])
+def test_invalid_barrier_geometry_cannot_improve_forward_statistics(direction, stop, target):
+    row = SimpleNamespace(entry=100, stop_loss=stop, take_profit=target, direction=direction)
+    result = _decision_stats([(row, {"candidate_passed": True}, "win")], "candidate_passed")
+    assert result["resolved"] == 0 and result["invalid_geometry"] == 1
+    assert result["profit_factor"] is None
+
+
+@pytest.mark.asyncio
+async def test_disabled_recording_does_not_suppress_observation_after_enable(monkeypatch):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {}
+    calls = []
+    async def persist(**kwargs):
+        calls.append(kwargs)
+        return True
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", lambda coro, **kwargs: asyncio.create_task(coro))
+    signal = {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]}
+    candidate = {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8}
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "0")
+    module._persist_candidate_forward_observation(signal, candidate)
+    assert candidate["observation_status"] == "disabled_by_configuration"
+    assert seen == {} and calls == []
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    module._persist_candidate_forward_observation(signal, candidate)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert len(calls) == 1 and len(seen) == 1
+    assert candidate["observation_status"] == "submitted_not_yet_durable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["not_queued", "write_error", "submit_error"])
+async def test_unaccepted_observation_can_retry_immediately(monkeypatch, failure):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {}
+    calls = []
+    async def persist(**kwargs):
+        calls.append(kwargs)
+        if failure == "write_error":
+            raise RuntimeError("temporary write error")
+        return False
+    def submit(coro, **kwargs):
+        if failure == "submit_error":
+            raise RuntimeError("loop unavailable")
+        return asyncio.create_task(coro)
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", submit)
+    signal = {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]}
+    candidate = {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8}
+    for _ in range(2):
+        module._persist_candidate_forward_observation(signal, candidate)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert seen == {}
+    assert len(calls) == (0 if failure == "submit_error" else 2)
+
+
+@pytest.mark.asyncio
+async def test_observation_dedup_cache_stays_bounded_before_ttl_expiry(monkeypatch):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {str(i): module.time.monotonic() for i in range(4096)}
+    async def persist(**kwargs):
+        return True
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", lambda coro, **kwargs: asyncio.create_task(coro))
+    module._persist_candidate_forward_observation(
+        {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]},
+        {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8},
+    )
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert len(seen) == 4096 and "0" not in seen
 
 
 def test_shadow_rejected_effective_weight_is_bounded_by_proof(monkeypatch):

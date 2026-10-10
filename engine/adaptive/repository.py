@@ -3,15 +3,24 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.redis_state import state
 from db.session import get_session
-from .lifecycle import approval_lease, lock_profile_lifecycle
+from .lifecycle import approval_lease, lock_profile_lifecycle, health_interval_seconds
 
 logger = logging.getLogger(__name__)
+
+
+def _health_receipt_fresh(checked: Any) -> bool:
+    if not isinstance(checked, datetime):
+        return False
+    instant = checked.astimezone(timezone.utc).replace(tzinfo=None) if checked.tzinfo else checked
+    age = (datetime.now(timezone.utc).replace(tzinfo=None) - instant).total_seconds()
+    return -5 <= age <= 2 * health_interval_seconds() + 30
 
 
 async def persist_signal_adaptive_evidence(session: AsyncSession, signal: Any, payload: Mapping[str, Any]) -> None:
@@ -64,6 +73,8 @@ async def persist_signal_adaptive_evidence(session: AsyncSession, signal: Any, p
 
 
 async def publish_approved_profiles() -> int:
+    from .health_baselines import baseline_valid
+    published = 0
     async with get_session(
         priority="background",
         label="adaptive.publish_profiles",
@@ -74,7 +85,13 @@ async def publish_approved_profiles() -> int:
             (
                 await session.execute(
                     text(
-                        """SELECT profile_id,asset,asset_class,version,state,source_scope,preferred_families,penalised_families,disabled_families,preferred_timeframes,preferred_sessions,avoided_sessions,regime_weights,family_weights,minimum_confidence,minimum_reward_risk,maximum_score_multiplier,minimum_score_multiplier,data_sufficiency_score,sample_size,metadata FROM adaptive_asset_profiles WHERE state IN ('APPROVED','LIMITED_LIVE','CANARY') AND is_current=TRUE"""
+                        """SELECT p.*,to_jsonb(b) AS approved_health_baseline,h.report AS health_report,h.created_at AS health_checked_at
+                        FROM adaptive_asset_profiles p
+                        LEFT JOIN strategy_health_baselines b ON b.profile_id=p.profile_id
+                        LEFT JOIN LATERAL (SELECT report,created_at FROM strategy_health_events e
+                            WHERE e.profile_id=p.profile_id AND e.baseline_id=b.baseline_id
+                            ORDER BY event_id DESC LIMIT 1) h ON TRUE
+                        WHERE p.state IN ('APPROVED','LIMITED_LIVE','CANARY') AND p.is_current=TRUE"""
                     )
                 )
             )
@@ -82,7 +99,15 @@ async def publish_approved_profiles() -> int:
             .all()
         )
         for row in rows:
+            baseline = row.get("approved_health_baseline")
+            health_report = row.get("health_report") or {}
+            if not baseline_valid(baseline, dict(row)) or not _health_receipt_fresh(row.get("health_checked_at")) or health_report.get("reasons") or health_report.get("approved_baseline_comparison") not in {"WITHIN_LIMITS", "INSUFFICIENT"}:
+                invalidate_profile_cache(str(row["asset"]), state_name="BASELINE_UNVERIFIED")
+                continue
             payload = dict(row)
+            payload.pop("approved_health_baseline", None)
+            payload.pop("health_report", None)
+            payload.pop("health_checked_at", None)
             for key in (
                 "preferred_families", "penalised_families", "disabled_families",
                 "preferred_timeframes", "preferred_sessions", "avoided_sessions",
@@ -92,8 +117,9 @@ async def publish_approved_profiles() -> int:
             lease_seconds = int(payload["health_lease"]["expires_at"] - payload["health_lease"]["issued_at"])
             state.set_sync(f"adaptive:profile:approved:{str(payload['asset']).upper()}",
                            json.dumps(payload, default=str), ex=lease_seconds)
+            published += 1
         await session.commit()
-    return len(rows)
+    return published
 
 
 def invalidate_profile_cache(asset: str, *, state_name: str = "SUSPENDED") -> None:

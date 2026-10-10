@@ -746,7 +746,20 @@ class MLRejectionTracker:
                 label="rejection_batch_write",
                 timeout_seconds=float(os.getenv("REJECTION_DB_TIMEOUT_SECONDS", "0.5") or 0.5),
             ) as session:
-                session.add_all(logs)
+                # 0046 changes this relation from a table to a computed view.
+                # Write its physical owner, including during a rolling upgrade;
+                # recording only DecisionLog on 0045 strands outcome readers.
+                relation_kind = "r"
+                if session.get_bind().dialect.name == "postgresql":
+                    relation_kind = (await session.execute(text(
+                        "SELECT relkind FROM pg_class WHERE oid=to_regclass('public.ml_rejected_signals')"
+                    ))).scalar_one_or_none()
+                if relation_kind in {"v", b"v"}:
+                    session.add_all(logs)
+                elif relation_kind in {"r", b"r", "p", b"p"}:
+                    session.add_all([MLRejectedSignal(**payload) for payload in batch])
+                else:
+                    raise RuntimeError("rejection_evidence_storage_unavailable")
                 await session.commit()
             logger.info("Rejection batch stored: count=%s pending=%s", len(batch), self.pending_rejection_count())
             return len(batch)
@@ -793,15 +806,15 @@ class MLRejectionTracker:
         features: Dict[str, Any],
         rejection_type: Optional[str] = None,
         signal_id: Optional[str] = None,
-    ) -> None:
-        """Queue rejection evidence and opportunistically flush it in batches."""
+    ) -> bool:
+        """Return whether evidence was queued, never a claim of durable commit."""
         if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
             "1",
             "true",
             "yes",
             "on",
         }:
-            return
+            return False
 
         tp_value = self._parse_tp_value(take_profit_levels)
         if tp_value <= 0:
@@ -835,6 +848,7 @@ class MLRejectionTracker:
             await self.flush_pending_rejections(force=True)
         else:
             self._schedule_rejection_flush(flush_seconds)
+        return True
 
     async def _load_runtime_int(self, key: str, default: int = 0) -> int:
         try:

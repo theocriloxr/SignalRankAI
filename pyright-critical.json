@@ -4,6 +4,8 @@
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "include": [
+    "engine/adaptive/availability.py",
+    "engine/adaptive/health_baselines.py",
     "core/env.py",
     "core/production_integrity.py",
     "core/outcome_accounting.py",
@@ -59,6 +61,7 @@
     "scripts/controlled_migrate.py",
     "scripts/assert_database_schema.py",
     "scripts/approve_production_release.py",
+    "scripts/production_backup_receipt.py",
     "scripts/verify_release_chain.py",
     "scripts/staging_backup_restore_drill.py",
     "scripts/demo_account_preflight.py",
@@ -67,6 +70,10 @@
     "scripts/certify_market_classes.py",
     "scripts/certify_providers.py",
     "scripts/semgrep_gate.py",
-    "scripts/install_opengrep.py"
+    "scripts/install_opengrep.py",
+    "data/connectors/fred_adapter.py",
+    "engine/adaptive/dataset_snapshot.py",
+    "db/research_snapshot_schema.py",
+    "ml/candidate_forward.py"
   ]
 }

@@ -575,7 +575,19 @@ tbody tr:last-child td{border-bottom:0}
 
 /* Canonical cross-channel control room */
 .operator-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
-.operator-diagnostics{display:grid;gap:12px}
+.operator-diagnostics{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:12px}
+.adaptive-health-table td:first-child{max-width:220px;white-space:normal;overflow-wrap:anywhere}
+.adaptive-health-table td:nth-child(4),.adaptive-health-table td:last-child{max-width:220px;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:760px){
+  .adaptive-health-table-wrap{overflow:visible}
+  .adaptive-health-table,.adaptive-health-table tbody{display:block;width:100%;min-width:0}
+  .adaptive-health-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .adaptive-health-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border-bottom:1px solid var(--line)}
+  .adaptive-health-table tr:last-child{border-bottom:0}
+  .adaptive-health-table td{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:none!important;white-space:normal;overflow-wrap:anywhere;border-bottom:0}
+  .adaptive-health-table td:first-child,.adaptive-health-table td:nth-child(4),.adaptive-health-table td:last-child{grid-column:1/-1}
+  .adaptive-health-table td:before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:700}
+}
 .diagnostic-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px}
 .diagnostic-card{
   min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-soft);

@@ -186,6 +186,25 @@ def health_metrics(rows):
                                    brier_limit=0.35, expectancy_floor=-0.10)
 
 
+@pytest.mark.parametrize("count,status,reason", [(0, "UNAVAILABLE", "no_eligible_delivery_outcomes"),
+    (1, "INSUFFICIENT", "minimum_delivery_sample_not_met"), (29, "INSUFFICIENT", "minimum_delivery_sample_not_met"),
+    (30, "OBSERVED", None), (250, "OBSERVED", None)])
+def test_delivery_health_coverage_preserves_missing_and_insufficient_evidence(count, status, reason):
+    report = health_metrics(health_rows(count))
+    assert report["sample_size"] == count
+    assert report["delivery_evidence_status"] == status and report["coverage_reason"] == reason
+    assert report["reasons"] == [], "missing outcomes are not fabricated degradation observations"
+    assert report["approved_baseline_comparison"] == "UNVERIFIED"
+    if count < 30:
+        assert report["expectancy_r"] is None and report["max_drawdown_r"] is None
+    json.dumps(report, allow_nan=False)
+
+
+def test_health_window_cannot_exceed_the_bounded_database_window():
+    with pytest.raises(ValueError, match="delivery_health_window_must_be_0_to_250"):
+        health_metrics(health_rows(251))
+
+
 def test_heuristic_confidence_is_not_scored_as_a_calibrated_probability():
     report = health_metrics(health_rows(35))
     assert report["reasons"] == [] and report["brier_score"] is None
@@ -221,6 +240,7 @@ def test_calibration_versions_require_their_own_minimum_sample():
 def test_invalid_claimed_calibration_suspends_below_the_sample_minimum(probability):
     report = health_metrics(health_rows(2, probability=probability))
     assert report["reasons"] == ["invalid_calibrated_health_observations"]
+    assert report["delivery_evidence_status"] == "INVALID"
     json.dumps(report, allow_nan=False)
 
 
@@ -228,4 +248,5 @@ def test_overflowing_delivery_metrics_are_quarantined_without_nonfinite_json():
     report = health_metrics(health_rows(35, outcome=1e308))
     assert report["reasons"] == ["invalid_delivery_health_observations"]
     assert report["expectancy_r"] is None and report["max_drawdown_r"] is None
+    assert report["delivery_evidence_status"] == "INVALID"
     json.dumps(report, allow_nan=False)

@@ -115,6 +115,13 @@ class OperatorAdaptiveRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorHealthBaselineRequest(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=128)
+    profile_version: int = Field(strict=True, ge=1)
+    conditions: dict[str, Any]
+    confirm: bool = Field(default=False, strict=True)
+
+
 class OperatorMarketScanRequest(BaseModel):
     confirm: bool = False
     hours: int = Field(default=4, ge=1, le=24)
@@ -1619,6 +1626,36 @@ async def operator_research(asset: str | None = None, user: dict[str, Any] = Dep
     from engine.adaptive.research_ledger import research_snapshot
     async with get_session(label="platform.operator.research", timeout_seconds=6.0) as session:
         return await research_snapshot(session, asset=str(asset).strip().upper() if asset else None)
+
+
+@router.get("/operator/health-baseline")
+async def operator_health_baseline(profile_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if _platform_operator_authority(user) not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    if not 1 <= len(profile_id) <= 128:
+        raise HTTPException(status_code=422, detail="Invalid profile identity")
+    from engine.adaptive.health_baselines import health_baseline_snapshot
+    async with get_session(label="platform.operator.health_baseline", timeout_seconds=6) as session:
+        return await health_baseline_snapshot(session, profile_id)
+
+
+@router.post("/operator/health-baseline")
+async def operator_approve_health_baseline(payload: OperatorHealthBaselineRequest,
+        user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if _platform_operator_authority(user) != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    try:
+        conditions = HealthConditions(**payload.conditions)
+        async with get_session(label="platform.operator.health_baseline.approve", timeout_seconds=6) as session:
+            result = await approve_health_baseline(session, profile_id=payload.profile_id,
+                profile_version=payload.profile_version, approved_by=user["id"], conditions=conditions)
+            await session.commit()
+            return result
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/operator/business")

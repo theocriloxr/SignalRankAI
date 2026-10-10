@@ -46,6 +46,7 @@ async def research_database():
                 from alembic.operations import Operations
                 with Operations.context(MigrationContext.configure(sync_connection)):
                     import_module("db.migrations.versions.0049_research_trial_ledger").upgrade()
+                    import_module("db.migrations.versions.0052_research_dataset_snapshots").upgrade()
             await connection.run_sync(migrate)
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
@@ -85,6 +86,8 @@ async def test_retry_and_strategy_renaming_preserve_lineage_counts(research_data
         assert not counts["pre_ledger_trial_history_verified"]
         snapshot = await research_snapshot(session, asset="BTCUSDT")
         assert len(snapshot["experiments"]) == 2
+        assert all(row["dataset_snapshot"]["status"] == "UNAVAILABLE" for row in snapshot["experiments"])
+        assert all(row["dataset_snapshot"]["complete_market_input_replay"] is False for row in snapshot["experiments"])
         assert await research_snapshot(session, asset="AAPL") == {
             "experiments": [], "families": snapshot["families"],
             "historical_coverage": "since_ledger_introduction", "automatic_live_promotion": False}

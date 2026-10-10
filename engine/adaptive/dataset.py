@@ -4,8 +4,13 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
+from collections.abc import Sized
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
+
+from .availability import canonical_sequence_provenance
+
+MAX_DATASET_ROWS = 100_000
 
 
 _ALLOWED_EVIDENCE_CATEGORIES = {
@@ -40,6 +45,7 @@ class AdaptiveDatasetRow:
     data_quality_score: float = 0.0
     profile_id: str | None = None
     outcome_known_at: datetime | None = None
+    sequence_provenance: tuple[str, ...] = ()
 
     def canonical(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -87,10 +93,19 @@ def normalise_evidence_category(value: Any, *, delivered: bool = False, executed
 
 
 def build_dataset(
-    rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v2"
+    rows: Iterable[Mapping[str, Any]], *, dataset_namespace: str = "adaptive-v2",
+    as_of: datetime | None = None,
 ) -> tuple[tuple[AdaptiveDatasetRow, ...], DatasetManifest]:
+    if as_of is not None:
+        if not isinstance(as_of, datetime) or as_of.tzinfo is None:
+            raise ValueError("dataset_as_of_must_be_aware")
+        as_of = as_of.astimezone(timezone.utc)
     parsed: list[AdaptiveDatasetRow] = []
-    for row in rows:
+    if isinstance(rows, Sized) and len(rows) > MAX_DATASET_ROWS:
+        raise ValueError("adaptive_dataset_row_budget_exceeded")
+    for ordinal, row in enumerate(rows):
+        if ordinal >= MAX_DATASET_ROWS:
+            raise ValueError("adaptive_dataset_row_budget_exceeded")
         dt = row.get("decision_time") or row.get("created_at")
         if not isinstance(dt, datetime):
             continue
@@ -102,6 +117,8 @@ def build_dataset(
             known_at = known_at.replace(tzinfo=timezone.utc) if known_at.tzinfo is None else known_at.astimezone(timezone.utc)
         else:
             known_at = None
+        if as_of is not None and (dt > as_of or known_at is None or known_at > as_of):
+            continue  # Future or unavailable labels cannot enter this snapshot.
         if row.get("r_multiple") is None:
             continue  # An unresolved outcome is not a break-even trade.
         result_r = float(row["r_multiple"])
@@ -131,6 +148,7 @@ def build_dataset(
                 data_quality_score=max(0.0, min(1.0, quality)),
                 profile_id=str(row.get("profile_id")) if row.get("profile_id") else None,
                 outcome_known_at=known_at,
+                sequence_provenance=canonical_sequence_provenance(row.get("sequence_provenance")),
             )
         )
     parsed.sort(key=lambda item: (item.decision_time, item.signal_id))

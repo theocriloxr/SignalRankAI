@@ -401,7 +401,7 @@ def test_canonical_migration_head_is_active_guard_reconcile():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["0050_profile_health_index"]
+    assert script.get_heads() == ["0052_research_dataset_snapshots"]
 
 
 def test_engine_metadata_reads_wait_boundedly_under_db_contention():

@@ -9,7 +9,7 @@ import os
 from dataclasses import asdict
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from utils.timeutils import now_utc_naive
 
 from .components import DEFAULT_COMPONENTS
 from .dataset import AdaptiveDatasetRow, build_dataset
+from .dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
 from .statistics import profit_factor as _profit_factor
 from .repository import publish_approved_profiles
 from .walk_forward import walk_forward_evaluate
@@ -131,21 +132,25 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             await session.execute(
                 text(
                     """
-                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,h.*
+                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,
+                       to_jsonb(p) AS profile_identity,to_jsonb(b) AS approved_health_baseline,h.*
                 FROM adaptive_asset_profiles p
-                JOIN LATERAL (
+                LEFT JOIN strategy_health_baselines b ON b.profile_id=p.profile_id
+                LEFT JOIN LATERAL (
                     SELECT o.r_multiple,o.closed_at,s.created_at,s.signal_id,
                            s.ml_probability_calibrated,s.ml_calibration_version,
                            s.ml_calibration_validated,s.ml_calibration_validation_rows,
                            s.ml_calibration_brier,s.ml_calibration_ece
                     FROM signals s JOIN outcomes o ON o.signal_id=s.signal_id
                     WHERE o.r_multiple IS NOT NULL
+                      AND UPPER(s.asset)=UPPER(p.asset) AND s.asset_class=p.asset_class
                       AND o.performance_inclusion_status='eligible'
                       AND o.closed_at IS NOT NULL AND o.closed_at <= NOW()
                       AND s.created_at <= o.closed_at
                       AND s.created_at >= NOW() - INTERVAL '120 days'
                       AND EXISTS (SELECT 1 FROM adaptive_signal_evidence ev
-                                  WHERE ev.profile_id=p.profile_id AND ev.signal_id=s.signal_id)
+                                  WHERE ev.profile_id=p.profile_id AND ev.profile_version=p.version
+                                    AND UPPER(ev.asset)=UPPER(p.asset) AND ev.signal_id=s.signal_id)
                       AND EXISTS (SELECT 1 FROM signal_deliveries sd
                                   WHERE sd.signal_id=s.signal_id AND sd.sent_ok=TRUE
                                     AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')
@@ -164,22 +169,37 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     profile_meta: dict[str, dict[str, Any]] = {}
     for row in rows:
         profile_id = str(row["profile_id"])
-        if len(grouped[profile_id]) < 250:
-            grouped[profile_id].append(dict(row))
+        evidence = grouped[profile_id]
+        # A LEFT JOIN placeholder is a profile with no eligible outcomes, not
+        # an invalid observed return. Keep it in coverage without inventing R.
+        if row["signal_id"] is not None and len(evidence) < 250:
+            evidence.append(dict(row))
         profile_meta[profile_id] = dict(row)
 
     suspended: list[str] = []
     restored: list[str] = []
     diagnostics: list[dict[str, Any]] = []
+    coverage = {status: 0 for status in ("UNAVAILABLE", "INSUFFICIENT", "OBSERVED", "INVALID")}
+    from .health_baselines import compare_health_baseline, record_health_event
+    baseline_coverage: dict[str, int] = defaultdict(int)
     for profile_id, evidence_rows in grouped.items():
         metrics = _runtime_health_metrics(evidence_rows, minimum_live=minimum_live,
             drawdown_limit=drawdown_limit, brier_limit=brier_limit, expectancy_floor=expectancy_floor)
+        coverage[metrics["delivery_evidence_status"]] += 1
+        meta = profile_meta[profile_id]
+        comparison = compare_health_baseline(meta.get("approved_health_baseline"), meta.get("profile_identity") or {}, evidence_rows)
+        metrics.update(comparison)
+        baseline_coverage[comparison["approved_baseline_comparison"]] += 1
+        if comparison["approved_baseline_comparison"] in {"BREACHED", "INVALID"}:
+            metrics["reasons"].extend(comparison["baseline_reasons"])
+        await record_health_event(session, profile_id=profile_id, report=metrics)
         if len(diagnostics) < 20:
-            diagnostics.append({"profile_id": profile_id, **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
+            diagnostics.append({"profile_id": profile_id, "asset": str(meta["asset"]),
+                "profile_state": str(meta["state"]),
+                **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
         reasons = metrics["reasons"]
         if not reasons:
             continue
-        meta = profile_meta[profile_id]
         asset = str(meta["asset"])
         await session.execute(
             text(
@@ -213,6 +233,8 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
         suspended.append(asset)
     return {"suspended_assets": suspended, "restored_profiles": restored,
             "evaluated_profile_count": len(grouped), "profile_diagnostics": diagnostics,
+            "delivery_evidence_counts": coverage,
+            "baseline_comparison_counts": dict(baseline_coverage),
             "diagnostics_truncated": len(grouped) > len(diagnostics)}
 
 
@@ -221,14 +243,19 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
     """Delivery outcome diagnostics; component confidence is never a probability."""
     result: dict[str, Any] = {"reasons": [], "sample_size": len(rows), "expectancy_r": None,
         "max_drawdown_r": None, "brier_score": None, "calibrated_sample_size": 0,
+        "delivery_evidence_status": "UNAVAILABLE" if not rows else "INSUFFICIENT",
+        "coverage_reason": "no_eligible_delivery_outcomes" if not rows else "minimum_delivery_sample_not_met",
         "calibration_status": "UNAVAILABLE", "calibration_versions": {},
         "qualified_calibration_version_count": 0, "brier_aggregation": "worst_qualified_version",
         "broker_fills_certified": False, "approved_baseline_comparison": "UNVERIFIED"}
-    if not 1 <= len(rows) <= 250:
-        raise ValueError("delivery_health_window_must_be_1_to_250")
+    if len(rows) > 250:
+        raise ValueError("delivery_health_window_must_be_0_to_250")
+    if not rows:
+        return result
     if any(isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float))
            or not math.isfinite(row["r_multiple"]) for row in rows):
         result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
         return result
     versions: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for row in rows:
@@ -236,6 +263,7 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
             continue
         if not calibration_evidence_valid(row):
             result["reasons"].append("invalid_calibrated_health_observations")
+            result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_calibrated_health_observations")
             return result
         versions[row["ml_calibration_version"]].append((int(row["r_multiple"] > 0), float(row["ml_probability_calibrated"])))
     result["calibrated_sample_size"] = sum(len(observations) for observations in versions.values())
@@ -257,8 +285,10 @@ def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
             raise ValueError("delivery_metric_overflow")
     except (OverflowError, ValueError):
         result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
         return result
-    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown)
+    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown,
+                  delivery_evidence_status="OBSERVED", coverage_reason=None)
     if expectancy < expectancy_floor:
         result["reasons"].append("live_expectancy_below_floor")
     if drawdown > drawdown_limit:
@@ -335,7 +365,8 @@ class AdaptiveLearningWorker:
 
         minimum_samples = max(20, int(os.getenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "40") or 40))
         lookback_days = max(30, int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "365") or 365))
-        cutoff = now_utc_naive() - timedelta(days=lookback_days)
+        snapshot_at = now_utc_naive()
+        cutoff = snapshot_at - timedelta(days=lookback_days)
         feature_version, feature_hash, component_versions = _feature_version()
         run_id = str(uuid4())
 
@@ -386,6 +417,15 @@ class AdaptiveLearningWorker:
                                 WHERE seq.signal_id = s.signal_id
                             ), ARRAY[]::VARCHAR[]) AS sequence_hashes,
                             COALESCE((
+                                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                                    'asset', seq.asset, 'timeframe', seq.timeframe,
+                                    'sequence_hash', seq.sequence_hash, 'candle_count', seq.candle_count,
+                                    'start_time_ms', seq.start_time_ms, 'end_time_ms', seq.end_time_ms,
+                                    'provider', seq.provider, 'evidence_stage', seq.evidence_stage,
+                                    'summary', seq.summary) ORDER BY seq.timeframe, seq.sequence_hash)
+                                FROM adaptive_signal_sequences seq WHERE seq.signal_id = s.signal_id
+                            ), '[]'::JSONB) AS sequence_provenance,
+                            COALESCE((
                                 SELECT MAX(
                                     CASE
                                         WHEN (ev.data_quality->>'score') ~ '^[0-9]+(\\.[0-9]+)?$'
@@ -406,20 +446,24 @@ class AdaptiveLearningWorker:
                         FROM signals s
                         JOIN outcomes o ON o.signal_id = s.signal_id
                         WHERE s.created_at >= :cutoff
+                          AND s.created_at <= :snapshot_at
                           AND o.r_multiple IS NOT NULL
                           AND o.closed_at IS NOT NULL
+                          AND GREATEST(o.closed_at,o.corrected_at) <= :snapshot_at
                           AND o.performance_inclusion_status='eligible'
                         ORDER BY s.created_at, s.signal_id
+                        LIMIT 100001
                         """
                         ),
-                        {"cutoff": cutoff},
+                        {"cutoff": cutoff, "snapshot_at": snapshot_at},
                     )
                 )
                 .mappings()
                 .all()
             )
 
-            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows])
+            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows],
+                as_of=snapshot_at.replace(tzinfo=timezone.utc))
             await session.execute(
                 text(
                     """
@@ -444,6 +488,10 @@ class AdaptiveLearningWorker:
                     "manifest": json.dumps(manifest.to_dict()),
                 },
             )
+            await persist_dataset_snapshot(session, dataset_rows, manifest,
+                observation_cutoff=snapshot_at.replace(tzinfo=timezone.utc))
+            # Research consumes the saved rows, never a later reread of outcomes.
+            dataset_rows, manifest = await load_dataset_snapshot(session, manifest.dataset_version)
             await session.execute(
                 text(
                     """

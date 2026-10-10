@@ -22,8 +22,7 @@ The operator diagnostics expose the last check as COMPLETED, ERROR, STALE or
 UNAVAILABLE. COMPLETED reports a successful monitor iteration, not certified
 edge. The current evidence is confirmed signal-delivery outcomes, not broker
 fills or account equity. Invalid/nonfinite observations suspend a profile even
-below the ordinary sample minimum. Validated per-profile health baselines,
-instrument execution evidence and funded-account constraints remain unfinished.
+below the ordinary sample minimum. Owner-approved delivery baselines and forward comparisons are implemented as described below. Instrument/broker execution baselines and funded-account constraints remain unfinished.
 
 The `RiskManager` spot-unit adviser now forwards account drawdown state into
 sizing, preserves zero risk and soft throttles, and rejects malformed inputs or
@@ -65,9 +64,49 @@ Correlation assumptions still require consolidation and qualification.
 These advice limits remain unqualified for
 broker contracts, commissions, spread/slippage, margin and funded-account rules.
 
+The primary engine and optional controller correlation gates now use ordered
+timestamped closes and compare percentage returns only over identical start/end
+intervals. Missing or invalid history, undefined correlation, invalid thresholds
+and existing-symbol exposure block admission when the check applies. Admission
+reads require a complete shared trade snapshot; Redis failures or corrupt
+records cannot be interpreted as an empty portfolio. The separate heuristic
+group filters and signal-delivery exposure counts remain advisory evidence,
+not calibrated account-level portfolio validation.
+
+Legacy WFO replay uses `wfo_conservative_fills_v4`. Requested spot units reuse
+the bounded adviser, including its 10% per-trade quote-notional limit. Entry
+sizing includes adverse entry and stop-exit slippage and fees on both notionals.
+Reports expose the configured `risk_budget`, `modeled_stop_risk` and observed
+`risk_budget_breached`; calendar-fold summaries retain the breach count. Market
+gaps keep their actual losses instead of being clipped to the modeled budget.
+Nonfinite policy inputs, impossible cost fractions and arithmetic overflow reject
+the research run. This does not model shared capital across concurrent positions,
+qualify venue costs or establish portfolio risk survival. Those limitations
+remain explicit on each replay record.
+
+OHLC replay uses only bars whose opening timestamp plus their declared fixed
+duration is at or before the validation cutoff. An unclosed bar cannot supply
+its future high, low, close or total volume, so it receives no optimistic fill.
+Timestamped ticks/orderbooks remain available at their own observation times.
+Records expose the last observation availability and excluded unclosed candles;
+fold exclusion totals count replay observations per signal, not unique candles.
+Training labels also respect whole-bar availability within their stated horizon.
+Unknown, nonpositive, monthly or overflowing durations reject rather than default
+to one minute. These fixed-duration bounds do not verify venue sessions, DST,
+historical provider revisions or publication delays; calendar qualification
+remains explicit and unfinished.
+
 Health reads at most 250 distinct resolved signals per profile in PostgreSQL,
 ordered by outcome close time. Multiple component-evidence rows do not multiply
 an observation; future closes and closes preceding the decision are excluded.
+The read retains every current CANARY/LIMITED_LIVE/APPROVED profile, including
+profiles with no eligible outcomes. Coverage is explicitly UNAVAILABLE,
+INSUFFICIENT, OBSERVED or INVALID. Missing and undersized samples retain null
+delivery metrics; they are neither invented losses nor certified health. Coverage
+counts include all queried profiles, even when the diagnostic display is limited
+to 20 rows. Invalid observations still trigger suspension beyond that display
+limit. The operator diagnostics show coverage, sample sizes, null metrics and
+stale-monitor warnings, with signal-delivery and approved-baseline limits visible.
 Component confidence is not a probability and is no longer used for Brier loss.
 The monitor reuses the canonical calibration-evidence validator and the existing
 Brier implementation, with the training target `r_multiple > 0`. Missing or
@@ -218,7 +257,7 @@ immutable candidate. This gate does not replace native-device or broker testing.
    PostgreSQL tests. Hosted CI creates disposable owned databases and migrates
    each from an empty schema; the suite's database is not destroyed.
 2. Preserve a tested backup and apply the normal controlled migration path to
-   `0050_profile_health_index`. Verify all three research tables and six enabled
+   `0051_strategy_health_baselines`. Verify both health tables and their four enabled immutability guards, as well as all three research tables and six enabled
    append-only/truncate guards on their expected relations and function. Both the
    startup gate and runtime readiness fail if any guard is disabled or misplaced.
    Verify the valid, ready, nonunique B-tree index
@@ -272,10 +311,129 @@ as `since_ledger_introduction`, with prior history unverified.
 
 ## Remaining research directive gaps
 
-The Google Doc review is blocked by inaccessible content. Complete the
+The owner supplied the research source on 2026-10-10; its independent review and complete concept mapping are in `docs/research-source-review-20261010.md`. Complete the
 instrument-specific execution/capacity stress matrix, supported/disabled regime
 policies, point-in-time universe/revision evidence, ML search integration at all
-call sites, approved health baselines/decay analysis, portfolio interaction
+call sites, broker/paper and portfolio health baselines beyond the implemented delivery-R scope, portfolio interaction
 validation, full operator UI, telemetry/alert retention, feature/pivot/repainting
 tests and per-asset statistical qualification. No result in this candidate
 certifies profitable trading or enables real-money execution.
+
+
+## Approved delivery health baselines (0051)
+
+`strategy_health_baselines` stores one immutable approval per profile identity,
+with profile/configuration fingerprint, version, authenticated owner identity,
+approval timestamp, condition version, hashed evidence and derived metrics.
+Only SHADOW/PAPER/FORWARD_TEST profiles can receive an approval. Approval requires
+at least 100 distinct eligible, confirmed-delivery outcomes (bounded to 250,
+within 120 days), positive expectancy and observed losses. These are evidence
+preconditions, not statistically sufficient proof of an edge. New limits require
+a new profile/version and the existing lifecycle gates; suspended profiles cannot
+be silently restored or their baseline reset. No baseline is auto-approved.
+
+Owner/admin reads use `GET /api/v1/platform/operator/health-baseline?profile_id=...`.
+Owner approval uses `POST /api/v1/platform/operator/health-baseline` with
+`profile_id`, `profile_version`, `confirm=true` and all seven `conditions` fields:
+
+- `minimum_live_samples` (integer 20–250);
+- `maximum_expectancy_decay_r` (finite, nonnegative R);
+- `maximum_drawdown_r` (finite, positive R);
+- `maximum_drawdown_duration_observations` (integer 1–250);
+- `maximum_profit_factor_decay_fraction` (finite 0–1);
+- `maximum_brier_increase` (finite 0–1);
+- `calibration_required` (strict boolean).
+
+The request cannot supply metrics, approver identity or approval time. Derivation
+uses canonical stored outcomes and validated calibration evidence. When
+calibration is required, every observed calibration version must independently
+meet the approved forward minimum; missing probabilities or an under-sampled
+version cannot be hidden by a good version. Decay compares each calibrator with its matching approved version; a qualified new version cannot borrow another version's baseline, and a worse version cannot hide behind the maximum of two aggregate scores. The limits must be justified for
+the particular profile; none is presented as a universal trading threshold.
+
+Forward comparisons only include decisions created at/after approval, with
+chronological closed outcomes. Baseline-era decisions that close later are
+excluded. Metrics are delivery expectancy/PF/drawdown in R and drawdown duration
+in observations. Time-return Sharpe/Sortino/Calmar, MAE/MFE, fill rate, costs,
+latency, regime mix and calendar trade frequency remain unavailable. Missing
+metrics are never zero-filled or broker-certified. The latest 250 outcomes do
+not certify a lifetime account drawdown or concurrent portfolio exposure.
+
+`strategy_health_events` records immutable comparisons and reasons. Identical
+retries within a cadence slot are idempotent; each later cadence slot can record
+a fresh surveillance receipt. Required baseline/evidence failures prevent cache
+approvals; expiry also bounds stale receipts. Insufficient forward samples
+remain explicit and may collect CANARY evidence under the existing promotion
+policy; they are not certified as healthy. Breaches/invalid evidence suspend the
+adaptive profile, invalidate its cache and require revalidation. This does not
+claim to halt a broker account or authorize real execution. The Telegram
+promotion path obtains kill-condition approval from this stored, verified
+baseline rather than trusting a boolean in research JSON.
+
+The operator table shows per-profile comparison status, forward count and reason
+codes. The full approval/recovery user interface and broader health/kill
+orchestration remain separate gaps. Startup and runtime admission reject missing
+health tables or disabled/misbound immutability guards even at the Alembic head.
+No new environment variable is introduced.
+
+## Macro vintage request boundary
+
+`data.connectors.fred_adapter.fetch_series(..., as_of="YYYY-MM-DD")` pins both
+`realtime_start` and `realtime_end` and caps `observation_end` at that date.
+`FRED_VINTAGE_DATA_ENABLED=1` or `vintage=True` requires the explicit date; missing,
+invalid or future dates return unavailable data without calling the provider.
+`vintage=False` cannot bypass an enabled environment guard. Responses whose
+declared vintage differs, whose observation/vintage periods exceed the cutoff,
+or whose required historical dates are missing are rejected without retrying
+against latest revisions. Existing latest-context calls remain labeled
+`latest_revisions`; they are not qualified historical inputs.
+
+The adapter records process capture time separately and marks intraday
+availability unverified. FRED real-time periods have day precision. An economic
+period date is not its publication timestamp, and a requested date vintage is
+not an independently observed intraday release history. Feature replay must
+still establish actual availability, calendar and provider provenance; callers
+must deliberately supply their historical cutoff. This change does not wire
+macro features into every strategy or certify historical universe membership.
+
+Contract references checked on October 10, 2026: [FRED observations parameters](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+and [FRED real-time periods](https://fred.stlouisfed.org/docs/api/fred/realtime_period.html).
+`tests/test_fred_point_in_time.py` exercises pinned revisions, invalid/missing
+cutoffs, ignored request bounds, future/expired/missing vintages, unavailable
+responses and the public sync entry point using a mocked transport. These are
+adapter-contract checks, not actual-provider qualification.
+
+
+## Canonical outcome dataset snapshots (0052)
+
+The adaptive learning worker persists the complete canonical outcome rows it
+actually uses in `research_dataset_snapshots`, then loads those stored rows for
+research. Snapshot format 1 contains the existing dataset manifest and all rows,
+including label-availability timestamps and captured sequence metadata. It is
+bounded to 100,000 rows and 32 MiB of canonical JSON; excess input rejects rather
+than silently truncating. The database separately caps JSONB text at 64 MiB.
+The migration adds one table, without backfilling or rewriting earlier evidence.
+
+`load_dataset_snapshot(session, dataset_version)` validates the stored hash,
+manifest, row count, cutoff, canonical representation and source-version
+identity. It never reconstructs missing legacy snapshots from today's outcomes.
+Concurrent identical retries preserve the first stored observation cutoff.
+Corrections produce a successor content identity; old experiments retain their
+original labels. UPDATE, DELETE and TRUNCATE are rejected by database triggers.
+Startup and runtime readiness verify both guards, their events and enabled state.
+Operator research diagnostics report CAPTURED or UNAVAILABLE, with the exact
+scope and `complete_market_input_replay=false`.
+
+This is a reproducible **outcome-weighting dataset**, not a complete historical
+market-data replay. Full candles, feature definitions and publication/revision
+vintages, historical universe membership, corporate actions, calendars and
+actual broker fills remain separate required evidence. Replaying an old input
+with a newer engine also requires its recorded code/feature version to be
+qualified. No snapshot grants execution permission or changes a health approval.
+
+Apply the additive 0052 migration only to the isolated candidate database until
+release acceptance passes. Existing production schema 0045 remains untouched.
+The repository preflight defaults and example profiles now expect 0052; changing
+these tracked defaults does not migrate or reconfigure a remote service.
+Evidence-preserving forward repair or an approved restore is required for
+rollback; a destructive schema downgrade is deliberately unavailable.

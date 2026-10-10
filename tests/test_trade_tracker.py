@@ -21,7 +21,30 @@ def _utcnow_naive_iso() -> str:
 
 class TestTradeTracker(unittest.TestCase):
     def setUp(self):
-        """Clear open trades before each test."""
+        """Isolate both caches and persistence, including fresh-process retries."""
+        persisted = {}
+
+        def save_trade(trade_id, payload):
+            persisted[trade_id] = dict(payload)
+            return True
+
+        def remove_trade(trade_id):
+            persisted.pop(trade_id, None)
+            return True
+
+        for target, callback in (
+            ("state.get_active_trades_sync", lambda **kwargs: dict(persisted)),
+            ("state.set_active_trade_sync", save_trade),
+            ("state.remove_active_trade_sync", remove_trade),
+        ):
+            patcher = patch(f"core.trade_tracker.{target}", side_effect=callback)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        loaded = patch("core.trade_tracker._ACTIVE_TRADES_LOADED", False)
+        loaded.start()
+        self.addCleanup(loaded.stop)
+        self.addCleanup(open_trades_list.clear)
+        self.addCleanup(_PRICE_FAILURE_STATE.clear)
         open_trades_list.clear()
         _PRICE_FAILURE_STATE.clear()
 
@@ -216,6 +239,7 @@ class TestTradeTracker(unittest.TestCase):
         mock_price.return_value = 3100.0
         self.assertTrue(price_hit_sl(trade))
 
+    @patch.dict(os.environ, {"REDIS_URL": "redis://isolated-tracker-fixture"})
     @patch('core.trade_tracker._get_current_price')
     def test_update_trade_outcomes_tp(self, mock_price):
         """Test updating trade outcomes when TP is hit."""
@@ -238,6 +262,7 @@ class TestTradeTracker(unittest.TestCase):
         self.assertEqual(closed[0].outcome, "TP")
         self.assertEqual(len(open_trades_list), 0)
 
+    @patch.dict(os.environ, {"REDIS_URL": "redis://isolated-tracker-fixture"})
     @patch('core.trade_tracker._get_current_price')
     def test_update_trade_outcomes_sl(self, mock_price):
         """Test updating trade outcomes when SL is hit."""
@@ -260,6 +285,7 @@ class TestTradeTracker(unittest.TestCase):
         self.assertEqual(closed[0].outcome, "SL")
         self.assertEqual(len(open_trades_list), 0)
 
+    @patch.dict(os.environ, {"REDIS_URL": "redis://isolated-tracker-fixture"})
     @patch('core.trade_tracker._get_current_price')
     def test_update_trade_outcomes_partial_tp(self, mock_price):
         """Test partial TP outcome."""
@@ -283,6 +309,7 @@ class TestTradeTracker(unittest.TestCase):
         self.assertEqual(closed[0].outcome, "PARTIAL_TP")
         self.assertEqual(len(closed[0].targets_hit), 1)
 
+    @patch.dict(os.environ, {"REDIS_URL": "redis://isolated-tracker-fixture"})
     @patch('core.trade_tracker._get_current_price')
     def test_update_trade_outcomes_no_hit(self, mock_price):
         """Test no trades closed when price hasn't hit TP or SL."""

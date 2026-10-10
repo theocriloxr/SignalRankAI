@@ -14,24 +14,31 @@
     "fix-deps": "npx expo install --fix"
   },
   "dependencies": {
-    "expo": "~57.0.0",
-    "expo-constants": "~57.0.6",
+    "expo": "57.0.27",
+    "expo-constants": "~57.0.21",
     "expo-device": "~57.0.1",
-    "expo-linking": "~57.0.11",
-    "expo-notifications": "~57.0.8",
+    "expo-linking": "~57.0.12",
+    "expo-notifications": "~57.0.22",
     "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.0",
-    "react-native-safe-area-context": "~5.6.0"
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0"
   },
   "devDependencies": {
+    "@signalrank/metro-watch-glob": "file:vendor/metro-watch-glob",
     "@types/react": "~19.2.0",
-    "typescript": "~5.9.0"
+    "typescript": "~6.0.3"
   },
   "overrides": {
+    "micromatch": "$@signalrank/metro-watch-glob",
     "xcode": {
       "uuid": "11.1.1"
     }
-  }
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0",
+    "npm": ">=11.10.0"
+  },
+  "packageManager": "npm@11.17.0"
 }
