@@ -6974,8 +6974,8 @@
       "line_count": 439,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "b6b04b45ce384f884765984c5aa6723641742f7cf3929bb540161062297d2654",
-      "size_bytes": 28626
+      "sha256": "0e50d0ce0fbde8ef26abf3b19e6836c29ca93ca4eee95fa6ff8108671704750c",
+      "size_bytes": 28601
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13155,11 +13155,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 994,
+      "line_count": 1001,
       "path": "tests/test_adaptive_worker_research_postgres.py",
       "reason": "automated test evidence",
-      "sha256": "75e4c9bef774e1d50a8d386fb38337d97bfe031f590d35d0c7d60a2e3bb8f960",
-      "size_bytes": 62451
+      "sha256": "f5e5e3980dc3e01336a05cb516345aba17ddbece968dcfe30127827af20d6369",
+      "size_bytes": 62943
     },
     {
       "disposition": "TEST_ONLY",

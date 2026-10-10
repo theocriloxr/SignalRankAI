@@ -289,6 +289,7 @@ async def test_saved_dataset_survives_actual_source_corrections_and_missing_lega
     from engine.adaptive import learning, repository
     from engine.adaptive.dataset_snapshot import load_dataset_snapshot
     from engine.adaptive.walk_forward import walk_forward_evaluate
+    from utils.timeutils import now_utc_naive
     sessions = use_database(monkeypatch, worker_database)
     cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
     monkeypatch.setattr(learning, "state", cache)
@@ -303,7 +304,8 @@ async def test_saved_dataset_survives_actual_source_corrections_and_missing_lega
         observed = (await research_snapshot(session, asset="AUDITREPLAY"))["experiments"][0]["dataset_snapshot"]
         assert observed["status"] == "CAPTURED" and observed["content_hash"] == before_manifest.content_hash
         assert observed["row_count"] == 160 and observed["complete_market_input_replay"] is False
-        await session.execute(text("UPDATE outcomes SET r_multiple=-999,corrected_at=NOW()"))
+        await session.execute(text("UPDATE outcomes SET r_multiple=-999,corrected_at=:known_at"),
+            {"known_at": now_utc_naive()})
         await session.execute(text("UPDATE signals SET strategy_group='corrected'"))
         await session.commit()
     # A new process/session must reconstruct the old experiment from stored rows.
@@ -319,6 +321,11 @@ async def test_saved_dataset_survives_actual_source_corrections_and_missing_lega
     await learning.AdaptiveLearningWorker().run_once()
     async with sessions() as session:
         assert (await session.execute(text("SELECT COUNT(*) FROM research_dataset_snapshots"))).scalar_one() == 2
+        successor_version = (await session.execute(text(
+            "SELECT dataset_version FROM research_dataset_snapshots WHERE dataset_version<>:old"),
+            {"old": version})).scalar_one()
+        successor, _ = await load_dataset_snapshot(session, successor_version)
+        assert len(successor) == 160 and all(row.r_multiple == -999 and row.family == "corrected" for row in successor)
         replay, _ = await load_dataset_snapshot(session, version)
         assert replay == before, "a successor dataset cannot replace old evidence"
 

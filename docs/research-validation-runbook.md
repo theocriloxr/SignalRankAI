@@ -3,7 +3,7 @@
 ## Runtime integration
 
 The analytics role and legacy worker own an independent profile-health loop
-(`ADAPTIVE_HEALTH_INTERVAL_SECONDS`, default 60, allowed 15â€“300 seconds).
+(`ADAPTIVE_HEALTH_INTERVAL_SECONDS`, default 60, allowed 15–300 seconds).
 Pausing or disabling research does not pause health surveillance.
 `AdaptiveLearningWorker` also checks health before starting research. Analytics
 supervises its recurring tasks and exits if a task unexpectedly stops; startup
@@ -336,12 +336,12 @@ Owner/admin reads use `GET /api/v1/platform/operator/health-baseline?profile_id=
 Owner approval uses `POST /api/v1/platform/operator/health-baseline` with
 `profile_id`, `profile_version`, `confirm=true` and all seven `conditions` fields:
 
-- `minimum_live_samples` (integer 20â€“250);
+- `minimum_live_samples` (integer 20–250);
 - `maximum_expectancy_decay_r` (finite, nonnegative R);
 - `maximum_drawdown_r` (finite, positive R);
-- `maximum_drawdown_duration_observations` (integer 1â€“250);
-- `maximum_profit_factor_decay_fraction` (finite 0â€“1);
-- `maximum_brier_increase` (finite 0â€“1);
+- `maximum_drawdown_duration_observations` (integer 1–250);
+- `maximum_profit_factor_decay_fraction` (finite 0–1);
+- `maximum_brier_increase` (finite 0–1);
 - `calibration_required` (strict boolean).
 
 The request cannot supply metrics, approver identity or approval time. Derivation
