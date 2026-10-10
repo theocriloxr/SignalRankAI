@@ -20,6 +20,14 @@ missing field cannot conceal a known violation. Ambiguous timestamp aliases do
 not acquire an invented bar-open convention. Snapshot rows and provenance have
 hard budgets; oversized inputs reject rather than silently truncating evidence.
 
+The existing FRED adapter accepted a vintage argument without sending historical
+real-time bounds. It now pins both inclusive realtime bounds to an explicit
+as_of date, caps the observation end and rejects unavailable/mismatched vintages.
+The environment vintage guard cannot be bypassed with vintage=False. Latest
+context remains explicitly latest-revised; captured observation time and day
+precision are separate. No intraday release availability, complete historical
+universe or connected strategy-feature pipeline is inferred from this repair.
+
 The local PostgreSQL server uses Africa/Lagos. This exposed a pre-existing
 baseline bug: NOW() inherited local time when cast into canonical UTC-naive
 columns, making valid approvals appear future-dated. Lifecycle serialization
@@ -55,8 +63,21 @@ additional inventory/budget cases. Inventory/availability checks then passed
 had three assertion failures because the test read a nested field instead of
 the canonical stored result; the corrected four-case successor passed. The
 expanded research run passed 408 cases and failed the baseline timezone case.
-After its repair, all four baseline/timezone cases passed. Required broad and
-hosted successor acceptance remains necessary; overlapping counts are not summed.
+After its repair, all four baseline/timezone cases passed and the expanded
+research successor passed 414 cases with required real PostgreSQL.
+
+Published checkpoint ad4b8047d5936b8df49857e7cdc60e370283680a has tree
+5d4f2d95e82e13c3b6e019b5fd00984dc3f3c488. Its clean, unchanged source passed all
+32 complete-system steps, including 3383 tests, zero failures and zero skips,
+using the locked local Python 3.11 runtime and an owned PostgreSQL database.
+The report is full-ad4b8047-research/complete_system_test_report.json. It labels
+its external acceptance limits explicitly. Critical typing passed with zero
+errors/warnings; legacy typing counted 1102 errors against its existing 1532
+budget, with six warnings. That budget pass does not close the remaining debt.
+
+The subsequent FRED repair and existing provider contracts passed 62 focused
+cases. Full/hosted successor acceptance must be tied to its own immutable SHA;
+the ad4b8047 report is not relabeled. Overlapping counts are not summed.
 
 Early local inventory fixtures encountered the sandbox's inaccessible global
 pytest directory and a missing local parent directory. An explicitly owned
@@ -71,6 +92,12 @@ At 2026-10-10T16:21:30Z, all four production application roles had active
 SUCCESS deployments of `8f8583933a853a54ba1b3585610ee466903c08fc`.
 That is the serving historical release, not recovery-branch deployment proof.
 No production configuration or financial activation was changed.
+
+At 16:51:35Z the canonical read-only backup verifier accepted the serving
+schema's full backup and isolated-restore receipt, created 2026-10-10T02:00:22Z,
+digest 656ccff64ac83f9142df1e986bc2320f4387c4b702c8a77fe277818a1d19d464.
+This covers 0045_mt5_credential_retirement only, not candidate-head migration/
+restore acceptance. The local artifact is completion-backup-20261010.json.
 
 A separate staging project now exists:
 `a0f2739b-0922-4489-be0e-57ce9922ca3e`, environment

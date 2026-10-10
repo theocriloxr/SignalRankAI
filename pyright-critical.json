@@ -70,6 +70,7 @@
     "scripts/certify_market_classes.py",
     "scripts/certify_providers.py",
     "scripts/semgrep_gate.py",
-    "scripts/install_opengrep.py"
+    "scripts/install_opengrep.py",
+    "data/connectors/fred_adapter.py"
   ]
 }

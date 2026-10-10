@@ -1,5 +1,5 @@
 {
-  "file_count": 2029,
+  "file_count": 2030,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2619,19 +2619,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 41,
+      "line_count": 44,
       "path": "certification/completion_dispositions.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "d6756ab30da5d109df2edffb3924f5bf64d4601fb77fea283f5fb90fb569f52a",
-      "size_bytes": 2255
+      "sha256": "493d806385d5483dd14e1eebf7e2f6887479be1e1001bd3021ef70040ef2018b",
+      "size_bytes": 2724
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 69109,
+      "line_count": 69112,
       "path": "certification/completion_matrix.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "e42f41c80e6717db0746a8aaca62e4304915865aceb6f57cc0c18e3a1db47b44",
-      "size_bytes": 2829456
+      "sha256": "f3912b9448e861f79071b53759b6db85b2b9ad7b1f8267f9b64409e95f22fed0",
+      "size_bytes": 2829931
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2651,11 +2651,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 552,
+      "line_count": 555,
       "path": "certification/release_manifest.yaml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "835641941230e7c03df60c9bc603cf8abbf8487cc7ded76060cb62b8e44c5ed9",
-      "size_bytes": 18513
+      "sha256": "170eb1c5633638791e788eaa5937f6c9892e55be441041ce26bcb0a8eb85dfc4",
+      "size_bytes": 18607
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3491,11 +3491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 105,
+      "line_count": 158,
       "path": "data/connectors/fred_adapter.py",
       "reason": "production/build source",
-      "sha256": "7f62b0dc2d678e4bd36b8dc8632001ae6d301ab4344c2dca9fd5425ec14147ae",
-      "size_bytes": 3114
+      "sha256": "93704855c272bf17943ef011203aebf13dabd4ca93c4878836667ab8ebabbc45",
+      "size_bytes": 5896
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4891,11 +4891,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 115,
+      "line_count": 142,
       "path": "docs/CONTINUATION_COMPLETION_20261010.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "c801cedb72002d53b7c0a9edfb97b7ff4f81205f60213a7786932f154ae35489",
-      "size_bytes": 7151
+      "sha256": "eda05f8c4e8a2682cd3e910a7e620c5a3fa4c4c4bed3ff58c70ecf6b6a77a6fa",
+      "size_bytes": 8916
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6947,11 +6947,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 377,
+      "line_count": 404,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d98f85047f0495a4c7acdd84ba3b8081547633cdee04afd919df1dca7f895ca2",
-      "size_bytes": 24602
+      "sha256": "8319aeab5bad6a3cdc90517e0cb131ed64f6772f5c054fb148b128c493e5ce29",
+      "size_bytes": 26399
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9659,11 +9659,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 75,
+      "line_count": 76,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "150db12f33e3aa68b9091ff60bfa260d2b3fd01175907da6bd61ae0287ffd8f2",
-      "size_bytes": 2472
+      "sha256": "3e74e34a5f8ff86d0b0563c6e22a316ebd763458eb7787c5c6d77570af81b2a7",
+      "size_bytes": 2511
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13755,6 +13755,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 116,
+      "path": "tests/test_fred_point_in_time.py",
+      "reason": "automated test evidence",
+      "sha256": "409eaaef478a6dab6dce3c9e4cb1253fbfe067aa7878bbc1072ebb84ab9c5c8a",
+      "size_bytes": 5398
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 102,
       "path": "tests/test_free_provider_microstructure.py",
       "reason": "automated test evidence",
@@ -16248,6 +16256,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 469,
     "PRESERVE_BEHAVIOUR": 1201,
-    "TEST_ONLY": 358
+    "TEST_ONLY": 359
   }
 }

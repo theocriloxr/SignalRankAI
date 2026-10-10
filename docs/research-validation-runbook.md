@@ -375,3 +375,30 @@ codes. The full approval/recovery user interface and broader health/kill
 orchestration remain separate gaps. Startup and runtime admission reject missing
 health tables or disabled/misbound immutability guards even at the Alembic head.
 No new environment variable is introduced.
+
+## Macro vintage request boundary
+
+`data.connectors.fred_adapter.fetch_series(..., as_of="YYYY-MM-DD")` pins both
+`realtime_start` and `realtime_end` and caps `observation_end` at that date.
+`FRED_VINTAGE_DATA_ENABLED=1` or `vintage=True` requires the explicit date; missing,
+invalid or future dates return unavailable data without calling the provider.
+`vintage=False` cannot bypass an enabled environment guard. Responses whose
+declared vintage differs, whose observation/vintage periods exceed the cutoff,
+or whose required historical dates are missing are rejected without retrying
+against latest revisions. Existing latest-context calls remain labeled
+`latest_revisions`; they are not qualified historical inputs.
+
+The adapter records process capture time separately and marks intraday
+availability unverified. FRED real-time periods have day precision. An economic
+period date is not its publication timestamp, and a requested date vintage is
+not an independently observed intraday release history. Feature replay must
+still establish actual availability, calendar and provider provenance; callers
+must deliberately supply their historical cutoff. This change does not wire
+macro features into every strategy or certify historical universe membership.
+
+Contract references checked on October 10, 2026: [FRED observations parameters](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+and [FRED real-time periods](https://fred.stlouisfed.org/docs/api/fred/realtime_period.html).
+`tests/test_fred_point_in_time.py` exercises pinned revisions, invalid/missing
+cutoffs, ignored request bounds, future/expired/missing vintages, unavailable
+responses and the public sync entry point using a mocked transport. These are
+adapter-contract checks, not actual-provider qualification.

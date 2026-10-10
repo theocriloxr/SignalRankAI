@@ -4604,14 +4604,15 @@
       "acceptance": {
         "text_sha256": "1c29e7d67ec86fcb96689cd15fd0cfd1a8fb50ba1fe9537235705bdb579d4bfd",
         "status": "PARTIAL",
-        "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones.",
+        "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones. FRED historical requests now pin explicit day vintages and reject missing or mismatched revision bounds; latest context and intraday availability remain unqualified.",
         "canonical_paths": [
           "engine/adaptive/dataset.py",
           "engine/adaptive/availability.py",
           "engine/adaptive/sequence.py",
           "engine/adaptive/learning.py",
           "engine/adaptive/integrity.py",
-          "engine/adaptive/lifecycle.py"
+          "engine/adaptive/lifecycle.py",
+          "data/connectors/fred_adapter.py"
         ],
         "conflicting_legacy_paths": [],
         "missing_acceptance": [
@@ -4623,12 +4624,14 @@
         ],
         "tests": {
           "positive": [
-            "tests/test_sequence_availability.py::test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages"
+            "tests/test_sequence_availability.py::test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages",
+            "tests/test_fred_point_in_time.py::test_revision_cutoff_is_sent_to_real_adapter_and_later_revisions_do_not_replace_history"
           ],
           "negative": [
             "tests/test_sequence_availability.py::test_future_label_mutations_cannot_change_an_as_of_dataset",
             "tests/test_sequence_availability.py::test_future_provenance_blocks_actual_walk_forward_and_integrity",
-            "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing"
+            "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing",
+            "tests/test_fred_point_in_time.py::test_provider_revision_mismatch_rejects_the_response_instead_of_certifying_it"
           ],
           "concurrency": [],
           "recovery": [
