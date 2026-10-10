@@ -283,7 +283,10 @@ def coinbase_quote(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
             if item.get("type") != "ticker" or item.get("product_id") != symbol:
                 continue
             bid, ask, price = (float(item[key]) for key in ("best_bid", "best_ask", "price"))
-            stamp = datetime.fromisoformat(item["time"].replace("Z", "+00:00")).timestamp()
+            source_time = datetime.fromisoformat(item["time"].replace("Z", "+00:00"))
+            if source_time.tzinfo is None:
+                raise ValueError("ambiguous_stream_timezone")
+            stamp = source_time.timestamp()
             if not all(math.isfinite(x) and x > 0 for x in (bid, ask, price, stamp)) or bid > ask:
                 raise ValueError("invalid_stream_quote")
             if not -5 <= time.time()-stamp <= 30:

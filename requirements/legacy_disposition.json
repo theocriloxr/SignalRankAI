@@ -8723,11 +8723,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 322,
+      "line_count": 325,
       "path": "market_data_sdk/worker.py",
       "reason": "production/build source",
-      "sha256": "61c7d84fade4d619b8233eb6571832dc4e2f80181a8020ab52d26e76c507397e",
-      "size_bytes": 15257
+      "sha256": "d56301993b624ee67fdef841fc2c965dde8db6797a1e16f12cda2e7cf1f0ef76",
+      "size_bytes": 15400
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16011,11 +16011,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 147,
+      "line_count": 152,
       "path": "tests_sdk/test_installed_data_sdks.py",
       "reason": "production/build source",
-      "sha256": "23fce3f474e158da672aa1b771fb2c51f07688d4a194eb3542797df6a535b097",
-      "size_bytes": 8339
+      "sha256": "8a859f114eeff6fbd210ac889185740bbf52546ef4ea86e7b6839cdc8db3347a",
+      "size_bytes": 8767
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

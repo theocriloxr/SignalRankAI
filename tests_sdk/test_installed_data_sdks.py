@@ -141,6 +141,11 @@ class InstalledSDKTests(unittest.TestCase):
             best_ask="101", price="100", time="2020-01-01T00:00:00Z"))
         with patch.object(websocket, "create_connection", return_value=stream), self.assertRaises(ValueError):
             worker.coinbase_quote({"symbol": "BTC-USDT"}, 2)
+        stream.recv = lambda: json.dumps(dict(type="ticker", product_id="BTC-USDT", best_bid="99",
+            best_ask="101", price="100", time=datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
+        with patch.object(websocket, "create_connection", return_value=stream), \
+             self.assertRaisesRegex(ValueError, "ambiguous_stream_timezone"):
+            worker.coinbase_quote({"symbol": "BTC-USDT"}, 2)
 
 
 if __name__ == "__main__":
