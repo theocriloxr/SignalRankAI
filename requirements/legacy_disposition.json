@@ -9811,11 +9811,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 1772,
       "path": "requirements-market-data-sdk.lock",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "14ba1e795b06faa142f8153ff5f5e5391a8b49d1973e526496f3c482f2600fed",
-      "size_bytes": 144146
+      "sha256": "f25e671d194a14a3da17c067cf88e61101ccde4acaabce4f3241ca9ac75db235",
+      "size_bytes": 142374
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9843,7 +9843,7 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
+      "line_count": 146,
       "path": "requirements.lock",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "a4d5172ec37bab3b131f7c104b48858579ea65cb51940b83fea9673ceee30599",
@@ -10243,11 +10243,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1472,
+      "line_count": 1473,
       "path": "scripts/build_v7_governance.py",
       "reason": "production/build source",
-      "sha256": "7042736527952435c525d338c7519755657255abf92c521fdc4d0996659c1e83",
-      "size_bytes": 58625
+      "sha256": "7066f5b0f142c3270c5d11371f91df2b65214ff5069692a49f6810b6ab9f393e",
+      "size_bytes": 58638
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13899,11 +13899,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 25,
+      "line_count": 43,
       "path": "tests/test_governance_checkout_portability.py",
       "reason": "automated test evidence",
-      "sha256": "e50d58967fed216ae23da0f990b0c7f1cbe6273cc3483b684a124bf6e54701a5",
-      "size_bytes": 1024
+      "sha256": "901ed2d3957c4265b71cccda2702eec3923344638bcbc430b6a3904a8a3778d1",
+      "size_bytes": 2063
     },
     {
       "disposition": "TEST_ONLY",
