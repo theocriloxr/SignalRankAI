@@ -67,7 +67,7 @@ def test_railway_completion_script_enforces_common_db_and_safe_flags():
         assert safe_flag in source
     assert "staging_migrate_and_bootstrap.py" in source
     assert "database_identity.py" in source
-    assert "0050_profile_health_index" in source
+    assert "0051_strategy_health_baselines" in source
     assert "UndefinedTableError" in source
     assert "UndefinedColumnError" in source
 
@@ -149,7 +149,7 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "metrics" in source and "--since" in source
     assert "$proofArguments" in source
     assert "& python @args" not in source
-    assert '"--filter","alembic_current=0050_profile_health_index"' in source
+    assert '"--filter","alembic_current=0051_strategy_health_baselines"' in source
     assert '"--filter","patch=deployment-final-r4"' in source
     assert '@("service","list","--json")' in source
     assert '"service","status"' not in source
@@ -160,10 +160,10 @@ def test_r4_soak_certification_contract():
     assert '"--since", $hoursToken' in text
     assert '"metrics", "--all"' in text
     assert "patch=deployment-final-r4" in text
-    assert "alembic_current=0050_profile_health_index" in text
+    assert "alembic_current=0051_strategy_health_baselines" in text
     assert "AmbiguousParameterError" in text
     assert "staging_soak_summary.json" in text
-    assert '"--filter", "alembic_current=0050_profile_health_index"' in text
+    assert '"--filter", "alembic_current=0051_strategy_health_baselines"' in text
     assert '"--filter", "patch=deployment-final-r4"' in text
     assert '@("service", "list", "--json")' in text
     assert '"service", "status"' not in text

@@ -22,8 +22,7 @@ The operator diagnostics expose the last check as COMPLETED, ERROR, STALE or
 UNAVAILABLE. COMPLETED reports a successful monitor iteration, not certified
 edge. The current evidence is confirmed signal-delivery outcomes, not broker
 fills or account equity. Invalid/nonfinite observations suspend a profile even
-below the ordinary sample minimum. Validated per-profile health baselines,
-instrument execution evidence and funded-account constraints remain unfinished.
+below the ordinary sample minimum. Owner-approved delivery baselines and forward comparisons are implemented as described below. Instrument/broker execution baselines and funded-account constraints remain unfinished.
 
 The `RiskManager` spot-unit adviser now forwards account drawdown state into
 sizing, preserves zero risk and soft throttles, and rejects malformed inputs or
@@ -258,7 +257,7 @@ immutable candidate. This gate does not replace native-device or broker testing.
    PostgreSQL tests. Hosted CI creates disposable owned databases and migrates
    each from an empty schema; the suite's database is not destroyed.
 2. Preserve a tested backup and apply the normal controlled migration path to
-   `0050_profile_health_index`. Verify all three research tables and six enabled
+   `0051_strategy_health_baselines`. Verify both health tables and their four enabled immutability guards, as well as all three research tables and six enabled
    append-only/truncate guards on their expected relations and function. Both the
    startup gate and runtime readiness fail if any guard is disabled or misplaced.
    Verify the valid, ready, nonunique B-tree index
@@ -312,10 +311,67 @@ as `since_ledger_introduction`, with prior history unverified.
 
 ## Remaining research directive gaps
 
-The Google Doc review is blocked by inaccessible content. Complete the
+The owner supplied the research source on 2026-10-10; its independent review and complete concept mapping are in `docs/research-source-review-20261010.md`. Complete the
 instrument-specific execution/capacity stress matrix, supported/disabled regime
 policies, point-in-time universe/revision evidence, ML search integration at all
-call sites, approved health baselines/decay analysis, portfolio interaction
+call sites, broker/paper and portfolio health baselines beyond the implemented delivery-R scope, portfolio interaction
 validation, full operator UI, telemetry/alert retention, feature/pivot/repainting
 tests and per-asset statistical qualification. No result in this candidate
 certifies profitable trading or enables real-money execution.
+
+
+## Approved delivery health baselines (0051)
+
+`strategy_health_baselines` stores one immutable approval per profile identity,
+with profile/configuration fingerprint, version, authenticated owner identity,
+approval timestamp, condition version, hashed evidence and derived metrics.
+Only SHADOW/PAPER/FORWARD_TEST profiles can receive an approval. Approval requires
+at least 100 distinct eligible, confirmed-delivery outcomes (bounded to 250,
+within 120 days), positive expectancy and observed losses. These are evidence
+preconditions, not statistically sufficient proof of an edge. New limits require
+a new profile/version and the existing lifecycle gates; suspended profiles cannot
+be silently restored or their baseline reset. No baseline is auto-approved.
+
+Owner/admin reads use `GET /api/v1/platform/operator/health-baseline?profile_id=...`.
+Owner approval uses `POST /api/v1/platform/operator/health-baseline` with
+`profile_id`, `profile_version`, `confirm=true` and all seven `conditions` fields:
+
+- `minimum_live_samples` (integer 20–250);
+- `maximum_expectancy_decay_r` (finite, nonnegative R);
+- `maximum_drawdown_r` (finite, positive R);
+- `maximum_drawdown_duration_observations` (integer 1–250);
+- `maximum_profit_factor_decay_fraction` (finite 0–1);
+- `maximum_brier_increase` (finite 0–1);
+- `calibration_required` (strict boolean).
+
+The request cannot supply metrics, approver identity or approval time. Derivation
+uses canonical stored outcomes and validated calibration evidence. When
+calibration is required, every observed calibration version must independently
+meet the approved forward minimum; missing probabilities or an under-sampled
+version cannot be hidden by a good version. The limits must be justified for
+the particular profile; none is presented as a universal trading threshold.
+
+Forward comparisons only include decisions created at/after approval, with
+chronological closed outcomes. Baseline-era decisions that close later are
+excluded. Metrics are delivery expectancy/PF/drawdown in R and drawdown duration
+in observations. Time-return Sharpe/Sortino/Calmar, MAE/MFE, fill rate, costs,
+latency, regime mix and calendar trade frequency remain unavailable. Missing
+metrics are never zero-filled or broker-certified. The latest 250 outcomes do
+not certify a lifetime account drawdown or concurrent portfolio exposure.
+
+`strategy_health_events` records immutable comparisons and reasons. Identical
+retries within a cadence slot are idempotent; each later cadence slot can record
+a fresh surveillance receipt. Required baseline/evidence failures prevent cache
+approvals; expiry also bounds stale receipts. Insufficient forward samples
+remain explicit and may collect CANARY evidence under the existing promotion
+policy; they are not certified as healthy. Breaches/invalid evidence suspend the
+adaptive profile, invalidate its cache and require revalidation. This does not
+claim to halt a broker account or authorize real execution. The Telegram
+promotion path obtains kill-condition approval from this stored, verified
+baseline rather than trusting a boolean in research JSON.
+
+The operator table shows per-profile comparison status, forward count and reason
+codes. The full approval/recovery user interface and broader health/kill
+orchestration remain separate gaps. Startup and runtime admission reject missing
+health tables or disabled/misbound immutability guards even at the Alembic head.
+No new environment variable is introduced.

@@ -131,8 +131,10 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             await session.execute(
                 text(
                     """
-                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,h.*
+                SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,
+                       to_jsonb(p) AS profile_identity,to_jsonb(b) AS approved_health_baseline,h.*
                 FROM adaptive_asset_profiles p
+                LEFT JOIN strategy_health_baselines b ON b.profile_id=p.profile_id
                 LEFT JOIN LATERAL (
                     SELECT o.r_multiple,o.closed_at,s.created_at,s.signal_id,
                            s.ml_probability_calibrated,s.ml_calibration_version,
@@ -145,7 +147,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
                       AND s.created_at <= o.closed_at
                       AND s.created_at >= NOW() - INTERVAL '120 days'
                       AND EXISTS (SELECT 1 FROM adaptive_signal_evidence ev
-                                  WHERE ev.profile_id=p.profile_id AND ev.signal_id=s.signal_id)
+                                  WHERE ev.profile_id=p.profile_id AND ev.profile_version=p.version AND ev.signal_id=s.signal_id)
                       AND EXISTS (SELECT 1 FROM signal_deliveries sd
                                   WHERE sd.signal_id=s.signal_id AND sd.sent_ok=TRUE
                                     AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')
@@ -175,11 +177,19 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     restored: list[str] = []
     diagnostics: list[dict[str, Any]] = []
     coverage = {status: 0 for status in ("UNAVAILABLE", "INSUFFICIENT", "OBSERVED", "INVALID")}
+    from .health_baselines import compare_health_baseline, record_health_event
+    baseline_coverage: dict[str, int] = defaultdict(int)
     for profile_id, evidence_rows in grouped.items():
         metrics = _runtime_health_metrics(evidence_rows, minimum_live=minimum_live,
             drawdown_limit=drawdown_limit, brier_limit=brier_limit, expectancy_floor=expectancy_floor)
         coverage[metrics["delivery_evidence_status"]] += 1
         meta = profile_meta[profile_id]
+        comparison = compare_health_baseline(meta.get("approved_health_baseline"), meta.get("profile_identity") or {}, evidence_rows)
+        metrics.update(comparison)
+        baseline_coverage[comparison["approved_baseline_comparison"]] += 1
+        if comparison["approved_baseline_comparison"] in {"BREACHED", "INVALID"}:
+            metrics["reasons"].extend(comparison["baseline_reasons"])
+        await record_health_event(session, profile_id=profile_id, report=metrics)
         if len(diagnostics) < 20:
             diagnostics.append({"profile_id": profile_id, "asset": str(meta["asset"]),
                 "profile_state": str(meta["state"]),
@@ -221,6 +231,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     return {"suspended_assets": suspended, "restored_profiles": restored,
             "evaluated_profile_count": len(grouped), "profile_diagnostics": diagnostics,
             "delivery_evidence_counts": coverage,
+            "baseline_comparison_counts": dict(baseline_coverage),
             "diagnostics_truncated": len(grouped) > len(diagnostics)}
 
 

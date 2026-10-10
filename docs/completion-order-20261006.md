@@ -160,3 +160,16 @@ fills remain incomplete. A final candidate must pass required CI, deploy to
 every production application service using one approved immutable commit,
 pass runtime/schema checks and complete a new observation window. Two complete
 audits with no new material gaps are still required.
+
+
+2026-10-10 continuation: the owner supplied the previously inaccessible research
+source. Its complete supplied text/hash and independent concept review are
+recorded in `docs/specs/20261010/research-source-supplied.md` and
+`docs/research-source-review-20261010.md`. The source review is complete; the
+research directive remains in progress. The successor adds owner-approved
+immutable delivery-R baselines, predefined per-profile decay conditions,
+forward-evidence separation, persistent health receipts, promotion/cache guards
+and operator comparison visibility. Broker/paper/portfolio baselines, the other
+research gaps and directives 2–7 remain open. Current production certification
+and live-money restrictions remain unchanged. Verification evidence will be
+retained in `docs/CONTINUATION_20261010.md`.

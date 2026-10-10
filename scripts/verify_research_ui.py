@@ -75,13 +75,18 @@ with sync_playwright() as p:
                     'diagnostics_truncated': True, 'profile_diagnostics': [
                         {'profile_id': 'synthetic-empty', 'asset': 'Synthetic <img src=x onerror=window.healthInjected=true>',
                          'profile_state': 'CANARY', 'sample_size': 0, 'delivery_evidence_status': 'UNAVAILABLE',
-                         'coverage_reason': 'no_eligible_delivery_outcomes', 'expectancy_r': None, 'reasons': []},
+                         'coverage_reason': 'no_eligible_delivery_outcomes', 'expectancy_r': None, 'reasons': [],
+                         'approved_baseline_comparison': 'UNAVAILABLE', 'baseline_sample_size': 0,
+                         'baseline_reasons': ['approved_delivery_baseline_missing']},
                         {'profile_id': 'synthetic-small', 'asset': 'SMALL', 'profile_state': 'LIMITED_LIVE',
                          'sample_size': 1, 'delivery_evidence_status': 'INSUFFICIENT',
-                         'coverage_reason': 'minimum_delivery_sample_not_met', 'reasons': []},
+                         'coverage_reason': 'minimum_delivery_sample_not_met', 'reasons': [],
+                         'approved_baseline_comparison': 'INSUFFICIENT', 'baseline_sample_size': 1},
                         {'profile_id': 'synthetic-invalid', 'asset': 'INVALID', 'profile_state': 'APPROVED',
                          'sample_size': 2, 'delivery_evidence_status': 'INVALID',
-                         'reasons': ['invalid_delivery_health_observations']}]}
+                         'reasons': ['invalid_delivery_health_observations'],
+                         'approved_baseline_comparison': 'INVALID',
+                         'baseline_reasons': ['Synthetic <img src=x onerror=window.baselineInjected=true>']}]}
                 body = diagnostics.json()
                 page.route('**/api/v1/platform/operator/diagnostics', lambda route: route.fulfill(status=200,
                     content_type='application/json', body=json.dumps({**body, 'adaptive_health': fixture})))
@@ -93,6 +98,10 @@ with sync_playwright() as p:
                 assert 'Showing 3 profiles' in panel.inner_text()
                 assert panel.locator('tbody tr').count() == 3 and panel.locator('img').count() == 0
                 assert page.evaluate('window.healthInjected') is None
+                assert page.evaluate('window.baselineInjected') is None
+                panel.get_by_text('Forward sample incomplete', exact=True).wait_for()
+                panel.get_by_text('Invalid approval or evidence', exact=True).wait_for()
+                assert '1 forward observations' in panel.inner_text()
                 assert 'certify strategy health' in panel.inner_text()
                 panel.get_by_text('Monitor current', exact=True).wait_for()
                 assert 'HEALTHY' not in panel.inner_text().upper()
