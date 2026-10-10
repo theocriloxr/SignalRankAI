@@ -9854,8 +9854,8 @@
       "line_count": 16170,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "30b8f031c27491c12ccc57371a4d46d139d02ba0cb78a0c6228a72eb6cb35cf6",
-      "size_bytes": 474329
+      "sha256": "bc414abf560003fa3948b51436336c55f0a996d3e2dff337760173d8e3df24a3",
+      "size_bytes": 474321
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
