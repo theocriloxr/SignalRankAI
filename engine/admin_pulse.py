@@ -155,6 +155,10 @@ def _cycle_signal_drought_summary(stats: dict[str, Any]) -> list[str]:
         lines.append("- bottleneck: ML admission; Telegram is waiting for an admitted signal")
     elif strict == 0:
         lines.append("- bottleneck: pre-ML candidate quality/consensus gates")
+    if _int("ml_forward_observations_disabled"):
+        lines.append("- challenger evidence: recording is disabled on the engine; forward qualification cannot progress")
+    if _int("ml_forward_observations_failed"):
+        lines.append("- challenger evidence: submission failed; inspect database and background worker health")
     return lines
 
 
@@ -461,7 +465,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     )
                 ).first()
                 db_delivered = int(delivered_row[0] or 0) if delivered_row else 0
-            except Exception as e:
+            except Exception:
                 try:
                     delivered_row = (
                         await session.execute(
@@ -621,7 +625,6 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     global_total = (
         int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
     )
-    db_rejected_total = sum(int(v or 0) for v in (db_rejected_by or {}).values())
     # Decision accounting and recipient delivery are different units. Prefer
     # the decision_log row count whenever available; signal rows/deliveries are
     # separate evidence and must never inflate the number of decisions evaluated.
@@ -1075,7 +1078,6 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
             logger.exception("[admin_pulse] loop send failed")
         # Weekly filter-efficacy report: run once per configured weekday/hour
         try:
-            weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", str(datetime.now(timezone.utc).weekday())))
             # Default weekday env not set -> use current weekday (no-op); recommend ADMIN_WEEKLY_REPORT_WEEKDAY=6 for Sunday
             report_weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", "6"))
             report_hour = int(os.getenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", "9"))

@@ -1586,7 +1586,6 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
                 .first()
             )
             await session.commit()
-        outcomes = int((row or {}).get("outcomes") or 0)
         wins = int((row or {}).get("wins") or 0)
         losses = int((row or {}).get("losses") or 0)
         terminal = wins + losses
@@ -3247,6 +3246,9 @@ def main_loop(DRY_RUN: bool = False):
             "ml_raw_probability_max": None,
             "ml_calibrated_probability_max": None,
             "ml_threshold_raw": None,
+            "ml_forward_observations_disabled": 0,
+            "ml_forward_observations_submitted": 0,
+            "ml_forward_observations_failed": 0,
             "ml_alignment_samples": 0,
             "ml_alignment_abs_gap_max": 0.0,
             "ml_alignment_approved": 0,
@@ -4026,6 +4028,13 @@ def main_loop(DRY_RUN: bool = False):
                             )
                             challenger_prob = challenger.get("probability")
                             challenger_threshold = challenger.get("threshold")
+                            observation_counter = {
+                                "disabled_by_configuration": "ml_forward_observations_disabled",
+                                "submitted_not_yet_durable": "ml_forward_observations_submitted",
+                                "submission_failed": "ml_forward_observations_failed",
+                            }.get(str(challenger.get("observation_status") or ""))
+                            if observation_counter:
+                                pipeline_stats[observation_counter] += 1
                             if challenger_threshold is not None:
                                 pipeline_stats["ml_challenger_threshold_raw"] = float(challenger_threshold)
                             if challenger_prob is not None:
@@ -5626,7 +5635,7 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception:
                     logger.exception("Failed to update trade outcomes")
 
-            except Exception as e:
+            except Exception:
                 logger.exception(f"[engine] pipeline error for asset={asset}")
                 continue
             finally:

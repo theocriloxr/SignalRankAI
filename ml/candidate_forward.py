@@ -1,8 +1,8 @@
 """Forward-proof governance for ML challenger models.
 
 This module never changes serving decisions while collecting evidence. It reads
-outcome-tracked candidate_shadow observations and decides whether the active
-candidate has enough live-forward evidence to be considered for promotion.
+candidate_shadow observations, counts only tracked outcomes as resolved, and
+decides whether the active candidate has enough evidence for promotion review.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import os
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from utils.timeutils import now_utc_naive
@@ -82,32 +83,40 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(default)
 
 
-def _row_r_multiple(row: Any, outcome: str) -> float:
+def _row_r_multiple(row: Any, outcome: str) -> float | None:
     entry = _safe_float(getattr(row, "entry", 0.0))
     stop = _safe_float(getattr(row, "stop_loss", 0.0))
-    raw_tp = getattr(row, "take_profit", None)
-    try:
-        target = float(raw_tp)
-    except Exception:
-        target = 0.0
+    target = _safe_float(getattr(row, "take_profit", None))
+    direction = str(getattr(row, "direction", "") or "").strip().lower()
+    if not (entry > 0 and stop > 0 and target > 0):
+        return None
+    if direction in {"long", "buy"}:
+        if not stop < entry < target:
+            return None
+    elif direction in {"short", "sell"}:
+        if not target < entry < stop:
+            return None
+    else:
+        return None
     risk = abs(entry - stop)
     reward = abs(target - entry)
     if risk <= 0.0 or reward <= 0.0:
-        return 0.0
+        return None
     return reward / risk if outcome == "win" else -1.0
 
 
 def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> dict[str, Any]:
     selected = [(row, features, outcome) for row, features, outcome in rows if _boolish(features.get(key))]
-    r_values = [_row_r_multiple(row, outcome) for row, _, outcome in selected]
-    usable = [value for value in r_values if value != 0.0]
-    wins = sum(1 for _, _, outcome in selected if outcome == "win")
-    losses = sum(1 for _, _, outcome in selected if outcome == "loss")
+    valid = [(value, outcome) for row, _, outcome in selected
+             if (value := _row_r_multiple(row, outcome)) is not None]
+    usable = [value for value, _ in valid]
+    wins = sum(1 for _, outcome in valid if outcome == "win")
+    losses = sum(1 for _, outcome in valid if outcome == "loss")
     resolved = wins + losses
     gross_profit = sum(value for value in usable if value > 0.0)
     gross_loss = abs(sum(value for value in usable if value < 0.0))
     expectancy = (sum(usable) / len(usable)) if usable else 0.0
-    profit_factor = gross_profit / gross_loss if gross_loss > 0.0 else (999.0 if gross_profit > 0.0 else 0.0)
+    profit_factor = gross_profit / gross_loss if gross_loss > 0.0 else None
     return {
         "resolved": resolved,
         "wins": wins,
@@ -115,6 +124,7 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
         "win_rate": (wins / resolved) if resolved else 0.0,
         "expected_r": expectancy,
         "profit_factor": profit_factor,
+        "invalid_geometry": len(selected) - len(valid),
     }
 
 
@@ -228,6 +238,7 @@ async def evaluate_candidate_forward_evidence(
     trained_at = _parse_dt(candidate.get("trained_at")) or now_utc_naive()
     max_age_hours = max(1.0, _env_float("ML_CANDIDATE_FORWARD_MAX_AGE_HOURS", 48.0))
     cutoff = trained_at - timedelta(minutes=1)
+    observation_cutoff = now_utc_naive()
     max_rows = max(100, min(20000, _env_int("ML_CANDIDATE_FORWARD_MAX_ROWS", 5000)))
 
     async with get_session(
@@ -236,22 +247,38 @@ async def evaluate_candidate_forward_evidence(
         timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
         drop_if_busy=False,
     ) as session:
-        rows = list(
+        rows = [SimpleNamespace(**dict(row)) for row in
             (
                 await session.execute(
-                    select(MLRejectedSignal)
+                    select(
+                        MLRejectedSignal.id, MLRejectedSignal.entry, MLRejectedSignal.stop_loss, MLRejectedSignal.direction,
+                        MLRejectedSignal.take_profit, MLRejectedSignal.features,
+                        MLRejectedSignal.actual_outcome, MLRejectedSignal.outcome_tracked_at,
+                        MLRejectedSignal.created_at,
+                    )
                     .where(
                         MLRejectedSignal.created_at >= cutoff,
-                        MLRejectedSignal.outcome_tracked_at.is_not(None),
+                        MLRejectedSignal.created_at <= observation_cutoff,
+                        MLRejectedSignal.features["rejection_type"].as_string() == "candidate_shadow",
+                        MLRejectedSignal.features["candidate_artifact_hash_sha256"].as_string() == artifact_hash,
                     )
                     .order_by(MLRejectedSignal.created_at.asc())
-                    .limit(max_rows)
+                    .limit(max_rows + 1)
                 )
             )
-            .scalars()
+            .mappings()
             .all()
-        )
+        ]
         await session.rollback()
+
+    if len(rows) > max_rows:
+        return {
+            "eligible": False,
+            "status": "failed",
+            "reasons": ["candidate_observation_limit_exceeded"],
+            "observations_scanned": len(rows),
+            "maximum_observations": max_rows,
+        }
 
     unique: dict[str, Any] = {}
     for row in rows:
@@ -272,10 +299,11 @@ async def evaluate_candidate_forward_evidence(
         features = dict(getattr(row, "features", {}) or {})
         outcome = _outcome_class(getattr(row, "actual_outcome", None))
         asset_class_raw = features.get("asset_class_enc")
-        if asset_class_raw is not None and str(asset_class_raw).strip() != "":
-            asset_classes.add(str(asset_class_raw).strip())
-        if outcome is not None:
+        tracked_at = getattr(row, "outcome_tracked_at", None)
+        if outcome is not None and isinstance(tracked_at, datetime) and row.created_at <= tracked_at <= observation_cutoff:
             resolved_rows.append((row, features, outcome))
+            if asset_class_raw is not None and str(asset_class_raw).strip() != "":
+                asset_classes.add(str(asset_class_raw).strip())
 
     candidate_stats = _decision_stats(resolved_rows, "candidate_passed")
     champion_stats = _decision_stats(resolved_rows, "champion_passed")
@@ -289,7 +317,7 @@ async def evaluate_candidate_forward_evidence(
     champion_pass_rate = champion_passed_all / len(all_rows) if all_rows else 0.0
 
     observation_times = [
-        getattr(row, "created_at", None) for row in all_rows if isinstance(getattr(row, "created_at", None), datetime)
+        stamp for row in all_rows if isinstance(stamp := getattr(row, "created_at", None), datetime)
     ]
     if observation_times:
         first_at = min(observation_times)
@@ -329,6 +357,8 @@ async def evaluate_candidate_forward_evidence(
         reasons.append("insufficient_forward_span")
     if len(asset_classes) < min_asset_classes:
         reasons.append("insufficient_asset_class_coverage")
+    if candidate_stats["invalid_geometry"]:
+        reasons.append("candidate_geometry_invalid")
     if candidate_pass_rate < min_pass_rate:
         reasons.append("candidate_pass_rate_too_low")
     if candidate_pass_rate > max_pass_rate:
@@ -336,7 +366,9 @@ async def evaluate_candidate_forward_evidence(
     if candidate_stats["resolved"] >= min_passed_resolved:
         if float(candidate_stats["expected_r"]) < min_expected_r:
             reasons.append("candidate_expected_r_below_floor")
-        if float(candidate_stats["profit_factor"]) < min_profit_factor:
+        if candidate_stats["profit_factor"] is None:
+            reasons.append("candidate_profit_factor_undefined")
+        elif float(candidate_stats["profit_factor"]) < min_profit_factor:
             reasons.append("candidate_profit_factor_below_floor")
     if champion_stats["resolved"] >= champion_min_compare:
         if float(candidate_stats["expected_r"]) < (float(champion_stats["expected_r"]) - max_expected_r_regression):
@@ -368,6 +400,7 @@ async def evaluate_candidate_forward_evidence(
 
     return {
         "eligible": eligible,
+        "statistics_scope": "shadow_barrier_labels_gross_of_costs",
         "status": status,
         "reasons": reasons,
         "observations": len(all_rows),
