@@ -251,10 +251,15 @@ def compare_health_baseline(baseline: Mapping[str, Any] | None, profile: Mapping
             # A new calibration version must earn its own forward sample; a
             # good version cannot conceal missing evidence for another one.
             versions = calibration["calibration_versions"]
+            approved_versions = baseline["payload"]["calibration_versions"]
             if any(item["brier_score"] is None for item in versions.values()) or not versions or calibration["calibrated_sample_size"] != len(live):
                 unknown.append("CALIBRATION_COVERAGE_UNAVAILABLE")
-            if metrics["brier_score"] is not None:
-                checks["CALIBRATION_DECAY"] = metrics["brier_score"] > expected["brier_score"] + conditions.maximum_brier_increase
+            if any(version not in approved_versions or approved_versions[version]["brier_score"] is None for version in versions):
+                unknown.append("CALIBRATION_BASELINE_VERSION_MISSING")
+            checks["CALIBRATION_DECAY"] = any(item["brier_score"] is not None
+                and approved_versions.get(version, {}).get("brier_score") is not None
+                and item["brier_score"] > approved_versions[version]["brier_score"] + conditions.maximum_brier_increase
+                for version, item in versions.items())
         reasons = [name for name, breached in checks.items() if breached]
         result.update(baseline_checks=checks, baseline_reasons=reasons + unknown,
             live_comparison_metrics=metrics, approved_baseline_comparison="BREACHED" if reasons else "UNAVAILABLE" if unknown else "WITHIN_LIMITS")

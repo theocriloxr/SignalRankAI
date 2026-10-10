@@ -4859,11 +4859,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 99,
+      "line_count": 110,
       "path": "docs/CONTINUATION_20261010.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0e2388a9cc624d88aef1aa6ee3f566621b62097bd15c3cac9213e427644bf984",
-      "size_bytes": 6095
+      "sha256": "a7f61ac0d30673813e2e576ade8ed349c7b5fa9968b2ff8efc60aa2a3b797f69",
+      "size_bytes": 6746
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -6918,8 +6918,8 @@
       "line_count": 377,
       "path": "docs/research-validation-runbook.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f3b03dfc0218da9bdbd1daf9076c933a3ba4987859f6bd1a18e84fa2dbcab5ee",
-      "size_bytes": 24393
+      "sha256": "d98f85047f0495a4c7acdd84ba3b8081547633cdee04afd919df1dca7f895ca2",
+      "size_bytes": 24602
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7259,11 +7259,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 281,
+      "line_count": 286,
       "path": "engine/adaptive/health_baselines.py",
       "reason": "production/build source",
-      "sha256": "f1c675a80cb77a46af05e1bff1e952096c4077a521d074c362adf92dbc4d795d",
-      "size_bytes": 17595
+      "sha256": "75edf1a96c4839c6baa29febc6e3f684b6049d1debf2671e6fe5611784c85572",
+      "size_bytes": 18030
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7350,8 +7350,8 @@
       "line_count": 131,
       "path": "engine/adaptive/repository.py",
       "reason": "production/build source",
-      "sha256": "e841293693bdd1ed4f0b2cfd54543eb6251f90660d32c113d39458409a054319",
-      "size_bytes": 7239
+      "sha256": "d1fea4b920bfeb1f35ca774ed2627d7e04db20f7038e600f9f66f04d4fc29553",
+      "size_bytes": 7271
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15219,11 +15219,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 181,
+      "line_count": 210,
       "path": "tests/test_strategy_health_baselines.py",
       "reason": "automated test evidence",
-      "sha256": "13882c7781e8951e6d2a8016fbaf5bf4d3d5782b20c6844d9a44020841907e6d",
-      "size_bytes": 9395
+      "sha256": "88dd9ee20036cf6788d7b8f46c62a83a90fafcd824b73caf24affe6c84b71e6b",
+      "size_bytes": 11123
     },
     {
       "disposition": "TEST_ONLY",

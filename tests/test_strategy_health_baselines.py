@@ -128,6 +128,35 @@ def test_good_calibration_version_cannot_hide_missing_forward_version_coverage()
     assert "CALIBRATION_COVERAGE_UNAVAILABLE" in result["baseline_reasons"]
 
 
+def calibrated_rows(count, *, version, error, live=False):
+    rows = forward(count, probability=0.5, version=version) if live else observations(count, probability=0.5, version=version)
+    for row in rows:
+        row["signal_id"] += "-" + version
+        row["ml_probability_calibrated"] = 1 - error if row["r_multiple"] > 0 else error
+    return rows
+
+
+def test_calibration_decay_compares_matching_versions_instead_of_worst_to_worst():
+    baseline, identity = approved()
+    baseline["payload"] = build_baseline_payload(calibrated_rows(100, version="a", error=0.4) +
+        calibrated_rows(100, version="b", error=0.1), limits(calibration_required=True))
+    baseline["content_hash"] = _hash(baseline["payload"])
+    result = compare_health_baseline(baseline, identity, calibrated_rows(30, version="a", error=0.3, live=True) +
+        calibrated_rows(30, version="b", error=0.4, live=True))
+    assert result["approved_baseline_comparison"] == "BREACHED"
+    assert "CALIBRATION_DECAY" in result["baseline_reasons"]
+    assert result["live_comparison_metrics"]["brier_score"] == pytest.approx(baseline["payload"]["metrics"]["brier_score"])
+
+
+def test_qualified_new_calibrator_cannot_borrow_another_versions_approved_baseline():
+    baseline, identity = approved()
+    baseline["payload"] = build_baseline_payload(calibrated_rows(100, version="approved", error=0.4), limits(calibration_required=True))
+    baseline["content_hash"] = _hash(baseline["payload"])
+    result = compare_health_baseline(baseline, identity, calibrated_rows(30, version="new", error=0.2, live=True))
+    assert result["approved_baseline_comparison"] == "UNAVAILABLE"
+    assert "CALIBRATION_BASELINE_VERSION_MISSING" in result["baseline_reasons"]
+
+
 def test_missing_baseline_is_missing_evidence_and_not_a_fabricated_loss():
     report = compare_health_baseline(None, {}, [])
     assert report["approved_baseline_comparison"] == "UNAVAILABLE"

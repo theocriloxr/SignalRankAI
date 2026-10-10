@@ -101,7 +101,7 @@ async def publish_approved_profiles() -> int:
         for row in rows:
             baseline = row.get("approved_health_baseline")
             health_report = row.get("health_report") or {}
-            if not baseline_valid(baseline, dict(row)) or not _health_receipt_fresh(row.get("health_checked_at")) or health_report.get("approved_baseline_comparison") not in {"WITHIN_LIMITS", "INSUFFICIENT"}:
+            if not baseline_valid(baseline, dict(row)) or not _health_receipt_fresh(row.get("health_checked_at")) or health_report.get("reasons") or health_report.get("approved_baseline_comparison") not in {"WITHIN_LIMITS", "INSUFFICIENT"}:
                 invalidate_profile_cache(str(row["asset"]), state_name="BASELINE_UNVERIFIED")
                 continue
             payload = dict(row)

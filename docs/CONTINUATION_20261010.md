@@ -97,3 +97,14 @@ research selection passed 315 tests. Required hosted checks remain necessary.
 Fresh mobile checks still report four high audit rows. The registry reports
 node-forge 1.4.0; the primary advisory GHSA-86w9-cpqp-85rv, checked on
 2026-10-10, still lists no patched release. No dependency waiver is introduced.
+
+
+The instrument-bound successor is `da2c5809bcfea3a65fe26b39a9901ae8ab0581bf`
+(local `6ba57520d4b09b1494c480909af7c2962b35aaee`, tree
+`6b2fcd70d3c5ac211425e805ed3e17a9473354df`), with push run 38056679120 and
+PR run 38056682509. A final calibration review replaces worst-to-worst baseline
+comparison with matching-version comparisons: an improving high-Brier version
+cannot conceal decay in another version. A new qualified calibrator still needs
+its own approved baseline. Two regression cases demonstrate both boundaries.
+Publication also rejects any retained generic suspension reason, even if an
+approved-limit comparison alone is within bounds.

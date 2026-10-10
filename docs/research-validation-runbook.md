@@ -348,7 +348,7 @@ The request cannot supply metrics, approver identity or approval time. Derivatio
 uses canonical stored outcomes and validated calibration evidence. When
 calibration is required, every observed calibration version must independently
 meet the approved forward minimum; missing probabilities or an under-sampled
-version cannot be hidden by a good version. The limits must be justified for
+version cannot be hidden by a good version. Decay compares each calibrator with its matching approved version; a qualified new version cannot borrow another version's baseline, and a worse version cannot hide behind the maximum of two aggregate scores. The limits must be justified for
 the particular profile; none is presented as a universal trading threshold.
 
 Forward comparisons only include decisions created at/after approval, with
