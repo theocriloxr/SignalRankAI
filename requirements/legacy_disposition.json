@@ -5739,11 +5739,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 94,
+      "line_count": 119,
       "path": "docs/SIGNAL_DELIVERY_RECOVERY_20261010.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0b3927e2219cd6106a9c855dc89f26d889e7f9a1e249acde4bc23ae2ed6929b4",
-      "size_bytes": 5955
+      "sha256": "15ab91e7ccd511d7cd35bce1646fdec465208237b75c193985690ea0c65d4df0",
+      "size_bytes": 7692
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10483,11 +10483,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 184,
+      "line_count": 214,
       "path": "scripts/production_soak_monitor.py",
       "reason": "production/build source",
-      "sha256": "1b5099720d9b6cea505f92ccb0bdd86ed6a35f0122e83c7f3c8e8af8e19cf66a",
-      "size_bytes": 10642
+      "sha256": "652487fc3b90de9432267e2db8a2ef6fb24f881b26ad47a2764fa7e5f49b8f3a",
+      "size_bytes": 12903
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14683,11 +14683,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 69,
+      "line_count": 140,
       "path": "tests/test_production_soak_monitor.py",
       "reason": "automated test evidence",
-      "sha256": "764a16af66cfe41bb363de8e66b77e81bd73b9bf20c849a456dfced994a38eb8",
-      "size_bytes": 4118
+      "sha256": "86938aaef91657f2eb14355bbcbf269044ebf9b29eac3d05f1f0a430c87f462b",
+      "size_bytes": 8058
     },
     {
       "disposition": "TEST_ONLY",

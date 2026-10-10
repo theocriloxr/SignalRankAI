@@ -53,13 +53,34 @@ def evaluate_observation(config: dict, health: dict, services: dict) -> dict:
     for role, expected in config["services"].items():
         observed = services.get(role) or {}
         variables = observed.get("variables")
-        active = [row for row in observed.get("deployments", []) if row.get("status") == "SUCCESS"]
-        exact = [row for row in active if row.get("id") == expected["deployment_id"]]
+        runtime = observed.get("runtime")
+        if not isinstance(runtime, dict) or runtime.get("serviceId") != expected["service_id"]:
+            failures.append(role + ":runtime_unavailable_or_wrong_service")
+            runtime = {}
+        active = runtime.get("activeDeployments")
+        active = active if isinstance(active, list) else []
+        exact = [row for row in active if isinstance(row, dict) and row.get("id") == expected["deployment_id"]]
         if len(active) != 1 or len(exact) != 1:
             failures.append(role + ":active_deployment_changed_or_missing")
         deployment_sha = ((exact[0].get("meta") or {}).get("commitHash")) if exact else None
         if deployment_sha != config["release_sha"]:
             failures.append(role + ":deployment_source_mismatch")
+        deployment = exact[0] if exact else {}
+        instances = deployment.get("instances")
+        instances = instances if isinstance(instances, list) else []
+        valid_instances = all(isinstance(row, dict) and isinstance(row.get("id"), str)
+                              and row.get("id") and isinstance(row.get("status"), str) for row in instances)
+        unique_instances = valid_instances and len({row["id"] for row in instances}) == len(instances)
+        running = sum(row.get("status") == "RUNNING" for row in instances if isinstance(row, dict))
+        unexpected = sum(row.get("status") not in {"RUNNING", "REMOVED"}
+                         for row in instances if isinstance(row, dict))
+        expected_replicas = expected.get("replicas", 1)
+        replicas_ok = (type(expected_replicas) is int and expected_replicas > 0 and unique_instances
+                       and running == expected_replicas and unexpected == 0)
+        runtime_ok = (deployment.get("status") == "SUCCESS" and deployment.get("deploymentStopped") is False
+                      and replicas_ok)
+        if not runtime_ok:
+            failures.append(role + ":running_replicas_not_proven")
         if not isinstance(variables, dict):
             failures.append(role + ":configuration_unavailable")
             summaries[role] = {"deployment_id": expected["deployment_id"], "status": "unverified"}
@@ -70,7 +91,8 @@ def evaluate_observation(config: dict, health: dict, services: dict) -> dict:
         pin_ok = variables.get("EXPECTED_RELEASE_COMMIT") == config["release_sha"]
         if not (flags_off and kill_on and pin_ok):
             failures.append(role + ":configuration_safety_not_proven")
-        summaries[role] = {"deployment_id": expected["deployment_id"], "status": "SUCCESS" if exact else "unverified",
+        summaries[role] = {"deployment_id": expected["deployment_id"], "status": "RUNNING" if runtime_ok else "unverified",
+                           "running_replicas": running, "expected_replicas": expected_replicas,
                            "source_matches": deployment_sha == config["release_sha"], "financial_flags_off": flags_off,
                            "kill_switch_on": kill_on, "approval_pin_matches": pin_ok}
     return {"readiness_ok": not failures, "safety_ok": not failures,
@@ -100,9 +122,9 @@ def summarize(samples: list[dict], config: dict, *, now: datetime) -> dict:
             "latest_failures": samples[-1].get("failures", []) if samples else ["no_observations"]}
 
 
-def _cli_json(config: dict, command: list[str]) -> object:
+def _cli_json(config: dict, command: list[str], *, input_text: str | None = None) -> object:
     result = subprocess.run([config["railway_cli"], *command], capture_output=True, text=True,
-                            timeout=25, encoding="utf-8", errors="replace")
+                            timeout=25, encoding="utf-8", errors="replace", input=input_text)
     if result.returncode:
         raise RuntimeError("railway_read_failed")
     return json.loads(result.stdout)
@@ -116,11 +138,19 @@ def collect(config: dict) -> dict:
     def role_read(item: tuple[str, dict]) -> tuple[str, dict]:
         role, service = item
         common = ["--project", config["project_id"], "--environment", config["environment_id"], "--service", service["service_id"], "--json"]
-        deployments = _cli_json(config, ["deployment", "list", *common, "--limit", "50"])
+        # CLI service-status describes the latest attempt, which may have failed
+        # while an older approved instance still serves. Query the active owner
+        # and actual replicas rather than inferring liveness from SUCCESS history.
+        query = ("query { serviceInstance(serviceId:" + json.dumps(service["service_id"])
+                 + ",environmentId:" + json.dumps(config["environment_id"])
+                 + ") { serviceId activeDeployments { id status meta deploymentStopped instances { id status } } } }")
+        response = _cli_json(config, ["api", "--compact"], input_text=query)
         variables = _cli_json(config, ["variable", "list", *common])
-        if not isinstance(deployments, list) or not isinstance(variables, dict):
+        if not isinstance(response, dict) or response.get("errors") or not isinstance(variables, dict):
             raise RuntimeError("railway_read_shape_invalid")
-        return role, {"deployments": deployments, "variables": variables}
+        data = response.get("data")
+        runtime = data.get("serviceInstance") if isinstance(data, dict) else None
+        return role, {"runtime": runtime, "variables": variables}
     with ThreadPoolExecutor(max_workers=4) as pool:
         services = dict(pool.map(role_read, config["services"].items()))
     # Only the filtered verdict escapes this function; raw variable maps remain

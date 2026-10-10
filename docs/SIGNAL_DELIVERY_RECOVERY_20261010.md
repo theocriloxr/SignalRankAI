@@ -70,6 +70,31 @@ guard was relaxed.
 
 ## Remaining recovery and acceptance
 
+The production inventory and runtime scan covers all 18 resources using two
+explicit service groups within the connector's ten-service limit. The four
+serving roles have one running replica each; PgBouncer has three. Three historical
+verification services are offline. The provider-certification job reports
+`SUCCESS`/`Online` but has zero running replicas and one crashed replica. Its
+prior source-guard failure is not a provider-certification pass. The backup cron's
+last execution succeeded on October 10 at 02:03:33 UTC. PostgreSQL's volume is
+20,000 MB; the former 5 GB capacity is no longer the current allocation.
+
+The read-only availability monitor now queries `serviceInstance.activeDeployments`
+with `deploymentStopped` and actual replica states. Deployment history or CLI
+service status alone cannot prove liveness: service status selects the latest
+failed attempt even while an older approved application is running. Exactly the
+configured number of distinct replicas must be running; removed historical
+replicas are ignored, and crashed, pending, unknown, missing or excess replicas
+interrupt the window. Existing successful deployment badges cannot hide a stopped
+job. This does not convert availability monitoring into release-soak acceptance.
+
+The published recovery checkpoint `6e52b42d` passed all 3,445 local tests and both
+hosted Python 3.11/3.12 suites, with no failures or skips and unchanged clean
+source identities. Hosted frontend, static and browser checks passed. Mobile
+typing and its 44 dependency/flow checks passed, but its four high dependency
+audit rows still fail aggregate release certification. These results precede the
+additional monitor repair described above; successor verification is required.
+
 The production configuration switches still require a controlled operational
 change after the corrected source is qualified and deployed. Re-enable recording
 on the engine and the canonical delivery shadow tracker, then verify new durable
