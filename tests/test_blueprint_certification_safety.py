@@ -88,6 +88,7 @@ class FakeCursor:
                 "research_experiment_results", "research_append_only_triggers",
                 "adaptive_profile_health_index",
                 "strategy_health_schema",
+                "research_snapshot_schema",
                 "broker_connections_credential_format",
                 "broker_connections_credential_version",
                 "broker_connections_credential_key_id",
@@ -130,6 +131,7 @@ class FakeCursor:
     (False, ("research_experiments",), False),
     (False, ("adaptive_profile_health_index",), False),
     (False, ("strategy_health_schema",), False),
+    (False, ("research_snapshot_schema",), False),
 ])
 def test_schema_gate_checks_all_revisions_and_execution_columns(monkeypatch, extra_revision, missing, allowed):
     head = schema_gate._expected_head()

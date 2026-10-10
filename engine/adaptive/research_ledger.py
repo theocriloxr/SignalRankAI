@@ -130,10 +130,17 @@ async def research_snapshot(session: AsyncSession, *, asset: str | None = None) 
     experiments = (await session.execute(text("""
         SELECT e.experiment_id,e.hypothesis_id,e.strategy_id,e.strategy_version,e.trial_family,
                e.dataset_version,e.feature_version,e.specification,e.started_at,
+               jsonb_build_object('status',CASE WHEN ds.dataset_version IS NULL
+                    THEN 'UNAVAILABLE' ELSE 'CAPTURED' END,
+                    'scope','canonical_outcomes_and_captured_sequence_metadata',
+                    'content_hash',ds.content_hash,'row_count',ds.row_count,
+                    'observation_cutoff',ds.observation_cutoff,
+                    'complete_market_input_replay',FALSE) AS dataset_snapshot,
                h.spec AS hypothesis,h.version AS hypothesis_version,h.parent_hypothesis_id,
                r.status,r.result,r.evidence_hash,r.completed_at
         FROM research_experiments e JOIN research_hypotheses h USING(hypothesis_id)
         LEFT JOIN research_experiment_results r USING(experiment_id)
+        LEFT JOIN research_dataset_snapshots ds ON ds.dataset_version=e.dataset_version
         WHERE CAST(:asset AS TEXT) IS NULL OR e.specification->'asset_scope' ? :asset
         ORDER BY e.started_at DESC,e.experiment_id LIMIT 50
     """), {"asset": asset})).mappings().all()

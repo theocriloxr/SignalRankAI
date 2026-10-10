@@ -241,7 +241,7 @@ async def seed_research_outcomes(get_session, asset):
     from utils.timeutils import now_utc_naive
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0051_strategy_health_baselines"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0052_research_dataset_snapshots"
         for i in range(160):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
@@ -282,6 +282,86 @@ async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial
         assert not evidence["promotion_eligible"] and not evidence["integrity"]["passed"]
         assert evidence["multiple_testing"]["status"] == "UNVERIFIED"
         assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_saved_dataset_survives_actual_source_corrections_and_missing_legacy_snapshot(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    from engine.adaptive.dataset_snapshot import load_dataset_snapshot
+    from engine.adaptive.walk_forward import walk_forward_evaluate
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITREPLAY")
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        version = (await session.execute(text("SELECT dataset_version FROM research_experiments"))).scalar_one()
+        before, before_manifest = await load_dataset_snapshot(session, version)
+        from engine.adaptive.research_ledger import research_snapshot
+        observed = (await research_snapshot(session, asset="AUDITREPLAY"))["experiments"][0]["dataset_snapshot"]
+        assert observed["status"] == "CAPTURED" and observed["content_hash"] == before_manifest.content_hash
+        assert observed["row_count"] == 160 and observed["complete_market_input_replay"] is False
+        await session.execute(text("UPDATE outcomes SET r_multiple=-999,corrected_at=NOW()"))
+        await session.execute(text("UPDATE signals SET strategy_group='corrected'"))
+        await session.commit()
+    # A new process/session must reconstruct the old experiment from stored rows.
+    async with sessions() as session:
+        replay, replay_manifest = await load_dataset_snapshot(session, version)
+        assert (replay, replay_manifest) == (before, before_manifest)
+        assert replay[0].family == "trend" and replay[0].r_multiple == -0.5
+        def evaluate(rows):
+            return walk_forward_evaluate(rows, family_weights={}, minimum_train=80, validation_size=20).to_dict()
+        assert evaluate(replay) == evaluate(before)
+        with pytest.raises(ValueError, match="snapshot_unavailable"):
+            await load_dataset_snapshot(session, "missing-legacy-dataset")
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_dataset_snapshots"))).scalar_one() == 2
+        replay, _ = await load_dataset_snapshot(session, version)
+        assert replay == before, "a successor dataset cannot replace old evidence"
+
+
+@pytest.mark.asyncio
+async def test_dataset_snapshot_concurrent_retries_and_database_mutation_guards(worker_database):
+    from datetime import datetime, timezone
+    from sqlalchemy.exc import DBAPIError
+    from engine.adaptive.dataset import build_dataset
+    from engine.adaptive.dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
+    cutoff = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    rows, manifest = build_dataset([{"signal_id": "immutable-label", "decision_time": cutoff - timedelta(days=1),
+        "outcome_known_at": cutoff - timedelta(hours=1), "r_multiple": -0.5,
+        "asset": "BTCUSDT", "asset_class": "crypto", "timeframe": "1h", "family": "trend",
+        "regime": "trend", "direction": "LONG", "evidence_category": "shadow"}], as_of=cutoff)
+    async with worker_database() as session:
+        await session.execute(text("""INSERT INTO adaptive_dataset_versions
+            (dataset_version,content_hash,row_count,first_decision_at,last_decision_at,
+             evidence_categories,assets,sequence_coverage,manifest)
+            VALUES(:version,:hash,:count,:first,:last,'["shadow"]','["BTCUSDT"]',0,CAST(:manifest AS JSONB))"""),
+            {"version": manifest.dataset_version, "hash": manifest.content_hash, "count": manifest.row_count,
+             "first": rows[0].decision_time.replace(tzinfo=None), "last": rows[0].decision_time.replace(tzinfo=None),
+             "manifest": json.dumps(manifest.to_dict())})
+        await session.commit()
+    async def save():
+        async with worker_database() as session:
+            await persist_dataset_snapshot(session, rows, manifest, observation_cutoff=cutoff)
+            await session.commit()
+    await asyncio.gather(save(), save())
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_dataset_snapshots"))).scalar_one() == 1
+        assert await load_dataset_snapshot(session, manifest.dataset_version) == (rows, manifest)
+        for statement in ("UPDATE research_dataset_snapshots SET row_count=0",
+                          "DELETE FROM research_dataset_snapshots", "TRUNCATE research_dataset_snapshots"):
+            with pytest.raises(DBAPIError, match="research_evidence_is_append_only"):
+                async with session.begin_nested():
+                    await session.execute(text(statement))
+        assert await load_dataset_snapshot(session, manifest.dataset_version) == (rows, manifest)
+        # Even if older mutable manifest metadata is damaged, replay fails closed.
+        await session.execute(text("UPDATE adaptive_dataset_versions SET manifest='{}'::jsonb"))
+        with pytest.raises(ValueError, match="identity_mismatch"):
+            await load_dataset_snapshot(session, manifest.dataset_version)
+        await session.rollback()
 
 
 @pytest.mark.asyncio
@@ -853,6 +933,39 @@ async def test_startup_and_runtime_reject_disabled_health_baseline_guard(monkeyp
         await session.commit()
     assert (await railway_main._database_readiness_check())["detail"] == "strategy_health_baseline_schema_or_guards_missing"
     assert "strategy_health_schema" in schema_gate.check_schema()["missing"]
+
+
+@pytest.mark.asyncio
+async def test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("DATABASE_MIGRATION_URL", url)
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+    statements = [
+        ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_immutable",
+         "ALTER TABLE research_dataset_snapshots ENABLE TRIGGER research_dataset_snapshots_immutable"),
+        ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_no_truncate",
+         "ALTER TABLE research_dataset_snapshots ENABLE TRIGGER research_dataset_snapshots_no_truncate"),
+        ("ALTER TABLE research_dataset_snapshots RENAME TO missing_snapshot_fixture",
+         "ALTER TABLE missing_snapshot_fixture RENAME TO research_dataset_snapshots"),
+    ]
+    for mutation, recovery in statements:
+        async with sessions() as session:
+            await session.execute(text(mutation))
+            await session.commit()
+        assert (await railway_main._database_readiness_check())["detail"] == "research_dataset_snapshot_schema_or_guards_missing"
+        assert "research_snapshot_schema" in schema_gate.check_schema()["missing"]
+        async with sessions() as session:
+            await session.execute(text(recovery))
+            await session.commit()
+        assert (await railway_main._database_readiness_check())["ok"]
 
 
 @pytest.mark.asyncio

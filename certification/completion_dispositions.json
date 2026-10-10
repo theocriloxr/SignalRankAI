@@ -3,7 +3,7 @@
     "docs/specs/20261005/research-validation.md#22": {
       "text_sha256": "1c29e7d67ec86fcb96689cd15fd0cfd1a8fb50ba1fe9537235705bdb579d4bfd",
       "status": "PARTIAL",
-      "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones. FRED historical requests now pin explicit day vintages and reject missing or mismatched revision bounds; latest context and intraday availability remain unqualified.",
+      "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones. FRED historical requests now pin explicit day vintages and reject missing or mismatched revision bounds; latest context and intraday availability remain unqualified. Adaptive research now persists bounded, append-only canonical outcome rows and captured sequence metadata, consumes those stored rows, and verifies identity before replay after source corrections. Startup and runtime admission require the snapshot table and active mutation guards; operator diagnostics distinguish captured snapshots from unavailable legacy evidence.",
       "canonical_paths": [
         "engine/adaptive/dataset.py",
         "engine/adaptive/availability.py",
@@ -11,30 +11,38 @@
         "engine/adaptive/learning.py",
         "engine/adaptive/integrity.py",
         "engine/adaptive/lifecycle.py",
-        "data/connectors/fred_adapter.py"
+        "data/connectors/fred_adapter.py",
+        "engine/adaptive/dataset_snapshot.py",
+        "db/research_snapshot_schema.py",
+        "db/migrations/versions/0052_research_dataset_snapshots.py"
       ],
       "conflicting_legacy_paths": [],
       "missing_acceptance": [
         "Historical universe membership, listing/delisting and corporate-action/revision vintages.",
         "Actual immutable provider publication/observation histories and feature availability for every component.",
         "Historical calendars, sessions, holidays and DST qualification.",
-        "Replayable persisted full input versions after source/outcome corrections.",
+        "Full historical OHLC/feature/context inputs, provider vintages and universe replay beyond the preserved canonical outcome rows.",
         "Exact-successor hosted acceptance; current checks concern local synthetic research, not provider/broker execution."
       ],
       "tests": {
         "positive": [
           "tests/test_sequence_availability.py::test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages",
-          "tests/test_fred_point_in_time.py::test_revision_cutoff_is_sent_to_real_adapter_and_later_revisions_do_not_replace_history"
+          "tests/test_fred_point_in_time.py::test_revision_cutoff_is_sent_to_real_adapter_and_later_revisions_do_not_replace_history",
+          "tests/test_dataset_snapshot.py::test_replay_restores_exact_rows_and_folds_after_the_source_changes"
         ],
         "negative": [
           "tests/test_sequence_availability.py::test_future_label_mutations_cannot_change_an_as_of_dataset",
           "tests/test_sequence_availability.py::test_future_provenance_blocks_actual_walk_forward_and_integrity",
           "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing",
-          "tests/test_fred_point_in_time.py::test_provider_revision_mismatch_rejects_the_response_instead_of_certifying_it"
+          "tests/test_fred_point_in_time.py::test_provider_revision_mismatch_rejects_the_response_instead_of_certifying_it",
+          "tests/test_adaptive_worker_research_postgres.py::test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards"
         ],
-        "concurrency": [],
+        "concurrency": [
+          "tests/test_adaptive_worker_research_postgres.py::test_dataset_snapshot_concurrent_retries_and_database_mutation_guards"
+        ],
         "recovery": [
-          "tests/test_adaptive_worker_research_postgres.py::test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone"
+          "tests/test_adaptive_worker_research_postgres.py::test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone",
+          "tests/test_adaptive_worker_research_postgres.py::test_saved_dataset_survives_actual_source_corrections_and_missing_legacy_snapshot"
         ]
       },
       "evidence": [],

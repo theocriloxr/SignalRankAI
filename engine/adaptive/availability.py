@@ -108,7 +108,8 @@ def audit_sequence_availability(
                 failures.add("sequence_capture_time_invalid")
         if ref.get("timestamp_convention") != "bar_open":
             unknown.add("sequence_timestamp_convention_unverified")
-        if str(ref.get("provider") or "unknown").lower() in {"unknown", "none", ""}:
+        provider = ref.get("provider")
+        if not isinstance(provider, str) or provider.strip().lower() in {"unknown", "none", ""}:
             unknown.add("sequence_provider_unavailable")
         if decision is not None:
             if opened is not None and opened > decision:

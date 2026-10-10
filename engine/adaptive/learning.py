@@ -23,6 +23,7 @@ from utils.timeutils import now_utc_naive
 
 from .components import DEFAULT_COMPONENTS
 from .dataset import AdaptiveDatasetRow, build_dataset
+from .dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
 from .statistics import profit_factor as _profit_factor
 from .repository import publish_approved_profiles
 from .walk_forward import walk_forward_evaluate
@@ -487,6 +488,10 @@ class AdaptiveLearningWorker:
                     "manifest": json.dumps(manifest.to_dict()),
                 },
             )
+            await persist_dataset_snapshot(session, dataset_rows, manifest,
+                observation_cutoff=snapshot_at.replace(tzinfo=timezone.utc))
+            # Research consumes the saved rows, never a later reread of outcomes.
+            dataset_rows, manifest = await load_dataset_snapshot(session, manifest.dataset_version)
             await session.execute(
                 text(
                     """

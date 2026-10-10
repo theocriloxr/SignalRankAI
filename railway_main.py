@@ -2360,6 +2360,7 @@ async def _database_readiness_check() -> dict[str, object]:
 
         from db.priority import DBPriority
         from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL, STRATEGY_HEALTH_SCHEMA_VALID_SQL
+        from db.research_snapshot_schema import RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL
         from db.session import get_session, is_db_configured
 
         if not is_db_configured():
@@ -2474,6 +2475,7 @@ async def _database_readiness_check() -> dict[str, object]:
                                 AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
                             {PROFILE_HEALTH_INDEX_VALID_SQL} AS adaptive_profile_health_index,
                             {STRATEGY_HEALTH_SCHEMA_VALID_SQL} AS strategy_health_schema,
+                            {RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL} AS research_snapshot_schema,
                             EXISTS (
                                 SELECT 1 FROM information_schema.columns
                                 WHERE table_schema = current_schema()
@@ -2687,6 +2689,9 @@ async def _database_readiness_check() -> dict[str, object]:
 
         if not bool(row.get("strategy_health_schema")):
             return {"ok": False, "detail": "strategy_health_baseline_schema_or_guards_missing", "revision": deployed}
+
+        if not bool(row.get("research_snapshot_schema")):
+            return {"ok": False, "detail": "research_dataset_snapshot_schema_or_guards_missing", "revision": deployed}
 
         if not bool(row.get("active_guard_present")):
             return {

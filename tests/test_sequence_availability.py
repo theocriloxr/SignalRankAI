@@ -35,6 +35,13 @@ def test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages()
     assert result["scope"] == "captured_closed_bar_timing_only"
 
 
+@pytest.mark.parametrize("provider", [123, True, {}, [], "   "])
+def test_malformed_provider_identity_cannot_certify_sequence_availability(provider):
+    result = audit(reference() | {"provider": provider})
+    assert result["status"] == "UNVERIFIED"
+    assert "sequence_provider_unavailable" in result["reasons"]
+
+
 @pytest.mark.parametrize("change,reason", [
     ({"asset": "EURUSD"}, "sequence_scope_mismatch"),
     ({"evidence_stage": "post_signal"}, "sequence_scope_mismatch"),

@@ -4,7 +4,7 @@
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0051_strategy_health_baselines
+Repository Alembic head: 0052_research_dataset_snapshots
 Release-candidate branch: fix/provider-discovery-readiness-20260923
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -27,6 +27,8 @@ chain with:
 - `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.
 - `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.
 - `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.
+
+- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections; full candle/feature/publication history remains unverified.
 
 The current release candidate also includes:
 

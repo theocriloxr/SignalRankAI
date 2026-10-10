@@ -71,6 +71,8 @@
     "scripts/certify_providers.py",
     "scripts/semgrep_gate.py",
     "scripts/install_opengrep.py",
-    "data/connectors/fred_adapter.py"
+    "data/connectors/fred_adapter.py",
+    "engine/adaptive/dataset_snapshot.py",
+    "db/research_snapshot_schema.py"
   ]
 }

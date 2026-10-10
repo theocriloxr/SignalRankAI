@@ -31,12 +31,12 @@ def test_migration_inspection_and_release_cli_do_not_require_pythonpath(entrypoi
         DATABASE_URL="postgresql+asyncpg://unused@127.0.0.1:1/signalrank_release_test")
     if entrypoint == "verifier":
         command = [sys.executable, str(root / "scripts/verify_release_chain.py")]
-        marker = "ALEMBIC_RELEASE_CHAIN_PASS head=0051_strategy_health_baselines"
+        marker = "ALEMBIC_RELEASE_CHAIN_PASS head=0052_research_dataset_snapshots"
     else:
         command = [sys.executable, "-I", "-c",
             "from alembic.config import Config; from alembic.script import ScriptDirectory; "
             "print(ScriptDirectory.from_config(Config('alembic.ini')).get_heads())"]
-        marker = "['0051_strategy_health_baselines']"
+        marker = "['0052_research_dataset_snapshots']"
     result = subprocess.run(command, cwd=root, env=env, capture_output=True,
                             text=True, encoding="utf-8", errors="replace", timeout=180)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -86,7 +86,7 @@ def test_provenance_binds_current_release_lock_and_dockerfile(tmp_path: Path):
 
     assert report["release"]["git_commit"] == COMMIT
     assert report["release"]["git_branch"] == BRANCH
-    assert report["release"]["alembic_head"] == "0051_strategy_health_baselines"
+    assert report["release"]["alembic_head"] == "0052_research_dataset_snapshots"
     assert report["inputs"]["requirements.lock"]["sha256"] == provenance.sha256_file(
         provenance.LOCK
     )

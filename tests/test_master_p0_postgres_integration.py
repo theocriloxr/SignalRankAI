@@ -604,7 +604,7 @@ async def postgres_database():
     assert "test" in (parsed.database or "") or parsed.database == "signalrank_master_audit"
     async with get_session() as session:
         from sqlalchemy import text
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0051_strategy_health_baselines"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0052_research_dataset_snapshots"
     yield
     await dispose_engine_for_event_loop()
 

@@ -3,7 +3,7 @@
 ## Runtime integration
 
 The analytics role and legacy worker own an independent profile-health loop
-(`ADAPTIVE_HEALTH_INTERVAL_SECONDS`, default 60, allowed 15–300 seconds).
+(`ADAPTIVE_HEALTH_INTERVAL_SECONDS`, default 60, allowed 15â€“300 seconds).
 Pausing or disabling research does not pause health surveillance.
 `AdaptiveLearningWorker` also checks health before starting research. Analytics
 supervises its recurring tasks and exits if a task unexpectedly stops; startup
@@ -336,12 +336,12 @@ Owner/admin reads use `GET /api/v1/platform/operator/health-baseline?profile_id=
 Owner approval uses `POST /api/v1/platform/operator/health-baseline` with
 `profile_id`, `profile_version`, `confirm=true` and all seven `conditions` fields:
 
-- `minimum_live_samples` (integer 20–250);
+- `minimum_live_samples` (integer 20â€“250);
 - `maximum_expectancy_decay_r` (finite, nonnegative R);
 - `maximum_drawdown_r` (finite, positive R);
-- `maximum_drawdown_duration_observations` (integer 1–250);
-- `maximum_profit_factor_decay_fraction` (finite 0–1);
-- `maximum_brier_increase` (finite 0–1);
+- `maximum_drawdown_duration_observations` (integer 1â€“250);
+- `maximum_profit_factor_decay_fraction` (finite 0â€“1);
+- `maximum_brier_increase` (finite 0â€“1);
 - `calibration_required` (strict boolean).
 
 The request cannot supply metrics, approver identity or approval time. Derivation
@@ -402,3 +402,38 @@ and [FRED real-time periods](https://fred.stlouisfed.org/docs/api/fred/realtime_
 cutoffs, ignored request bounds, future/expired/missing vintages, unavailable
 responses and the public sync entry point using a mocked transport. These are
 adapter-contract checks, not actual-provider qualification.
+
+
+## Canonical outcome dataset snapshots (0052)
+
+The adaptive learning worker persists the complete canonical outcome rows it
+actually uses in `research_dataset_snapshots`, then loads those stored rows for
+research. Snapshot format 1 contains the existing dataset manifest and all rows,
+including label-availability timestamps and captured sequence metadata. It is
+bounded to 100,000 rows and 32 MiB of canonical JSON; excess input rejects rather
+than silently truncating. The database separately caps JSONB text at 64 MiB.
+The migration adds one table, without backfilling or rewriting earlier evidence.
+
+`load_dataset_snapshot(session, dataset_version)` validates the stored hash,
+manifest, row count, cutoff, canonical representation and source-version
+identity. It never reconstructs missing legacy snapshots from today's outcomes.
+Concurrent identical retries preserve the first stored observation cutoff.
+Corrections produce a successor content identity; old experiments retain their
+original labels. UPDATE, DELETE and TRUNCATE are rejected by database triggers.
+Startup and runtime readiness verify both guards, their events and enabled state.
+Operator research diagnostics report CAPTURED or UNAVAILABLE, with the exact
+scope and `complete_market_input_replay=false`.
+
+This is a reproducible **outcome-weighting dataset**, not a complete historical
+market-data replay. Full candles, feature definitions and publication/revision
+vintages, historical universe membership, corporate actions, calendars and
+actual broker fills remain separate required evidence. Replaying an old input
+with a newer engine also requires its recorded code/feature version to be
+qualified. No snapshot grants execution permission or changes a health approval.
+
+Apply the additive 0052 migration only to the isolated candidate database until
+release acceptance passes. Existing production schema 0045 remains untouched.
+The repository preflight defaults and example profiles now expect 0052; changing
+these tracked defaults does not migrate or reconfigure a remote service.
+Evidence-preserving forward repair or an approved restore is required for
+rollback; a destructive schema downgrade is deliberately unavailable.
