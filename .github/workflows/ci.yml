@@ -208,7 +208,8 @@ jobs:
       - name: Install isolated hash-locked SDK profile
         run: |
           python -m venv "$RUNNER_TEMP/signalrank-data-sdks"
-          "$RUNNER_TEMP/signalrank-data-sdks/bin/python" -m pip install --require-hashes -r requirements-market-data-sdk.lock
+          "$RUNNER_TEMP/signalrank-data-sdks/bin/python" -m pip install -r requirements-build-tools.txt
+          "$RUNNER_TEMP/signalrank-data-sdks/bin/python" -m pip install --no-build-isolation --require-hashes -r requirements-market-data-sdk.lock
           "$RUNNER_TEMP/signalrank-data-sdks/bin/python" -m pip check
       - name: Exercise installed SDK request and parser contracts
         run: |

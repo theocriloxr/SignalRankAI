@@ -18,7 +18,8 @@ this profile into the application's environment.
 
 ```sh
 python3.11 -m venv /opt/signalrank-data-sdks
-/opt/signalrank-data-sdks/bin/python -m pip install --require-hashes -r requirements-market-data-sdk.lock
+/opt/signalrank-data-sdks/bin/python -m pip install -r requirements-build-tools.txt
+/opt/signalrank-data-sdks/bin/python -m pip install --no-build-isolation --require-hashes -r requirements-market-data-sdk.lock
 /opt/signalrank-data-sdks/bin/python -m pip check
 /opt/signalrank-data-sdks/bin/python -m unittest discover -s tests_sdk -v
 ```

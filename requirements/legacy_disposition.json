@@ -43,11 +43,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 287,
+      "line_count": 288,
       "path": ".github/workflows/ci.yml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c0cde9ed579acdbc70e347b0e2ab48a644998d0912aac2ead606043a3a487680",
-      "size_bytes": 10583
+      "sha256": "2dcb97a9ce807721fdde85c162f5d292b7c4bd94a32b672dba63648542b09b44",
+      "size_bytes": 10708
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5307,11 +5307,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 105,
+      "line_count": 106,
       "path": "docs/MARKET_DATA_SDKS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "cc337818dcd5ad2cddb1f2a976714e6d99ef4977f7816f0f7c3bb2e9ec353308",
-      "size_bytes": 6701
+      "sha256": "0c2fbcd067b04bf1ff9973e3a14815a62491007dc5d9b22b3bdac3d0999b76ba",
+      "size_bytes": 6806
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
