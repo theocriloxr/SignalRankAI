@@ -11,7 +11,7 @@ from typing import Any, Mapping
 
 from sqlalchemy import text
 
-LIFECYCLE_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_health'))"
+LIFECYCLE_LOCK_SQL = "SELECT set_config('TimeZone','UTC',true), pg_advisory_xact_lock(hashtext('signalrankai_adaptive_health'))"
 LEASE_VERSION = "adaptive-health-lease-v1"
 MAXIMUM_LEASE_SECONDS = 630
 logger = logging.getLogger(__name__)
@@ -27,6 +27,10 @@ def health_interval_seconds() -> float:
 async def lock_profile_lifecycle(session: Any) -> None:
     # Publication and deactivation share this transaction lock, so an older
     # publisher cannot overwrite a suspension after reading an approved row.
+    # Canonical evidence columns are UTC-naive TIMESTAMPs. NOW() casts and
+    # comparisons must not inherit a deployment/pool connection's local zone.
+    # SET LOCAL shares this round trip and ends with the transaction, including
+    # rollback; it does not change another pooled transaction's session policy.
     await session.execute(text(LIFECYCLE_LOCK_SQL))
 
 

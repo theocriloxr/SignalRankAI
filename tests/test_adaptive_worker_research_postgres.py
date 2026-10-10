@@ -285,6 +285,50 @@ async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["future_close", "future_correction", "unclosed_sequence"])
+async def test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing(monkeypatch, worker_database, mode):
+    from datetime import timezone
+    from db.models import AdaptiveSignalSequence
+    from engine.adaptive import learning, repository
+    from utils.timeutils import now_utc_naive
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITAVAILABILITY")
+    async with sessions() as session:
+        first = (await session.execute(text("SELECT signal_id,created_at FROM signals ORDER BY created_at LIMIT 1"))).mappings().one()
+        if mode.startswith("future"):
+            column = "closed_at" if mode == "future_close" else "corrected_at"
+            await session.execute(text(f"UPDATE outcomes SET {column}=:future WHERE signal_id=:id"),
+                {"future": now_utc_naive() + timedelta(days=1), "id": first["signal_id"]})
+        else:
+            decision = first["created_at"].replace(tzinfo=timezone.utc)
+            session.add(AdaptiveSignalSequence(signal_id=first["signal_id"], asset="AUDITAVAILABILITY",
+                timeframe="1h", sequence_hash="a" * 64, candle_count=30,
+                start_time_ms=int((decision - timedelta(hours=30)).timestamp() * 1000),
+                end_time_ms=int(decision.timestamp() * 1000), provider="synthetic-audit", evidence_stage="pre_signal",
+                summary={"captured_at": decision.isoformat(), "timestamp_convention": "bar_open"}))
+        await session.commit()
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        manifest = (await session.execute(text("SELECT manifest FROM adaptive_dataset_versions"))).scalar_one()
+        result = (await session.execute(text("SELECT result FROM research_experiment_results"))).scalar_one()
+        evidence = result
+        assert not result["promotion_eligible"]
+        if mode.startswith("future"):
+            assert manifest["row_count"] == 159
+            assert evidence["walk_forward"]["leakage_checks_passed"]
+        else:
+            assert manifest["row_count"] == 160
+            assert not evidence["walk_forward"]["leakage_checks_passed"]
+            assert "sequence_availability_violation" in evidence["walk_forward"]["reasons"]
+            check = next(c for c in evidence["integrity"]["checks"] if c["check_id"] == "captured_sequence_availability")
+            assert check["status"] == "FAIL" and "sequence_bar_unclosed_at_decision" in check["reason"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["objective_exception", "aborted_database_transaction"])
 async def test_actual_failed_worker_keeps_immutable_terminal_evidence_and_skips_closed_trials(monkeypatch, worker_database, mode):
     from sqlalchemy.exc import DBAPIError
@@ -684,7 +728,7 @@ async def test_approved_baseline_detects_forward_decay_and_never_restores_suspen
         await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE"))
         await session.commit()
     first = await learning.monitor_profile_health()
-    assert first["profile_diagnostics"][0]["approved_baseline_comparison"] == "INSUFFICIENT"
+    assert first["profile_diagnostics"][0]["approved_baseline_comparison"] == "INSUFFICIENT", first["profile_diagnostics"][0]
     assert first["published"] == 1
     async with sessions() as session:
         # PostgreSQL NOW() is transaction-start time; place forward fixture
@@ -692,9 +736,9 @@ async def test_approved_baseline_detects_forward_decay_and_never_restores_suspen
         await session.execute(text("SELECT pg_sleep(0.01)"))
         await seed_health_baseline(session, forward=True)
         await session.execute(text("UPDATE signals SET created_at=(SELECT approved_at FROM strategy_health_baselines)+INTERVAL '1 millisecond' "
-            "WHERE created_at>NOW()-INTERVAL '1 day'"))
-        await session.execute(text("UPDATE outcomes SET closed_at=NOW()-INTERVAL '1 millisecond' "
-            "WHERE signal_id IN (SELECT signal_id FROM signals WHERE created_at>NOW()-INTERVAL '1 day')"))
+            "WHERE created_at>(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 day'"))
+        await session.execute(text("UPDATE outcomes SET closed_at=(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 millisecond' "
+            "WHERE signal_id IN (SELECT signal_id FROM signals WHERE created_at>(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 day')"))
         await session.commit()
     second = await learning.monitor_profile_health()
     report = second["profile_diagnostics"][0]
@@ -707,6 +751,35 @@ async def test_approved_baseline_detects_forward_decay_and_never_restores_suspen
         assert (await session.execute(text("SELECT COUNT(*) FROM strategy_health_events"))).scalar_one() == 2
     assert (await learning.monitor_profile_health())["published"] == 0
     assert json.loads(values["adaptive:profile:approved:AUDITBASE"])["state"] == "SUSPENDED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("zone", ["Africa/Lagos", "America/New_York", "Asia/Tokyo"])
+async def test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone(worker_database, zone):
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline, baseline_valid, record_health_event
+    from engine.adaptive.lifecycle import lock_profile_lifecycle
+    from utils.timeutils import now_utc_naive
+    async with worker_database() as session:
+        await session.execute(text("SELECT set_config('TimeZone',:zone,false)"), {"zone": zone})
+        await session.commit()
+        # Keep this same connection checked out for the rollback check below.
+        async with session.begin():
+            await seed_health_baseline(session)
+            await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+                approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+            baseline = (await session.execute(text("SELECT * FROM strategy_health_baselines"))).mappings().one()
+            profile = (await session.execute(text("SELECT * FROM adaptive_asset_profiles"))).mappings().one()
+            assert baseline_valid(baseline, profile)
+            assert abs((now_utc_naive() - baseline["approved_at"]).total_seconds()) < 30
+            await record_health_event(session, profile_id="governed-health", report={"baseline_id": baseline["baseline_id"], "test": "timezone"})
+            checked = (await session.execute(text("SELECT created_at FROM strategy_health_events"))).scalar_one()
+            assert abs((now_utc_naive() - checked).total_seconds()) < 30
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == zone
+        await session.rollback()
+        await lock_profile_lifecycle(session)
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == "UTC"
+        await session.rollback()
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == zone
 
 
 @pytest.mark.asyncio

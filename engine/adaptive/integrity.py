@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from typing import Sequence
 
 from .dataset import AdaptiveDatasetRow
+from .availability import audit_sequence_availability
 from .walk_forward import WalkForwardResult
 
 
@@ -32,6 +33,13 @@ def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardR
           "hypothetical_delivery_and_execution_evidence_must_not_be_pooled")
     check("sequence_lineage", bool(rows) and all(row.sequence_hashes for row in rows),
           "content_references_required_but_not_sufficient_for_point_in_time_verification")
+    availability = [audit_sequence_availability(row.sequence_provenance, asset=row.asset,
+        decision_time=row.decision_time, sequence_hashes=row.sequence_hashes) for row in rows]
+    status = "FAIL" if any(item["status"] == "FAIL" for item in availability) else (
+        "PASS" if availability and all(item["status"] == "PASS" for item in availability) else "UNVERIFIED")
+    reasons = sorted({reason for item in availability for reason in item["reasons"]})
+    checks.append(IntegrityCheck("captured_sequence_availability", status,
+        ";".join(reasons) or "captured_closed_bar_timing_only;publication_and_feature_vintages_unverified"))
     # A sequence hash is not a replay of indicator availability, universe
     # membership or fills. Existing outcome weighting cannot establish these.
     for name, reason in {
@@ -44,6 +52,6 @@ def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardR
         "calendar_alignment": "sequence_hashes_do_not_verify_historical_session_and_revision_alignment",
     }.items():
         checks.append(IntegrityCheck(name, "UNVERIFIED", reason))
-    return {"method_version": "adaptive-integrity-v1", "checks": [asdict(item) for item in checks],
+    return {"method_version": "adaptive-integrity-v2", "checks": [asdict(item) for item in checks],
             "passed": all(item.status in {"PASS", "NOT_APPLICABLE"} or not item.blocking for item in checks),
             "evidence_class": "research", "limitations_explicit": True}

@@ -1,0 +1,41 @@
+{
+  "entries": {
+    "docs/specs/20261005/research-validation.md#22": {
+      "text_sha256": "1c29e7d67ec86fcb96689cd15fd0cfd1a8fb50ba1fe9537235705bdb579d4bfd",
+      "status": "PARTIAL",
+      "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones.",
+      "canonical_paths": [
+        "engine/adaptive/dataset.py",
+        "engine/adaptive/availability.py",
+        "engine/adaptive/sequence.py",
+        "engine/adaptive/learning.py",
+        "engine/adaptive/integrity.py",
+        "engine/adaptive/lifecycle.py"
+      ],
+      "conflicting_legacy_paths": [],
+      "missing_acceptance": [
+        "Historical universe membership, listing/delisting and corporate-action/revision vintages.",
+        "Actual immutable provider publication/observation histories and feature availability for every component.",
+        "Historical calendars, sessions, holidays and DST qualification.",
+        "Replayable persisted full input versions after source/outcome corrections.",
+        "Exact-successor hosted acceptance; current checks concern local synthetic research, not provider/broker execution."
+      ],
+      "tests": {
+        "positive": [
+          "tests/test_sequence_availability.py::test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages"
+        ],
+        "negative": [
+          "tests/test_sequence_availability.py::test_future_label_mutations_cannot_change_an_as_of_dataset",
+          "tests/test_sequence_availability.py::test_future_provenance_blocks_actual_walk_forward_and_integrity",
+          "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing"
+        ],
+        "concurrency": [],
+        "recovery": [
+          "tests/test_adaptive_worker_research_postgres.py::test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone"
+        ]
+      },
+      "evidence": [],
+      "external": null
+    }
+  }
+}

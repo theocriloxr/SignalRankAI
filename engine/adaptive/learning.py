@@ -9,7 +9,7 @@ import os
 from dataclasses import asdict
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
@@ -364,7 +364,8 @@ class AdaptiveLearningWorker:
 
         minimum_samples = max(20, int(os.getenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "40") or 40))
         lookback_days = max(30, int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "365") or 365))
-        cutoff = now_utc_naive() - timedelta(days=lookback_days)
+        snapshot_at = now_utc_naive()
+        cutoff = snapshot_at - timedelta(days=lookback_days)
         feature_version, feature_hash, component_versions = _feature_version()
         run_id = str(uuid4())
 
@@ -415,6 +416,15 @@ class AdaptiveLearningWorker:
                                 WHERE seq.signal_id = s.signal_id
                             ), ARRAY[]::VARCHAR[]) AS sequence_hashes,
                             COALESCE((
+                                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                                    'asset', seq.asset, 'timeframe', seq.timeframe,
+                                    'sequence_hash', seq.sequence_hash, 'candle_count', seq.candle_count,
+                                    'start_time_ms', seq.start_time_ms, 'end_time_ms', seq.end_time_ms,
+                                    'provider', seq.provider, 'evidence_stage', seq.evidence_stage,
+                                    'summary', seq.summary) ORDER BY seq.timeframe, seq.sequence_hash)
+                                FROM adaptive_signal_sequences seq WHERE seq.signal_id = s.signal_id
+                            ), '[]'::JSONB) AS sequence_provenance,
+                            COALESCE((
                                 SELECT MAX(
                                     CASE
                                         WHEN (ev.data_quality->>'score') ~ '^[0-9]+(\\.[0-9]+)?$'
@@ -435,20 +445,24 @@ class AdaptiveLearningWorker:
                         FROM signals s
                         JOIN outcomes o ON o.signal_id = s.signal_id
                         WHERE s.created_at >= :cutoff
+                          AND s.created_at <= :snapshot_at
                           AND o.r_multiple IS NOT NULL
                           AND o.closed_at IS NOT NULL
+                          AND GREATEST(o.closed_at,o.corrected_at) <= :snapshot_at
                           AND o.performance_inclusion_status='eligible'
                         ORDER BY s.created_at, s.signal_id
+                        LIMIT 100001
                         """
                         ),
-                        {"cutoff": cutoff},
+                        {"cutoff": cutoff, "snapshot_at": snapshot_at},
                     )
                 )
                 .mappings()
                 .all()
             )
 
-            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows])
+            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows],
+                as_of=snapshot_at.replace(tzinfo=timezone.utc))
             await session.execute(
                 text(
                     """

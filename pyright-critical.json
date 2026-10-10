@@ -4,6 +4,7 @@
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "include": [
+    "engine/adaptive/availability.py",
     "engine/adaptive/health_baselines.py",
     "core/env.py",
     "core/production_integrity.py",
