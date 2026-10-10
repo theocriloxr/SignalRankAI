@@ -105,6 +105,10 @@ def _env_enabled(name: str, default: bool = True) -> bool:
 
 
 _PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
+    "alpaca_connector": ("ALPACA_MARKET_DATA_ENABLED", True),
+    "marketdata_connector": ("MARKETDATA_ENABLED", False),
+    "ccxt_connector": ("CCXT_MARKET_DATA_ENABLED", False),
+    "ibkr_connector": ("IBKR_MARKET_DATA_ENABLED", False),
     "fcs_connector": ("FCS_ENABLED", True),
     "yfinance_connector": ("YFINANCE_ENABLED", True),
     "fmp_connector": ("FMP_ENABLED", False),
@@ -113,6 +117,7 @@ _PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
 }
 
 _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "marketdata_connector": ("MARKETDATA_TOKEN",),
     "fcs_connector": ("FCS_API_KEY", "FCS_API_SECRET"),
     "twelvedata_connector": ("TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY"),
     "polygon_connector": ("MASSIVE_API_KEY", "POLYGON_API_KEY"),  # Massive (formerly Polygon.io) consolidated secret
@@ -136,6 +141,12 @@ def _provider_configured(name: str) -> bool:
         flag_name, default_enabled = enable_contract
         if not _env_enabled(flag_name, default_enabled):
             return False
+    if canonical == "ccxt_connector":
+        from market_data_sdk.worker import CCXT_VENUES
+        return os.getenv("CCXT_MARKET_DATA_EXCHANGE", "").strip().lower() in CCXT_VENUES
+    if canonical == "ibkr_connector":
+        return all(os.getenv(key, "").strip() for key in (
+            "IBKR_MARKET_DATA_HOST", "IBKR_MARKET_DATA_PORT", "IBKR_MARKET_DATA_CONTRACTS_JSON"))
     required = _PROVIDER_KEYS.get(canonical)
     if not required:
         return True
@@ -198,13 +209,15 @@ def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[T
         return derivative_providers
 
     if kind == "crypto":
-        return crypto
+        return crypto + [("ccxt_connector", getattr(c, "ccxt_get_candles", None)),
+                         ("alpaca_connector", getattr(c, "alpaca_get_candles", None))]
     if kind in ("fx", "forex"):
         return [
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
             ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("oanda_connector", getattr(c, "oanda_get_candles", None)),
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
             ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
@@ -214,6 +227,7 @@ def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[T
         ]
     if kind == "commodity":
         return [
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
             ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
@@ -223,6 +237,7 @@ def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[T
         ]
     if kind == "index":
         return [
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
             ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
@@ -235,6 +250,8 @@ def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[T
         ("fcs_connector", getattr(c, "fcs_get_candles", None)),
         ("polygon_connector", getattr(c, "polygon_get_candles", None)),
         ("alpaca_connector", getattr(c, "alpaca_get_candles", None)),
+        ("marketdata_connector", getattr(c, "marketdata_get_candles", None)),
+        ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
         ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
         ("tradier_connector", getattr(c, "tradier_get_candles", None)),
         ("fmp_connector", getattr(c, "fmp_get_candles", None)),

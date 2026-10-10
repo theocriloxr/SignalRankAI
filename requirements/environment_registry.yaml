@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1365,
+  "variable_count": 1380,
   "variables": [
     {
       "declared_defaults": {},
@@ -1101,7 +1101,7 @@
       "name": "ALPACA_API_KEY",
       "production_example_default": "",
       "read_locations": [
-        "data/connectors/alpaca_adapter.py:26"
+        "data/connectors/alpaca_adapter.py:31"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -1120,10 +1120,45 @@
       "name": "ALPACA_API_SECRET",
       "production_example_default": "",
       "read_locations": [
-        "data/connectors/alpaca_adapter.py:27"
+        "data/connectors/alpaca_adapter.py:32"
       ],
       "required_by_code": true,
       "sensitive": true
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "iex"
+      },
+      "name": "ALPACA_DATA_FEED",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/alpaca_adapter.py:47",
+        "data/provider_catalog.py:88"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "rest"
+      },
+      "name": "ALPACA_DATA_TRANSPORT",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/alpaca_adapter.py:50"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "1"
+      },
+      "name": "ALPACA_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
     },
     {
       "declared_defaults": {
@@ -1202,7 +1237,7 @@
       "name": "APCA_API_KEY_ID",
       "production_example_default": "",
       "read_locations": [
-        "data/connectors/alpaca_adapter.py:26"
+        "data/connectors/alpaca_adapter.py:31"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -1221,7 +1256,7 @@
       "name": "APCA_API_SECRET_KEY",
       "production_example_default": "",
       "read_locations": [
-        "data/connectors/alpaca_adapter.py:27"
+        "data/connectors/alpaca_adapter.py:32"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -2543,6 +2578,29 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "CCXT_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "kraken"
+      },
+      "name": "CCXT_MARKET_DATA_EXCHANGE",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connector_registry.py:146",
+        "data/connectors/sdk_adapters.py:50"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "CHART_STYLE_DEFAULT",
       "production_example_default": null,
@@ -2669,6 +2727,19 @@
       "production_example_default": "2",
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "rest"
+      },
+      "name": "COINBASE_QUOTE_TRANSPORT",
+      "production_example_default": null,
+      "read_locations": [
+        "data/get_live_price.py:1136",
+        "data/get_live_price.py:1150"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -6400,6 +6471,64 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "71"
+      },
+      "name": "IBKR_MARKET_DATA_CLIENT_ID",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:65"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "{}"
+      },
+      "name": "IBKR_MARKET_DATA_CONTRACTS_JSON",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:61"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "IBKR_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "IBKR_MARKET_DATA_HOST",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:63"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "4002"
+      },
+      "name": "IBKR_MARKET_DATA_PORT",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:64"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "IMAGE_DIGEST",
       "production_example_default": null,
@@ -6860,6 +6989,41 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "0"
+      },
+      "name": "MARKETDATA_ENABLED",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "live"
+      },
+      "name": "MARKETDATA_MODE",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:41",
+        "data/provider_catalog.py:90"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "MARKETDATA_TOKEN",
+      "production_example_default": null,
+      "read_locations": [
+        "data/connectors/sdk_adapters.py:39"
+      ],
+      "required_by_code": true,
+      "sensitive": true
+    },
+    {
+      "declared_defaults": {
         ".env.example": "",
         "configs/env/hermetic-test.env.example": "",
         "configs/env/production.env.example": "",
@@ -6936,6 +7100,18 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": ""
+      },
+      "name": "MARKET_DATA_SDK_PYTHON",
+      "production_example_default": null,
+      "read_locations": [
+        "data/sdk_gateway.py:38"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "MARKET_ENRICHMENT_TIMEOUT_SECONDS",
       "production_example_default": null,
@@ -6993,7 +7169,7 @@
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2728"
+        "data/fetcher.py:2732"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8647,7 +8823,7 @@
       "name": "NASDAQ_DATA_LINK_API_KEY",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:148",
+        "data/connector_registry.py:159",
         "data/connectors/nasdaq_data_link_adapter.py:37"
       ],
       "required_by_code": true,
@@ -8667,7 +8843,7 @@
       "name": "NASDAQ_DATA_LINK_DATASETS_JSON",
       "production_example_default": "",
       "read_locations": [
-        "data/connector_registry.py:149",
+        "data/connector_registry.py:160",
         "data/connectors/nasdaq_data_link_adapter.py:22"
       ],
       "required_by_code": true,
@@ -11049,7 +11225,7 @@
       "read_locations": [
         "config.py:70",
         "data/connectors/polygon_adapter.py:26",
-        "data/get_live_price.py:1274",
+        "data/get_live_price.py:1289",
         "data/get_live_price.py:131",
         "data/get_live_price.py:340",
         "data/pair_discovery.py:1096",

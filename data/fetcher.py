@@ -2653,6 +2653,10 @@ def _provider_timeframe_eligible(provider_name: str, timeframe: str) -> bool:
     tf = str(timeframe or "").strip().lower()
     if alias == "ecb" and tf not in {"1d", "d", "day", "daily"}:
         return False
+    if alias in {"alpaca", "marketdata"}:
+        from data.provider_catalog import get_provider_spec
+        if not get_provider_spec(alias).execution_data_allowed():
+            return False
     return True
 
 

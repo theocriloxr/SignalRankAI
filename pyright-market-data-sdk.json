@@ -1,0 +1,6 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "include": ["market_data_sdk"],
+  "reportMissingTypeStubs": false
+}

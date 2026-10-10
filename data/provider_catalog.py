@@ -79,6 +79,17 @@ class ProviderSpec:
             return self.default_enabled
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
+    def execution_data_allowed(self, env: Mapping[str, str] | None = None) -> bool:
+        """Feed policy only; this never certifies an account or an order."""
+        source = os.environ if env is None else env
+        if not self.realtime_capable:
+            return False
+        if self.key == "alpaca":
+            return str(source.get("ALPACA_DATA_FEED", "iex")).strip().lower() in {"iex", "sip"}
+        if self.key == "marketdata":
+            return str(source.get("MARKETDATA_MODE", "live")).strip().lower() == "live"
+        return True
+
     def resolve_connector(self) -> Callable[..., Any] | None:
         """Resolve only connectors explicitly compiled into the provider catalogue."""
         if not self.connector_module or not self.connector_attr:
@@ -127,6 +138,12 @@ class ProviderSpec:
             from data.connectors.finnhub_adapter import get_candles as value
         elif key == ("data.connectors.alpaca_adapter", "get_candles"):
             from data.connectors.alpaca_adapter import get_candles as value
+        elif key == ("data.connectors.sdk_adapters", "marketdata_get_candles"):
+            from data.connectors.sdk_adapters import marketdata_get_candles as value
+        elif key == ("data.connectors.sdk_adapters", "ccxt_get_candles"):
+            from data.connectors.sdk_adapters import ccxt_get_candles as value
+        elif key == ("data.connectors.sdk_adapters", "ibkr_get_candles"):
+            from data.connectors.sdk_adapters import ibkr_get_candles as value
         elif key == ("data.connectors.tradier_adapter", "get_candles"):
             from data.connectors.tradier_adapter import get_candles as value
         elif key == ("data.connectors.nasdaq_data_link_adapter", "get_candles"):
@@ -151,6 +168,33 @@ class ProviderSpec:
 
 PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
+        "marketdata", "Market Data", "data.connectors.sdk_adapters", "marketdata_get_candles",
+        ("equity",), ("cash",), ("1m", "5m", "15m", "30m", "1h", "4h", "1d"),
+        ("keyed_fallback", "historical"), "https://github.com/MarketDataApp/sdk-py",
+        required_env=("MARKETDATA_TOKEN",), enabled_env="MARKETDATA_ENABLED", default_enabled=False,
+        sample_symbol="AAPL", sample_timeframe="5m",
+        notes="Isolated official SDK. Delayed/cached modes are analysis only. Plan and exchange entitlements apply.",
+    ),
+    ProviderSpec(
+        "ccxt", "CCXT public spot", "data.connectors.sdk_adapters", "ccxt_get_candles",
+        ("crypto_spot",), ("spot",), ("1m", "5m", "15m", "30m", "1h", "4h", "1d"),
+        ("public", "fallback_realtime"), "https://docs.ccxt.com/",
+        required_env=("CCXT_MARKET_DATA_EXCHANGE",), public_endpoint=True,
+        enabled_env="CCXT_MARKET_DATA_ENABLED", default_enabled=False,
+        sample_symbol="BTCUSDT", sample_timeframe="5m",
+        notes="Explicit venue, exact active spot pair. No keys or orders. Venue/interval/region limits apply.",
+    ),
+    ProviderSpec(
+        "ibkr", "Interactive Brokers TWS data", "data.connectors.sdk_adapters", "ibkr_get_candles",
+        ("equity", "forex", "index", "commodity_spot"), ("cash", "fx", "index", "spot"),
+        ("1m", "5m", "15m", "30m", "1h", "4h", "1d"), ("keyed_fallback", "historical"),
+        "https://interactivebrokers.github.io/tws-api/initial_setup.html",
+        required_env_all=(("IBKR_MARKET_DATA_HOST",), ("IBKR_MARKET_DATA_PORT",), ("IBKR_MARKET_DATA_CONTRACTS_JSON",)),
+        enabled_env="IBKR_MARKET_DATA_ENABLED", default_enabled=False,
+        sample_symbol="AAPL", sample_timeframe="5m",
+        notes="Read-only Gateway/TWS with subscriptions and exact contract map; isolated pinned legacy PyPI SDK.",
+    ),
+    ProviderSpec(
         "fcs", "FCS API", "data.connectors.fcs_adapter", "get_candles",
         ("forex", "equity", "index", "commodity_spot", "crypto_spot"),
         ("fx", "cash", "index", "spot"),
@@ -167,7 +211,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         "get_candles",
         ("crypto_spot",),
         ("spot",),
-        ("1m", "5m", "15m", "1h", "4h", "1d"),
+        ("1m", "5m", "15m", "1h", "1d"),
         ("primary_realtime", "public"),
         "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles",
         public_endpoint=True,
@@ -456,16 +500,18 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         "Alpaca",
         "data.connectors.alpaca_adapter",
         "get_candles",
-        ("equity", "crypto_spot", "equity_option"),
-        ("cash", "spot", "options"),
-        ("1m", "5m", "15m", "1h", "1d"),
+        ("equity", "crypto_spot"),
+        ("cash", "spot"),
+        ("1m", "5m", "15m", "30m", "1h", "4h", "1d"),
         ("keyed_primary", "sandbox"),
         "https://docs.alpaca.markets/docs/market-data",
         required_env_all=(("ALPACA_API_KEY", "APCA_API_KEY_ID"), ("ALPACA_API_SECRET", "APCA_API_SECRET_KEY")),
         sandbox=True,
-        default_enabled=False,
+        enabled_env="ALPACA_MARKET_DATA_ENABLED",
+        default_enabled=True,
         sample_symbol="AAPL",
         sample_timeframe="1h",
+        notes="IEX is a single exchange; SIP requires entitlement. delayed_sip is analysis only. REST or isolated official SDK.",
     ),
     ProviderSpec(
         "tradier",

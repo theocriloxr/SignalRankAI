@@ -23,6 +23,7 @@ from .eodhd_adapter import get_candles as eodhd_get_candles
 from .marketstack_adapter import get_candles as marketstack_get_candles
 from .finnhub_adapter import get_candles as finnhub_get_candles
 from .alpaca_adapter import get_candles as alpaca_get_candles
+from .sdk_adapters import marketdata_get_candles, ccxt_get_candles, ibkr_get_candles
 from .tradier_adapter import get_candles as tradier_get_candles
 from .stooq_adapter import get_candles as stooq_get_candles
 from .nasdaq_data_link_adapter import get_candles as nasdaq_data_link_get_candles
@@ -82,6 +83,9 @@ __all__ = [
     "marketstack_get_candles",
     "finnhub_get_candles",
     "alpaca_get_candles",
+    "marketdata_get_candles",
+    "ccxt_get_candles",
+    "ibkr_get_candles",
     "tradier_get_candles",
     "stooq_get_candles",
     "nasdaq_data_link_get_candles",

@@ -12,13 +12,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements.lock requirements-build-tools.txt release_certification_manifest.txt ./
+COPY requirements.txt requirements.lock requirements-build-tools.txt requirements-market-data-sdk.lock release_certification_manifest.txt ./
 RUN python -m venv "$VIRTUAL_ENV" \
     && python -m pip install --requirement requirements-build-tools.txt \
     && pip install --no-deps -r requirements.lock \
     && pip check
 
+# Keep SDK dependencies out of the Telegram runtime (httpx versions conflict).
+RUN python -m venv /opt/market-data-sdk \
+    && /opt/market-data-sdk/bin/python -m pip install -r requirements-build-tools.txt \
+    && /opt/market-data-sdk/bin/python -m pip install --no-build-isolation --require-hashes -r requirements-market-data-sdk.lock \
+    && /opt/market-data-sdk/bin/python -m pip check
+
 COPY . .
+RUN /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v
 
 # Build-time certification is intentionally deterministic and network-free
 # except for dependency installation above. This prevents Railway from
@@ -30,6 +37,7 @@ FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab0
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
+    MARKET_DATA_SDK_PYTHON=/opt/market-data-sdk/bin/python \
     PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update \
@@ -40,6 +48,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/market-data-sdk /opt/market-data-sdk
 COPY --from=builder --chown=signalrank:signalrank /app /app
 
 RUN chmod +x /app/start.sh

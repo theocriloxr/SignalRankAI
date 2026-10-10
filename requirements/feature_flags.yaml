@@ -1,5 +1,5 @@
 {
-  "count": 156,
+  "count": 160,
   "flags": [
     {
       "dangerous": false,
@@ -115,6 +115,14 @@
     },
     {
       "dangerous": false,
+      "name": "ALPACA_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ANALYTICS_ML_TRAIN_ENABLED",
       "production_example_default": "0",
       "required_safe_default": null,
@@ -204,6 +212,14 @@
     {
       "dangerous": false,
       "name": "CALLBACK_FAST_ACK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CCXT_MARKET_DATA_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -555,6 +571,14 @@
     },
     {
       "dangerous": false,
+      "name": "IBKR_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "IMP_FX_SESSION_FILTER_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -596,6 +620,14 @@
     {
       "dangerous": false,
       "name": "LIVE_EXECUTION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "MARKETDATA_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",

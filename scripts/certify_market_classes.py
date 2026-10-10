@@ -101,7 +101,7 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
         spec = get_provider_spec(source_lower.removesuffix("_connector"))
     except KeyError:
         spec = None
-    capability_ok = bool(spec and spec.realtime_capable and asset_class in spec.asset_classes
+    capability_ok = bool(spec and spec.execution_data_allowed() and asset_class in spec.asset_classes
                          and timeframe in spec.timeframes)
     fresh = freshness["fresh"]
     valid = bool(validation.get("valid"))
