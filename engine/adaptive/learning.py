@@ -142,12 +142,14 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
                            s.ml_calibration_brier,s.ml_calibration_ece
                     FROM signals s JOIN outcomes o ON o.signal_id=s.signal_id
                     WHERE o.r_multiple IS NOT NULL
+                      AND UPPER(s.asset)=UPPER(p.asset) AND s.asset_class=p.asset_class
                       AND o.performance_inclusion_status='eligible'
                       AND o.closed_at IS NOT NULL AND o.closed_at <= NOW()
                       AND s.created_at <= o.closed_at
                       AND s.created_at >= NOW() - INTERVAL '120 days'
                       AND EXISTS (SELECT 1 FROM adaptive_signal_evidence ev
-                                  WHERE ev.profile_id=p.profile_id AND ev.profile_version=p.version AND ev.signal_id=s.signal_id)
+                                  WHERE ev.profile_id=p.profile_id AND ev.profile_version=p.version
+                                    AND UPPER(ev.asset)=UPPER(p.asset) AND ev.signal_id=s.signal_id)
                       AND EXISTS (SELECT 1 FROM signal_deliveries sd
                                   WHERE sd.signal_id=s.signal_id AND sd.sent_ok=TRUE
                                     AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')

@@ -179,14 +179,15 @@ async def approve_health_baseline(session: Any, *, profile_id: str, profile_vers
                s.ml_calibration_validation_rows,s.ml_calibration_brier,s.ml_calibration_ece
         FROM signals s JOIN outcomes o ON o.signal_id=s.signal_id
         WHERE o.r_multiple IS NOT NULL AND o.closed_at IS NOT NULL AND o.closed_at<=NOW()
+          AND UPPER(s.asset)=UPPER(:asset) AND s.asset_class=:asset_class
           AND s.created_at<=o.closed_at AND s.created_at>=NOW()-INTERVAL '120 days'
           AND o.performance_inclusion_status='eligible'
           AND EXISTS(SELECT 1 FROM adaptive_signal_evidence ev WHERE ev.signal_id=s.signal_id
-                     AND ev.profile_id=:id AND ev.profile_version=:version)
+                     AND ev.profile_id=:id AND ev.profile_version=:version AND UPPER(ev.asset)=UPPER(:asset))
           AND EXISTS(SELECT 1 FROM signal_deliveries sd WHERE sd.signal_id=s.signal_id
                      AND sd.sent_ok=TRUE AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')
         ORDER BY o.closed_at DESC,s.signal_id DESC LIMIT 250
-    """), {"id": profile_id, "version": profile_version})).mappings().all()
+    """), {"id": profile_id, "version": profile_version, "asset": row["asset"], "asset_class": row["asset_class"]})).mappings().all()
     payload = build_baseline_payload([dict(item) for item in observations], conditions)
     identifier = uuid4().hex
     result = (await session.execute(text("""INSERT INTO strategy_health_baselines

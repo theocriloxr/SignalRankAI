@@ -122,7 +122,7 @@ async def test_actual_health_reads_canonical_probabilities_and_a_bounded_unique_
     monkeypatch.setenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100")
     monkeypatch.setattr(repository, "state", SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True))
     invalidated = []
-    monkeypatch.setattr(repository, "invalidate_profile_cache", invalidated.append)
+    monkeypatch.setattr(repository, "invalidate_profile_cache", lambda asset, **kwargs: invalidated.append(asset))
     count = 350 if mode == "bounded_window" else 70 if mode == "version_sample" else 35
     start = now_utc_naive() - timedelta(days=20)
     async with sessions() as session:
@@ -491,7 +491,7 @@ async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch
 
     monkeypatch.setattr(learning, "state", State())
     monkeypatch.setattr(repository, "state", State())
-    monkeypatch.setattr(repository, "invalidate_profile_cache", cache_invalidations.append)
+    monkeypatch.setattr(repository, "invalidate_profile_cache", lambda asset, **kwargs: cache_invalidations.append(asset))
     monkeypatch.setenv("ADAPTIVE_OPTIMISATION_ENABLED", "0" if mode == "disabled" else "1")
     asset, current, old = "AUDITHEALTH", "health-current", "health-old"
     start = now_utc_naive() - timedelta(days=5)
@@ -757,7 +757,7 @@ async def test_missing_baseline_and_mutated_profile_configuration_cannot_receive
         await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
             approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
         await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE,"
-            "family_weights='{\"trend\":1.15}'::jsonb WHERE profile_id='governed-health'"))
+            "family_weights=CAST(:weights AS JSONB) WHERE profile_id='governed-health'"), {"weights": json.dumps({"trend": 1.15})})
         await session.commit()
     assert await repository.publish_approved_profiles() == 0
     assert all(json.loads(value)["state"] == "BASELINE_UNVERIFIED" for value in values.values())
@@ -780,3 +780,29 @@ async def test_startup_and_runtime_reject_disabled_health_baseline_guard(monkeyp
         await session.commit()
     assert (await railway_main._database_readiness_check())["detail"] == "strategy_health_baseline_schema_or_guards_missing"
     assert "strategy_health_schema" in schema_gate.check_schema()["missing"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["signal_asset", "signal_class", "evidence_asset", "profile_version"])
+async def test_health_observations_must_match_profile_instrument_and_version(monkeypatch, worker_database, mismatch):
+    from engine.adaptive import learning, repository
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(repository, "state", SimpleNamespace(set_sync=lambda *a, **kw: True))
+    statements = {
+        "signal_asset": "UPDATE signals SET asset='OTHERASSET'",
+        "signal_class": "UPDATE signals SET asset_class='forex'",
+        "evidence_asset": "UPDATE adaptive_signal_evidence SET asset='OTHERASSET'",
+        "profile_version": "UPDATE adaptive_signal_evidence SET profile_version=2"}
+    async with sessions() as session:
+        await seed_health_baseline(session)
+        await session.execute(text(statements[mismatch]))
+        with pytest.raises(ValueError, match="health_observation_window_must_be_1_to_250"):
+            await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+                approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+        await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE"))
+        await session.commit()
+    report = await learning.monitor_profile_health()
+    assert report["published"] == 0 and report["suspended_assets"] == []
+    assert report["profile_diagnostics"][0]["sample_size"] == 0
+    assert report["profile_diagnostics"][0]["delivery_evidence_status"] == "UNAVAILABLE"

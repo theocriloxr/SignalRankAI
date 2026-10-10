@@ -69,3 +69,31 @@ The prior exact source passed backend/frontend/static/browser checks, but mobile
 audit failed on four high rows in the node-forge/Expo signing graph. This successor
 must be checked again; it contains no dependency waiver or vulnerability bypass.
 Live-money execution stays disabled and production readiness is not certified.
+
+
+## First hosted successor and retained failures
+
+Published source `9088a27fb02fda4c430822a420f4369670751a09` matches local
+`6ed7385fef03938404c21b358eefc866c2913db3` exactly (tree
+`c9ee0c05a01ec03ef60c073f43f124c7c7bcf0cb`). Push run 38056338770 and
+PR run 38056343151 passed manifest/frontend. Real PostgreSQL executed the
+new baseline/forward-decay/immutable-history/admission cases. Four research
+test failures came from three old cache-invalidation fixtures accepting no
+keyword argument and a new test embedding JSON literally in SQLAlchemy text
+(where its colon was parsed as a bind). The successor uses faithful fixture
+signatures and a bound JSON parameter. The browser found the baseline status
+combined with its sibling count in one exact-text locator; a dedicated status
+element makes the visible label independently addressable. These failures are
+retained in the original run IDs; no gate is removed or weakened.
+
+Further review found instrument-scope binding needed alongside profile/version
+binding. Both baseline approval and ongoing monitoring now require the signal's
+asset/class and component evidence asset to match the profile. Four actual
+PostgreSQL cases exercise wrong signal asset/class, wrong evidence asset and
+wrong profile version, retaining missing evidence instead of borrowing outcomes.
+The final local health/baseline selection passed 81 tests; the broader local
+research selection passed 315 tests. Required hosted checks remain necessary.
+
+Fresh mobile checks still report four high audit rows. The registry reports
+node-forge 1.4.0; the primary advisory GHSA-86w9-cpqp-85rv, checked on
+2026-10-10, still lists no patched release. No dependency waiver is introduced.

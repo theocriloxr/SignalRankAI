@@ -4859,11 +4859,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 71,
+      "line_count": 99,
       "path": "docs/CONTINUATION_20261010.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f216f0b067d20142deee92ef0270b13d1cc2b016adfd0e5be39249bb4c39d285",
-      "size_bytes": 4391
+      "sha256": "0e2388a9cc624d88aef1aa6ee3f566621b62097bd15c3cac9213e427644bf984",
+      "size_bytes": 6095
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7259,11 +7259,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 280,
+      "line_count": 281,
       "path": "engine/adaptive/health_baselines.py",
       "reason": "production/build source",
-      "sha256": "0919e31295e24eef9d42ce4e31a7e3b06befb987bd08947583556773aca3b356",
-      "size_bytes": 17429
+      "sha256": "f1c675a80cb77a46af05e1bff1e952096c4077a521d074c362adf92dbc4d795d",
+      "size_bytes": 17595
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7299,11 +7299,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 765,
+      "line_count": 767,
       "path": "engine/adaptive/learning.py",
       "reason": "production/build source",
-      "sha256": "7c74c63fe69afad016d61433ff2f63e6853793870db2b323c41173d5894e7de3",
-      "size_bytes": 40674
+      "sha256": "06dbf3419023575a839951430232a11c933555da99a46041d62e4b149ac5c97a",
+      "size_bytes": 40833
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13075,11 +13075,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 782,
+      "line_count": 808,
       "path": "tests/test_adaptive_worker_research_postgres.py",
       "reason": "automated test evidence",
-      "sha256": "0ec4dec11308ca2d26886fdd9e3ca3e25ad936b11bd2ef6c66bc037483ac2853",
-      "size_bytes": 48153
+      "sha256": "d771021f021aa923c3a4f125cc45726da98d0f5b32528209bd9b1c6b924afbad",
+      "size_bytes": 49959
     },
     {
       "disposition": "TEST_ONLY",
@@ -16022,8 +16022,8 @@
       "line_count": 1244,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "482dc36e1f5661256ad016d4c47bf40235b62a546d223663aa64ec2dd6f65630",
-      "size_bytes": 153643
+      "sha256": "3a3dd91fa95cd32e086b8d8a30dc9c9d8140ba785ad9f5c571b523b0ae9c9a7f",
+      "size_bytes": 153691
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
