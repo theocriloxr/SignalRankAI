@@ -42,6 +42,7 @@ class StepResult:
 
 
 HERMETIC_TEST_FILES = (
+    "tests/test_ml_promotion_snapshot_postgres.py",
     "tests/test_railway_lifecycle.py",
     "tests/test_railway_redis_queue.py",
     "tests/test_redis_webhook_queue.py",
@@ -57,6 +58,7 @@ HERMETIC_TEST_FILES = (
     "tests/test_provider_registry_fail_closed.py",
     "tests/test_delivery_fanout_planner.py",
     "tests/test_delivery_freshness.py",
+    "tests/test_delivery_prefilter_and_retry_selection.py",
     "tests/test_signal_delivery_ack.py",
     "tests/test_outcome_delivery_contract.py",
     "tests/test_outcome_integration_multi_tp.py",

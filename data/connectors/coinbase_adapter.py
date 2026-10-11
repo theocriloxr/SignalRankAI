@@ -6,27 +6,14 @@ from typing import Any, Dict, List
 
 from utils.async_runner import run_sync
 from utils import httpx_client
+from data.connectors.sdk_adapters import crypto_pair
 
 logger = logging.getLogger(__name__)
 
 
 def _normalize_product(symbol: str) -> str:
-    s = (symbol or "").upper().strip().replace("_", "-").replace("/", "-")
-    if "-" in s:
-        parts = [p for p in s.split("-") if p]
-        if len(parts) >= 2:
-            base, quote = parts[0], parts[1]
-        else:
-            base, quote = s.replace("-", ""), "USD"
-    elif s.endswith("USDT"):
-        base, quote = s[:-4], "USD"
-    elif s.endswith("USDC"):
-        base, quote = s[:-4], "USD"
-    elif s.endswith("USD"):
-        base, quote = s[:-3], "USD"
-    else:
-        base, quote = s, "USD"
-    return f"{base}-{quote}"
+    pair = crypto_pair(symbol)
+    return pair.replace("/", "-") if pair else ""
 
 
 def _granularity_seconds(timeframe: str) -> int:
@@ -35,9 +22,8 @@ def _granularity_seconds(timeframe: str) -> int:
         "5m": 300,
         "15m": 900,
         "1h": 3600,
-        "4h": 21600,
         "1d": 86400,
-    }.get((timeframe or "").strip().lower(), 3600)
+    }.get((timeframe or "").strip().lower(), 0)
 
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: int = 10) -> List[Dict[str, Any]]:
@@ -48,6 +34,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
     request_timeout = min(2.5, max(0.1, float(timeout)))
     product = _normalize_product(symbol)
     params = {"granularity": _granularity_seconds(timeframe)}
+    if not product or not params["granularity"]:
+        return []
 
     async def _do():
         resp = await client.get(

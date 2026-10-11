@@ -60,3 +60,23 @@ def test_governance_and_prompt_changes_invalidate_source_evidence(tmp_path):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("changed policy", encoding="utf-8")
         assert capture_release_identity(tmp_path)["source_sha256"] != previous["source_sha256"]
+
+
+@pytest.mark.parametrize("directory", ["market_data_sdk", "tests_sdk"])
+def test_sdk_changes_invalidate_receipts_even_when_the_worktree_is_already_dirty(tmp_path, directory):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                    "commit", "--allow-empty", "-qm", "test"], check=True)
+    source = tmp_path / directory / "contract.py"
+    source.parent.mkdir()
+    clean = capture_release_identity(tmp_path)
+    source.write_text("CONTRACT = 1\n", encoding="utf-8")
+    previous = capture_release_identity(tmp_path)
+    assert previous["source_sha256"] != clean["source_sha256"]
+    source.write_text("CONTRACT = 2\n", encoding="utf-8")
+    current = capture_release_identity(tmp_path)
+    assert current["git_sha"] == previous["git_sha"]
+    assert current["worktree_dirty"] is previous["worktree_dirty"] is True
+    assert current["source_sha256"] != previous["source_sha256"]
+    with pytest.raises(RuntimeError, match="mismatch"):
+        validate_resume_identity({"release_identity": previous, "invocation": {}}, current, {})

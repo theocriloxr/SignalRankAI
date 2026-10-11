@@ -20,6 +20,7 @@ DEFAULT_TARGETS = [
     "worker",
     "db",
     "data",
+    "market_data_sdk",
     "strategies",
     "services",
     "ml",

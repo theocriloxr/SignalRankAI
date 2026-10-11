@@ -7,6 +7,7 @@ from statistics import median, pstdev
 from typing import Mapping, Sequence
 
 from .dataset import AdaptiveDatasetRow
+from .availability import audit_sequence_availability
 from .statistics import profit_factor as _profit_factor
 
 
@@ -52,7 +53,7 @@ class WalkForwardResult:
     def to_dict(self) -> dict:
         payload = asdict(self)
         payload["folds"] = [asdict(fold) for fold in self.folds]
-        payload["method_version"] = "purged_outcome_weighting_v3"
+        payload["method_version"] = "purged_outcome_weighting_v4"
         return payload
 
 
@@ -99,6 +100,10 @@ def walk_forward_evaluate(
         reasons.append("outcome_availability_unverified")
     if any(not math.isfinite(row.r_multiple) for row in ordered):
         reasons.append("non_finite_outcomes")
+    if any(audit_sequence_availability(row.sequence_provenance, asset=row.asset,
+            decision_time=row.decision_time, sequence_hashes=row.sequence_hashes)["status"] == "FAIL"
+            for row in ordered):
+        reasons.append("sequence_availability_violation")
     if len({row.evidence_category for row in ordered}) > 1:
         reasons.append("mixed_evidence_categories")
     if reasons:

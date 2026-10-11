@@ -1241,26 +1241,37 @@ class RedisState:
         except Exception:
             return False
 
-    def get_active_trades_sync(self) -> Dict[str, Dict[str, Any]]:
+    def get_active_trades_sync(self, *, require_complete: bool = False) -> Dict[str, Dict[str, Any]]:
+        """Admission callers require a complete shared snapshot, without fallback."""
         r = self._get_redis_sync()
         if r is None:
+            if require_complete:
+                raise RuntimeError("active_trade_snapshot_unavailable")
             trades = self._memory.get(_ACTIVE_TRADES_KEY, {})
             if isinstance(trades, dict):
                 return {str(k): dict(v) for k, v in trades.items() if isinstance(v, dict)}
             return {}
 
         try:
-            raw = r.hgetall(_ACTIVE_TRADES_KEY) or {}
+            raw = r.hgetall(_ACTIVE_TRADES_KEY)
+            if not isinstance(raw, dict):
+                raise ValueError("invalid_active_trade_snapshot")
             out: Dict[str, Dict[str, Any]] = {}
             for key, value in raw.items():
                 try:
                     data = json.loads(value) if isinstance(value, str) else value
                     if isinstance(data, dict):
                         out[str(key)] = data
+                    elif require_complete:
+                        raise ValueError("invalid_active_trade_record")
                 except Exception:
+                    if require_complete:
+                        raise RuntimeError("active_trade_snapshot_incomplete") from None
                     continue
             return out
         except Exception:
+            if require_complete:
+                raise RuntimeError("active_trade_snapshot_unavailable") from None
             return {}
 
     # -------- Async API (FastAPI/worker) --------

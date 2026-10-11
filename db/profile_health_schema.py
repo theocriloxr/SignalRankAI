@@ -2,6 +2,21 @@
 from typing import Any, Mapping
 
 PROFILE_HEALTH_INDEX_NAME = "ix_adaptive_evidence_profile_signal"
+STRATEGY_HEALTH_SCHEMA_VALID_SQL = """
+    (to_regclass('public.strategy_health_baselines') IS NOT NULL
+     AND to_regclass('public.strategy_health_events') IS NOT NULL
+     AND (SELECT COUNT(*)=4 FROM pg_trigger AS guard
+       JOIN (VALUES
+         ('public.strategy_health_baselines','strategy_health_baselines_immutable'),
+         ('public.strategy_health_baselines','strategy_health_baselines_no_truncate'),
+         ('public.strategy_health_events','strategy_health_events_immutable'),
+         ('public.strategy_health_events','strategy_health_events_no_truncate')
+       ) AS required(table_name,trigger_name)
+         ON guard.tgrelid=to_regclass(required.table_name) AND guard.tgname=required.trigger_name
+       WHERE NOT guard.tgisinternal
+         AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
+         AND guard.tgenabled IN ('O','A')))
+"""
 _CATALOG_SQL = """
     SELECT c.relkind::text AS relkind,i.indisvalid,i.indisready,i.indisunique,a.amname,
            i.indrelid=to_regclass('public.adaptive_signal_evidence') AS expected_relation,

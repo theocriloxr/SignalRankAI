@@ -98,6 +98,10 @@ def test_rejection_telemetry_is_batched(monkeypatch):
     commits = {"count": 0}
 
     class _Session:
+        def get_bind(self):
+            from types import SimpleNamespace
+            return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
         def add_all(self, rows):
             committed.extend(rows)
 
@@ -147,6 +151,10 @@ def test_sparse_rejection_telemetry_gets_delayed_flush(monkeypatch):
     commits = {"count": 0}
 
     class _Session:
+        def get_bind(self):
+            from types import SimpleNamespace
+            return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
         def add_all(self, rows):
             assert len(rows) == 1
 

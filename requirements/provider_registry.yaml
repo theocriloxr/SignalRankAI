@@ -1,9 +1,149 @@
 {
-  "count": 34,
+  "count": 37,
   "generated_at": "2026-07-27T00:00:00Z",
   "generator": "scripts/build_v7_governance.py",
   "kind": "provider_registry",
   "providers": [
+    {
+      "asset_classes": [
+        "equity"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "marketdata_get_candles",
+      "connector_module": "data.connectors.sdk_adapters",
+      "default_enabled": false,
+      "display_name": "Market Data",
+      "docs_url": "https://github.com/MarketDataApp/sdk-py",
+      "enabled_env": "MARKETDATA_ENABLED",
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "marketdata",
+      "market_types": [
+        "cash"
+      ],
+      "notes": "Isolated official SDK. Delayed/cached modes are analysis only. Plan and exchange entitlements apply.",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "MARKETDATA_TOKEN"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback",
+        "historical"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "ccxt_get_candles",
+      "connector_module": "data.connectors.sdk_adapters",
+      "default_enabled": false,
+      "display_name": "CCXT public spot",
+      "docs_url": "https://docs.ccxt.com/",
+      "enabled_env": "CCXT_MARKET_DATA_ENABLED",
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "ccxt",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "Explicit venue, exact active spot pair. No keys or orders. Venue/interval/region limits apply.",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "CCXT_MARKET_DATA_EXCHANGE"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "public",
+        "fallback_realtime"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "forex",
+        "index",
+        "commodity_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "ibkr_get_candles",
+      "connector_module": "data.connectors.sdk_adapters",
+      "default_enabled": false,
+      "display_name": "Interactive Brokers TWS data",
+      "docs_url": "https://interactivebrokers.github.io/tws-api/initial_setup.html",
+      "enabled_env": "IBKR_MARKET_DATA_ENABLED",
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "ibkr",
+      "market_types": [
+        "cash",
+        "fx",
+        "index",
+        "spot"
+      ],
+      "notes": "Read-only Gateway/TWS with subscriptions and exact contract map; isolated pinned legacy PyPI SDK.",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [
+        [
+          "IBKR_MARKET_DATA_HOST"
+        ],
+        [
+          "IBKR_MARKET_DATA_PORT"
+        ],
+        [
+          "IBKR_MARKET_DATA_CONTRACTS_JSON"
+        ]
+      ],
+      "roles": [
+        "keyed_fallback",
+        "historical"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
     {
       "asset_classes": [
         "forex",
@@ -92,7 +232,6 @@
         "5m",
         "15m",
         "1h",
-        "4h",
         "1d"
       ]
     },
@@ -890,24 +1029,22 @@
     {
       "asset_classes": [
         "equity",
-        "crypto_spot",
-        "equity_option"
+        "crypto_spot"
       ],
       "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
       "connector_attr": "get_candles",
       "connector_module": "data.connectors.alpaca_adapter",
-      "default_enabled": false,
+      "default_enabled": true,
       "display_name": "Alpaca",
       "docs_url": "https://docs.alpaca.markets/docs/market-data",
-      "enabled_env": null,
+      "enabled_env": "ALPACA_MARKET_DATA_ENABLED",
       "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
       "key": "alpaca",
       "market_types": [
         "cash",
-        "spot",
-        "options"
+        "spot"
       ],
-      "notes": "",
+      "notes": "IEX is a single exchange; SIP requires entitlement. delayed_sip is analysis only. REST or isolated official SDK.",
       "public_endpoint": false,
       "realtime_capable": true,
       "regional_caveat": null,
@@ -934,7 +1071,9 @@
         "1m",
         "5m",
         "15m",
+        "30m",
         "1h",
+        "4h",
         "1d"
       ]
     },

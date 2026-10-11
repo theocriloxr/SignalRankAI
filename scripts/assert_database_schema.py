@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL
+from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL, STRATEGY_HEALTH_SCHEMA_VALID_SQL
+from db.research_snapshot_schema import RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL
 
 EXIT_CONFIGURATION = 64
 EXIT_UNREACHABLE = 69
@@ -94,6 +95,8 @@ def check_schema() -> dict[str, Any]:
               AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
               AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
           {PROFILE_HEALTH_INDEX_VALID_SQL} AS adaptive_profile_health_index,
+          {STRATEGY_HEALTH_SCHEMA_VALID_SQL} AS strategy_health_schema,
+          {RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL} AS research_snapshot_schema,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -233,6 +236,8 @@ def check_schema() -> dict[str, Any]:
             "research_experiment_results",
             "research_append_only_triggers",
             "adaptive_profile_health_index",
+            "strategy_health_schema",
+            "research_snapshot_schema",
             "broker_connections_credential_format",
             "broker_connections_credential_version",
             "broker_connections_credential_key_id",

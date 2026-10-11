@@ -42,8 +42,8 @@ class AssetCycleQueue:
     * ``refresh_universe(assets)`` — update the canonical asset universe;
       newly-discovered assets are appended to the *tail* of the current queue
       so they are included in this round without discarding already-queued
-      work.  Runs at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL`` seconds
-      unless *force=True*.
+      work. Additions run at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL``
+      seconds unless *force=True*. Removals apply on every call.
 
     * ``pop_batch(n)`` — pop up to *n* assets for processing; triggers a new
       round automatically when the queue drains.
@@ -72,15 +72,12 @@ class AssetCycleQueue:
         """Merge *assets* into the canonical universe.
 
         New assets not yet seen this round are appended to the queue tail.
-        Already-queued and already-done assets are left untouched.  The rebuild
-        only fires once per ``_refresh_interval`` unless *force=True*.
+        Eligible queued and already-done assets retain their round position.
+        Removals apply immediately; additions wait for ``_refresh_interval``
+        unless *force=True*.
         """
         now = time.monotonic()
         with self._lock:
-            if not force and (now - self._last_refresh) < self._refresh_interval:
-                return
-            self._last_refresh = now
-
             # De-duplicate while preserving order.
             ordered: list[str] = []
             seen: set[str] = set()
@@ -95,6 +92,12 @@ class AssetCycleQueue:
             # so an older queue snapshot cannot leak them into later batches.
             allowed = set(ordered)
             self._queue = deque(a for a in self._queue if a in allowed)
+            # Prune the refill snapshot as well. A drained queue must not
+            # resurrect an asset disabled since the last scheduled refresh.
+            self._universe = [a for a in self._universe if a in allowed]
+            if not force and (now - self._last_refresh) < self._refresh_interval:
+                return
+            self._last_refresh = now
 
             # Append assets brand-new to this round.
             existing = set(self._queue) | self._done_this_round

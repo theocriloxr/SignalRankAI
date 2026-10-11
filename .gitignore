@@ -41,3 +41,7 @@ Thumbs.db
 .audit-tools-venv/
 .audit-browser-venv/
 node_modules/
+
+# Native JavaScript export outputs are built and certified from the release.
+mobile/dist-android/
+mobile/dist-ios/

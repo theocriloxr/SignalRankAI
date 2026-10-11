@@ -94,6 +94,8 @@ def _freshness_validation(
     """Require genuinely recent data before a provider is execution-eligible."""
     if not spec.realtime_capable:
         return False, None, None, "provider_catalog_not_realtime_capable"
+    if not spec.execution_data_allowed():
+        return False, None, None, "configured_feed_not_execution_data"
     payload = dict(validation or {})
     last = payload.get("last_timestamp")
     if last is None:
@@ -296,7 +298,7 @@ async def certify_one(spec: ProviderSpec, *, live: bool, timeout: float, limit: 
             "freshness_limit_seconds": result.freshness_limit_seconds,
             "realtime_capable": bool(spec.realtime_capable),
         }
-        if not spec.realtime_capable:
+        if not spec.execution_data_allowed():
             result.certification_status = CertificationStatus.ANALYSIS_ONLY.value
             result.error = freshness_error
             return result

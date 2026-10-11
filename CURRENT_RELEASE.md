@@ -4,7 +4,7 @@
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0050_profile_health_index
+Repository Alembic head: 0053_research_market_inputs
 Release-candidate branch: fix/provider-discovery-readiness-20260923
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -26,9 +26,18 @@ chain with:
 - `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;
 - `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.
 - `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.
+- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.
+
+- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.
+- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.
 
 The current release candidate also includes:
 
+- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;
+- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;
+- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));
+- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;
+- immediate removal of ineligible assets from pending and refill scanner queues;
 - exact-branch CI/release-manifest gating;
 - web fan-out ORM materialization before SQLAlchemy session expiry;
 - bounded adaptive-candle database transaction wall time;

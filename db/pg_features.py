@@ -1160,6 +1160,10 @@ async def get_or_create_signal_impl(
             existing.signal_id,
             confirmed_delivery_count,
         )
+        if signal.get("adaptive_evidence") or signal.get("adaptive_sequence_refs"):
+            from engine.adaptive.repository import persist_optional_signal_evidence
+
+            await persist_optional_signal_evidence(session, existing, signal)
         return existing
 
     # The database's final admission rule is stricter than semantic-thesis
@@ -1301,9 +1305,14 @@ async def get_or_create_signal_impl(
     await session.flush()
 
     try:
-        await _touch_strategy_stat(session, strategy_name=strategy_name, strategy_group=strategy_group)
-    except Exception:
-        pass
+        async with session.begin_nested():
+            await _touch_strategy_stat(session, strategy_name=strategy_name, strategy_group=strategy_group)
+    except Exception as stat_error:
+        logger.warning("[store_signal] optional strategy statistic skipped error_type=%s", type(stat_error).__name__)
+    if signal.get("adaptive_evidence") or signal.get("adaptive_sequence_refs"):
+        from engine.adaptive.repository import persist_optional_signal_evidence
+
+        await persist_optional_signal_evidence(session, s, signal)
     return s
 
 

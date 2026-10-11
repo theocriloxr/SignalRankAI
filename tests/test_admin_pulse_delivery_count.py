@@ -23,6 +23,8 @@ def test_admin_pulse_explains_ml_signal_drought(monkeypatch):
                 "ml_raw_probability_max": 0.588154,
                 "ml_calibrated_probability_max": 0.645346,
                 "ml_threshold_raw": 0.78,
+                "ml_forward_observations_disabled": 15,
+                "ml_forward_observations_failed": 1,
             },
         },
     })
@@ -33,3 +35,5 @@ def test_admin_pulse_explains_ml_signal_drought(monkeypatch):
     assert "best pre-threshold score: 90.42" in joined
     assert "PAPER-ONLY" in joined
     assert "Telegram is waiting for an admitted signal" in joined
+    assert "recording is disabled on the engine" in joined
+    assert "submission failed" in joined

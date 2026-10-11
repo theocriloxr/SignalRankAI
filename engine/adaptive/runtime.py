@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 from typing import Any, Mapping
 
 from data.fetcher import is_commodity, is_crypto, is_fx, is_index, is_stock
@@ -10,6 +11,7 @@ from .components import DEFAULT_COMPONENTS
 from .data_quality import assess_candle_quality, normalise_candles
 from .profiles import ProfileResolver
 from .sequence import sequence_reference
+from .market_input import capture_market_input, restore_market_input
 from .types import AdaptiveAssessment, Direction, MarketContext, StrategyEvidence, clamp
 
 logger = logging.getLogger(__name__)
@@ -89,12 +91,16 @@ class AdaptiveStrategyService:
         bias = _bias(market_data)
         evidence: list[StrategyEvidence] = []
         refs = []
+        input_snapshots = []
         quality_scores = []
         allowed_tfs = [
-            x.strip()
+            x.strip().lower()
             for x in (os.getenv("ADAPTIVE_EVALUATION_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",")
             if x.strip()
         ]
+        allowed_tfs = list(dict.fromkeys(allowed_tfs))
+        if len(allowed_tfs) > 8:
+            raise ValueError("adaptive_evaluation_timeframe_budget_exceeded")
         for tf in allowed_tfs:
             d = market_data.get(tf)
             if not isinstance(d, Mapping):
@@ -108,10 +114,8 @@ class AdaptiveStrategyService:
                 minimum_candles=max(20, int(os.getenv("ADAPTIVE_MIN_CANDLES_PER_TIMEFRAME", "30") or 30)),
             )
             quality_scores.append(quality.score)
-            refs.append(
-                sequence_reference(
-                    asset, tf, d, pre_signal_candles=int(os.getenv("ADAPTIVE_PRE_SIGNAL_CANDLES", "120") or 120)
-                )
+            reference = sequence_reference(
+                asset, tf, d, pre_signal_candles=int(os.getenv("ADAPTIVE_PRE_SIGNAL_CANDLES", "120") or 120)
             )
             context = MarketContext(
                 asset=str(asset).upper(),
@@ -127,6 +131,26 @@ class AdaptiveStrategyService:
                 news_context={"sentiment": market_data.get("news_sentiment")},
                 macro_context=dict(market_data.get("_macro") or {}),
             )
+            reference["summary"]["universe_observation_status"] = "UNAVAILABLE"
+            try:
+                captured = capture_market_input(context,
+                    timestamp_convention=reference["summary"]["timestamp_convention"],
+                    universe_observation=market_data.get("_universe_observation"))
+                stored_payload = json.loads(captured.payload)
+                # Components use the captured values, detached from the live
+                # source dictionaries. Save these same values with the signal.
+                context = restore_market_input(stored_payload, content_hash=captured.content_hash)
+                input_snapshots.append({"content_hash": captured.content_hash, "payload": stored_payload})
+                reference["summary"].update(market_input_hash=captured.content_hash,
+                    captured_at=captured.captured_at.isoformat(), input_capture_status="CAPTURED")
+                if "universe_observation" in stored_payload:
+                    reference["summary"]["universe_observation_hash"] = stored_payload["universe_observation"]["content_hash"]
+                    reference["summary"]["universe_observation_status"] = "CAPTURED"
+            except (ValueError, TypeError, OverflowError):
+                reference["summary"].update(input_capture_status="UNAVAILABLE",
+                    input_capture_reason="unsupported_or_over_budget_component_input")
+                logger.warning("[adaptive] input capture unavailable asset=%s tf=%s", asset, tf)
+            refs.append(reference)
             for component in self.components:
                 try:
                     evidence.extend(component.evaluate(context))
@@ -158,6 +182,7 @@ class AdaptiveStrategyService:
             data_quality_score=(sum(quality_scores) / len(quality_scores) if quality_scores else 0.0),
             sequence_references=tuple(refs),
             runtime_mode=mode,
+            input_snapshots=tuple(input_snapshots),
         )
 
     def apply_to_signals(self, signals: list[dict[str, Any]], assessment: AdaptiveAssessment) -> list[dict[str, Any]]:
@@ -186,6 +211,7 @@ class AdaptiveStrategyService:
                 e.to_dict() for e in sorted(selected, key=lambda x: x.confidence, reverse=True)[:8]
             ]
             signal["adaptive_sequence_refs"] = list(assessment.sequence_references)
+            signal["_adaptive_input_snapshots"] = list(assessment.input_snapshots)
             signal["adaptive_conflicts"] = list(assessment.conflicts)
             signal["adaptive_data_quality_score"] = assessment.data_quality_score
         return signals
@@ -238,6 +264,7 @@ class AdaptiveStrategyService:
                     "adaptive_score_multiplier": mult,
                     "adaptive_evidence": [e.to_dict()],
                     "adaptive_sequence_refs": list(assessment.sequence_references),
+                    "_adaptive_input_snapshots": list(assessment.input_snapshots),
                     "adaptive_conflicts": list(assessment.conflicts),
                     "adaptive_data_quality_score": assessment.data_quality_score,
                     "adaptive_candidate": True,

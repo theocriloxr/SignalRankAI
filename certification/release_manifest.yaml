@@ -10,7 +10,7 @@
       "id": "static-ruff",
       "group": "static",
       "description": "Ruff release-critical Python correctness",
-      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py scripts/release_evidence_identity.py scripts/build_master_requirement_registry.py scripts/run_complete_system_test.py scripts/certify_market_classes.py scripts/semgrep_gate.py scripts/smtp_preflight.py",
+      "command": "ruff check --select F601,F602,F811,F821,F822,F823 core engine web worker db data market_data_sdk strategies services ml signalrank_telegram runtime execution railway_main.py config.py scripts/run_release_manifest.py scripts/verify_release_chain.py scripts/assert_single_alembic_head.py scripts/generate_release_provenance.py scripts/controlled_migrate.py scripts/staging_backup_restore_drill.py scripts/demo_account_preflight.py scripts/production_readiness_check.py scripts/secret_scan.py scripts/build_v7_governance.py scripts/release_evidence_identity.py scripts/build_master_requirement_registry.py scripts/run_complete_system_test.py scripts/certify_market_classes.py scripts/semgrep_gate.py scripts/smtp_preflight.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -48,7 +48,7 @@
       "id": "security-bandit",
       "group": "static",
       "description": "Bandit security scan",
-      "command": "bandit -r -ll -ii core engine web worker db strategies services",
+      "command": "bandit -r -ll -ii core engine web worker db strategies services market_data_sdk",
       "severity": "high",
       "required": true,
       "environments": [
@@ -95,7 +95,7 @@
       "id": "backend-compile",
       "group": "backend",
       "description": "Compile runtime Python",
-      "command": "python -m compileall -q core engine web worker db data strategies services ml signalrank_telegram runtime execution",
+      "command": "python -m compileall -q core engine web worker db data market_data_sdk strategies services ml signalrank_telegram runtime execution",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -155,6 +155,18 @@
       ]
     },
     {
+      "id": "backend-completion-matrix",
+      "group": "backend",
+      "description": "Preserve all 560 directive sections, 431 master clauses and bounded, scoped acceptance claims",
+      "command": "python -m scripts.completion_matrix --check",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
       "id": "backend-secret-scan",
       "group": "backend",
       "description": "Repository secret scan",
@@ -170,7 +182,7 @@
       "id": "backend-critical-regressions",
       "group": "backend",
       "description": "Release-critical regression contracts",
-      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py tests/test_provider_crash_remediation.py tests/test_smtp_preflight.py tests/test_production_backup_script.py tests/test_semgrep_gate.py tests/test_partial_exit_safety.py tests/test_governance_reproducibility.py",
+      "command": "python -m pytest -q tests/test_config_alias_safety.py tests/test_delivery_prefilter_and_retry_selection.py tests/test_ml_promotion_snapshot_postgres.py tests/test_web_platform_runtime_contract.py tests/test_webhook_latency_semantics.py tests/test_ml_learning_runtime_v135.py tests/test_engine_critical_fallbacks_fail_closed.py tests/test_v20_event_platform.py tests/test_class_fair_scheduler_contract.py tests/test_market_data_routing.py tests/test_market_class_certification.py tests/test_runtime_schema_bridge_0048.py tests/test_master_directive_p0_regressions.py tests/test_release_evidence_identity.py tests/test_master_requirement_registry.py tests/test_release_manifest_validation.py tests/test_provider_crash_remediation.py tests/test_smtp_preflight.py tests/test_production_backup_script.py tests/test_semgrep_gate.py tests/test_partial_exit_safety.py tests/test_governance_reproducibility.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -182,7 +194,7 @@
       "id": "backend-research-validation",
       "group": "backend",
       "description": "Purged research, immutable trial lineage, optimizer persistence, profile health and operator authorization",
-      "command": "python -m pytest -q tests/test_research_validation.py tests/test_research_ledger_postgres.py tests/test_adaptive_worker_research_postgres.py tests/test_research_operator_access.py tests/test_migration_environment.py tests/test_adaptive_dataset_and_wfo.py tests/test_backtest_wfo.py tests/test_orderbook_fills.py tests/test_wfo_train.py tests/test_research_browser_safety.py tests/test_adaptive_health_lifecycle.py tests/test_dynamic_sizing_fail_closed.py tests/test_risk_advice_fail_closed.py tests/test_primary_risk_advice.py tests/test_legacy_sizer_boundaries.py",
+      "command": "python -m pytest -q tests/test_research_validation.py tests/test_sequence_availability.py tests/test_dataset_snapshot.py tests/test_market_input_snapshot.py tests/test_universe_observation.py tests/test_cycle_queue_eligibility.py tests/test_completion_matrix.py tests/test_research_ledger_postgres.py tests/test_adaptive_worker_research_postgres.py tests/test_research_operator_access.py tests/test_migration_environment.py tests/test_adaptive_dataset_and_wfo.py tests/test_backtest_wfo.py tests/test_orderbook_fills.py tests/test_wfo_train.py tests/test_research_browser_safety.py tests/test_adaptive_health_lifecycle.py tests/test_strategy_health_baselines.py tests/test_dynamic_sizing_fail_closed.py tests/test_risk_advice_fail_closed.py tests/test_primary_risk_advice.py tests/test_legacy_sizer_boundaries.py tests/test_fred_point_in_time.py tests/test_v22_provider_expansion.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -215,7 +227,7 @@
       "id": "backend-postgres-integrity",
       "group": "backend",
       "description": "Real PostgreSQL receipt, paper idempotency, lifecycle concurrency and outcome authority",
-      "command": "python -m pytest -q tests/test_master_p0_postgres_integration.py",
+      "command": "python -m pytest -q tests/test_master_p0_postgres_integration.py tests/test_candidate_evidence_storage.py",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -280,7 +292,7 @@
       "id": "frontend-session-transport",
       "group": "frontend",
       "description": "Cookie session and CSRF transport contracts",
-      "command": "cd frontend && npm run test:transport",
+      "command": "cd frontend && npm run test:transport && npm run test:dependencies",
       "severity": "critical",
       "required": true,
       "environments": [
@@ -537,6 +549,31 @@
       "required": true,
       "environments": [
         "image"
+      ]
+    },
+    {
+      "id": "security-market-data-sdk-audit",
+      "group": "static",
+      "description": "Audit the isolated hash-locked data SDK dependency graph",
+      "command": "pip-audit --require-hashes --disable-pip -r requirements-market-data-sdk.lock",
+      "severity": "high",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom"
+      ]
+    },
+    {
+      "id": "market-data-sdk-consumer-tests",
+      "group": "market-data-sdk",
+      "description": "Exercise installed vendor request models, parsers and fail-closed feed contracts in the isolated SDK interpreter",
+      "command": "python -m unittest discover -s tests_sdk -v",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "cleanroom",
+        "local"
       ]
     }
   ]

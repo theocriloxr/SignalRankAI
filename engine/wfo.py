@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 from typing import Iterable, Dict, Any
 import pandas as pd
-import re
 
 from engine.backtest import BacktestRunner
 from typing import Callable
 from ml.features import extract_features
+from engine.backtest_execution import FILL_POLICY_VERSION, fixed_bar_duration
 
 try:
     import xgboost as xgb
@@ -37,19 +37,7 @@ class WalkForwardOptimizer:
 
     @staticmethod
     def _timeframe_minutes(timeframe: str | None) -> int:
-        token = str(timeframe or "1m").strip().lower()
-        match = re.match(r"^(\d+)(m|h|d|w)?$", token)
-        if not match:
-            return 1
-        value = int(match.group(1))
-        unit = match.group(2) or "m"
-        if unit == "h":
-            return value * 60
-        if unit == "d":
-            return value * 1440
-        if unit == "w":
-            return value * 10080
-        return value
+        return int(fixed_bar_duration(timeframe if timeframe is not None else "1m").total_seconds() / 60)
 
     @staticmethod
     def _average_daily_volume_notional(
@@ -135,7 +123,8 @@ class WalkForwardOptimizer:
             tp = float(tps[0].get("price") if isinstance(tps[0], dict) else tps[0])
             start_ts = pd.to_datetime(sig.get("timestamp") or df["timestamp"].iloc[0], utc=True)
             end_ts = start_ts + pd.Timedelta(minutes=lookahead_minutes)
-            rows = df.loc[(df["timestamp"] > start_ts) & (df["timestamp"] <= end_ts), :]
+            availability = df["timestamp"] + fixed_bar_duration(sig["timeframe"])
+            rows = df.loc[(df["timestamp"] > start_ts) & (availability <= end_ts), :].sort_values("timestamp")
             for row in rows.to_dict(orient="records"):
                 high = float(row["high"])
                 low = float(row["low"])
@@ -328,7 +317,9 @@ class WalkForwardOptimizer:
                     "completed_trades": total,
                     "nonfills": sum(row["status"] == "NOT_FILLED" for row in sim),
                     "open_trades": sum(row["status"] == "OPEN" for row in sim),
-                    "fill_policy_version": "wfo_conservative_fills_v2",
+                    "risk_budget_breaches": sum(row["risk_budget_breached"] for row in sim),
+                    "excluded_unclosed_candle_observations": sum(row["excluded_unclosed_candles"] for row in sim),
+                    "fill_policy_version": FILL_POLICY_VERSION,
                     "evidence_class": "simulation",
                     "win_rate": win_rate,
                     "avg_return": avg,

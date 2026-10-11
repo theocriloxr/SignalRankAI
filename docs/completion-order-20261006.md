@@ -1,10 +1,15 @@
 # Ordered completion record — 6 October 2026
 
+Latest continuation: [9 October hosted-check follow-up](CONTINUATION_20261009.md).
+Previous recovery: [8 October recovery and release repair](RECOVERY_HANDOFF_20261008.md).
+This preserves the unpublished 7 October changes and records current evidence;
+it does not mark the remaining directives or production certification complete.
+
 This record preserves the user's requested order. An implemented component is
 not a claim that its entire directive, deployment, financial certification or
 required observation window is complete. The source prompts remain in
-`docs/specs/20261005/`; the newer attachments were verified byte-for-byte against
-those saved sources.
+`docs/specs/20261005/`; the newer attachments match the saved content after
+normalizing line endings and surrounding whitespace.
 
 | Order | Work | Current state |
 | --- | --- | --- |
@@ -155,3 +160,16 @@ fills remain incomplete. A final candidate must pass required CI, deploy to
 every production application service using one approved immutable commit,
 pass runtime/schema checks and complete a new observation window. Two complete
 audits with no new material gaps are still required.
+
+
+2026-10-10 continuation: the owner supplied the previously inaccessible research
+source. Its complete supplied text/hash and independent concept review are
+recorded in `docs/specs/20261010/research-source-supplied.md` and
+`docs/research-source-review-20261010.md`. The source review is complete; the
+research directive remains in progress. The successor adds owner-approved
+immutable delivery-R baselines, predefined per-profile decay conditions,
+forward-evidence separation, persistent health receipts, promotion/cache guards
+and operator comparison visibility. Broker/paper/portfolio baselines, the other
+research gaps and directives 2–7 remain open. Current production certification
+and live-money restrictions remain unchanged. Verification evidence will be
+retained in `docs/CONTINUATION_20261010.md`.

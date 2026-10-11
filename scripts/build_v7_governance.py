@@ -56,6 +56,7 @@ TEXT_EXTENSIONS = {
     ".ini",
     ".cfg",
     ".txt",
+    ".lock",
     ".env",
     ".example",
     ".sql",

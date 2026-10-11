@@ -123,6 +123,17 @@ def _is_production_runtime() -> bool:
     )
 
 
+def _qualification_number(value: Any, *, minimum: float | None = None,
+                          maximum: float | None = None) -> float:
+    if isinstance(value, bool):
+        raise ValueError("boolean_is_not_qualification_metric")
+    number = float(value)
+    if (not math.isfinite(number) or (minimum is not None and number < minimum)
+            or (maximum is not None and number > maximum)):
+        raise ValueError("invalid_qualification_metric")
+    return number
+
+
 def _promotion_quality_gate(
     metrics: dict,
     *,
@@ -138,23 +149,28 @@ def _promotion_quality_gate(
         deployed_runtime = _is_production_runtime()
     default_min_auc = "0.60" if deployed_runtime else "0.52"
     default_min_accuracy = "0.55" if deployed_runtime else "0.50"
-    min_auc = float(os.getenv("ML_MIN_PROMOTION_AUC", default_min_auc) or default_min_auc)
-    min_accuracy = float(os.getenv("ML_MIN_PROMOTION_ACCURACY", default_min_accuracy) or default_min_accuracy)
-    accuracy = float(metrics.get("accuracy", 0.0) or 0.0)
-    auc = float(metrics.get("auc", 0.0) or 0.0)
+    min_auc, min_accuracy = float(default_min_auc), float(default_min_accuracy)
+    try:
+        min_auc = _qualification_number(os.getenv("ML_MIN_PROMOTION_AUC", default_min_auc) or default_min_auc, minimum=0, maximum=1)
+        min_accuracy = _qualification_number(os.getenv("ML_MIN_PROMOTION_ACCURACY", default_min_accuracy) or default_min_accuracy, minimum=0, maximum=1)
+        accuracy = _qualification_number(metrics.get("accuracy", 0.0), minimum=0, maximum=1)
+        auc = _qualification_number(metrics.get("auc", 0.0), minimum=0, maximum=1)
+        balanced_acc = _qualification_number(metrics.get("balanced_accuracy", accuracy), minimum=0, maximum=1)
+        positive_recall = _qualification_number(metrics.get("positive_recall", 0.0), minimum=0, maximum=1)
+        pr_auc = _qualification_number(metrics.get("pr_auc", auc), minimum=0, maximum=1)
+        positive_rate = _qualification_number(metrics.get("positive_rate", 0.0), minimum=0, maximum=1)
+        expected_r = _qualification_number(metrics.get("expected_r", 0.0))
+        min_pr_auc = _qualification_number(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35, minimum=0, maximum=1)
+        min_pr_auc_floor = _qualification_number(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25, minimum=0, maximum=1)
+        min_pr_auc_lift = _qualification_number(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0, minimum=0)
+        min_balanced_acc = _qualification_number(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55, minimum=0, maximum=1)
+        min_positive_recall = _qualification_number(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20, minimum=0, maximum=1)
+        min_expected_r = _qualification_number(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
+    except (TypeError, ValueError, OverflowError):
+        return False, min_accuracy, min_auc
     # Imbalance-aware promotion gate (staging-certification requirement): raw
     # accuracy is never trading accuracy.  A majority-class model (e.g. the
     # staging candidate [[56,0],[13,2]]) must fail on the gates below.
-    balanced_acc = float(metrics.get("balanced_accuracy", accuracy) or 0.0)
-    positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
-    pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
-    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
-    expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
-    majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
-
-    min_pr_auc = float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
-    min_pr_auc_floor = float(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25)
-    min_pr_auc_lift = float(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0)
     pr_auc_lift = (pr_auc / positive_rate) if positive_rate > 0 else 0.0
     # PR-AUC is prevalence-sensitive. Keep the existing strong absolute gate,
     # but also recognize a candidate that clears a conservative absolute floor
@@ -172,10 +188,10 @@ def _promotion_quality_gate(
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
-        and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
+        and balanced_acc >= min_balanced_acc
+        and positive_recall >= min_positive_recall
         and pr_auc_ok
-        and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
+        and expected_r >= min_expected_r
     )
     return ok, min_accuracy, min_auc
 
@@ -215,22 +231,27 @@ def _champion_comparison_gate(
                 "error": type(exc).__name__,
             }
 
-    tolerances = {
-        "auc": float(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01),
-        "pr_auc": float(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02),
-        "balanced_accuracy": float(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02),
-        "expected_r": float(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15),
-    }
+    try:
+        tolerances = {
+            "auc": _qualification_number(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01, minimum=0, maximum=1),
+            "pr_auc": _qualification_number(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02, minimum=0, maximum=1),
+            "balanced_accuracy": _qualification_number(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02, minimum=0, maximum=1),
+            "expected_r": _qualification_number(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15, minimum=0),
+        }
+    except (TypeError, ValueError, OverflowError):
+        return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
     regressions: dict[str, dict[str, float]] = {}
     compared: dict[str, dict[str, float]] = {}
     for key, tolerance in tolerances.items():
         if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
             continue
         try:
-            candidate = float(candidate_metrics[key])
-            champion = float(champion_metrics[key])
-        except (TypeError, ValueError):
-            continue
+            candidate = _qualification_number(candidate_metrics[key], minimum=0 if key != "expected_r" else None,
+                                              maximum=1 if key != "expected_r" else None)
+            champion = _qualification_number(champion_metrics[key], minimum=0 if key != "expected_r" else None,
+                                             maximum=1 if key != "expected_r" else None)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_metric", "source": source, "metric": key}
         compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
         if candidate < champion - tolerance:
             regressions[key] = compared[key]
@@ -241,19 +262,28 @@ def _champion_comparison_gate(
         ("calibrated_ece", "ML_CHAMPION_MAX_ECE_REGRESSION", 0.02),
         ("calibrated_brier", "ML_CHAMPION_MAX_BRIER_REGRESSION", 0.02),
     ):
+        try:
+            tolerance = _qualification_number(os.getenv(env_name, str(default)) or default, minimum=0, maximum=1)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
         if candidate_cal.get(key) is None or champion_cal.get(key) is None:
             continue
         try:
-            candidate = float(candidate_cal[key])
-            champion = float(champion_cal[key])
-            tolerance = float(os.getenv(env_name, str(default)) or default)
-        except (TypeError, ValueError):
-            continue
+            candidate = _qualification_number(candidate_cal[key], minimum=0, maximum=1)
+            champion = _qualification_number(champion_cal[key], minimum=0, maximum=1)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_metric", "source": source, "metric": key}
         compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
         if candidate > champion + tolerance:
             regressions[key] = compared[key]
 
-    minimum_comparable = max(1, int(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2))
+    try:
+        minimum_value = _qualification_number(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2, minimum=1, maximum=6)
+        if not minimum_value.is_integer():
+            raise ValueError("noninteger_comparison_count")
+        minimum_comparable = int(minimum_value)
+    except (TypeError, ValueError, OverflowError):
+        return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
     if len(compared) < minimum_comparable:
         return False, {
             "enabled": True,

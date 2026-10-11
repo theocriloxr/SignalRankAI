@@ -152,13 +152,18 @@ class CorrelationManager:
         self.correlation_matrix = {}
 
     def calculate_pair_correlation(self, returns1: np.ndarray, returns2: np.ndarray) -> float:
-        if len(returns1) < 2 or len(returns2) < 2:
-            return 0
-        try:
-            corr = np.corrcoef(returns1, returns2)[0, 1]
-            return float(corr) if not np.isnan(corr) else 0
-        except:
-            return 0
+        """Callers must supply aligned returns; invalid evidence is not zero risk."""
+        left, right = np.asarray(returns1, dtype=float), np.asarray(returns2, dtype=float)
+        if left.ndim != 1 or right.ndim != 1 or len(left) != len(right) or len(left) < 10:
+            raise ValueError("insufficient_aligned_returns")
+        if not np.isfinite(left).all() or not np.isfinite(right).all():
+            raise ValueError("nonfinite_returns")
+        if np.std(left) <= np.finfo(float).eps or np.std(right) <= np.finfo(float).eps:
+            raise ValueError("undefined_correlation")
+        corr = float(np.corrcoef(left, right)[0, 1])
+        if not math.isfinite(corr):
+            raise ValueError("undefined_correlation")
+        return corr
 
     def can_add_correlated_position(
         self,
@@ -167,12 +172,22 @@ class CorrelationManager:
         max_correlation: float = 0.7,
         returns_data: Optional[Dict[str, np.ndarray]] = None,
     ) -> Tuple[bool, str]:
-        if not existing_pairs or not returns_data:
+        threshold = _finite_number(max_correlation)
+        if threshold is None or not 0 < threshold <= 1:
+            return False, "Invalid correlation threshold"
+        if not isinstance(existing_pairs, list):
+            return False, "Invalid exposure evidence"
+        if not existing_pairs:
             return True, "No correlation check needed"
-        for existing in existing_pairs:
-            if new_pair not in returns_data or existing not in returns_data:
-                continue
-            corr = self.calculate_pair_correlation(returns_data[new_pair], returns_data[existing])
-            if abs(corr) > max_correlation:
-                return False, f"High correlation with {existing}: {corr:.2f}"
+        if not isinstance(returns_data, dict):
+            return False, "Missing correlation evidence"
+        try:
+            for existing in existing_pairs:
+                if new_pair == existing:
+                    return False, "Existing symbol exposure"
+                corr = self.calculate_pair_correlation(returns_data[new_pair], returns_data[existing])
+                if abs(corr) >= threshold:
+                    return False, f"High correlation with {existing}: {corr:.2f}"
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False, "Invalid correlation evidence"
         return True, "OK"

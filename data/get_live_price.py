@@ -13,7 +13,7 @@ import logging
 import asyncio
 import time
 from typing import Optional, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from collections import deque
 from datetime import datetime, timezone
 
@@ -1126,15 +1126,29 @@ async def _fetch_coinbase_quote(symbol: str) -> LivePriceQuote | LivePriceFailur
         return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
     started = time.perf_counter()
     try:
-        # Normalize symbol: BTCUSDT -> BTC-USD, ETHUSDT -> ETH-USD
+        from data.connectors.sdk_adapters import crypto_pair, coinbase_stream_quote
+
         canonical, provider_symbol, _ = _provider_identity(symbol, provider)
-        compact = canonical.replace("/", "").replace("-", "")
-        base, quote = compact, "USD"
-        for suffix in ("USDT", "USDC", "BUSD", "USD"):
-            if compact.endswith(suffix):
-                base, quote = compact[: -len(suffix)], "USD"
-                break
-        product_id = f"{base}-{quote}"
+        pair = crypto_pair(canonical)
+        if not pair:
+            return _typed_failure(symbol, provider, "invalid_spot_pair", retryable=False)
+        product_id = pair.replace("/", "-")
+        if os.getenv("COINBASE_QUOTE_TRANSPORT", "rest").strip().lower() == "websocket":
+            payload = await asyncio.to_thread(coinbase_stream_quote, canonical, timeout=5.0)
+            if not payload:
+                breaker.record_failure()
+                return _typed_failure(symbol, provider, "stream_quote_unavailable")
+            quote = _typed_quote(symbol=symbol, provider=provider, price=payload["last"],
+                                 bid=payload["bid"], ask=payload["ask"], source_timestamp=payload["timestamp"],
+                                 started=started, received_at=time.time(), quote_kind=QuoteKind.BID_ASK.value,
+                                 market_status="open", confidence_reasons=("websocket_source",))
+            if isinstance(quote, LivePriceQuote):
+                breaker.record_success()
+                return replace(quote, provider_symbol=product_id)
+            breaker.record_failure()
+            return quote
+        if os.getenv("COINBASE_QUOTE_TRANSPORT", "rest").strip().lower() != "rest":
+            return _typed_failure(symbol, provider, "invalid_quote_transport", retryable=False)
         response = await asyncio.to_thread(
             requests.get,
             f"https://api.exchange.coinbase.com/products/{product_id}/ticker",
@@ -1167,6 +1181,7 @@ async def _fetch_coinbase_quote(symbol: str) -> LivePriceQuote | LivePriceFailur
             market_status="open",
         )
         if isinstance(quote, LivePriceQuote):
+            quote = replace(quote, provider_symbol=product_id)
             breaker.record_success()
             logger.info(
                 "[price] coinbase_live_quote symbol=%s price=%s bid=%s ask=%s product=%s latency_ms=%s",

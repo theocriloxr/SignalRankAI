@@ -207,6 +207,12 @@ async def adaptive_promote_command(update: Any, context: Any) -> None:
             "portfolio_validation_passed": research.get("portfolio_validation_passed") is True,
             "kill_conditions_approved": research.get("kill_conditions_approved") is True,
         }
+        from engine.adaptive.health_baselines import approved_baseline, baseline_valid
+        identity = (await session.execute(text("SELECT * FROM adaptive_asset_profiles WHERE profile_id=:id"),
+                                         {"id": profile_id})).mappings().one()
+        baseline = await approved_baseline(session, profile_id)
+        # Research JSON cannot self-authorize predeclared runtime kill limits.
+        metrics["kill_conditions_approved"] = baseline_valid(baseline, identity)
         gate = evaluate_profile_promotion(
             metrics,
             human_approved=True,
