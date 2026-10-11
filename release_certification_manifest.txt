@@ -99,3 +99,5 @@ tests/test_production_backup_script.py
 tests/test_semgrep_gate.py
 tests/test_partial_exit_safety.py
 tests/test_governance_reproducibility.py
+
+tests/test_market_input_snapshot.py

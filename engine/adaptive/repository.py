@@ -11,8 +11,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.redis_state import state
 from db.session import get_session
 from .lifecycle import approval_lease, lock_profile_lifecycle, health_interval_seconds
+from .market_input import MarketInputSnapshot, persist_market_inputs, restore_market_input
 
 logger = logging.getLogger(__name__)
+
+
+async def persist_optional_signal_evidence(session: AsyncSession, signal: Any, payload: Mapping[str, Any]) -> None:
+    """Keep optional research writes atomic without poisoning signal storage."""
+    if not (payload.get("adaptive_evidence") or payload.get("adaptive_sequence_refs")):
+        return
+    try:
+        async with session.begin_nested():
+            await persist_signal_adaptive_evidence(session, signal, payload)
+    except Exception as error:
+        logger.warning("[adaptive] evidence persistence skipped signal=%s error_type=%s",
+                       getattr(signal, "signal_id", None), type(error).__name__)
 
 
 def _health_receipt_fresh(checked: Any) -> bool:
@@ -26,6 +39,28 @@ def _health_receipt_fresh(checked: Any) -> bool:
 async def persist_signal_adaptive_evidence(session: AsyncSession, signal: Any, payload: Mapping[str, Any]) -> None:
     evidence = list(payload.get("adaptive_evidence") or [])[:16]
     refs = list(payload.get("adaptive_sequence_refs") or [])[:8]
+    captures = payload.get("_adaptive_input_snapshots") or []
+    if not isinstance(captures, (list, tuple)) or len(captures) > 8:
+        raise ValueError("market_input_capture_batch_budget_exceeded")
+    snapshots = []
+    captured_by_hash = {}
+    for item in captures:
+        if not isinstance(item, Mapping):
+            raise ValueError("market_input_capture_invalid")
+        digest, stored = item["content_hash"], item["payload"]
+        context = restore_market_input(stored, content_hash=digest)
+        if context.asset != signal.asset:
+            raise ValueError("market_input_signal_asset_mismatch")
+        encoded = json.dumps(stored, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        captured_at = datetime.fromisoformat(stored["captured_at"])
+        snapshots.append(MarketInputSnapshot(digest, encoded, len(context.candles), captured_at))
+        captured_by_hash[digest] = context
+    for ref in refs:
+        digest = (ref.get("summary") or {}).get("market_input_hash")
+        if digest is not None and (digest not in captured_by_hash
+            or captured_by_hash[digest].timeframe != ref.get("timeframe")):
+            raise ValueError("market_input_reference_capture_missing_or_mismatched")
+    await persist_market_inputs(session, snapshots)
     for item in evidence:
         await session.execute(
             text(

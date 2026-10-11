@@ -23,7 +23,7 @@ from sqlalchemy import text
 from db.session import get_session
 
 
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0052_research_dataset_snapshots")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0053_research_market_inputs")
 _READY_CONNECTION_STATUSES = {"verified", "ready", "linked"}
 _CREDENTIAL_READY_FORMATS = {"envelope_v1", "provider_managed"}
 

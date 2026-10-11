@@ -56,6 +56,9 @@ def canonical_sequence_provenance(value: Any) -> tuple[str, ...]:
         payload.update({key: summary.get(key) for key in (
             "captured_at", "timestamp_convention", "publication_vintage",
         )})
+        # Optional new fields do not alter the identity of legacy snapshots.
+        payload.update({key: summary[key] for key in ("market_input_hash", "input_capture_status", "input_capture_reason")
+                        if key in summary})
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(raw.encode()) > 4096:
             raise ValueError("sequence_provenance_too_large")

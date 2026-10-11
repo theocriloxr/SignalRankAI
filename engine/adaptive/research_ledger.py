@@ -135,6 +135,7 @@ async def research_snapshot(session: AsyncSession, *, asset: str | None = None) 
                     'scope','canonical_outcomes_and_captured_sequence_metadata',
                     'content_hash',ds.content_hash,'row_count',ds.row_count,
                     'observation_cutoff',ds.observation_cutoff,
+                    'captured_input_replay',r.result->'captured_input_replay',
                     'complete_market_input_replay',FALSE) AS dataset_snapshot,
                h.spec AS hypothesis,h.version AS hypothesis_version,h.parent_hypothesis_id,
                r.status,r.result,r.evidence_hash,r.completed_at

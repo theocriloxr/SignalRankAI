@@ -73,6 +73,7 @@
     "scripts/install_opengrep.py",
     "data/connectors/fred_adapter.py",
     "engine/adaptive/dataset_snapshot.py",
+    "engine/adaptive/market_input.py",
     "db/research_snapshot_schema.py",
     "ml/candidate_forward.py",
     "data/sdk_gateway.py",

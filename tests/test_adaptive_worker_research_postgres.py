@@ -241,7 +241,7 @@ async def seed_research_outcomes(get_session, asset):
     from utils.timeutils import now_utc_naive
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0052_research_dataset_snapshots"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0053_research_market_inputs"
         for i in range(160):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
@@ -253,6 +253,171 @@ async def seed_research_outcomes(get_session, asset):
                                 r_multiple=0.4 if i % 5 else -0.5, provenance="shadow",
                                 closed_at=start + timedelta(hours=i, minutes=30), performance_inclusion_status="eligible"))
         await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_market_inputs_concurrent_capture_replay_and_physical_mutation_guards(worker_database):
+    from sqlalchemy.exc import DBAPIError
+    from db.models import MarketCandle
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs, load_market_input
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    source = sample_context()
+    snapshot = capture_market_input(source, timestamp_convention="bar_open", captured_at=CAPTURED)
+    async def save():
+        async with worker_database() as session:
+            await persist_market_inputs(session, [snapshot])
+            await session.commit()
+    await asyncio.gather(save(), save())
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_market_inputs"))).scalar_one() == 1
+        session.add(MarketCandle(symbol="BTCUSDT", timeframe="1h", **{
+            key: source.candles[-1][key] for key in ("open_time_ms", "open", "high", "low", "close", "volume")}))
+        await session.flush()
+        await session.execute(text("UPDATE market_candles SET close=900 WHERE symbol='BTCUSDT'"))
+        await session.commit()
+        replay = await load_market_input(session, snapshot.content_hash)
+        assert replay.candles[-1]["close"] == 101.0 and replay.indicators["ema_fast"] == 101.0
+        for mutation in ("UPDATE research_market_inputs SET candle_count=0", "DELETE FROM research_market_inputs",
+                         "TRUNCATE research_market_inputs"):
+            with pytest.raises(DBAPIError, match="append.only|immutable"):
+                async with session.begin_nested():
+                    await session.execute(text(mutation))
+        assert (await load_market_input(session, snapshot.content_hash)).candles == replay.candles
+        # Even a privileged, disabled guard cannot make changed bytes replay
+        # successfully under the earlier content identity.
+        await session.execute(text("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_immutable"))
+        await session.execute(text("UPDATE research_market_inputs SET payload=jsonb_set(payload,'{context,indicators,ema_fast}','900')"))
+        with pytest.raises(ValueError, match="hash_mismatch"):
+            await load_market_input(session, snapshot.content_hash)
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded_complete_coverage(monkeypatch, worker_database):
+    from copy import deepcopy
+    from datetime import timedelta
+    from engine.adaptive import market_input
+    from engine.adaptive.dataset import build_dataset
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs, audit_captured_inputs
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    context = sample_context()
+    captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=captured.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    base = {"signal_id": "owned-input-audit", "asset": context.asset, "asset_class": "crypto", "timeframe": "1h",
+            "decision_time": CAPTURED + timedelta(minutes=1), "outcome_known_at": CAPTURED + timedelta(minutes=30),
+            "r_multiple": -0.2, "sequence_hashes": [ref["sequence_hash"]], "sequence_provenance": [ref]}
+    def rows(value):
+        return build_dataset([value], as_of=CAPTURED + timedelta(hours=1))[0]
+    async with worker_database() as session:
+        await persist_market_inputs(session, [captured])
+        await session.commit()
+        result = await audit_captured_inputs(session, rows(base))
+        assert result["status"] == "PASS" and result["verified_references"] == 1
+        assert not result["complete_point_in_time_replay"]
+        missing = deepcopy(base)
+        missing["sequence_provenance"][0]["summary"]["market_input_hash"] = "f" * 64
+        assert (await audit_captured_inputs(session, rows(missing)))["status"] == "UNVERIFIED"
+        legacy = deepcopy(base)
+        legacy["sequence_provenance"][0]["summary"].pop("market_input_hash")
+        assert (await audit_captured_inputs(session, rows(legacy)))["status"] == "UNVERIFIED"
+        for key, value, reason in (("asset", "ETHUSDT", "scope_or_time"),
+                                   ("decision_time", CAPTURED - timedelta(seconds=1), "scope_or_time")):
+            bad = {**base, key: value}
+            with pytest.raises(ValueError, match=reason):
+                await audit_captured_inputs(session, rows(bad))
+        bad = deepcopy(base)
+        bad["sequence_provenance"][0]["sequence_hash"] = "e" * 64
+        with pytest.raises(ValueError, match="sequence_hash_mismatch"):
+            await audit_captured_inputs(session, rows(bad))
+        monkeypatch.setattr(market_input, "MAX_AUDIT_BYTES", 1)
+        with pytest.raises(ValueError, match="byte_budget"):
+            await audit_captured_inputs(session, rows(base))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["none", "late_database_failure", "missing_capture", "strategy_stat_failure"])
+@pytest.mark.parametrize("writer", ["legacy", "serving"])
+async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evidence_transaction(monkeypatch, worker_database, failure, writer):
+    import db.repository as signal_repository
+    from db import pg_compat, pg_features, session as session_module
+    from engine.adaptive import repository
+    from engine.adaptive.market_input import capture_market_input
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    context = sample_context()
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    payload = {"asset": "BTCUSDT", "timeframe": "1h", "direction": "long", "entry": 100,
+        "stop_loss": 90, "take_profit": [110], "strategy_name": "owned-market-input", "adaptive_sequence_refs": [ref],
+        "_adaptive_input_snapshots": [{"content_hash": capture.content_hash, "payload": json.loads(capture.payload)}]}
+    @asynccontextmanager
+    async def owned_session(**kwargs):
+        async with worker_database() as session:
+            yield session
+    monkeypatch.setattr(signal_repository, "get_session", owned_session)
+    monkeypatch.setattr(session_module, "get_session", owned_session)
+    # Keep the serving facade's database operation in pytest's owned event loop.
+    # Its session, canonical writer, savepoint and commit remain real PostgreSQL.
+    monkeypatch.setattr(pg_compat, "_run", lambda operation, **kwargs: operation)
+    monkeypatch.setattr(pg_compat, "postgres_enabled", lambda: True)
+    if failure == "late_database_failure":
+        original = repository.persist_signal_adaptive_evidence
+        async def fail_after_real_writes(session, *args):
+            await original(session, *args)
+            await session.execute(text("SELECT 1/0"))
+        monkeypatch.setattr(repository, "persist_signal_adaptive_evidence", fail_after_real_writes)
+    elif failure == "missing_capture":
+        payload["_adaptive_input_snapshots"] = []
+    elif failure == "strategy_stat_failure":
+        async def failed_stat(session, **kwargs):
+            await session.execute(text("SELECT 1/0"))
+        monkeypatch.setattr(pg_features, "_touch_strategy_stat", failed_stat)
+    signal = (await signal_repository.persist_signal(payload) if writer == "legacy"
+              else await pg_compat.store_signal_compat(payload))
+    assert signal is not None, "optional research failure must not abort the canonical signal commit"
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM signals"))).scalar_one() == 1
+        count = 1 if failure in {"none", "strategy_stat_failure"} else 0
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_market_inputs"))).scalar_one() == count
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_signal_sequences"))).scalar_one() == count
+
+
+@pytest.mark.asyncio
+async def test_actual_worker_audits_saved_component_inputs_without_claiming_historical_truth(monkeypatch, worker_database):
+    from dataclasses import replace
+    from db.models import AdaptiveSignalSequence
+    from engine.adaptive import learning, repository
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITINPUTS")
+    context = replace(sample_context(), asset="AUDITINPUTS")
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    async with sessions() as session:
+        await persist_market_inputs(session, [capture])
+        for signal in (await session.execute(text("SELECT signal_id FROM signals"))).mappings():
+            session.add(AdaptiveSignalSequence(signal_id=signal["signal_id"], asset=context.asset, timeframe="1h",
+                sequence_hash=ref["sequence_hash"], candle_count=ref["candle_count"],
+                start_time_ms=ref["start_time_ms"], end_time_ms=ref["end_time_ms"], provider=context.provider,
+                evidence_stage="pre_signal", summary=ref["summary"]))
+        await session.commit()
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        result = (await session.execute(text("SELECT result FROM research_experiment_results"))).scalar_one()
+        audit = result["captured_input_replay"]
+        assert audit["status"] == "PASS" and audit["verified_references"] == 160 and audit["unique_inputs"] == 1
+        assert not audit["complete_point_in_time_replay"] and not result["integrity"]["passed"]
+        assert not result["promotion_eligible"]
 
 
 @pytest.mark.asyncio
@@ -956,6 +1121,12 @@ async def test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards(mo
     assert (await railway_main._database_readiness_check())["ok"]
     assert schema_gate.check_schema()["ok"]
     statements = [
+        ("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_immutable",
+         "ALTER TABLE research_market_inputs ENABLE TRIGGER research_market_inputs_immutable"),
+        ("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_no_truncate",
+         "ALTER TABLE research_market_inputs ENABLE TRIGGER research_market_inputs_no_truncate"),
+        ("ALTER TABLE research_market_inputs RENAME TO missing_market_input_fixture",
+         "ALTER TABLE missing_market_input_fixture RENAME TO research_market_inputs"),
         ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_immutable",
          "ALTER TABLE research_dataset_snapshots ENABLE TRIGGER research_dataset_snapshots_immutable"),
         ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_no_truncate",

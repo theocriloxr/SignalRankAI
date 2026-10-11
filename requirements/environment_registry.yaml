@@ -189,7 +189,7 @@
       "name": "ADAPTIVE_CANDIDATE_MIN_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/runtime.py:200"
+        "engine/adaptive/runtime.py:221"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -393,8 +393,8 @@
       "name": "ADAPTIVE_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:376",
-        "engine/adaptive/repository.py:81"
+        "engine/adaptive/learning.py:377",
+        "engine/adaptive/repository.py:116"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -409,7 +409,7 @@
       "name": "ADAPTIVE_DRIFT_MAX_BRIER",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:126"
+        "engine/adaptive/learning.py:127"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -424,7 +424,7 @@
       "name": "ADAPTIVE_DRIFT_MAX_DRAWDOWN_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:125"
+        "engine/adaptive/learning.py:126"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -439,7 +439,7 @@
       "name": "ADAPTIVE_DRIFT_MIN_EXPECTANCY_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:127"
+        "engine/adaptive/learning.py:128"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -454,7 +454,7 @@
       "name": "ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:124"
+        "engine/adaptive/learning.py:125"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -469,7 +469,7 @@
       "name": "ADAPTIVE_EVALUATION_TIMEFRAMES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/runtime.py:95"
+        "engine/adaptive/runtime.py:98"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -551,7 +551,7 @@
       "name": "ADAPTIVE_LOOKBACK_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:367"
+        "engine/adaptive/learning.py:368"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -566,7 +566,7 @@
       "name": "ADAPTIVE_MAX_CANDIDATES_PER_ASSET",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/runtime.py:247"
+        "engine/adaptive/runtime.py:269"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -581,7 +581,7 @@
       "name": "ADAPTIVE_MIN_CANDLES_PER_TIMEFRAME",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/runtime.py:108"
+        "engine/adaptive/runtime.py:114"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -596,7 +596,7 @@
       "name": "ADAPTIVE_MIN_OUTCOME_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:366"
+        "engine/adaptive/learning.py:367"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -611,7 +611,7 @@
       "name": "ADAPTIVE_OPTIMISATION_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:363"
+        "engine/adaptive/learning.py:364"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -626,7 +626,7 @@
       "name": "ADAPTIVE_PRE_SIGNAL_CANDLES",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/runtime.py:113"
+        "engine/adaptive/runtime.py:118"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -654,7 +654,7 @@
       "name": "ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:98"
+        "engine/adaptive/learning.py:99"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -708,8 +708,8 @@
       "name": "ADAPTIVE_WFO_COST_R",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:569",
-        "engine/adaptive/learning.py:600"
+        "engine/adaptive/learning.py:570",
+        "engine/adaptive/learning.py:601"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -724,9 +724,9 @@
       "name": "ADAPTIVE_WFO_EMBARGO_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:568",
-        "engine/adaptive/learning.py:599",
-        "engine/adaptive/learning.py:723"
+        "engine/adaptive/learning.py:569",
+        "engine/adaptive/learning.py:600",
+        "engine/adaptive/learning.py:726"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -741,8 +741,8 @@
       "name": "ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:566",
-        "engine/adaptive/learning.py:597"
+        "engine/adaptive/learning.py:567",
+        "engine/adaptive/learning.py:598"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -757,8 +757,8 @@
       "name": "ADAPTIVE_WFO_VALIDATION_ROWS",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:567",
-        "engine/adaptive/learning.py:598"
+        "engine/adaptive/learning.py:568",
+        "engine/adaptive/learning.py:599"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1754,8 +1754,8 @@
       "name": "ASSET_REPEAT_LOCK_HOURS",
       "production_example_default": "4",
       "read_locations": [
-        "db/pg_features.py:4099",
-        "db/pg_features.py:4148",
+        "db/pg_features.py:4108",
+        "db/pg_features.py:4157",
         "services/platform/signal_delivery.py:255"
       ],
       "required_by_code": true,
@@ -4254,7 +4254,7 @@
       "name": "DELIVERY_DEDUPE_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1338"
+        "db/pg_features.py:1347"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4264,7 +4264,7 @@
       "name": "DELIVERY_DEDUPE_RESET_EPOCH",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1350"
+        "db/pg_features.py:1359"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4335,7 +4335,7 @@
       "name": "DELIVERY_INFLIGHT_RETRY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1644"
+        "db/pg_features.py:1653"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4355,7 +4355,7 @@
       "name": "DELIVERY_MARKET_COOLDOWN_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1388"
+        "db/pg_features.py:1397"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4526,7 +4526,7 @@
       "name": "DELIVERY_REQUIRE_QUALITY_GATE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:4007"
+        "db/pg_features.py:4016"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4590,7 +4590,7 @@
       "name": "DELIVERY_UNRESOLVED_BLOCK_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1430",
+        "db/pg_features.py:1439",
         "signalrank_telegram/bot.py:1784"
       ],
       "required_by_code": true,
@@ -6351,7 +6351,7 @@
       "name": "GITHUB_SHA",
       "production_example_default": null,
       "read_locations": [
-        "engine/adaptive/learning.py:538"
+        "engine/adaptive/learning.py:539"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11037,7 +11037,7 @@
       "name": "PERFORMANCE_BASELINE_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1298",
+        "db/pg_features.py:1302",
         "signalrank_telegram/commands.py:3506",
         "signalrank_telegram/commands.py:8341"
       ],
@@ -12060,7 +12060,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:90",
-        "engine/adaptive/learning.py:538",
+        "engine/adaptive/learning.py:539",
         "engine/core.py:3123",
         "engine/shadow_outcome_worker.py:55",
         "railway_main.py:3134",
@@ -12358,9 +12358,9 @@
       "name": "REFERRALS_PER_REWARD",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3263",
-        "db/pg_features.py:3397",
-        "db/pg_features.py:3601",
+        "db/pg_features.py:3272",
+        "db/pg_features.py:3406",
+        "db/pg_features.py:3610",
         "web/platform_api.py:3352"
       ],
       "required_by_code": true,
@@ -12371,9 +12371,9 @@
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3264",
-        "db/pg_features.py:3398",
-        "db/pg_features.py:3602",
+        "db/pg_features.py:3273",
+        "db/pg_features.py:3407",
+        "db/pg_features.py:3611",
         "web/platform_api.py:3363"
       ],
       "required_by_code": true,
@@ -12384,8 +12384,8 @@
       "name": "REFERRAL_MONTHLY_CAP_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3417",
-        "db/pg_features.py:3637"
+        "db/pg_features.py:3426",
+        "db/pg_features.py:3646"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14020,7 +14020,7 @@
       "name": "SIGNAL_THESIS_DEDUP_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2834",
+        "db/pg_features.py:2843",
         "db/pg_features.py:954",
         "services/performance_ledger.py:436"
       ],
@@ -15193,7 +15193,7 @@
       "name": "TIME_STOP",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3136"
+        "db/pg_features.py:3145"
       ],
       "required_by_code": true,
       "sensitive": false

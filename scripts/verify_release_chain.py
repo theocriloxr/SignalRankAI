@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0052_research_dataset_snapshots")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0053_research_market_inputs")
 
 
 def main() -> int:
@@ -48,6 +48,10 @@ def main() -> int:
         "0050_profile_health_index",
         "0051_strategy_health_baselines",
         "0052_research_dataset_snapshots",
+        "0053_research_market_inputs",
+        "CREATE TABLE research_market_inputs",
+        "research_market_inputs_immutable",
+        "research_market_inputs_no_truncate",
         "CREATE TABLE research_dataset_snapshots",
         "research_dataset_snapshots_immutable",
         "research_dataset_snapshots_no_truncate",

@@ -100,6 +100,8 @@ def restore_dataset_snapshot(
                 raise ValueError("snapshot_sequence_metadata_invalid")
             summary_keys = ("captured_at", "timestamp_convention", "publication_vintage")
             summary = {key: ref.pop(key, None) for key in summary_keys}
+            summary.update({key: ref.pop(key) for key in ("market_input_hash", "input_capture_status", "input_capture_reason")
+                            if key in ref})
             provenance.append({**ref, "summary": summary})
         row["sequence_provenance"] = provenance
         raw_rows.append(row)

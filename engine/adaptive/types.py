@@ -178,6 +178,7 @@ class AdaptiveAssessment:
     data_quality_score: float
     sequence_references: tuple[Mapping[str, Any], ...]
     runtime_mode: str
+    input_snapshots: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {

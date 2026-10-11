@@ -24,6 +24,7 @@ from utils.timeutils import now_utc_naive
 from .components import DEFAULT_COMPONENTS
 from .dataset import AdaptiveDatasetRow, build_dataset
 from .dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
+from .market_input import audit_captured_inputs
 from .statistics import profit_factor as _profit_factor
 from .repository import publish_approved_profiles
 from .walk_forward import walk_forward_evaluate
@@ -657,11 +658,13 @@ class AdaptiveLearningWorker:
                         "evidence_category": evidence_category,
                     }
                     counts = await trial_counts(session, hypothesis_id)
+                    input_replay = await audit_captured_inputs(session, asset_rows)
                     research_evidence = {
                         "hypothesis_id": hypothesis_id, "experiment_id": experiment_id,
                         "dataset_version": manifest.dataset_version, "feature_version": feature_version,
                         "code_commit": code_commit, "trial_counts": counts,
-                        "integrity": audit_adaptive_dataset(asset_rows, wfo),
+                        "integrity": audit_adaptive_dataset(asset_rows, wfo, input_replay=input_replay),
+                        "captured_input_replay": input_replay,
                         "return_diagnostics": return_diagnostics([row.r_multiple for row in asset_rows]),
                         "multiple_testing": {"status": "UNVERIFIED", "deflated_sharpe_probability": None,
                                              "reason": "irregular_trade_R_and_incomplete_historical_trial_coverage"},

@@ -47,6 +47,7 @@ async def research_database():
                 with Operations.context(MigrationContext.configure(sync_connection)):
                     import_module("db.migrations.versions.0049_research_trial_ledger").upgrade()
                     import_module("db.migrations.versions.0052_research_dataset_snapshots").upgrade()
+                    import_module("db.migrations.versions.0053_research_market_inputs").upgrade()
             await connection.run_sync(migrate)
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:

@@ -4604,7 +4604,7 @@
       "acceptance": {
         "text_sha256": "1c29e7d67ec86fcb96689cd15fd0cfd1a8fb50ba1fe9537235705bdb579d4bfd",
         "status": "PARTIAL",
-        "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones. FRED historical requests now pin explicit day vintages and reject missing or mismatched revision bounds; latest context and intraday availability remain unqualified. Adaptive research now persists bounded, append-only canonical outcome rows and captured sequence metadata, consumes those stored rows, and verifies identity before replay after source corrections. Startup and runtime admission require the snapshot table and active mutation guards; operator diagnostics distinguish captured snapshots from unavailable legacy evidence.",
+        "current_behavior": "Canonical adaptive snapshots exclude decisions/labels unavailable at the observation cutoff. Captured sequence timing and provider metadata enter immutable row fingerprints; proven temporal violations block WFO. Legacy missing metadata stays unverified. UTC lifecycle transactions preserve approval and health-receipt chronology across database timezones. FRED historical requests now pin explicit day vintages and reject missing or mismatched revision bounds; latest context and intraday availability remain unqualified. Adaptive research now persists bounded, append-only canonical outcome rows and captured sequence metadata, consumes those stored rows, and verifies identity before replay after source corrections. Startup and runtime admission require the snapshot table and active mutation guards; operator diagnostics distinguish captured snapshots from unavailable legacy evidence. Normalized component contexts now have bounded canonical input captures, immutable content-addressed PostgreSQL storage and verified replay. Components receive detached, read-only captured values when capture succeeds; unsupported inputs retain explicit UNAVAILABLE metadata. Signal persistence writes captures and references within one optional-evidence savepoint. Research validates referenced bytes, scope, chronology and sequence hashes with count/byte budgets; missing legacy history stays unverified. This is observed component-input identity, not provider publication or historical-universe certification.",
         "canonical_paths": [
           "engine/adaptive/dataset.py",
           "engine/adaptive/availability.py",
@@ -4615,35 +4615,49 @@
           "data/connectors/fred_adapter.py",
           "engine/adaptive/dataset_snapshot.py",
           "db/research_snapshot_schema.py",
-          "db/migrations/versions/0052_research_dataset_snapshots.py"
+          "db/migrations/versions/0052_research_dataset_snapshots.py",
+          "engine/adaptive/market_input.py",
+          "engine/adaptive/runtime.py",
+          "engine/adaptive/repository.py",
+          "db/repository.py",
+          "db/pg_features.py",
+          "db/migrations/versions/0053_research_market_inputs.py"
         ],
         "conflicting_legacy_paths": [],
         "missing_acceptance": [
           "Historical universe membership, listing/delisting and corporate-action/revision vintages.",
           "Actual immutable provider publication/observation histories and feature availability for every component.",
           "Historical calendars, sessions, holidays and DST qualification.",
-          "Full historical OHLC/feature/context inputs, provider vintages and universe replay beyond the preserved canonical outcome rows.",
+          "Legacy missing candle/feature/context inputs cannot be reconstructed from mutable tables. Provider publication/revision history and historical universe/calendar replay remain unqualified; new component captures do not establish those histories or validate every feature algorithm.",
           "Exact-successor hosted acceptance; current checks concern local synthetic research, not provider/broker execution."
         ],
         "tests": {
           "positive": [
             "tests/test_sequence_availability.py::test_exact_close_and_capture_cutoff_is_inclusive_without_claiming_vintages",
             "tests/test_fred_point_in_time.py::test_revision_cutoff_is_sent_to_real_adapter_and_later_revisions_do_not_replace_history",
-            "tests/test_dataset_snapshot.py::test_replay_restores_exact_rows_and_folds_after_the_source_changes"
+            "tests/test_dataset_snapshot.py::test_replay_restores_exact_rows_and_folds_after_the_source_changes",
+            "tests/test_market_input_snapshot.py::test_input_replay_retains_full_features_and_is_detached_and_immutable",
+            "tests/test_market_input_snapshot.py::test_main_engine_candidate_selection_preserves_capture_and_reference_binding",
+            "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_audits_saved_component_inputs_without_claiming_historical_truth"
           ],
           "negative": [
             "tests/test_sequence_availability.py::test_future_label_mutations_cannot_change_an_as_of_dataset",
             "tests/test_sequence_availability.py::test_future_provenance_blocks_actual_walk_forward_and_integrity",
             "tests/test_adaptive_worker_research_postgres.py::test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing",
             "tests/test_fred_point_in_time.py::test_provider_revision_mismatch_rejects_the_response_instead_of_certifying_it",
-            "tests/test_adaptive_worker_research_postgres.py::test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards"
+            "tests/test_adaptive_worker_research_postgres.py::test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards",
+            "tests/test_market_input_snapshot.py::test_changed_input_cannot_reuse_a_capture_identity",
+            "tests/test_market_input_snapshot.py::test_capture_rejects_unsafe_or_oversized_inputs_without_truncation",
+            "tests/test_adaptive_worker_research_postgres.py::test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded_complete_coverage"
           ],
           "concurrency": [
-            "tests/test_adaptive_worker_research_postgres.py::test_dataset_snapshot_concurrent_retries_and_database_mutation_guards"
+            "tests/test_adaptive_worker_research_postgres.py::test_dataset_snapshot_concurrent_retries_and_database_mutation_guards",
+            "tests/test_adaptive_worker_research_postgres.py::test_market_inputs_concurrent_capture_replay_and_physical_mutation_guards"
           ],
           "recovery": [
             "tests/test_adaptive_worker_research_postgres.py::test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone",
-            "tests/test_adaptive_worker_research_postgres.py::test_saved_dataset_survives_actual_source_corrections_and_missing_legacy_snapshot"
+            "tests/test_adaptive_worker_research_postgres.py::test_saved_dataset_survives_actual_source_corrections_and_missing_legacy_snapshot",
+            "tests/test_adaptive_worker_research_postgres.py::test_actual_signal_write_owns_input_capture_and_recovers_optional_evidence_transaction"
           ]
         },
         "evidence": [],

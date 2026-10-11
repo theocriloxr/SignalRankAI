@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 from .dataset import AdaptiveDatasetRow
 from .availability import audit_sequence_availability
@@ -19,7 +19,8 @@ class IntegrityCheck:
     severity: str = "material"
 
 
-def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardResult) -> dict:
+def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardResult,
+                           *, input_replay: Mapping[str, Any] | None = None) -> dict:
     checks: list[IntegrityCheck] = []
     def check(name: str, passed: bool, reason: str) -> None:
         checks.append(IntegrityCheck(name, "PASS" if passed else "FAIL", reason))
@@ -40,6 +41,10 @@ def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardR
     reasons = sorted({reason for item in availability for reason in item["reasons"]})
     checks.append(IntegrityCheck("captured_sequence_availability", status,
         ";".join(reasons) or "captured_closed_bar_timing_only;publication_and_feature_vintages_unverified"))
+    checks.append(IntegrityCheck("captured_component_inputs",
+        "PASS" if input_replay and input_replay.get("status") == "PASS" else "UNVERIFIED",
+        "immutable_normalized_input_identity_only;historical_universe_and_source_vintages_unverified",
+        source="research_market_inputs"))
     # A sequence hash is not a replay of indicator availability, universe
     # membership or fills. Existing outcome weighting cannot establish these.
     for name, reason in {
