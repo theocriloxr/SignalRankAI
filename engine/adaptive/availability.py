@@ -57,7 +57,7 @@ def canonical_sequence_provenance(value: Any) -> tuple[str, ...]:
             "captured_at", "timestamp_convention", "publication_vintage",
         )})
         # Optional new fields do not alter the identity of legacy snapshots.
-        payload.update({key: summary[key] for key in ("market_input_hash", "input_capture_status", "input_capture_reason")
+        payload.update({key: summary[key] for key in ("market_input_hash", "input_capture_status", "input_capture_reason", "universe_observation_hash", "universe_observation_status")
                         if key in summary})
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(raw.encode()) > 4096:

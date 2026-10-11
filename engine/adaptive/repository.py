@@ -60,6 +60,10 @@ async def persist_signal_adaptive_evidence(session: AsyncSession, signal: Any, p
         if digest is not None and (digest not in captured_by_hash
             or captured_by_hash[digest].timeframe != ref.get("timeframe")):
             raise ValueError("market_input_reference_capture_missing_or_mismatched")
+        if digest is not None:
+            stored = next(item["payload"] for item in captures if item["content_hash"] == digest)
+            if (ref.get("summary") or {}).get("universe_observation_hash") != (stored.get("universe_observation") or {}).get("content_hash"):
+                raise ValueError("market_input_universe_reference_mismatch")
     await persist_market_inputs(session, snapshots)
     for item in evidence:
         await session.execute(

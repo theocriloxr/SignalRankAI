@@ -131,9 +131,11 @@ class AdaptiveStrategyService:
                 news_context={"sentiment": market_data.get("news_sentiment")},
                 macro_context=dict(market_data.get("_macro") or {}),
             )
+            reference["summary"]["universe_observation_status"] = "UNAVAILABLE"
             try:
                 captured = capture_market_input(context,
-                    timestamp_convention=reference["summary"]["timestamp_convention"])
+                    timestamp_convention=reference["summary"]["timestamp_convention"],
+                    universe_observation=market_data.get("_universe_observation"))
                 stored_payload = json.loads(captured.payload)
                 # Components use the captured values, detached from the live
                 # source dictionaries. Save these same values with the signal.
@@ -141,6 +143,9 @@ class AdaptiveStrategyService:
                 input_snapshots.append({"content_hash": captured.content_hash, "payload": stored_payload})
                 reference["summary"].update(market_input_hash=captured.content_hash,
                     captured_at=captured.captured_at.isoformat(), input_capture_status="CAPTURED")
+                if "universe_observation" in stored_payload:
+                    reference["summary"]["universe_observation_hash"] = stored_payload["universe_observation"]["content_hash"]
+                    reference["summary"]["universe_observation_status"] = "CAPTURED"
             except (ValueError, TypeError, OverflowError):
                 reference["summary"].update(input_capture_status="UNAVAILABLE",
                     input_capture_reason="unsupported_or_over_budget_component_input")

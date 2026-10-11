@@ -19,6 +19,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .types import DataQualityReport, MarketContext
+from engine.universe_observation import validate_universe_membership
 
 FORMAT_VERSION = 1
 MAX_INPUT_BYTES = 512 * 1024
@@ -115,6 +116,7 @@ class MarketInputSnapshot:
 def capture_market_input(
     context: MarketContext, *, timestamp_convention: str,
     captured_at: datetime | None = None,
+    universe_observation: Mapping[str, Any] | None = None,
 ) -> MarketInputSnapshot:
     if len(context.candles) > MAX_CANDLES:
         raise ValueError("market_input_candle_budget_exceeded")
@@ -123,6 +125,10 @@ def capture_market_input(
     value = {"format_version": FORMAT_VERSION, "context": _materialize(inputs),
              "captured_at": _instant(captured_at or datetime.now(timezone.utc)).isoformat(),
              "timestamp_convention": timestamp_convention, "source_history": dict(_UNVERIFIED)}
+    if universe_observation is not None:
+        observation = validate_universe_membership(universe_observation, asset=context.asset,
+            decision_time=_instant(value["captured_at"]))
+        value["universe_observation"] = observation.envelope()
     _validate_tree(value)
     encoded = _json(value)
     if len(encoded.encode("utf-8")) > MAX_INPUT_BYTES:
@@ -135,9 +141,10 @@ def capture_market_input(
 
 
 def restore_market_input(payload: Mapping[str, Any], *, content_hash: str) -> MarketContext:
-    if not isinstance(payload, dict) or set(payload) != {
+    required = {
         "format_version", "context", "captured_at", "timestamp_convention", "source_history",
-    }:
+    }
+    if not isinstance(payload, dict) or set(payload) not in (required, required | {"universe_observation"}):
         raise ValueError("market_input_payload_invalid")
     _validate_tree(payload)
     encoded = _json(payload)
@@ -184,7 +191,10 @@ def restore_market_input(payload: Mapping[str, Any], *, content_hash: str) -> Ma
     values = {key: _freeze(value) for key, value in context.items()}
     values.update({"candles": tuple(_freeze(c) for c in candles),
                    "data_quality": DataQualityReport(**{**quality, "reasons": tuple(quality["reasons"])})})
-    return MarketContext(**values)
+    result = MarketContext(**values)
+    if "universe_observation" in payload:
+        validate_universe_membership(payload["universe_observation"], asset=result.asset, decision_time=captured)
+    return result
 
 
 async def persist_market_inputs(session: AsyncSession, snapshots: Sequence[MarketInputSnapshot]) -> None:
@@ -264,6 +274,7 @@ async def audit_captured_inputs(session: AsyncSession, rows: Sequence[Any]) -> d
     if len(hashes) > MAX_AUDIT_INPUTS:
         raise ValueError("market_input_audit_count_budget_exceeded")
     verified = 0
+    universe_verified = 0
     total_bytes = 0
     # Decode bounded chunks, rather than materializing a year's input history.
     ordered = sorted(hashes)
@@ -282,6 +293,12 @@ async def audit_captured_inputs(session: AsyncSession, rows: Sequence[Any]) -> d
                     or payload["captured_at"] != ref.get("captured_at")
                     or payload["timestamp_convention"] != ref.get("timestamp_convention")):
                     raise ValueError("market_input_reference_scope_or_time_mismatch")
+                observation = payload.get("universe_observation")
+                if ref.get("universe_observation_hash") != (observation or {}).get("content_hash"):
+                    raise ValueError("market_input_universe_reference_mismatch")
+                if observation is not None:
+                    validate_universe_membership(observation, asset=row.asset, decision_time=_instant(row.decision_time))
+                    universe_verified += 1
                 count = ref["candle_count"]
                 if type(count) is not int or not 1 <= count <= len(context.candles):
                     raise ValueError("market_input_reference_count_mismatch")
@@ -294,4 +311,7 @@ async def audit_captured_inputs(session: AsyncSession, rows: Sequence[Any]) -> d
     return {"status": "PASS" if rows and references and not missing and verified == expected else "UNVERIFIED",
             "scope": "captured_normalized_component_inputs_only", "verified_references": verified,
             "missing_references": missing, "unique_inputs": len(hashes), "materialized_bytes": total_bytes,
+            "observed_universe": {"status": "PASS" if rows and references and not missing and universe_verified == expected else "UNVERIFIED",
+                "verified_references": universe_verified, "scope": "observed_engine_selection_only",
+                "historical_membership": "UNVERIFIED"},
             "source_history": dict(_UNVERIFIED), "complete_point_in_time_replay": False}

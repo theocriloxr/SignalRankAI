@@ -2876,6 +2876,8 @@ def main_loop(DRY_RUN: bool = False):
             _allow_static_fallback,
         )
         assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
+        _universe_candidates = list(assets)
+        _profile_universe_filter_applied = False
         if (
             _env_bool("PROFILE_DRIVEN_UNIVERSE_ENABLED", True)
             and _profile_demand_snapshot is not None
@@ -2889,6 +2891,8 @@ def main_loop(DRY_RUN: bool = False):
                     original_order.get(asset, 10**9),
                 )
             )
+            _profile_universe_filter_applied = True
+        _profile_filtered_universe = list(assets)
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
             time.sleep(max(5, cycle_sleep_seconds))
@@ -2930,6 +2934,7 @@ def main_loop(DRY_RUN: bool = False):
         # before the cycle queue is refreshed, so disabled classes cannot
         # consume batch slots or be re-injected by class coverage logic.
         _enabled_classes = _enabled_asset_classes()
+        _market_open_universe = list(open_assets)
         _operator_blacklist = _env_asset_blacklist()
         _pre_blacklist_count = len(open_assets)
         open_assets = [
@@ -3008,6 +3013,7 @@ def main_loop(DRY_RUN: bool = False):
             _cat_iters = _next_iters
 
         _universe_cap = max(1, _env_int("ENGINE_UNIVERSE_CAP", 20))
+        _eligible_universe = list(_all_open)
         _all_open = _all_open[:_universe_cap]
         # Feed the queue; refresh_universe only rebuilds once per hour
         # (CYCLE_UNIVERSE_REFRESH_INTERVAL env var) unless this is wakeup #1.
@@ -3019,7 +3025,7 @@ def main_loop(DRY_RUN: bool = False):
         )
         _default_cycle_batch = 20 if _running_on_railway else 20
         CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", _default_cycle_batch)
-        CYCLE_BATCH_SIZE = min(CYCLE_BATCH_SIZE, _universe_cap)
+        CYCLE_BATCH_SIZE = max(1, min(CYCLE_BATCH_SIZE, _universe_cap))
         assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
 
         # Guarantee class coverage: at least one asset per OPEN class each cycle.
@@ -3116,6 +3122,26 @@ def main_loop(DRY_RUN: bool = False):
             )
 
         cycle_started_at = datetime.now(timezone.utc)
+        _cycle_universe_observation = None
+        try:
+            from engine.universe_observation import capture_universe_observation
+
+            _cycle_universe_observation = capture_universe_observation(
+                sources={"managed": _dedupe_preserve_order(_managed_assets),
+                         "pinned": _dedupe_preserve_order(_saved_assets),
+                         "discovered": _dedupe_preserve_order(_discovered_assets)},
+                stages={"candidates": _universe_candidates,
+                        "profile_filtered": _profile_filtered_universe,
+                        "market_open": _market_open_universe,
+                        "eligible": _eligible_universe, "scheduled": list(_all_open),
+                        "selected": list(assets)},
+                discovery_source=_universe_source,
+                profile_filter_applied=_profile_universe_filter_applied,
+                universe_cap=_universe_cap, batch_size=CYCLE_BATCH_SIZE,
+                observed_at=cycle_started_at,
+            )
+        except (ValueError, TypeError, OverflowError):
+            logger.warning("[engine] universe observation unavailable: invalid_or_over_budget_selection")
         cycle_started_monotonic = time.monotonic()
         _cycle_state = {
             "status": "started",
@@ -3622,6 +3648,9 @@ def main_loop(DRY_RUN: bool = False):
                     market_data["news_sentiment"] = None
 
                 # Run strategies -> returns list of signals (each is a dict)
+                market_data.pop("_universe_observation", None)
+                if _cycle_universe_observation is not None:
+                    market_data["_universe_observation"] = _cycle_universe_observation.envelope()
                 try:
                     strategy_signals = run_all_strategies(asset, market_data, regime) or []
                     if not strategy_signals:

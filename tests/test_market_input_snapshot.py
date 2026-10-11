@@ -107,6 +107,7 @@ def test_runtime_components_receive_captured_readonly_values_and_public_diagnost
     assert len(assessment.input_snapshots) == 1
     reference = assessment.sequence_references[0]
     assert reference["summary"]["market_input_hash"] == assessment.input_snapshots[0]["content_hash"]
+    assert reference["summary"]["universe_observation_status"] == "UNAVAILABLE"
     assert "input_snapshots" not in assessment.to_dict()
 
 

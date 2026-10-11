@@ -33,6 +33,8 @@ chain with:
 
 The current release candidate also includes:
 
+- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;
+- immediate removal of ineligible assets from pending and refill scanner queues;
 - exact-branch CI/release-manifest gating;
 - web fan-out ORM materialization before SQLAlchemy session expiry;
 - bounded adaptive-candle database transaction wall time;

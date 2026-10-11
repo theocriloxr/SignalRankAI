@@ -45,6 +45,11 @@ def audit_adaptive_dataset(rows: Sequence[AdaptiveDatasetRow], wfo: WalkForwardR
         "PASS" if input_replay and input_replay.get("status") == "PASS" else "UNVERIFIED",
         "immutable_normalized_input_identity_only;historical_universe_and_source_vintages_unverified",
         source="research_market_inputs"))
+    observed_universe = input_replay.get("observed_universe") if input_replay else None
+    checks.append(IntegrityCheck("observed_engine_universe",
+        "PASS" if observed_universe and observed_universe.get("status") == "PASS" else "UNVERIFIED",
+        "prospective_selection_identity_only;prior_listings_delistings_and_corporate_actions_unverified",
+        source="research_market_inputs"))
     # A sequence hash is not a replay of indicator availability, universe
     # membership or fills. Existing outcome weighting cannot establish these.
     for name, reason in {

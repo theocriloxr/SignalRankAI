@@ -293,7 +293,8 @@ async def test_market_inputs_concurrent_capture_replay_and_physical_mutation_gua
 
 
 @pytest.mark.asyncio
-async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded_complete_coverage(monkeypatch, worker_database):
+@pytest.mark.parametrize("with_universe", [False, True])
+async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded_complete_coverage(monkeypatch, worker_database, with_universe):
     from copy import deepcopy
     from datetime import timedelta
     from engine.adaptive import market_input
@@ -302,9 +303,14 @@ async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded
     from engine.adaptive.sequence import sequence_reference
     from tests.test_market_input_snapshot import sample_context, CAPTURED
     context = sample_context()
-    captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    from tests.test_universe_observation import sample_universe
+    observation = sample_universe() if with_universe else None
+    captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope() if observation else None)
     ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
     ref["summary"].update(market_input_hash=captured.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    if observation:
+        ref["summary"]["universe_observation_hash"] = observation.content_hash
     base = {"signal_id": "owned-input-audit", "asset": context.asset, "asset_class": "crypto", "timeframe": "1h",
             "decision_time": CAPTURED + timedelta(minutes=1), "outcome_known_at": CAPTURED + timedelta(minutes=30),
             "r_multiple": -0.2, "sequence_hashes": [ref["sequence_hash"]], "sequence_provenance": [ref]}
@@ -315,6 +321,8 @@ async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded
         await session.commit()
         result = await audit_captured_inputs(session, rows(base))
         assert result["status"] == "PASS" and result["verified_references"] == 1
+        assert result["observed_universe"]["status"] == ("PASS" if observation else "UNVERIFIED")
+        assert result["observed_universe"]["historical_membership"] == "UNVERIFIED"
         assert not result["complete_point_in_time_replay"]
         missing = deepcopy(base)
         missing["sequence_provenance"][0]["summary"]["market_input_hash"] = "f" * 64
@@ -331,13 +339,33 @@ async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded
         bad["sequence_provenance"][0]["sequence_hash"] = "e" * 64
         with pytest.raises(ValueError, match="sequence_hash_mismatch"):
             await audit_captured_inputs(session, rows(bad))
+        bad = deepcopy(base)
+        bad["sequence_provenance"][0]["summary"]["universe_observation_hash"] = "a" * 64
+        with pytest.raises(ValueError, match="universe_reference_mismatch"):
+            await audit_captured_inputs(session, rows(bad))
+        if observation:
+            from engine.adaptive.dataset_snapshot import encode_dataset_snapshot, restore_dataset_snapshot
+            source_rows, manifest = build_dataset([base], as_of=CAPTURED + timedelta(hours=1))
+            restored, _ = restore_dataset_snapshot(json.loads(encode_dataset_snapshot(source_rows, manifest)),
+                observation_cutoff=CAPTURED + timedelta(hours=1))
+            assert restored == source_rows
+            assert (await audit_captured_inputs(session, restored))["observed_universe"]["status"] == "PASS"
+            legacy_capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+            await persist_market_inputs(session, [legacy_capture])
+            mixed_legacy = deepcopy(base)
+            mixed_legacy["signal_id"] = "legacy-universe"
+            mixed_legacy["sequence_provenance"][0]["summary"].pop("universe_observation_hash")
+            mixed_legacy["sequence_provenance"][0]["summary"]["market_input_hash"] = legacy_capture.content_hash
+            mixed_rows, _ = build_dataset([base, mixed_legacy], as_of=CAPTURED + timedelta(hours=1))
+            mixed = await audit_captured_inputs(session, mixed_rows)
+            assert mixed["status"] == "PASS" and mixed["observed_universe"]["status"] == "UNVERIFIED"
         monkeypatch.setattr(market_input, "MAX_AUDIT_BYTES", 1)
         with pytest.raises(ValueError, match="byte_budget"):
             await audit_captured_inputs(session, rows(base))
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["none", "late_database_failure", "missing_capture", "strategy_stat_failure"])
+@pytest.mark.parametrize("failure", ["none", "late_database_failure", "missing_capture", "strategy_stat_failure", "universe_reference_mismatch"])
 @pytest.mark.parametrize("writer", ["legacy", "serving"])
 async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evidence_transaction(monkeypatch, worker_database, failure, writer):
     import db.repository as signal_repository
@@ -347,9 +375,13 @@ async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evid
     from engine.adaptive.sequence import sequence_reference
     from tests.test_market_input_snapshot import sample_context, CAPTURED
     context = sample_context()
-    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    from tests.test_universe_observation import sample_universe
+    observation = sample_universe()
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope())
     ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
     ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    ref["summary"]["universe_observation_hash"] = observation.content_hash
     payload = {"asset": "BTCUSDT", "timeframe": "1h", "direction": "long", "entry": 100,
         "stop_loss": 90, "take_profit": [110], "strategy_name": "owned-market-input", "adaptive_sequence_refs": [ref],
         "_adaptive_input_snapshots": [{"content_hash": capture.content_hash, "payload": json.loads(capture.payload)}]}
@@ -371,6 +403,8 @@ async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evid
         monkeypatch.setattr(repository, "persist_signal_adaptive_evidence", fail_after_real_writes)
     elif failure == "missing_capture":
         payload["_adaptive_input_snapshots"] = []
+    elif failure == "universe_reference_mismatch":
+        payload["adaptive_sequence_refs"][0]["summary"]["universe_observation_hash"] = "a" * 64
     elif failure == "strategy_stat_failure":
         async def failed_stat(session, **kwargs):
             await session.execute(text("SELECT 1/0"))
@@ -383,6 +417,9 @@ async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evid
         count = 1 if failure in {"none", "strategy_stat_failure"} else 0
         assert (await session.execute(text("SELECT COUNT(*) FROM research_market_inputs"))).scalar_one() == count
         assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_signal_sequences"))).scalar_one() == count
+        if count:
+            stored = (await session.execute(text("SELECT payload FROM research_market_inputs"))).scalar_one()
+            assert stored["universe_observation"] == observation.envelope()
 
 
 @pytest.mark.asyncio
@@ -400,9 +437,15 @@ async def test_actual_worker_audits_saved_component_inputs_without_claiming_hist
     monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
     await seed_research_outcomes(sessions, "AUDITINPUTS")
     context = replace(sample_context(), asset="AUDITINPUTS")
-    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    from engine.universe_observation import capture_universe_observation, STAGES
+    observation = capture_universe_observation(sources={"managed": [context.asset], "pinned": [], "discovered": []},
+        stages={key: [context.asset] for key in STAGES}, discovery_source="database_registry",
+        profile_filter_applied=False, universe_cap=1, batch_size=1, observed_at=CAPTURED)
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope())
     ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
     ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    ref["summary"]["universe_observation_hash"] = observation.content_hash
     async with sessions() as session:
         await persist_market_inputs(session, [capture])
         for signal in (await session.execute(text("SELECT signal_id FROM signals"))).mappings():
@@ -418,6 +461,12 @@ async def test_actual_worker_audits_saved_component_inputs_without_claiming_hist
         assert audit["status"] == "PASS" and audit["verified_references"] == 160 and audit["unique_inputs"] == 1
         assert not audit["complete_point_in_time_replay"] and not result["integrity"]["passed"]
         assert not result["promotion_eligible"]
+        assert audit["observed_universe"]["status"] == "PASS" and audit["observed_universe"]["verified_references"] == 160
+        checks = {item["check_id"]: item["status"] for item in result["integrity"]["checks"]}
+        assert checks["observed_engine_universe"] == "PASS" and checks["survivorship"] == "UNVERIFIED"
+        from engine.adaptive.research_ledger import research_snapshot
+        operator = (await research_snapshot(session, asset=context.asset))["experiments"][0]
+        assert operator["dataset_snapshot"]["captured_input_replay"]["observed_universe"] == audit["observed_universe"]
 
 
 @pytest.mark.asyncio
