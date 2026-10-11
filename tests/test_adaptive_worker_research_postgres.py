@@ -257,11 +257,14 @@ async def seed_research_outcomes(get_session, asset):
 
 @pytest.mark.asyncio
 async def test_market_inputs_concurrent_capture_replay_and_physical_mutation_guards(worker_database):
+    import numpy as np
     from sqlalchemy.exc import DBAPIError
     from db.models import MarketCandle
     from engine.adaptive.market_input import capture_market_input, persist_market_inputs, load_market_input
     from tests.test_market_input_snapshot import sample_context, CAPTURED
     source = sample_context()
+    source.indicators.update(numeric=np.float64(1.25), structure=np.bool_(True))
+    source.candles[-1]["trade_count"] = np.int64(42)
     snapshot = capture_market_input(source, timestamp_convention="bar_open", captured_at=CAPTURED)
     async def save():
         async with worker_database() as session:
@@ -277,6 +280,8 @@ async def test_market_inputs_concurrent_capture_replay_and_physical_mutation_gua
         await session.commit()
         replay = await load_market_input(session, snapshot.content_hash)
         assert replay.candles[-1]["close"] == 101.0 and replay.indicators["ema_fast"] == 101.0
+        assert type(replay.indicators["numeric"]) is float and replay.indicators["numeric"] == 1.25
+        assert replay.indicators["structure"] is True and type(replay.candles[-1]["trade_count"]) is int
         for mutation in ("UPDATE research_market_inputs SET candle_count=0", "DELETE FROM research_market_inputs",
                          "TRUNCATE research_market_inputs"):
             with pytest.raises(DBAPIError, match="append.only|immutable"):

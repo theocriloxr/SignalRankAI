@@ -2,6 +2,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -42,6 +43,59 @@ def test_input_replay_retains_full_features_and_is_detached_and_immutable():
         replay.macro_context["rates"]["value"] = 0
     assert capture_market_input(replay, timestamp_convention="bar_open", captured_at=CAPTURED) == capture
     assert json.loads(capture.payload)["source_history"]["historical_universe"] == "UNVERIFIED"
+
+
+def test_real_indicator_output_is_captured_and_supplied_to_components(monkeypatch):
+    import numpy as np
+    from data.indicators import calculate_indicators
+    candles = tuple({"open_time_ms": int((CAPTURED-timedelta(minutes=5*(240-i))).timestamp()*1000),
+        "open": 100+i*0.05+math.sin(i/5), "high": 101+i*0.05+math.sin(i/5),
+        "low": 99+i*0.05+math.sin(i/5), "close": 100.2+i*0.05+math.sin(i/5), "volume": 1000+i*3}
+        for i in range(240))
+    indicators = calculate_indicators(candles)
+    assert isinstance(indicators["ema_20"], np.floating)
+    context = replace(sample_context(), timeframe="5m", candles=candles, indicators=indicators,
+        data_quality=assess_candle_quality(candles, timeframe="5m", provider="synthetic-owned", data_age_seconds=1))
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    replay = restore_market_input(json.loads(capture.payload), content_hash=capture.content_hash)
+    assert type(replay.indicators["ema_20"]) is float and replay.indicators["ema_20"] == indicators["ema_20"]
+    assert type(replay.indicators["volume"]) is int and replay.indicators["volume"] == indicators["volume"]
+    assert replay.indicators["higher_highs"] == indicators["higher_highs"]
+    monkeypatch.setenv("ADAPTIVE_EVALUATION_TIMEFRAMES", "5m")
+    service = AdaptiveStrategyService()
+    monkeypatch.setattr(service.profile_resolver, "resolve", lambda asset, cls: _profile_from_mapping({}, asset=asset, asset_class=cls))
+    observed = []
+    service.components = [SimpleNamespace(evaluate=lambda value: observed.append(value) or [])]
+    assessment = service.evaluate(context.asset, {"5m": {"candles": candles, "indicators": indicators,
+        "source": context.provider, "data_age_seconds": 1}}, "trend")
+    assert len(assessment.input_snapshots) == 1
+    assert assessment.sequence_references[0]["summary"]["input_capture_status"] == "CAPTURED"
+    assert observed[0].indicators["ema_20"] == replay.indicators["ema_20"]
+    with pytest.raises(TypeError):
+        observed[0].indicators["ema_20"] = 0
+
+
+@pytest.mark.parametrize("kind", ["bool", "integer", "float16", "float32", "float64"])
+def test_supported_numpy_scalar_values_round_trip_without_changing_native_capture_identity(kind):
+    import numpy as np
+    value = {"bool": np.bool_(True), "integer": np.uint64(2**64-1), "float16": np.float16(1.25),
+        "float32": np.float32(1.25), "float64": np.float64(1.25)}[kind]
+    context = sample_context()
+    context.indicators["scalar"] = value
+    captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+    context.indicators["scalar"] = value.item()
+    assert capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED) == captured
+
+
+@pytest.mark.parametrize("kind", ["nan", "infinity", "array", "complex", "extended_precision"])
+def test_unsafe_numpy_values_remain_unavailable(kind):
+    import numpy as np
+    value = {"nan": np.float64("nan"), "infinity": np.float32("inf"), "array": np.array([1.0]),
+             "complex": np.complex128(1+2j), "extended_precision": np.longdouble(1.25)}[kind]
+    context = sample_context()
+    context.indicators["unsupported"] = value
+    with pytest.raises(ValueError):
+        capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
 
 
 @pytest.mark.parametrize("change", ["candle", "feature", "scope", "capture", "false_provenance", "format"])

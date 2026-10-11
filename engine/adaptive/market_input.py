@@ -15,6 +15,7 @@ import re
 from typing import Any, Mapping, Sequence
 from types import MappingProxyType
 
+import numpy as np
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +55,15 @@ def _materialize(value: Any, depth: int = 0, budget: list[int] | None = None) ->
         if len(value) > 10000:
             raise ValueError("market_input_sequence_budget_exceeded")
         return [_materialize(item, depth + 1, budget) for item in value]
+    # The real pandas indicator pipeline returns NumPy scalars. Convert only
+    # scalar types whose values are preserved by Python's JSON primitives.
+    # Arrays, complex values and extended-precision floats remain unsupported.
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if type(value) in (np.float16, np.float32, np.float64):
+        return float(value)
     return value
 
 

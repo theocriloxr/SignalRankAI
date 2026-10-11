@@ -2619,19 +2619,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 74,
+      "line_count": 76,
       "path": "certification/completion_dispositions.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "01c20e074dbc3af8ac9351f573185c042d9d29ca4a990df463241947a770504e",
-      "size_bytes": 7165
+      "sha256": "94cdd28a7bc89e075a8dd2d941aa30e3b53a5b322e410c0e4b6485bdb7271854",
+      "size_bytes": 7565
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 69142,
+      "line_count": 69144,
       "path": "certification/completion_matrix.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f6e39e8d3585ce9a5bfc5c9c6efc62f19ac0bf1ba804e93c0c9d6e166f6d729c",
-      "size_bytes": 2834432
+      "sha256": "11deb41af28a23e117a72e4dfa15a09002ab0b3fbeab4d3b192ee389a001be50",
+      "size_bytes": 2834836
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4939,11 +4939,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 59,
+      "line_count": 67,
       "path": "docs/CONTINUATION_MARKET_INPUTS_20261011.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e459d9cbb115a2847ffd9f8afcbda4eec6d89528082631dbad3a4962a98888df",
-      "size_bytes": 4033
+      "sha256": "bbdc70076e4a79f4732755eaf4097d107c142c28f39d2fbc2bc6330ced10ca7e",
+      "size_bytes": 4539
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7443,11 +7443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 317,
+      "line_count": 327,
       "path": "engine/adaptive/market_input.py",
       "reason": "production/build source",
-      "sha256": "e25286ddb7967254b248174919cad42e0209a42a7341b2d4fc9a20baf2fd82a2",
-      "size_bytes": 17195
+      "sha256": "05071eab6115afc83766382d93de1281e678c31449a52f1ee38f5234f1929e75",
+      "size_bytes": 17660
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13259,11 +13259,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 1221,
+      "line_count": 1226,
       "path": "tests/test_adaptive_worker_research_postgres.py",
       "reason": "automated test evidence",
-      "sha256": "4389161a9f93d036969a9972d7fcbdb2f28bc800dc40e1dd461b3b5b8e05ca30",
-      "size_bytes": 78438
+      "sha256": "66b62c576f75f6583da448e9c2ffde850fd91c4c4ad83a56bf49cc8e2fa85f13",
+      "size_bytes": 78800
     },
     {
       "disposition": "TEST_ONLY",
@@ -14091,11 +14091,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 178,
+      "line_count": 232,
       "path": "tests/test_market_input_snapshot.py",
       "reason": "automated test evidence",
-      "sha256": "67cd075f93cf29c4d2ab1f47a5891a7f9f9fe1b48738371f7d7ac1c48c15027b",
-      "size_bytes": 9763
+      "sha256": "eaddcf54e5e609cced46d79d0d6b46312c2d145fc433e47de31a416630ce13da",
+      "size_bytes": 13149
     },
     {
       "disposition": "TEST_ONLY",

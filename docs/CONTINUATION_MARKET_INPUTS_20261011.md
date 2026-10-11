@@ -14,6 +14,14 @@ excessive size/depth/count instead of silently truncating data. When capture
 succeeds, components receive detached read-only values. Failed capture remains
 explicitly UNAVAILABLE and does not become historical proof.
 
+The actual pandas indicator output includes NumPy scalar numbers and booleans.
+Capture normalizes NumPy integers, float16/32/64 and booleans to equivalent
+Python JSON primitives before validation. This preserves the same identity as
+native scalar inputs. Nonfinite values, arrays, complex numbers and extended
+precision remain unsupported; they cannot silently lose precision or become
+scientific evidence. Regression coverage uses the real indicator calculator,
+not only manually supplied Python floats.
+
 Migration `0053_research_market_inputs` adds an immutable content-addressed
 relation. Multiple signals from one assessment reuse a capture. Persistence
 orders hashes deterministically; identical concurrent retries preserve one row.
