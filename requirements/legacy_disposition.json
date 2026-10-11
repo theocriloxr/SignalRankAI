@@ -1,5 +1,5 @@
 {
-  "file_count": 2059,
+  "file_count": 2061,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -355,11 +355,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 58,
+      "line_count": 61,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "5bc0441b320c23feb443180c4933b3ff047fd294896006cfdc98ac38c407b558",
-      "size_bytes": 2381
+      "sha256": "c8af14560764c97020dbf25911e6ee149237705d0cee6cf7471fc7a0d6dd5524",
+      "size_bytes": 2835
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -406,8 +406,8 @@
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "5bc0441b320c23feb443180c4933b3ff047fd294896006cfdc98ac38c407b558",
-      "size_bytes": 2381
+      "sha256": "c8af14560764c97020dbf25911e6ee149237705d0cee6cf7471fc7a0d6dd5524",
+      "size_bytes": 2835
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4915,6 +4915,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 34,
+      "path": "docs/CONTAINER_SECURITY_ACCEPTANCE_20261011.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "c439b131550162561e786c89983912f942c90cf01b3d1154386091bbac3c744e",
+      "size_bytes": 1990
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 127,
       "path": "docs/CONTINUATION_20261009.md",
       "reason": "documentation/specification/evidence",
@@ -7563,11 +7571,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1124,
+      "line_count": 1130,
       "path": "engine/admin_pulse.py",
       "reason": "production/build source",
-      "sha256": "5774243bc289f19bac840f5a1cac929de01b20f810800b4096275960554d8e0e",
-      "size_bytes": 49039
+      "sha256": "e3a05158de442be152726a76091eae6b570fe9b2d26c1bd82d7544abf5a0c4c0",
+      "size_bytes": 49322
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9830,16 +9838,16 @@
       "line_count": 3816,
       "path": "railway_main.py",
       "reason": "production/build source",
-      "sha256": "2a9a1d0ce432fd70e2314f6cc4248ea20402620091a29282dddd68f96891280a",
-      "size_bytes": 170050
+      "sha256": "2c5db8e7aaa293245cc641f705d90b43396de26f2c456cd8fb62c86683c254a0",
+      "size_bytes": 170033
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 105,
+      "line_count": 106,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "fd04bf617deb9d5c6c7c62285ad45c65459cf8e45cac4cdc6b65aba72d1b001e",
-      "size_bytes": 6722
+      "sha256": "ec3fe481f1d11fd5f1fd9eb30ebf3947a8a75c8cb40c4afafc175dce2b023c35",
+      "size_bytes": 6763
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9963,11 +9971,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16346,
+      "line_count": 16348,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "3ad4b1c6fc57e7a19bbbe1226adf8db5a82dac54534d8b47f350f5ab26fba645",
-      "size_bytes": 478749
+      "sha256": "a99d0a20f73bdc5012e0c49d3fcad0dca1f9f15b367b08a9597a83feb14a8485",
+      "size_bytes": 478823
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15235,6 +15243,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 30,
+      "path": "tests/test_runtime_heartbeat_identity.py",
+      "reason": "automated test evidence",
+      "sha256": "76b340e46a0ab88ecd0c62264c39091b393cb68c5cc51f2c594886ac64c4ff32",
+      "size_bytes": 1378
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 297,
       "path": "tests/test_runtime_hotfix_20260725.py",
       "reason": "automated test evidence",
@@ -16486,8 +16502,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 475,
+    "DOCUMENTATION_ONLY": 476,
     "PRESERVE_BEHAVIOUR": 1216,
-    "TEST_ONLY": 367
+    "TEST_ONLY": 368
   }
 }

@@ -805,7 +805,7 @@
       "name": "ADMIN_WEEKLY_REPORT_HOUR_UTC",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1083"
+        "engine/admin_pulse.py:1089"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -815,7 +815,7 @@
       "name": "ADMIN_WEEKLY_REPORT_WEEKDAY",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1082"
+        "engine/admin_pulse.py:1088"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1417,7 +1417,7 @@
         "data/fetcher_router.py:32",
         "data/market_data.py:773",
         "db/migration_environment.py:9",
-        "engine/admin_pulse.py:1033",
+        "engine/admin_pulse.py:1039",
         "engine/core.py:1118",
         "engine/core.py:5769",
         "payments/paystack_policy.py:45",
@@ -2705,7 +2705,7 @@
       "name": "CODEX_OPENAI_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:930",
+        "engine/admin_pulse.py:936",
         "railway_main.py:582",
         "services/automated_analyst.py:19",
         "services/codex_governance.py:122",
@@ -5328,7 +5328,7 @@
       "name": "ENGINE_PULSE_DISTRIBUTED_LOCK_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1016"
+        "engine/admin_pulse.py:1022"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5338,7 +5338,7 @@
       "name": "ENGINE_PULSE_INITIAL_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1068"
+        "engine/admin_pulse.py:1074"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5348,7 +5348,7 @@
       "name": "ENGINE_PULSE_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1064",
+        "engine/admin_pulse.py:1070",
         "engine/admin_pulse.py:281"
       ],
       "required_by_code": true,
@@ -5364,7 +5364,7 @@
       "name": "ENGINE_PULSE_LOCK_KEY",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1031"
+        "engine/admin_pulse.py:1037"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5379,7 +5379,7 @@
       "name": "ENGINE_PULSE_LOCK_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1027"
+        "engine/admin_pulse.py:1033"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5389,7 +5389,7 @@
       "name": "ENGINE_PULSE_REQUIRE_DISTRIBUTED_LOCK",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:1034"
+        "engine/admin_pulse.py:1040"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6209,7 +6209,7 @@
       "name": "GEMINI_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:931",
+        "engine/admin_pulse.py:937",
         "railway_main.py:2880",
         "railway_main.py:583",
         "services/automated_analyst.py:20",
@@ -6382,6 +6382,7 @@
       "name": "GIT_COMMIT_SHA",
       "production_example_default": null,
       "read_locations": [
+        "engine/admin_pulse.py:344",
         "engine/core.py:3149",
         "engine/shadow_outcome_worker.py:55",
         "railway_main.py:3134",
@@ -9292,7 +9293,7 @@
       "name": "OPENAI_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "engine/admin_pulse.py:930",
+        "engine/admin_pulse.py:936",
         "railway_main.py:582",
         "services/automated_analyst.py:19",
         "services/codex_governance.py:122",
@@ -12061,6 +12062,7 @@
       "read_locations": [
         "config.py:90",
         "engine/adaptive/learning.py:539",
+        "engine/admin_pulse.py:344",
         "engine/core.py:3149",
         "engine/shadow_outcome_worker.py:55",
         "railway_main.py:3134",
@@ -14729,8 +14731,8 @@
       "read_locations": [
         "config.py:37",
         "data/fetcher.py:2018",
-        "engine/admin_pulse.py:756",
-        "engine/admin_pulse.py:918",
+        "engine/admin_pulse.py:762",
+        "engine/admin_pulse.py:924",
         "engine/core.py:1687",
         "engine/signal_deduplicator.py:1074",
         "railway_main.py:2878",
