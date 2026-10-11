@@ -3225,7 +3225,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
             max_age = max(60.0, float(os.getenv("ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS", "300") or 300))
             cycle_sha = str(cycle.get("git_sha") or "")
             expected_sha = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
-            sha_ok = not cycle_sha or not expected_sha or cycle_sha == expected_sha
+            sha_ok = not expected_sha or cycle_sha == expected_sha
             status_ok = str(cycle.get("status") or "") in {
                 "started",
                 "market_data_fetched",
