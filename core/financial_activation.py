@@ -21,6 +21,13 @@ PAYSTACK_TRANSFERS_ACK_VALUE = "I_CONFIRM_PAYSTACK_TRANSFERS_IS_ENABLED_FOR_THIS
 BYBIT_DEDICATED_ACCOUNT_ACK_VALUE = "I_CONFIRM_BYBIT_ACCOUNT_IS_DEDICATED_TO_SIGNALRANKAI"
 PRODUCTION_EXECUTION_ACK_VALUE = "I_APPROVE_OWNER_ONLY_LIVE_EXECUTION"
 MAX_ACTIVATION_WINDOW = timedelta(hours=24)
+LIVE_EXECUTION_FLAGS = (
+    "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED", "PROP_EXECUTION_ENABLED", "MT5_ALLOW_LIVE_ACCOUNTS",
+    "MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED", "BYBIT_EXECUTION_ENABLED",
+    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
+)
+PAYOUT_FLAGS = ("REAL_PAYOUTS_ENABLED", "AUTOMATIC_PAYOUTS_ENABLED")
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +113,17 @@ def evaluate_financial_activation(
     auto_execution = _bool(environ, "AUTO_EXECUTION_ENABLED")
     auto_trade = _bool(environ, "AUTO_TRADE_ENABLED")
     copy_trade = _bool(environ, "COPY_TRADE_ENABLED")
+    prop_execution = _bool(environ, "PROP_EXECUTION_ENABLED")
     mt5_live = _bool(environ, "MT5_ALLOW_LIVE_ACCOUNTS")
+    mt5_live_alias = _bool(environ, "MT5_LIVE_EXECUTION_ENABLED")
+    mt5_auto_alias = _bool(environ, "MT5_AUTO_EXECUTION_ENABLED")
+    hyperliquid_mainnet = _bool(environ, "HYPERLIQUID_MAINNET_EXECUTION_ENABLED")
     bybit_execution = _bool(environ, "BYBIT_EXECUTION_ENABLED")
-    payouts = _bool(environ, "REAL_PAYOUTS_ENABLED")
-    requested = any((real_execution, auto_execution, auto_trade, copy_trade, mt5_live, bybit_execution, payouts))
-    live_execution_requested = any((real_execution, auto_execution, auto_trade, copy_trade, mt5_live, bybit_execution))
+    # Admission and startup clamping share the same complete switch inventory.
+    # A secondary flag must never disappear behind the "nothing requested" path.
+    payouts = any(_bool(environ, name) for name in PAYOUT_FLAGS)
+    live_execution_requested = any(_bool(environ, name) for name in LIVE_EXECUTION_FLAGS)
+    requested = live_execution_requested or payouts
 
     environment = _environment(environ)
     master_enabled = _bool(environ, "LIVE_FINANCIAL_FEATURES_ENABLED")
@@ -296,13 +309,24 @@ def evaluate_financial_activation(
         ),
         ActivationCheck(
             "auto_execution_dependency",
-            (not (auto_trade or copy_trade)) or auto_execution,
-            "AUTO_TRADE/COPY_TRADE require AUTO_EXECUTION_ENABLED",
+            (not (auto_trade or copy_trade or mt5_auto_alias)) or auto_execution,
+            "AUTO_TRADE/COPY_TRADE/MT5_AUTO require AUTO_EXECUTION_ENABLED",
         ),
         ActivationCheck(
             "real_execution_dependency",
-            (not (auto_execution or auto_trade or copy_trade or mt5_live or bybit_execution)) or real_execution,
+            (not (auto_execution or auto_trade or copy_trade or prop_execution or mt5_live
+                  or mt5_live_alias or mt5_auto_alias or bybit_execution or hyperliquid_mainnet)) or real_execution,
             "all broker automation requires REAL_EXECUTION_ENABLED",
+        ),
+        ActivationCheck(
+            "mt5_live_alias_dependency",
+            (not (mt5_live_alias or mt5_auto_alias)) or mt5_live,
+            "MT5 live execution aliases require MT5_ALLOW_LIVE_ACCOUNTS",
+        ),
+        ActivationCheck(
+            "unsupported_mainnet_adapter",
+            not hyperliquid_mainnet,
+            "the current live activation contract certifies only MT5 and Bybit adapters",
         ),
         ActivationCheck(
             "mt5_token",
@@ -396,16 +420,7 @@ def force_invalid_financial_flags_off(
     if report.ok:
         return ()
     forced: list[str] = []
-    for name in (
-        "REAL_EXECUTION_ENABLED",
-        "AUTO_EXECUTION_ENABLED",
-        "AUTO_TRADE_ENABLED",
-        "COPY_TRADE_ENABLED",
-        "MT5_ALLOW_LIVE_ACCOUNTS",
-        "BYBIT_EXECUTION_ENABLED",
-        "REAL_PAYOUTS_ENABLED",
-        "AUTOMATIC_PAYOUTS_ENABLED",
-    ):
+    for name in (*LIVE_EXECUTION_FLAGS, *PAYOUT_FLAGS):
         if _bool(env, name):
             forced.append(name)
         env[name] = "0"

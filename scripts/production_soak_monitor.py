@@ -23,8 +23,9 @@ FINANCIAL_FLAGS = (
     "LIVE_FINANCIAL_FEATURES_ENABLED", "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED",
     "AUTO_TRADE_ENABLED", "COPY_TRADE_ENABLED", "PROP_EXECUTION_ENABLED", "REAL_PAYOUTS_ENABLED",
     "MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED", "BYBIT_EXECUTION_ENABLED",
-    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
+    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED", "MT5_ALLOW_LIVE_ACCOUNTS", "AUTOMATIC_PAYOUTS_ENABLED",
 )
+OFF_VALUES = {"0", "false", "no", "off", "n", ""}
 VOLATILE_METADATA = {
     "RAILWAY_DEPLOYMENT_ID", "RAILWAY_SNAPSHOT_ID", "RAILWAY_GIT_COMMIT_SHA",
     "RAILWAY_GIT_COMMIT_MESSAGE", "RAILWAY_GIT_AUTHOR", "RAILWAY_GIT_BRANCH",
@@ -86,7 +87,10 @@ def evaluate_observation(config: dict, health: dict, services: dict) -> dict:
             summaries[role] = {"deployment_id": expected["deployment_id"], "status": "unverified"}
             continue
         configuration[role] = {key: value for key, value in variables.items() if key not in VOLATILE_METADATA}
-        flags_off = all(str(variables.get(key, "0")).strip().lower() not in TRUTHY for key in FINANCIAL_FLAGS)
+        flags_off = all(
+            str(variables.get(key, "0")).strip().strip('"').strip("'").lower() in OFF_VALUES
+            for key in FINANCIAL_FLAGS
+        )
         kill_on = str(variables.get("GLOBAL_EXECUTION_KILL_SWITCH", "")).strip().lower() in TRUTHY
         pin_ok = variables.get("EXPECTED_RELEASE_COMMIT") == config["release_sha"]
         if not (flags_off and kill_on and pin_ok):

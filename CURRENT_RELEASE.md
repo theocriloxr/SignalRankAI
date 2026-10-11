@@ -33,6 +33,7 @@ chain with:
 
 The current release candidate also includes:
 
+- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;
 - transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;
 - strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;
 - cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));

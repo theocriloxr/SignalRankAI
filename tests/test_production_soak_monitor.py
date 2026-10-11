@@ -34,6 +34,21 @@ def test_rejected_candidate_preserves_active_approved_baseline_and_secrets_stay_
     assert "database-password-never-written" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("flag", [
+    "REAL_EXECUTION_ENABLED", "PROP_EXECUTION_ENABLED", "MT5_ALLOW_LIVE_ACCOUNTS",
+    "MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED",
+    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED", "AUTOMATIC_PAYOUTS_ENABLED",
+])
+@pytest.mark.parametrize("value", ["1", "enabled", "unresolved-reference"])
+def test_active_or_unknown_financial_switch_cannot_look_paper_safe(flag, value):
+    config, health, services = baseline()
+    services["worker"]["variables"][flag] = value
+    result = evaluate_observation(config, health, services)
+    assert result["readiness_ok"] is False
+    assert result["safety_ok"] is False
+    assert "worker:configuration_safety_not_proven" in result["failures"]
+
+
 @pytest.mark.parametrize("defect", ["release", "schema", "deployment", "overlap", "kill_switch", "execution", "configuration", "readiness", "public_safety"])
 def test_changed_or_unavailable_production_observation_is_not_healthy(defect):
     config, health, services = baseline()
