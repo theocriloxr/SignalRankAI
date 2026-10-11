@@ -101,6 +101,99 @@ def test_financial_flags_off_are_safe():
     assert report.ok is True
 
 
+@pytest.mark.parametrize("flag", [
+    "PROP_EXECUTION_ENABLED",
+    "MT5_LIVE_EXECUTION_ENABLED",
+    "MT5_AUTO_EXECUTION_ENABLED",
+    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
+    "AUTOMATIC_PAYOUTS_ENABLED",
+])
+def test_isolated_financial_switch_cannot_evade_activation_or_startup_clamp(flag):
+    env = {"APP_ENV": "production", flag: "1"}
+    report = evaluate_financial_activation(env)
+    assert report.requested is True
+    assert report.ok is False
+    forced = force_invalid_financial_flags_off(env)
+    assert flag in forced
+    assert env[flag] == "0"
+
+
+def test_unsupported_mainnet_cannot_piggyback_on_certified_mt5_bybit_contract():
+    env = _full_env()
+    env["HYPERLIQUID_MAINNET_EXECUTION_ENABLED"] = "1"
+    report = evaluate_financial_activation(env)
+    assert report.ok is False
+    assert "unsupported_mainnet_adapter" in {check.name for check in report.checks if not check.ok}
+    force_invalid_financial_flags_off(env)
+    assert env["HYPERLIQUID_MAINNET_EXECUTION_ENABLED"] == "0"
+    assert env["REAL_EXECUTION_ENABLED"] == "0"
+
+
+@pytest.mark.parametrize("flag", ["MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED"])
+def test_mt5_alias_cannot_activate_without_the_canonical_live_adapter(flag):
+    env = _full_env()
+    env["MT5_ALLOW_LIVE_ACCOUNTS"] = "0"
+    env[flag] = "1"
+    report = evaluate_financial_activation(env)
+    assert report.ok is False
+    assert "mt5_live_alias_dependency" in {check.name for check in report.checks if not check.ok}
+
+
+def test_mt5_auto_alias_requires_automation_master():
+    env = _full_env()
+    env.update(MT5_AUTO_EXECUTION_ENABLED="1", AUTO_EXECUTION_ENABLED="0", AUTO_TRADE_ENABLED="0", COPY_TRADE_ENABLED="0")
+    report = evaluate_financial_activation(env)
+    assert report.ok is False
+    assert "auto_execution_dependency" in {check.name for check in report.checks if not check.ok}
+
+
+def test_automatic_payout_switch_is_reported_as_a_payout_request():
+    report = evaluate_financial_activation({"APP_ENV": "production", "AUTOMATIC_PAYOUTS_ENABLED": "1"})
+    assert report.payouts_requested is True
+    assert report.live_execution_requested is False
+    assert report.ok is False
+
+
+@pytest.mark.parametrize("flag", [
+    "PROP_EXECUTION_ENABLED",
+    "MT5_LIVE_EXECUTION_ENABLED",
+    "MT5_AUTO_EXECUTION_ENABLED",
+    "HYPERLIQUID_MAINNET_EXECUTION_ENABLED",
+    "AUTOMATIC_PAYOUTS_ENABLED",
+])
+def test_production_startup_clamps_every_incomplete_financial_switch(flag):
+    from runtime_safety import apply_runtime_safety_environment
+
+    env = {"APP_ENV": "production", flag: "1"}
+    result = apply_runtime_safety_environment(env)
+    assert flag in result.forced_off
+    assert flag in env["FINANCIAL_ACTIVATION_FORCED_OFF"].split(",")
+    assert env[flag] == "0"
+
+
+@pytest.mark.parametrize("flag", ["MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED"])
+def test_mt5_aliases_preserve_the_complete_existing_activation_contract(flag):
+    env = _full_env()
+    env[flag] = "1"
+    assert evaluate_financial_activation(env).ok is True
+    assert force_invalid_financial_flags_off(env) == ()
+
+
+def test_prop_activation_preserves_manual_execution_without_automation():
+    env = _full_env()
+    env.update(PROP_EXECUTION_ENABLED="1", AUTO_EXECUTION_ENABLED="0", AUTO_TRADE_ENABLED="0", COPY_TRADE_ENABLED="0")
+    assert evaluate_financial_activation(env).ok is True
+
+
+def test_paper_and_demo_flags_do_not_request_real_money_activation():
+    env = {"APP_ENV": "production", "PAPER_TRADING_ENABLED": "1", "DEMO_EXECUTION_ENABLED": "1"}
+    report = evaluate_financial_activation(env)
+    assert report.requested is False
+    assert report.ok is True
+    assert force_invalid_financial_flags_off(env) == ()
+    assert env["PAPER_TRADING_ENABLED"] == env["DEMO_EXECUTION_ENABLED"] == "1"
+
+
 def test_partial_live_activation_is_forced_off():
     env = {"APP_ENV": "production", "REAL_EXECUTION_ENABLED": "1", "AUTO_TRADE_ENABLED": "1"}
     forced = force_invalid_financial_flags_off(env)
