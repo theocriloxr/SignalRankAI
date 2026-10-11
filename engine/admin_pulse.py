@@ -341,7 +341,13 @@ def _shadow_tracker_health() -> dict[str, Any]:
         interval = max(15, int(payload.get("interval_seconds") or 60))
         status = str(payload.get("status") or "unknown")
         payload["heartbeat_age_seconds"] = age_seconds
-        payload["proven"] = status in {"starting", "idle", "healthy"} and age_seconds <= max(180, interval * 3)
+        expected_sha = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "")
+        payload["release_match"] = not expected_sha or str(payload.get("git_sha") or "") == expected_sha
+        payload["proven"] = (
+            status in {"starting", "idle", "healthy"}
+            and age_seconds <= max(180, interval * 3)
+            and payload["release_match"]
+        )
         return payload
     except Exception:
         return {"status": "missing", "proven": False, "heartbeat_age_seconds": None}
