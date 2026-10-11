@@ -220,7 +220,10 @@ def _load_model(*, sync_durable: bool = True) -> None:
         from ml.schema_version import get_feature_columns
         from ml.model_registry import compute_feature_schema_hash
 
-        current_serving_features = get_feature_columns()
+        model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
+        current_serving_features = get_feature_columns(
+            int(metadata.get("schema_version") or 1) if model_schema_hash else None
+        )
         serving_schema_hash = compute_feature_schema_hash(current_serving_features)
         model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
         if model_schema_hash and model_schema_hash != serving_schema_hash:
@@ -487,7 +490,10 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         from ml.schema_version import get_feature_columns
         from ml.model_registry import compute_feature_schema_hash
 
-        current_serving_features = get_feature_columns()
+        model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
+        current_serving_features = get_feature_columns(
+            int(metadata.get("schema_version") or 1) if model_schema_hash else None
+        )
         serving_schema_hash = compute_feature_schema_hash(current_serving_features)
         model_schema_hash = str(metadata.get("feature_schema_hash_sha256") or "").strip().lower()
         if model_schema_hash and model_schema_hash != serving_schema_hash:
