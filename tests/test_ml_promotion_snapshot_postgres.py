@@ -72,7 +72,8 @@ def payload(name, parent=""):
         "artifact_hash_sha256": hashlib.sha256(model).hexdigest(),
         "parent_model_hash_sha256": parent,
         "training_meta": {"offline_quality_gate": {"passed": True},
-            "lineage": {"eligible": True}, "candidate_forward_gate": {"required": True}}}
+            "lineage": {"eligible": True}, "candidate_forward_gate": {"required": True},
+            "champion_comparison": {"enabled": True, "reason": "noninferior" if parent else "no_existing_champion"}}}
 
 
 async def replace(sessions, slot, value, *, registry_hash=None):

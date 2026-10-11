@@ -536,7 +536,7 @@ async def promote_candidate_from_forward_proof(
     training_meta = dict(payload.get("training_meta") or {})
     candidate_metrics = dict(candidate.get("metrics") or payload.get("metrics") or training_meta.get("metrics") or {})
     offline_quality = dict(training_meta.get("offline_quality_gate") or {})
-    if not bool(offline_quality.get("passed")):
+    if offline_quality.get("passed") is not True:
         return {
             "ok": False,
             "reason": "offline_quality_evidence_missing_or_failed",
@@ -544,7 +544,7 @@ async def promote_candidate_from_forward_proof(
         }
 
     forward_gate = dict(training_meta.get("candidate_forward_gate") or {})
-    if not _boolish(forward_gate.get("required")):
+    if forward_gate.get("required") is not True:
         return {
             "ok": False,
             "reason": "candidate_not_admitted_to_forward_proof",
@@ -552,10 +552,9 @@ async def promote_candidate_from_forward_proof(
         }
 
     champion_comparison = dict(training_meta.get("champion_comparison") or {})
-    if champion_comparison.get("enabled") is True and champion_comparison.get("reason") not in {
-        "noninferior",
-        "no_existing_champion",
-    }:
+    comparison_reason = "noninferior" if primary else "no_existing_champion"
+    if (champion_comparison.get("enabled") is not True
+            or champion_comparison.get("reason") != comparison_reason):
         return {
             "ok": False,
             "reason": "candidate_offline_noninferiority_failed",
@@ -563,7 +562,7 @@ async def promote_candidate_from_forward_proof(
         }
 
     calibration = dict(candidate_metrics.get("calibration") or {})
-    if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and not bool(calibration.get("validated")):
+    if _env_bool("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", True) and calibration.get("validated") is not True:
         return {
             "ok": False,
             "reason": "candidate_calibration_unvalidated",
@@ -571,7 +570,7 @@ async def promote_candidate_from_forward_proof(
         }
 
     lineage = dict(training_meta.get("lineage") or {})
-    if not bool(lineage.get("eligible")):
+    if lineage.get("eligible") is not True:
         return {
             "ok": False,
             "reason": "candidate_lineage_invalid",
@@ -592,7 +591,7 @@ async def promote_candidate_from_forward_proof(
         }
 
     evidence = await evaluate_candidate_forward_evidence(candidate)
-    if not bool(evidence.get("eligible")):
+    if evidence.get("eligible") is not True:
         return {
             "ok": False,
             "reason": "forward_proof_not_eligible",

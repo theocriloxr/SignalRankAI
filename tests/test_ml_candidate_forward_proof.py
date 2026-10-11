@@ -22,6 +22,7 @@ def _eligible_candidate(*, artifact="cand", parent="champ", schema=4):
                 "offline_quality_gate": {"passed": True},
                 "lineage": {"eligible": True},
                 "candidate_forward_gate": {"required": True},
+                "champion_comparison": {"enabled": True, "reason": "noninferior"},
             },
         },
     }
@@ -33,6 +34,92 @@ def test_candidate_outcome_normalization_excludes_ambiguous_results():
     assert _outcome_class("sl") == "loss"
     assert _outcome_class("ambiguous") is None
     assert _outcome_class("no_hit") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [False, "false", "true", 0, 1, None, [True], {"passed": True}])
+@pytest.mark.parametrize("field,reason", [
+    ("offline", "offline_quality_evidence_missing_or_failed"),
+    ("admission", "candidate_not_admitted_to_forward_proof"),
+    ("calibration", "candidate_calibration_unvalidated"),
+    ("lineage", "candidate_lineage_invalid"),
+    ("forward", "forward_proof_not_eligible"),
+])
+async def test_non_boolean_qualification_never_reaches_registry_write(monkeypatch, field, reason, value):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    evidence = {"eligible": True, "status": "eligible"}
+    metadata = candidate["payload"]["training_meta"]
+    if field == "offline":
+        metadata["offline_quality_gate"]["passed"] = value
+    elif field == "admission":
+        metadata["candidate_forward_gate"]["required"] = value
+    elif field == "calibration":
+        candidate["metrics"]["calibration"]["validated"] = value
+    elif field == "lineage":
+        metadata["lineage"]["eligible"] = value
+    else:
+        evidence["eligible"] = value
+    writer = AsyncMock()
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value={"artifact_hash_sha256": "champ"}))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value=evidence))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    monkeypatch.setenv("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", "1")
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == reason
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("primary_exists,comparison", [
+    (True, {}), (False, {}),
+    (True, {"enabled": False, "reason": "disabled"}),
+    (True, {"enabled": "false", "reason": "noninferior"}),
+    (True, {"enabled": 1, "reason": "noninferior"}),
+    (True, {"enabled": True, "reason": "no_existing_champion"}),
+    (False, {"enabled": True, "reason": "noninferior"}),
+])
+async def test_missing_or_inapplicable_champion_comparison_cannot_promote(monkeypatch, primary_exists, comparison):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate(parent="champ" if primary_exists else "")
+    candidate["payload"]["training_meta"]["champion_comparison"] = comparison
+    primary = {"artifact_hash_sha256": "champ"} if primary_exists else None
+    writer = AsyncMock()
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value=primary))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value={"eligible": True}))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == "candidate_offline_noninferiority_failed"
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("primary_exists", [True, False])
+async def test_typed_evidence_with_matching_comparison_reaches_registry_guard(monkeypatch, primary_exists):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate(parent="champ" if primary_exists else "")
+    candidate["payload"]["training_meta"]["champion_comparison"]["reason"] = (
+        "noninferior" if primary_exists else "no_existing_champion")
+    primary = {"artifact_hash_sha256": "champ", "schema_version": 4} if primary_exists else None
+    writer = AsyncMock(return_value={"ok": False, "reason": "synthetic_writer_stopped"})
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value=primary))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value={"eligible": True}))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == "durable_promotion_failed"
+    writer.assert_awaited_once()
 
 
 def test_candidate_forward_decision_stats_use_realized_r():

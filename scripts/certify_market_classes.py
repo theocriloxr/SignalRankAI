@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 
 from data.fetcher import async_get_candles, _get_last_provider_used, _timeframe_to_seconds
 from data.provider_catalog import evaluate_candle_freshness, get_provider_spec, validate_candles
+from data.market_hours import get_market_session_status
 
 CLASS_SAMPLES: dict[str, tuple[str, str]] = {
     "crypto_spot": ("BTCUSDT", "5m"),
@@ -90,7 +91,8 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
 
     provider = str(_get_last_provider_used(symbol, timeframe) or "unknown")
     validation = validate_candles(rows or [], minimum=20)
-    freshness = evaluate_candle_freshness(validation, interval_seconds=_timeframe_to_seconds(timeframe), now_epoch=time.time())
+    checked_at = datetime.fromtimestamp(time.time(), timezone.utc)
+    freshness = evaluate_candle_freshness(validation, interval_seconds=_timeframe_to_seconds(timeframe), now_epoch=checked_at.timestamp())
     age = freshness["age_seconds"]
     freshness_limit = freshness["limit_seconds"]
     source_lower = provider.lower()
@@ -105,7 +107,17 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
                          and timeframe in spec.timeframes)
     fresh = freshness["fresh"]
     valid = bool(validation.get("valid"))
-    eligible = bool(valid and fresh and not analysis_only and capability_ok)
+    try:
+        market = get_market_session_status(symbol, now_utc=checked_at)
+        session = {"is_open": market.is_open, "reason": market.reason,
+                   "session": market.session, "calendar": market.calendar,
+                   "checked_at": market.checked_at.isoformat()}
+        session_open = market.is_open is True
+    except Exception as exc:
+        session = {"is_open": False, "reason": "market_session_unavailable",
+                   "error_type": type(exc).__name__, "checked_at": checked_at.isoformat()}
+        session_open = False
+    eligible = bool(valid and fresh and not analysis_only and capability_ok and session_open)
 
     reasons: list[str] = []
     if not valid:
@@ -124,6 +136,8 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
         reasons.append("provider_not_in_catalog")
     elif not capability_ok:
         reasons.append("provider_capability_mismatch")
+    if not session_open:
+        reasons.append("market_closed" if session["reason"] != "market_session_unavailable" else "market_session_unavailable")
 
     return {
         "asset_class": asset_class,
@@ -137,6 +151,7 @@ async def _certify(asset_class: str, symbol: str, timeframe: str, timeout: float
         "freshness_limit_seconds": freshness_limit,
         "latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
         "validation": validation,
+        "market_session": session,
         "reasons": reasons,
     }
 

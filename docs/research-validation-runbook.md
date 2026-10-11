@@ -327,6 +327,27 @@ concurrent promotion, same-byte replacements, changed parent and inconsistent
 registry/payload identities. Existing forward, calibration, schema and human
 authorization gates remain in force.
 
+Promotion qualification requires actual boolean `true` values for offline
+quality, forward admission, calibration (when required), lineage and forward
+eligibility. Truthy strings, numbers and containers do not grant approval.
+Champion-comparison evidence must be enabled and state `noninferior` when a
+primary exists; `no_existing_champion` applies only to a reviewed empty primary
+slot. Missing or disabled comparisons fail closed. These input checks preserve
+the separate human/schema gates and transactional registry snapshot guard.
+The trainer's offline and champion gates reject nonfinite/malformed metrics,
+boolean metrics and invalid thresholds/tolerances. Probability statistics must
+lie in [0,1]; expected R remains a finite return statistic rather than a
+probability. Invalid comparison evidence fails explicitly without persisting
+NaN/Infinity values in the qualification receipt. Default thresholds and
+material-regression tolerances are unchanged.
+
+Market-class certification now also records the canonical engine calendar
+decision. Fresh, valid provider candles cannot certify execution during a
+closed session or when the calendar lookup fails. Continuous crypto remains
+eligible on weekends if its other provider/data requirements pass. A local
+provider probe is connectivity/data evidence, not a staging rollout or broker
+execution certificate.
+
 The owner supplied the research source on 2026-10-10; its independent review and complete concept mapping are in `docs/research-source-review-20261010.md`. Complete the
 instrument-specific execution/capacity stress matrix, supported/disabled regime
 policies, point-in-time universe/revision evidence, ML search integration at all
