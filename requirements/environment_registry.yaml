@@ -7631,7 +7631,7 @@
       "name": "ML_CALIBRATION_ARTIFACT_ID",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:328"
+        "engine/ml.py:331"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7663,7 +7663,7 @@
       "name": "ML_CANDIDATE_FORWARD_DEDUP_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:661"
+        "engine/ml.py:667"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7784,8 +7784,8 @@
       "production_example_default": null,
       "read_locations": [
         "db/auto_ops.py:468",
-        "engine/ml.py:374",
-        "engine/ml.py:385"
+        "engine/ml.py:377",
+        "engine/ml.py:388"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8037,7 +8037,7 @@
       "name": "ML_MAX_CALIBRATION_BRIER",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:312"
+        "engine/ml.py:315"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8049,7 +8049,7 @@
       "name": "ML_MAX_CALIBRATION_ECE",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:313"
+        "engine/ml.py:316"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8091,7 +8091,7 @@
       "name": "ML_MIN_CALIBRATION_VALIDATION_ROWS",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:309"
+        "engine/ml.py:312"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8395,7 +8395,7 @@
       "name": "ML_SHADOW_MODE",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:853"
+        "engine/ml.py:859"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8455,7 +8455,7 @@
       "name": "ML_STRICT_SCHEMA",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:823"
+        "engine/ml.py:829"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8544,7 +8544,7 @@
       "name": "ML_WEEKLY_RETRAIN_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:1031"
+        "engine/ml.py:1037"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12477,7 +12477,7 @@
       "name": "REGIME_STRATEGIES",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:1006"
+        "engine/ml.py:1012"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12487,7 +12487,7 @@
       "name": "REGIME_STRATEGIES_JSON",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:1006"
+        "engine/ml.py:1012"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12553,7 +12553,7 @@
       "name": "REJECTION_LOG_WRITE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:640",
+        "engine/ml.py:646",
         "engine/signal_deduplicator.py:811"
       ],
       "required_by_code": true,
@@ -14623,7 +14623,7 @@
       "name": "STRATEGY_DRAWDOWN_DISABLE_LIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:1060"
+        "engine/ml.py:1066"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14633,7 +14633,7 @@
       "name": "STRATEGY_WEIGHTS",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:979"
+        "engine/ml.py:985"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14643,7 +14643,7 @@
       "name": "STRATEGY_WEIGHTS_JSON",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:979"
+        "engine/ml.py:985"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16271,8 +16271,8 @@
       "name": "XGB_NTHREAD",
       "production_example_default": null,
       "read_locations": [
-        "engine/ml.py:234",
-        "engine/ml.py:499"
+        "engine/ml.py:237",
+        "engine/ml.py:505"
       ],
       "required_by_code": true,
       "sensitive": false

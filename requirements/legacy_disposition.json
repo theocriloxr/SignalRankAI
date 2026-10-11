@@ -1,5 +1,5 @@
 {
-  "file_count": 2061,
+  "file_count": 2062,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7819,11 +7819,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1181,
+      "line_count": 1187,
       "path": "engine/ml.py",
       "reason": "production/build source",
-      "sha256": "60b9a4777725a4c0ac283eaca24a1e0cee450e960f7f0a84e7cf1da2258928be",
-      "size_bytes": 47462
+      "sha256": "7c0a114a45a51adc29376abca1151335c5ca54c13beef221d647973d5981873e",
+      "size_bytes": 47844
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8955,11 +8955,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 239,
+      "line_count": 250,
       "path": "ml/schema_version.py",
       "reason": "production/build source",
-      "sha256": "d4972fa62841de5e73ee464a8ae1a768b59a1f883f944da8eef04f6cb709ad3c",
-      "size_bytes": 6739
+      "sha256": "99cc41ab55293766c38b0beee28e531a8e8f3a1dbf979d1cd2bddfde7d2fc824",
+      "size_bytes": 7322
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9843,11 +9843,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 106,
+      "line_count": 107,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ec3fe481f1d11fd5f1fd9eb30ebf3947a8a75c8cb40c4afafc175dce2b023c35",
-      "size_bytes": 6763
+      "sha256": "cf46d06f6563da85b8a7ab0b22d08da7279aef83e3d2e687be006149ceb3b946",
+      "size_bytes": 6807
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9974,7 +9974,7 @@
       "line_count": 16348,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "a99d0a20f73bdc5012e0c49d3fcad0dca1f9f15b367b08a9597a83feb14a8485",
+      "sha256": "265afd715473ca6b181552a8a96fb70867b2f77851e9bd0b7a564bb216b2a335",
       "size_bytes": 478823
     },
     {
@@ -14371,6 +14371,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 53,
+      "path": "tests/test_ml_versioned_serving_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "4993e3d3282ceace3cad2ac33819c8a409c6a955de1066d77d64916e42034db3",
+      "size_bytes": 2585
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 33,
       "path": "tests/test_mlfilter_durable_sync.py",
       "reason": "automated test evidence",
@@ -16504,6 +16512,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
     "PRESERVE_BEHAVIOUR": 1216,
-    "TEST_ONLY": 368
+    "TEST_ONLY": 369
   }
 }

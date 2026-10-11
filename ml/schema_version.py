@@ -152,8 +152,19 @@ def get_current_schema_version() -> int:
     return CURRENT_SCHEMA_VERSION
 
 
-def get_feature_columns() -> list[str]:
-    return list(FEATURE_COLUMNS_V4)
+def get_feature_columns(schema_version: int | None = None) -> list[str]:
+    """Return the declared contract; new training defaults to V4.
+
+    Serving an existing V3 champion must use its original ordered features while
+    the V4 challenger gathers forward evidence. Unknown hashed contracts fail
+    closed instead of being interpreted as the current training schema.
+    """
+    version = CURRENT_SCHEMA_VERSION if schema_version is None else int(schema_version)
+    if version == 3:
+        return list(FEATURE_COLUMNS_V3)
+    if version == 4:
+        return list(FEATURE_COLUMNS_V4)
+    raise ValueError(f"unsupported_feature_schema_version:{version}")
 
 
 def get_critical_features(schema_version: int | None = None) -> frozenset[str]:
