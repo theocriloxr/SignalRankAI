@@ -11,9 +11,9 @@ import sys
 
 SOURCE_ROOTS = {
     "admin", "alembic", "certification", "configs", "core", "data", "db", "delivery",
-    "deploy", "engine", "execution", "frontend", "market", "migrations", "ml", "mobile",
+    "deploy", "engine", "execution", "frontend", "market", "market_data_sdk", "migrations", "ml", "mobile",
     "observability", "payments", "paystack", "runtime", "scripts", "services",
-    "signalrank_discord", "signalrank_telegram", "storage", "strategies", "tests",
+    "signalrank_discord", "signalrank_telegram", "storage", "strategies", "tests", "tests_sdk",
     "tools", "utils", "web", "worker", ".github", "requirements",
 }
 GENERATED_PARTS = {"node_modules", "__pycache__", ".next", "dist", "dist-android", "dist-ios"}

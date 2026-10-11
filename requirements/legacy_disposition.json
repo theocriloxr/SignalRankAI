@@ -10670,8 +10670,8 @@
       "line_count": 67,
       "path": "scripts/release_evidence_identity.py",
       "reason": "production/build source",
-      "sha256": "40acc5c1c36723f261a704c171a832de51eee932c281ba9c7e048fdbff92fde6",
-      "size_bytes": 3005
+      "sha256": "17712f4684de439e2b86bfeb26257044ea7aedd146c63365a50cf76e3544a79c",
+      "size_bytes": 3037
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15043,11 +15043,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 62,
+      "line_count": 82,
       "path": "tests/test_release_evidence_identity.py",
       "reason": "automated test evidence",
-      "sha256": "09e110d989e6bbc8a555d92a6f0346742cf29cfc51a83eae17ef489aaf132818",
-      "size_bytes": 3230
+      "sha256": "6316442d29aaf631bb9fa9c74adbda60aa16c9fe9d9458b0815b3e575bb4aebb",
+      "size_bytes": 4410
     },
     {
       "disposition": "TEST_ONLY",
