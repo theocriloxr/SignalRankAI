@@ -8,8 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Pin the Debian security updates as well as the base digest. The base predates
+# DSA-6530-1 (PCRE2) and DSA-6531-1 (OpenSSL); installing libpq alone keeps those
+# vulnerable inherited packages in the final image.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 \
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 libpcre2-8-0=10.46-1~deb13u3 libssl3t64=3.5.7-1~deb13u3 openssl=3.5.7-1~deb13u3 openssl-provider-legacy=3.5.7-1~deb13u3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.lock requirements-build-tools.txt requirements-market-data-sdk.lock release_certification_manifest.txt ./
@@ -41,7 +44,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5=17.11-0+deb13u1 ca-certificates=20250419 \
+    && apt-get install -y --no-install-recommends libpq5=17.11-0+deb13u1 ca-certificates=20250419 libpcre2-8-0=10.46-1~deb13u3 libssl3t64=3.5.7-1~deb13u3 openssl=3.5.7-1~deb13u3 openssl-provider-legacy=3.5.7-1~deb13u3 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 signalrank \
     && useradd --system --uid 10001 --gid signalrank --create-home --home-dir /home/signalrank signalrank
