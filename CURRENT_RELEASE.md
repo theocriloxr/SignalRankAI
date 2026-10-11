@@ -33,6 +33,7 @@ chain with:
 
 The current release candidate also includes:
 
+- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));
 - bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;
 - immediate removal of ineligible assets from pending and refill scanner queues;
 - exact-branch CI/release-manifest gating;

@@ -5900,7 +5900,13 @@ def main_loop(DRY_RUN: bool = False):
                 )
                 return []
 
-        async def deliver_all():
+        async def deliver_all(
+            scored_signals_all=tuple(dict(signal) for signal in scored_signals_all),
+            user_ids=tuple(user_ids),
+            pipeline_stats=pipeline_stats,
+        ):
+            # The scanner continues while this coroutine runs. Bind this
+            # cycle's payload and telemetry before its next loop iteration.
             dispatched_count = 0
             skipped_daily_limit = 0
             skipped_no_eligible_signals = 0
@@ -5957,12 +5963,14 @@ def main_loop(DRY_RUN: bool = False):
 
             _fresh_scored_signals: list = []
             try:
-                from engine.stale_signal_validator import validate_signal_freshness
+                from engine.delivery_prefilter import analytical_age_expired, prefilter_delivery_candidate
 
                 for _sig in scored_signals_all:
                     try:
-                        _cached_px = _live_price_cache.get(str(_sig.get("asset") or ""))
-                        _fresh, _reason, _price = await validate_signal_freshness(_sig, cached_live_price=_cached_px)
+                        _asset_key = str(_sig.get("asset") or "").upper()
+                        _cached_px = _live_price_cache.get(_asset_key)
+                        _result = await prefilter_delivery_candidate(_sig, _live_quote_cache.get(_asset_key))
+                        _fresh, _reason, _price = _result.ok, _result.reason, _result.live_price
                         if _fresh:
                             # Store the confirmed live price so downstream steps
                             # (dispatch_signals / _check_entry_status) can reuse
@@ -5978,6 +5986,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _sig["pre_delivery_quote_source_age_ms"] = getattr(_quote, "source_age_ms", None)
                             _fresh_scored_signals.append(_sig)
                         else:
+                            _delivery_skip(f"shared_prefilter:{_reason}")
                             logger.info(
                                 f"[engine] Stale signal dropped — {_sig.get('asset')} "
                                 f"{_sig.get('timeframe')}: {_reason}"
@@ -6004,30 +6013,29 @@ def main_loop(DRY_RUN: bool = False):
                                 _sig.get("asset"),
                                 _sig.get("timeframe"),
                             )
-                            # Mark original as expired in DB so resend job skips it.
+                            # Only analytical age expiry changes the signal. A
+                            # temporary quote failure or delivery expiry leaves
+                            # monitoring and outcome authority intact.
                             try:
                                 _sig_id = _sig.get("signal_id") or _sig.get("id")
-                                if _sig_id and get_session is not None:
+                                if _sig_id and get_session is not None and analytical_age_expired(_reason):
                                     from db.pg_features import expire_signal
-                                    from sqlalchemy import text
-
                                     async with get_session() as _es:
-                                        if "market_closed" in str(_reason):
-                                            await _es.execute(
-                                                text(
-                                                    "UPDATE signals SET status = 'market_closed' WHERE signal_id = :id"
-                                                ),
-                                                {"id": str(_sig_id)},
-                                            )
-                                        else:
-                                            await expire_signal(_es, str(_sig_id))
+                                        await expire_signal(_es, str(_sig_id))
                                         await _es.commit()
                             except Exception as _exp_err:
                                 logger.debug(f"[engine] Could not update DB for dropped signal: {_exp_err}")
-                    except Exception:
-                        _fresh_scored_signals.append(_sig)
-            except Exception:
-                _fresh_scored_signals = list(scored_signals_all)
+                    except Exception as _prefilter_err:
+                        _delivery_skip("shared_prefilter:error")
+                        logger.warning("[engine] shared delivery prefilter failed closed error_type=%s", type(_prefilter_err).__name__)
+            except Exception as _prefilter_err:
+                _delivery_skip("shared_prefilter:unavailable", len(scored_signals_all))
+                logger.warning("[engine] shared delivery prefilter unavailable error_type=%s", type(_prefilter_err).__name__)
+                _fresh_scored_signals = []
+
+            if not _fresh_scored_signals:
+                logger.info("[engine] delivery skipped before audience lookup: no qualified opportunities reasons=%s", delivery_skip_reasons)
+                return 0
 
             # Correlation governance: keep only the strongest signal per
             # correlation cluster/timeframe to reduce compounding exposure.
@@ -6551,9 +6559,14 @@ def main_loop(DRY_RUN: bool = False):
                             _lock_token = uuid.uuid4().hex
                             _delivery_state.cache_set_sync(_lock_key, _lock_token, ex=_lock_ttl)
 
-                            async def _deliver_all_with_lock_release():
+                            async def _deliver_all_with_lock_release(
+                                _deliver=deliver_all,
+                                _delivery_state=_delivery_state,
+                                _lock_key=_lock_key,
+                                _lock_token=_lock_token,
+                            ):
                                 try:
-                                    return await deliver_all()
+                                    return await _deliver()
                                 finally:
                                     try:
                                         released = await _delivery_state.cache_delete_if_value(_lock_key, _lock_token)

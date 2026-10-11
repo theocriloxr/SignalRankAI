@@ -363,38 +363,22 @@ async def _resend_unsent_signals_async():
         resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
         resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "3") or 3)
 
-        # Keep highest-quality signals only to avoid flooding users.
-        ranked = sorted(
-            raw_signals,
-            key=lambda s: float(getattr(s, 'score', 0) or 0),
-            reverse=True,
+        from signalrank_telegram.resend_selection import (
+            has_fresh_resend, rank_resend_candidates, resend_payload, take_distinct_fresh_resends,
         )
 
-        # De-duplicate by asset+timeframe and enforce quality floor.
-        best_by_bucket = {}
-        for s in ranked:
-            try:
-                if float(getattr(s, 'score', 0) or 0) < resend_min_score:
-                    continue
-                bucket = f"{str(getattr(s, 'asset', '')).upper()}_{str(getattr(s, 'timeframe', '')).lower()}"
-                if not bucket.strip("_"):
-                    continue
-                if bucket not in best_by_bucket:
-                    best_by_bucket[bucket] = s
-            except Exception:
-                continue
-
-        signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
+        # A stale high score must not consume a bucket or a delivery slot ahead
+        # of a lower-scored fresh version of the same asset/timeframe.
+        signals = rank_resend_candidates(raw_signals, resend_min_score)
         try:
             from engine.delivery_freshness import evaluate_signal_age, evaluate_time_to_telegraph
 
+            # Optional housekeeping cannot consume the send deadline while a
+            # fresh opportunity waits. Without fresh work, keep writes bounded.
+            housekeeping_slots = 0 if has_fresh_resend(signals) else max(1, resend_max_signals)
             fresh_ranked = []
             for signal_row in signals:
-                payload = (
-                    {column.key: getattr(signal_row, column.key, None) for column in signal_row.__table__.columns}
-                    if hasattr(signal_row, "__table__")
-                    else dict(getattr(signal_row, "__dict__", {}) or {})
-                )
+                payload = resend_payload(signal_row)
                 sid = str(getattr(signal_row, "signal_id", "") or "")
                 age_result = evaluate_signal_age(payload)
                 if not age_result.ok:
@@ -408,6 +392,9 @@ async def _resend_unsent_signals_async():
                         float(age_result.max_age_minutes or 0.0),
                         float(age_result.opportunity_remaining_pct or 0.0),
                     )
+                    if housekeeping_slots <= 0:
+                        continue
+                    housekeeping_slots -= 1
                     try:
                         async with get_session(
                             priority="background",
@@ -436,6 +423,9 @@ async def _resend_unsent_signals_async():
                     # analytical signal/lifecycle. This prevents the same signal
                     # version from being reconsidered every scheduler tick while
                     # monitoring/outcome tracking remains intact.
+                    if housekeeping_slots <= 0:
+                        continue
+                    housekeeping_slots -= 1
                     try:
                         from datetime import timedelta as _resend_timedelta
                         from sqlalchemy.dialects.postgresql import insert as _pg_insert
@@ -508,7 +498,7 @@ async def _resend_unsent_signals_async():
                         )
                     continue
                 fresh_ranked.append(signal_row)
-            signals = fresh_ranked
+            signals = take_distinct_fresh_resends(fresh_ranked, resend_max_signals)
         except Exception as _fresh_err:
             logger.warning("[resend] freshness prefilter failed closed: %s", _fresh_err)
             signals = []

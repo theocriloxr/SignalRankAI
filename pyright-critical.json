@@ -4,6 +4,8 @@
   "reportMissingImports": false,
   "reportMissingTypeStubs": false,
   "include": [
+    "engine/delivery_prefilter.py",
+    "signalrank_telegram/resend_selection.py",
     "engine/universe_observation.py",
     "engine/adaptive/availability.py",
     "engine/adaptive/health_baselines.py",

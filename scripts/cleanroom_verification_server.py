@@ -42,6 +42,7 @@ _TESTS = [
     "tests/test_production_backup_script.py",
     "tests/test_production_backup_restore_script.py",
     "tests/test_resend_terminal_queue_expiry.py",
+    "tests/test_delivery_prefilter_and_retry_selection.py",
     "tests/test_provider_live_contract_repairs.py",
     "tests/test_provider_catalog_and_certification.py",
     "tests/test_provider_registry_fail_closed.py",
