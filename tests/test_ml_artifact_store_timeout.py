@@ -1,5 +1,6 @@
 import inspect
 import os
+import pytest
 from unittest.mock import patch
 
 from ml import artifact_store
@@ -18,3 +19,10 @@ def test_artifact_persistence_uses_bounded_execute_and_commit():
     assert "session.execute" in source
     assert "session.commit" in source
     assert "_artifact_query_timeout()" in source
+
+
+@pytest.mark.parametrize("configured", ["nan", "inf", "-inf", "1e100", "invalid"])
+def test_invalid_or_excessive_registry_timeout_cannot_create_an_unbounded_wait(monkeypatch, configured):
+    monkeypatch.setenv("ML_ARTIFACT_DB_TIMEOUT_SECONDS", configured)
+    timeout = artifact_store._artifact_query_timeout()
+    assert 5 <= timeout <= 120

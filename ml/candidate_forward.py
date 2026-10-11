@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from utils.timeutils import now_utc_naive
+from ml.artifact_store import artifact_review_hash
 
 
 def _candidate_db_priority():
@@ -160,6 +161,7 @@ async def load_active_candidate() -> dict[str, Any] | None:
         payload = dict(getattr(row, "payload", {}) or {})
         snapshot = {
             "id": int(getattr(row, "id", 0) or 0),
+            "registry_review_hash": artifact_review_hash(row),
             "artifact_hash_sha256": str(getattr(row, "artifact_hash_sha256", "") or ""),
             "model_version": str(getattr(row, "model_version", "") or ""),
             "feature_schema_version": str(getattr(row, "feature_schema_version", "") or ""),
@@ -207,6 +209,7 @@ async def load_active_primary() -> dict[str, Any] | None:
         payload = dict(getattr(row, "payload", {}) or {})
         snapshot = {
             "id": int(getattr(row, "id", 0) or 0),
+            "registry_review_hash": artifact_review_hash(row),
             "artifact_hash_sha256": str(getattr(row, "artifact_hash_sha256", "") or ""),
             "model_version": str(getattr(row, "model_version", "") or ""),
             "feature_schema_version": str(getattr(row, "feature_schema_version", "") or ""),
@@ -634,6 +637,11 @@ async def promote_candidate_from_forward_proof(
 
     promoted = await promote_active_candidate_artifact(
         expected_artifact_hash_sha256=candidate_hash,
+        expected_candidate_id=candidate.get("id"),
+        expected_primary_hash_sha256=primary_hash,
+        expected_primary_id=primary.get("id") if primary else None,
+        expected_candidate_review_hash=candidate.get("registry_review_hash"),
+        expected_primary_review_hash=primary.get("registry_review_hash") if primary else "",
     )
     if not promoted.get("ok"):
         return {

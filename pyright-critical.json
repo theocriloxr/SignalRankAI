@@ -79,6 +79,7 @@
     "engine/adaptive/market_input.py",
     "db/research_snapshot_schema.py",
     "ml/candidate_forward.py",
+    "ml/artifact_store.py",
     "data/sdk_gateway.py",
     "data/connectors/sdk_adapters.py"
   ]

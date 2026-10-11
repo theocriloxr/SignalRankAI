@@ -311,6 +311,22 @@ as `since_ledger_introduction`, with prior history unverified.
 
 ## Remaining research directive gaps
 
+Durable ML challenger promotion now compares both the candidate and current
+primary row IDs, artifact hashes and qualification-metadata fingerprints inside the transaction that locks those
+rows. A champion replacement after forward evaluation rejects the stale review,
+including a replacement with identical model bytes but changed metadata or an
+in-place edit to the reviewed row's metadata/clocks. The
+stored candidate payload must match the registry's artifact hash, and its parent
+must still identify the reviewed champion. Genuine first-model promotion requires
+the reviewed absence of a primary and an empty parent. Query/commit waits remain
+finite, with registry timeouts clamped to 5-120 seconds and invalid/nonfinite
+values restored to the existing 20-second default. This closes review/write
+identity races; it does not qualify the model, issue an approval, validate
+forward outcomes or authorize financial execution. Real PostgreSQL tests cover
+concurrent promotion, same-byte replacements, changed parent and inconsistent
+registry/payload identities. Existing forward, calibration, schema and human
+authorization gates remain in force.
+
 The owner supplied the research source on 2026-10-10; its independent review and complete concept mapping are in `docs/research-source-review-20261010.md`. Complete the
 instrument-specific execution/capacity stress matrix, supported/disabled regime
 policies, point-in-time universe/revision evidence, ML search integration at all
