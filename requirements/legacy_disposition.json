@@ -1,5 +1,5 @@
 {
-  "file_count": 2062,
+  "file_count": 2063,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7651,11 +7651,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6820,
+      "line_count": 6830,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "d5d1033d380ccb957d68c582b7a0035c173f10d79675242068a5b04e48410b46",
-      "size_bytes": 339078
+      "sha256": "3f21edfcb8f1f5f41ad57d285fdd24553e4a1a20cbde8e63162b5f271d33ee3e",
+      "size_bytes": 338385
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7979,11 +7979,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 815,
+      "line_count": 819,
       "path": "engine/risk.py",
       "reason": "production/build source",
-      "sha256": "179f971618c345e10deeb0566dded16cecf5b5355512861e94a939f1b708ef9b",
-      "size_bytes": 31777
+      "sha256": "dc0860750b78e149208b256aa7f410b042a793e656a394946e2ea399e56d1854",
+      "size_bytes": 32340
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9843,11 +9843,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 107,
+      "line_count": 108,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cf46d06f6563da85b8a7ab0b22d08da7279aef83e3d2e687be006149ceb3b946",
-      "size_bytes": 6807
+      "sha256": "b16242c4f9109f7b1308a1e6b109decd47c9757c5b85423feb69dff694345e07",
+      "size_bytes": 6853
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9974,7 +9974,7 @@
       "line_count": 16348,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "265afd715473ca6b181552a8a96fb70867b2f77851e9bd0b7a564bb216b2a335",
+      "sha256": "a25686acf393df77085f17c643415a973020a6052eb63522d1533922fcbf70d2",
       "size_bytes": 478823
     },
     {
@@ -13987,6 +13987,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 86,
+      "path": "tests/test_generation_expectancy_admission.py",
+      "reason": "automated test evidence",
+      "sha256": "1ce87982b178fa8a1054c19100a20d049c771fbbbef3928b00a499d2da8f686c",
+      "size_bytes": 4307
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 43,
       "path": "tests/test_governance_checkout_portability.py",
       "reason": "automated test evidence",
@@ -16512,6 +16520,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
     "PRESERVE_BEHAVIOUR": 1216,
-    "TEST_ONLY": 369
+    "TEST_ONLY": 370
   }
 }

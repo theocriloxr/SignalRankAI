@@ -85,7 +85,7 @@ from engine.exit_manager import ExitManager, PartialExitTracker
 from engine.filters import SignalFilter
 from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
-from engine.risk import risk_check
+from engine.risk import risk_check_with_reason
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
 from engine.signal_metrics import resolve_confluence_percent
 
@@ -821,6 +821,79 @@ def _log_decision(
     except Exception as e:
         logger.warning(f"[engine] Failed to publish analytics event: {e}")
         pass
+
+
+def _risk_check_with_history(sig: Dict[str, Any], account_state: Any, asset: str) -> bool:
+    """Load delivered-outcome evidence before applying the configured risk gate."""
+    # Strategy payloads cannot supply their own qualification evidence.
+    sig.pop("live_expectancy", None)
+    sig["historical_evidence_actionable"] = False
+    # Proof-backed recent performance context. This is
+    # evidence for ranking/AI review and negative-edge
+    # down-weighting; insufficient samples remain
+    # explicitly non-actionable rather than fabricated.
+    try:
+        if _env_bool("HISTORICAL_PERFORMANCE_CONTEXT_ENABLED", True):
+            from engine.expectancy_gate import get_best_live_performance_context
+
+            _history = run_sync(
+                get_best_live_performance_context(
+                    str(sig.get("asset") or asset),
+                    strategy=str(sig.get("strategy_name") or sig.get("strategy") or "") or None,
+                    timeframe=str(sig.get("timeframe") or "") or None,
+                    lookback_hours=max(
+                        24,
+                        _env_int(
+                            "HISTORICAL_PERFORMANCE_LOOKBACK_HOURS",
+                            24 * 30,
+                        ),
+                    ),
+                ),
+                timeout=max(
+                    2.0,
+                    _env_float(
+                        "HISTORICAL_PERFORMANCE_CONTEXT_TIMEOUT_SECONDS",
+                        4.0,
+                    ),
+                ),
+            )
+            if isinstance(_history, dict):
+                sig["historical_evidence_actionable"] = bool(_history.get("actionable"))
+                sig["historical_sample_size"] = int(_history.get("sample_size") or 0)
+                sig["historical_evidence_scope"] = str(_history.get("scope") or "asset")
+                sig["historical_evidence_fallback_depth"] = int(_history.get("fallback_depth") or 0)
+                if _history.get("win_rate") is not None:
+                    sig["historical_win_rate"] = float(_history["win_rate"]) * 100.0
+                    sig["live_win_rate"] = sig["historical_win_rate"]
+                if _history.get("win_rate_lower_95") is not None:
+                    sig["historical_win_rate_lower_95"] = (
+                        float(_history["win_rate_lower_95"]) * 100.0
+                    )
+                if _history.get("win_rate_upper_95") is not None:
+                    sig["historical_win_rate_upper_95"] = (
+                        float(_history["win_rate_upper_95"]) * 100.0
+                    )
+                sig["historical_decisive_samples"] = int(_history.get("decisive_samples") or 0)
+                if _history.get("avg_r") is not None:
+                    sig["historical_avg_r"] = float(_history["avg_r"])
+                if _history.get("avg_win_r") is not None:
+                    sig["historical_avg_win_r"] = float(_history["avg_win_r"])
+                if _history.get("avg_loss_r") is not None:
+                    sig["historical_avg_loss_r"] = float(_history["avg_loss_r"])
+                if _history.get("profit_factor") is not None:
+                    sig["historical_profit_factor"] = float(_history["profit_factor"])
+                if bool(_history.get("actionable")) and _history.get("expectancy_r") is not None:
+                    sig["live_expectancy"] = float(_history["expectancy_r"])
+    except Exception as _history_err:
+        logger.debug(
+            "[engine] historical performance context unavailable asset=%s error=%s",
+            sig.get("asset") or asset,
+            type(_history_err).__name__,
+        )
+
+    ok, reason = risk_check_with_reason(sig, account_state)
+    sig["risk_rejection_reason"] = reason
+    return ok
 
 
 def _log_market_observations(
@@ -3865,8 +3938,8 @@ def main_loop(DRY_RUN: bool = False):
                             )
                         except Exception:
                             sig["active_positions"] = None
-                        if not risk_check(sig, account_state):
-                            sig["rejection_reason"] = "risk/volatility"
+                        if not _risk_check_with_history(sig, account_state, asset):
+                            sig["rejection_reason"] = "risk/" + str(sig.get("risk_rejection_reason") or "policy")
                             pipeline_stats["risk_failed"] += 1
                             _bump_cycle_reason(pipeline_stats, "risk_failed_reasons", sig["rejection_reason"])
                             _increment_engine_veto("other")
@@ -4639,69 +4712,6 @@ def main_loop(DRY_RUN: bool = False):
                                 continue
                         except Exception as _intel_err:
                             logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
-
-                        # Proof-backed recent performance context. This is
-                        # evidence for ranking/AI review and negative-edge
-                        # down-weighting; insufficient samples remain
-                        # explicitly non-actionable rather than fabricated.
-                        try:
-                            if _env_bool("HISTORICAL_PERFORMANCE_CONTEXT_ENABLED", True):
-                                from engine.expectancy_gate import get_best_live_performance_context
-
-                                _history = run_sync(
-                                    get_best_live_performance_context(
-                                        str(sig.get("asset") or asset),
-                                        strategy=str(sig.get("strategy_name") or sig.get("strategy") or "") or None,
-                                        timeframe=str(sig.get("timeframe") or "") or None,
-                                        lookback_hours=max(
-                                            24,
-                                            _env_int(
-                                                "HISTORICAL_PERFORMANCE_LOOKBACK_HOURS",
-                                                24 * 30,
-                                            ),
-                                        ),
-                                    ),
-                                    timeout=max(
-                                        2.0,
-                                        _env_float(
-                                            "HISTORICAL_PERFORMANCE_CONTEXT_TIMEOUT_SECONDS",
-                                            4.0,
-                                        ),
-                                    ),
-                                )
-                                if isinstance(_history, dict):
-                                    sig["historical_evidence_actionable"] = bool(_history.get("actionable"))
-                                    sig["historical_sample_size"] = int(_history.get("sample_size") or 0)
-                                    sig["historical_evidence_scope"] = str(_history.get("scope") or "asset")
-                                    sig["historical_evidence_fallback_depth"] = int(_history.get("fallback_depth") or 0)
-                                    if _history.get("win_rate") is not None:
-                                        sig["historical_win_rate"] = float(_history["win_rate"]) * 100.0
-                                        sig["live_win_rate"] = sig["historical_win_rate"]
-                                    if _history.get("win_rate_lower_95") is not None:
-                                        sig["historical_win_rate_lower_95"] = (
-                                            float(_history["win_rate_lower_95"]) * 100.0
-                                        )
-                                    if _history.get("win_rate_upper_95") is not None:
-                                        sig["historical_win_rate_upper_95"] = (
-                                            float(_history["win_rate_upper_95"]) * 100.0
-                                        )
-                                    sig["historical_decisive_samples"] = int(_history.get("decisive_samples") or 0)
-                                    if _history.get("avg_r") is not None:
-                                        sig["historical_avg_r"] = float(_history["avg_r"])
-                                    if _history.get("avg_win_r") is not None:
-                                        sig["historical_avg_win_r"] = float(_history["avg_win_r"])
-                                    if _history.get("avg_loss_r") is not None:
-                                        sig["historical_avg_loss_r"] = float(_history["avg_loss_r"])
-                                    if _history.get("profit_factor") is not None:
-                                        sig["historical_profit_factor"] = float(_history["profit_factor"])
-                                    if bool(_history.get("actionable")) and _history.get("expectancy_r") is not None:
-                                        sig["live_expectancy"] = float(_history["expectancy_r"])
-                        except Exception as _history_err:
-                            logger.debug(
-                                "[engine] historical performance context unavailable asset=%s error=%s",
-                                sig.get("asset") or asset,
-                                type(_history_err).__name__,
-                            )
 
                         # Ultra quality must run only after executable levels and
                         # regime/session metadata exist. The previous order ran it
