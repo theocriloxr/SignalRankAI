@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SiteCredit } from "./SiteCredit";
 import { useState, type FormEvent } from "react";
 import client from "../lib/client";
 
@@ -33,5 +34,5 @@ export function MagicSignIn() {
     </label><button type="submit" className="button" disabled={busy}>{busy?"Requesting…":"Send sign-in link"}</button></form>}
     {message&&<p className="sr-form-message" role="status">{message}</p>}
     <Link className="sr-secondary-action" href="/login">Use password sign-in</Link>
-  </section></main>;
+  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
 }

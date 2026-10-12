@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PublicNav } from "./PublicNav";
+import { SiteCredit } from "./SiteCredit";
 
 export type EditorialDetail = {
   index: string;
@@ -57,7 +58,7 @@ export function PublicEditorial({ page }: { page: EditorialPage }) {
         <Link href={page.next.href}>Continue reading: {page.next.label} <span aria-hidden="true">↗</span></Link>
         <Link className="button" href="/login">Open secure account</Link>
       </div>
-      <footer className="sr-public-footer"><Link href="/">SignalRankAI</Link><span>Trading involves loss risk. Information is decision support, not a guaranteed outcome.</span><Link href="/risk">Risk disclosure ↗</Link></footer>
+      <SiteCredit />
     </div>
   </main>;
 }

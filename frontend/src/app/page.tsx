@@ -1,85 +1,72 @@
 import Link from "next/link";
 import { PublicNav } from "../components/PublicNav";
+import { SignalLifecycleExperience } from "../components/SignalLifecycleExperience";
+import { SiteCredit } from "../components/SiteCredit";
 
-const markets=["CRYPTO","FX","INDICES","EQUITIES","COMMODITIES"];
-const steps=[
-  {index:"01",name:"Market data and source",state:"QUALIFY"},
-  {index:"02",name:"Strategy and model",state:"EVALUATE"},
-  {index:"03",name:"Risk and account policy",state:"ADMIT / REJECT"},
-  {index:"04",name:"Entitled delivery",state:"RECEIPT"},
-  {index:"05",name:"Lifecycle and outcomes",state:"OBSERVE"},
+const markets=["CRYPTO","FOREX","INDICES","STOCKS","COMMODITIES"];
+const pillars=[
+  {n:"01",name:"Evidence you can inspect",copy:"Every entitled signal links to its lifecycle, model context and available delivery proof. Missing evidence is never quietly filled in.",href:"/methodology",icon:"◎"},
+  {n:"02",name:"Risk that has a voice",copy:"A rejected opportunity is an intentional decision. Risk policies, account boundaries and permissions remain independent of a strategy score.",href:"/risk",icon:"◇"},
+  {n:"03",name:"One connected workspace",copy:"Research, signal receipts, simulated trades, journal entries, alerts and broker readiness live alongside their canonical records.",href:"/app",icon:"⌘"},
 ];
-const principles=[
-  {number:"01",title:"Freshness before analysis",description:"A stale, unsupported or ambiguous price is a reason to stop. Every asset class needs its own provider and session verification."},
-  {number:"02",title:"Evidence over volume",description:"A scan may produce no deliverable signal. Thresholds and rejection reasons matter more than meeting a daily alert quota."},
-  {number:"03",title:"No false execution claims",description:"Research signals, simulated fills and broker-confirmed orders carry different evidence. None is silently promoted into another."},
+const experiences=[
+  {n:"01",label:"SIGNAL INTELLIGENCE",title:"Know why it qualifies.",copy:"Filter delivered decisions by market, strategy and timeframe. Follow the evidence instead of blindly chasing the alert.",href:"/app/signals",cta:"Explore signals"},
+  {n:"02",label:"PAPER DESK",title:"Practice, without pretending.",copy:"Keep simulated positions, cash, exposure and P&L distinct from live broker balances or execution claims.",href:"/app/paper",cta:"Explore paper trading"},
+  {n:"03",label:"BROKER OVERSIGHT",title:"Connections aren’t permission.",copy:"Review linked-account states and certification boundaries. A broker connection alone cannot approve a trade.",href:"/app/brokers",cta:"Inspect connections"},
 ];
 
 export default function Home() {
-  return <main className="sr-public-home">
+  return <main className="sr-public-home sr-cinema">
     <div className="sr-public-frame">
       <PublicNav/>
-      <section className="sr-public-home-hero" aria-labelledby="sr-home-heading">
-        <div className="sr-public-home-hero-top">
-          <p className="sr-overline">SignalRankAI — Multi-asset decision intelligence</p>
-          <p>RESEARCH / ACCOUNT EVIDENCE / RISK-GATED WORKFLOWS</p>
+      <section className="sr-cinema-hero" aria-labelledby="sr-cinema-title">
+        <div className="sr-cinema-hero-copy">
+          <p className="sr-cinema-kicker"><span className="sr-cinema-live-mark"/> SIGNALRANKAI / BUILT FOR THE DECISION</p>
+          <h1 id="sr-cinema-title">Read the market.<br/><em>Question the signal.</em><br/>Own the decision.</h1>
+          <p className="sr-cinema-lede">A multi-asset intelligence ecosystem that connects market research, quality gates, signal evidence and risk-aware account workflows—on the web and through Telegram.</p>
+          <div className="sr-cinema-hero-actions"><Link href="/login" className="button">Enter the workspace <span aria-hidden="true">↗</span></Link><Link href="#lifecycle" className="sr-cinema-link">Explore the decision engine <span aria-hidden="true">↓</span></Link></div>
+          <div className="sr-cinema-hero-bottom"><span>RESEARCH FIRST</span><span>EVIDENCE BEFORE EXECUTION</span><span>BUILT FOR ACCOUNTABILITY</span></div>
         </div>
-        <h1 id="sr-home-heading">A sharper way to see <em>what qualifies.</em></h1>
-        <p className="sr-public-home-lede">Built to examine opportunities across markets, reject uncertain setups, and keep every delivered signal connected to its evidence. Research on the web and Telegram, simulated trading and any certified broker workflow are accountable to the same canonical signal lifecycle.</p>
-        <div className="sr-public-home-actions">
-          <Link className="button" href="/login">Enter workspace ↗</Link>
-          <Link className="button secondary" href="/methodology">Explore the methodology</Link>
-        </div>
-        <div className="sr-home-markets" aria-label="Market categories">{markets.map(m=><span key={m}>{m}</span>)}</div>
-      </section>
-      <section className="sr-home-exhibit" aria-label="Illustration of SignalRank qualification principles">
-        <div className="sr-home-system">
-          <div className="sr-home-system-head"><p className="sr-overline">Decision qualification</p><span>PROCESS / NOT LIVE MARKET DATA</span></div>
-          <div className="sr-home-system-steps">{steps.map(step=><div className="sr-home-system-step" key={step.index}>
-            <span>{step.index}</span><strong>{step.name}</strong><span>{step.state}</span>
-          </div>)}</div>
-          <p className="sr-home-system-note">NO TRADE is a legitimate outcome. A high score cannot override missing market, execution or account evidence.</p>
-        </div>
-        <div className="sr-home-visual" role="img" aria-label="Decorative concentric market-data observation graphic. It displays no prices, results or live status.">
-          <div className="sr-home-visual-caption"><span>DATA INTEGRITY / DECISION BOUNDARIES</span><span>CONCEPTUAL VISUALIZATION — NOT A CHART</span></div>
-        </div>
-      </section>
-      <section className="sr-home-chapter" aria-labelledby="sr-principles-heading">
-        <div><p className="sr-overline">01 / The decision standard</p><h2 id="sr-principles-heading">Confidence should be traceable.</h2></div>
-        <div><p className="sr-home-chapter-intro">Market signals become more useful when you can ask where a quote originated, why a strategy passed, what the model actually measured and whether a result was delivered—or executed.</p>
-          <div className="sr-home-principles">{principles.map(principle=><article key={principle.number}>
-            <span>{principle.number} / SIGNAL STANDARD</span>
-            <h3>{principle.title}</h3><p>{principle.description}</p>
-          </article>)}</div>
-          <div className="sr-home-chapter-actions"><Link href="/providers">Provider lineage ↗</Link><Link href="/risk">Risk architecture ↗</Link></div>
+        <div className="sr-cinema-hero-art" aria-label="Schematic trading terminal illustration. No market data, balances, or performance figures are shown.">
+          <div className="sr-cinema-art-glow" aria-hidden="true"/>
+          <div className="sr-cinema-terminal">
+            <div className="sr-cinema-terminal-top"><span><i/><i/><i/></span><strong>SR / INTELLIGENCE TERMINAL</strong><small>ILLUSTRATION</small></div>
+            <div className="sr-cinema-terminal-layout">
+              <div className="sr-cinema-terminal-rail"><span>◎</span><span>▦</span><span>◇</span><span>⊞</span></div>
+              <div className="sr-cinema-terminal-canvas">
+                <div className="sr-cinema-terminal-label"><span>DECISION EVIDENCE</span><span>SCHEMATIC / NOT LIVE</span></div>
+                <div className="sr-cinema-terminal-radar" aria-hidden="true">
+                  <div className="sr-cinema-radar-rings"/><div className="sr-cinema-radar-axis"/>
+                  <div className="sr-cinema-radar-node sr-radar-node-one"/><div className="sr-cinema-radar-node sr-radar-node-two"/><div className="sr-cinema-radar-node sr-radar-node-three"/>
+                  <div className="sr-cinema-radar-center"><span>SR</span><small>QUALIFY</small></div>
+                </div>
+                <div className="sr-cinema-terminal-micro"><span>DATA QUALITY <b>CHECK</b></span><span>STRATEGY <b>REVIEW</b></span><span>RISK <b>ENFORCE</b></span></div>
+              </div>
+            </div>
+            <div className="sr-cinema-terminal-bottom"><span>UNVERIFIED OPPORTUNITIES CAN BE REJECTED</span><span>NO AUTO-TRADE CLAIM</span></div>
+          </div>
+          <div className="sr-cinema-art-chip sr-cinema-art-chip-top"><span>◎</span><strong>QUALITY GATES</strong><small>BEFORE DELIVERY</small></div>
+          <div className="sr-cinema-art-chip sr-cinema-art-chip-bottom"><span>◇</span><strong>ACCOUNT EVIDENCE</strong><small>TRACEABLE LIFECYCLE</small></div>
         </div>
       </section>
-      <section className="sr-home-chapter" aria-labelledby="sr-workflows-heading">
-        <div><p className="sr-overline">02 / The connected workspace</p><h2 id="sr-workflows-heading">One signal. Distinct outcomes.</h2></div>
-        <div className="sr-editorial-sections">
-          <article className="sr-editorial-section"><div className="sr-editorial-index"><span>01</span><span>Evidence</span></div>
-            <div className="sr-editorial-body"><h3>Delivered signals are not invented positions.</h3><p>Follow an entitled receipt into its model context, delivery proof, lifecycle observations and recorded outcomes. Missing evidence remains visible as unavailable.</p><ul><li>Asset and timeframe scoped details</li><li>Documented strategy and calibrated context</li><li>Receipt provenance and lifecycle history</li></ul></div>
-          </article>
-          <article className="sr-editorial-section"><div className="sr-editorial-index"><span>02</span><span>Simulation</span></div>
-            <div className="sr-editorial-body"><h3>Practice with a separate paper account.</h3><p>Paper balances, positions and results are simulated. They are never mixed with broker equity, real fills or claims of certified performance.</p><ul><li>Account-scoped simulated exposure</li><li>Transparent paper equity and outcomes</li><li>No automatic live brokerage authorization</li></ul></div>
-          </article>
-          <article className="sr-editorial-section"><div className="sr-editorial-index"><span>03</span><span>Risk policy</span></div>
-            <div className="sr-editorial-body"><h3>Broker connections must earn execution eligibility.</h3><p>Account selection, market geometry, free margin, explicit intent and runtime permission remain separate safeguards. A connected provider alone cannot grant an order.</p><ul><li>Per-account authorization and limits</li><li>Explicit rejection of ambiguous destinations</li><li>Provider-confirmed execution evidence</li></ul></div>
-          </article>
-        </div>
+      <div className="sr-cinema-market-bar" aria-label="Supported market categories"><span>ONE INTELLIGENCE LAYER / FIVE MARKET FAMILIES</span><div>{markets.map(m=><span key={m}>{m}</span>)}</div></div>
+      <section className="sr-cinema-position" aria-labelledby="sr-cinema-position-title">
+        <div className="sr-cinema-position-head"><p className="sr-cinema-kicker">01 / THE SIGNALRANK STANDARD</p><h2 id="sr-cinema-position-title">The best decision<br/>is sometimes <em>no trade.</em></h2></div>
+        <div className="sr-cinema-position-copy"><p>More alerts do not mean better intelligence. SignalRankAI is built around evidence, explicit rejection, and the difference between an observed market opportunity and an executed order.</p><Link href="/methodology">Read the methodology <span aria-hidden="true">↗</span></Link></div>
       </section>
-      <section className="sr-home-closing" aria-labelledby="sr-home-close">
-        <div><p className="sr-overline">Research that can be challenged</p><h2 id="sr-home-close">See the decision. Inspect the evidence.</h2></div>
-        <div><p>Open your account workspace to view permitted signal history, paper exposure, market quality, notifications and broker connection records. Features depend on plan access, available services and verification.</p>
-          <Link className="button" href="/login">Secure sign-in ↗</Link>
-          <Link className="sr-secondary-link" href="/pricing">Plan access and billing details →</Link>
-        </div>
-      </section>
-      <footer className="sr-public-footer">
-        <Link href="/">SignalRankAI</Link>
-        <span>Information and simulations are not guarantees. Trading involves risk of loss.</span>
-        <Link href="/risk">Risk disclosure ↗</Link>
-      </footer>
+      <section className="sr-cinema-pillars" aria-label="Product design principles">{pillars.map(p=><Link href={p.href} className="sr-cinema-pillar" key={p.n}>
+        <div className="sr-cinema-pillar-top"><span>{p.n} / 03</span><span>{p.icon}</span></div><div><h3>{p.name}</h3><p>{p.copy}</p></div><div className="sr-cinema-pillar-bottom"><span>EXPLORE THE STANDARD</span><span aria-hidden="true">↗</span></div></Link>)}</section>
     </div>
+    <SignalLifecycleExperience/>
+    <section className="sr-cinema-product" aria-labelledby="sr-cinema-product-title">
+      <div className="sr-public-frame">
+        <div className="sr-cinema-product-head"><p className="sr-cinema-kicker">03 / YOUR WORKSPACE, CONNECTED</p><h2 id="sr-cinema-product-title">From the first scan<br/>to the <em>full picture.</em></h2><p>One secure workspace for the signal lifecycle. Data and access always come from your authenticated account, not this illustration.</p></div>
+        <div className="sr-cinema-product-grid">{experiences.map(item=><article key={item.n} className="sr-cinema-product-card">
+          <div className="sr-cinema-product-card-top"><span>{item.n} / 03</span><span>↗</span></div><div><p>{item.label}</p><h3>{item.title}</h3><span>{item.copy}</span></div><Link href={item.href}>{item.cta} <span aria-hidden="true">↗</span></Link></article>)}</div>
+      </div>
+    </section>
+    <section className="sr-cinema-statement"><div className="sr-public-frame"><p className="sr-cinema-kicker">04 / DESIGNED WITH RESPONSIBILITY</p><h2>Built for clarity.<br/><em>Grounded in evidence.</em></h2><p>Signals are not guarantees. A paper result is not a live fill. A connected broker is not an authorized execution destination. The distinction is part of the product.</p><div><Link href="/risk">Explore risk boundaries ↗</Link><Link href="/security">Privacy and security ↗</Link></div></div></section>
+    <section className="sr-public-frame sr-cinema-outro" aria-labelledby="sr-cinema-outro-title"><div><p className="sr-cinema-kicker">THE NEXT DECISION IS YOURS</p><h2 id="sr-cinema-outro-title">See beyond<br/><em>the signal.</em></h2></div><div><p>Explore real entitled signal history, account records, notifications and trading simulations. Features remain dependent on account access and service availability.</p><Link href="/login" className="button">Open SignalRankAI <span aria-hidden="true">↗</span></Link><Link href="/pricing">Explore plans and access ↗</Link></div></section>
+    <div className="sr-public-frame"><SiteCredit/></div>
   </main>;
 }

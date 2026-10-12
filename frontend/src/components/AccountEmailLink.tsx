@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { SiteCredit } from "./SiteCredit";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
 
@@ -84,5 +85,5 @@ export function AccountEmailLink({ kind, token }: {
     {message&&<p className="sr-form-message" role="status">{message}</p>}
     {stage==="done"&&<Link className="sr-secondary-action" href="/login">Go to sign in</Link>}
     <Link className="sr-secondary-action" href="/login">Use normal sign in instead</Link>
-  </section></main>;
+  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
 }

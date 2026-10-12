@@ -1274,3 +1274,61 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .table-wrap,.auth-card,.warning-panel,.account-jump-nav a{border:1px solid CanvasText}
   .workspace-nav button.active,.workspace-nav button.active .nav-icon{color:Highlight}
 }
+
+/* 2026-10-12: frontend bridge until the secure Next.js terminal is certified.
+   Pure styling and the CRILOX footer; no broker, session, auth, financial or
+   order behavior changed in the serving legacy SPA. */
+:root{
+ --sr-workstation-accent:#67e6b4;
+ --sr-workstation-chrome:#d8e7dd;
+ --sr-workstation-glint:rgba(103,230,180,.15);
+}
+:root:not([data-theme="light"]){
+ --bg:#070e10;
+ --bg-elev:#0d1719;
+ --panel:#122020;
+ --panel-2:#182927;
+ --panel-3:#1c302c;
+ --panel-soft:#142421;
+ --line:#2b4741;
+ --line-strong:#45645b;
+ --cyan:#69dfb5;
+ --cyan-soft:rgba(105,223,181,.09);
+ --green:#78e7af;
+ --muted:#b0c3bd;
+ --muted-2:#8ca89d;
+}
+:root[data-theme="light"]{
+ --cyan:#137a54;
+ --cyan-soft:rgba(19,122,84,.08);
+ --green:#148357;
+}
+:where(.panel,.subpanel,.metric-card,.hero-card,.market-card,.tool-card){
+ box-shadow:0 17px 44px rgba(0,0,0,.07);
+ border-color:var(--line);
+}
+.workspace-nav button.active{
+ border-color:color-mix(in srgb,var(--cyan) 34%,var(--line))!important;
+ background:color-mix(in srgb,var(--cyan) 9%,var(--panel))!important;
+ color:var(--text);
+}
+.workspace-nav button:not(.active):hover{border-color:var(--line-strong)}
+:where(.panel,.subpanel,.hero-card) h2{
+ text-wrap:balance;letter-spacing:-.035em;
+}
+:where(.metric-card,.hero-card) strong{font-variant-numeric:tabular-nums}
+:where(button,a,input,textarea,select,summary):focus-visible{
+ outline:2px solid var(--cyan)!important;outline-offset:3px;
+}
+.sr-legacy-powered{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:12px}
+.sr-legacy-powered a{color:var(--cyan);text-decoration:underline;text-underline-offset:3px;font-weight:800}
+.sr-legacy-powered a:hover{color:var(--text-strong)}
+body>footer{flex-wrap:wrap;gap:12px 22px}
+@media (max-width:700px){
+ body>footer{padding-bottom:max(22px,env(safe-area-inset-bottom))}
+ .sr-legacy-powered{width:100%}
+ .panel,.subpanel{max-width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+ :where(.panel,.subpanel,.metric-card,.hero-card){transition:none!important}
+}

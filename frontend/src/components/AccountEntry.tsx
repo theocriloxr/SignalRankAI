@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { SiteCredit } from "./SiteCredit";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
 
@@ -101,5 +102,5 @@ export function AccountEntry() {
       {stage==="credentials"&&<Link href="/magic-login" className="sr-auth-switch">Sign in with an email link</Link>}
       <p className="sr-auth-disclaimer">Trading carries risk. Market data, execution eligibility and financial records must be verified independently.</p>
     </section>
-  </div></main>;
+  </div><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
 }

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { SiteCredit } from "./SiteCredit";
 import client from "../lib/client";
 
 /** Canonical password-recovery flow. No email-existence disclosure or browser token persistence. */
@@ -50,5 +51,5 @@ export function PasswordRecovery({ initialToken = "" }: { initialToken?: string 
     {message&&<p className="sr-form-message" role="status">{message}</p>}
     {finished?<Link className="sr-secondary-action" href="/login">Return to sign in</Link>:
       stage==="complete"?<button type="button" className="sr-auth-switch" onClick={()=>{setStage("request");setMessage("")}}>Request another recovery link</button>:<Link href="/login" className="sr-auth-switch">Back to sign in</Link>}
-  </section></main>;
+  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
 }
