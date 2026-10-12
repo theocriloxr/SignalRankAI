@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -32,6 +33,30 @@ class ShadowOutcomeWorker:
         self._min_age_minutes = max(1, int(os.getenv("REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES", "5") or 5))
         self._batch_size = max(1, min(250, int(os.getenv("SHADOW_TRACKER_BATCH_SIZE", "50") or 50)))
         self._price_concurrency = max(1, min(8, int(os.getenv("SHADOW_PRICE_CONCURRENCY", "3") or 3)))
+        self._scan_after_id = 0
+        self._pending_scan_after_id = 0
+
+    def _restore_scan_cursor(self) -> None:
+        try:
+            from core.redis_state import state
+
+            self._scan_after_id = max(0, int(state.get_sync("shadow:tracker:scan_after_id") or 0))
+        except (TypeError, ValueError, OverflowError):
+            self._scan_after_id = 0
+        except Exception:
+            logger.debug("[shadow_tracker] cursor restore unavailable", exc_info=True)
+
+    def _checkpoint_scan_cursor(self) -> None:
+        # The cursor is scheduling state, never an outcome or performance claim.
+        # Revisit unresolved rows after wrapping instead of pinning every pass
+        # to the same oldest batch. A lost checkpoint only repeats safe work.
+        self._scan_after_id = self._pending_scan_after_id
+        try:
+            from core.redis_state import state
+
+            state.set_sync("shadow:tracker:scan_after_id", str(self._scan_after_id), ex=86400)
+        except Exception:
+            logger.debug("[shadow_tracker] cursor checkpoint unavailable", exc_info=True)
 
     def _publish_health(
         self,
@@ -56,6 +81,7 @@ class ShadowOutcomeWorker:
                 "scanned": max(0, int(scanned or 0)),
                 "evaluated": max(0, int(evaluated or 0)),
                 "tracked": max(0, int(tracked or 0)),
+                "scan_after_id": self._scan_after_id,
                 "error": str(error)[:240] if error else None,
             }
             state.set_sync(
@@ -70,6 +96,7 @@ class ShadowOutcomeWorker:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        self._restore_scan_cursor()
         self._publish_health("starting")
         self._task = asyncio.create_task(self._run_loop(), name="shadow-outcome-tracker")
         logger.info("[shadow_tracker] started interval=%ss batch=%s", self._interval, self._batch_size)
@@ -95,21 +122,21 @@ class ShadowOutcomeWorker:
                 timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
                 drop_if_busy=False,
             ) as session:
-                rows = list(
-                    (
-                        await session.execute(
-                            select(DecisionLog)
-                            .where(DecisionLog.decision == "rejected")
-                            .where(DecisionLog.meta["layer"].as_string() == "ml")
-                            .where(DecisionLog.meta["outcome_tracked_at"].as_string().is_(None))
-                            .where(DecisionLog.created_at <= cutoff)
-                            .order_by(DecisionLog.created_at.asc())
-                            .limit(self._batch_size)
-                        )
-                    )
-                    .scalars()
-                    .all()
+                query = (
+                    select(DecisionLog)
+                    .where(DecisionLog.decision == "rejected")
+                    .where(DecisionLog.meta["layer"].as_string() == "ml")
+                    .where(DecisionLog.meta["outcome_tracked_at"].as_string().is_(None))
+                    .where(DecisionLog.created_at <= cutoff)
+                    .order_by(DecisionLog.id.asc())
+                    .limit(self._batch_size)
                 )
+                rows = list((await session.execute(query.where(DecisionLog.id > self._scan_after_id))).scalars().all())
+                if not rows and self._scan_after_id:
+                    # At most two bounded keyset queries; no OFFSET scan and no
+                    # provider calls while the transaction is open.
+                    rows = list((await session.execute(query)).scalars().all())
+                self._pending_scan_after_id = int(rows[-1].id) if rows else 0
                 # Copy only primitive values before closing the session.
                 snapshots: list[dict[str, Any]] = []
                 for record in rows:
@@ -270,6 +297,7 @@ class ShadowOutcomeWorker:
                     .all()
                 )
                 tracked = 0
+                metric_deltas: Counter[str] = Counter()
                 for record in db_rows:
                     source, outcome = by_id.get(int(record.id), ({}, ""))
                     record_meta = dict(record.meta or {})
@@ -318,33 +346,26 @@ class ShadowOutcomeWorker:
                         "outcome_tracked_at": now.isoformat(),
                     }
                     tracked += 1
-                    try:
-                        if is_candidate_forward:
-                            bucket = (
-                                "win" if outcome.startswith("tp") else "loss" if outcome == "sl" else "other_outcome"
-                            )
-                            state.incr_sync(
-                                f"candidate_forward:counts:{bucket}",
-                                1,
-                            )
-                            state.incr_sync(
-                                "candidate_forward:counts:total_tracked",
-                                1,
-                            )
-                        else:
-                            bucket = (
-                                "false_negative"
-                                if outcome.startswith("tp")
-                                else "correct_block"
-                                if outcome == "sl"
-                                else "other_outcome"
-                            )
-                            state.incr_sync(f"shadow:counts:{bucket}", 1)
-                            state.incr_sync("shadow:counts:total_tracked", 1)
-                    except Exception:
-                        logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
+                    if is_candidate_forward:
+                        bucket = "win" if outcome.startswith("tp") else "loss" if outcome == "sl" else "other_outcome"
+                        metric_deltas[f"candidate_forward:counts:{bucket}"] += 1
+                        metric_deltas["candidate_forward:counts:total_tracked"] += 1
+                    else:
+                        bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
+                        metric_deltas[f"shadow:counts:{bucket}"] += 1
+                        metric_deltas["shadow:counts:total_tracked"] += 1
                 await session.commit()
-                return tracked
+            # Redis counters are projections. Never advertise outcomes whose
+            # authoritative transaction failed to commit. incr_sync's second
+            # argument is expiry, not increment; these totals must not expire
+            # after one second. The database remains the authoritative ledger.
+            for key, delta in metric_deltas.items():
+                try:
+                    for _ in range(delta):
+                        state.incr_sync(key)
+                except Exception:
+                    logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
+            return tracked
         except NoncriticalWriteDropped:
             logger.info("[shadow_tracker] write deferred reason=db_background_capacity")
             return 0
@@ -352,10 +373,12 @@ class ShadowOutcomeWorker:
     async def run_once(self) -> int:
         rows = await self._load_rows()
         if not rows:
+            self._checkpoint_scan_cursor()
             self._publish_health("idle")
             return 0
         evaluated = await self._evaluate_rows(rows)
         tracked = await self._persist(evaluated)
+        self._checkpoint_scan_cursor()
         self._publish_health(
             "healthy",
             scanned=len(rows),

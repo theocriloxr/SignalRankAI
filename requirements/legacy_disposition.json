@@ -1,5 +1,5 @@
 {
-  "file_count": 2063,
+  "file_count": 2064,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8043,11 +8043,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 388,
+      "line_count": 411,
       "path": "engine/shadow_outcome_worker.py",
       "reason": "production/build source",
-      "sha256": "29b904f1386734cb0d599844d1b2e6658ec086c3a765aa0a0a8e0f57dd664c27",
-      "size_bytes": 17881
+      "sha256": "669b461b044056fbf369ca424ef3a8cd84e14462dc0e628ef3753ac237cc36c9",
+      "size_bytes": 19433
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9843,11 +9843,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 108,
+      "line_count": 109,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b16242c4f9109f7b1308a1e6b109decd47c9757c5b85423feb69dff694345e07",
-      "size_bytes": 6853
+      "sha256": "f8bbf1f81ce20c0fe0d5f638f6fc6d18e6c16a636eca9704343672ae20517eb7",
+      "size_bytes": 6891
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9974,8 +9974,8 @@
       "line_count": 16348,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "a25686acf393df77085f17c643415a973020a6052eb63522d1533922fcbf70d2",
-      "size_bytes": 478823
+      "sha256": "e0b84ece51982ba0e2f3089e9826e56572783e9ec4bf08f7f1db67775a52c196",
+      "size_bytes": 478824
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10603,11 +10603,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 218,
+      "line_count": 228,
       "path": "scripts/production_soak_monitor.py",
       "reason": "production/build source",
-      "sha256": "e03c353cdd7e85df977711445929506e386842f51d7cb1fed4bda786e23d25bf",
-      "size_bytes": 13065
+      "sha256": "e37f78c5a6d6824645c04b2177a91ad117eca0a0f748666d9d1c29c4f2316b6f",
+      "size_bytes": 13888
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14867,11 +14867,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 155,
+      "line_count": 194,
       "path": "tests/test_production_soak_monitor.py",
       "reason": "automated test evidence",
-      "sha256": "30ca5bba84d67ec3ddb0b573efdd461a630957955da24d4bfaf9ab2486c820d0",
-      "size_bytes": 8785
+      "sha256": "ac7d2b292d32117c857c66eac3c80e00b609139a7389fa1b3c0e43cf03dc1bbe",
+      "size_bytes": 10660
     },
     {
       "disposition": "TEST_ONLY",
@@ -15352,6 +15352,14 @@
       "reason": "automated test evidence",
       "sha256": "3fe0b54aaf7a769cf36fe3dfe8858d4014da657e609e519c2955f68ab93257a2",
       "size_bytes": 8572
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 187,
+      "path": "tests/test_shadow_tracker_progress.py",
+      "reason": "automated test evidence",
+      "sha256": "25b156f97d0cc2109b671dee9bead96582024003c20a851bc89f9d01c01c9e0b",
+      "size_bytes": 7189
     },
     {
       "disposition": "TEST_ONLY",
@@ -16520,6 +16528,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
     "PRESERVE_BEHAVIOUR": 1216,
-    "TEST_ONLY": 370
+    "TEST_ONLY": 371
   }
 }

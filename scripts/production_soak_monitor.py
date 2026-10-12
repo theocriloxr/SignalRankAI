@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, build_opener, urlopen
 
 TRUTHY = {"1", "true", "yes", "on", "y"}
 FINANCIAL_FLAGS = (
@@ -127,15 +127,22 @@ def summarize(samples: list[dict], config: dict, *, now: datetime) -> dict:
 
 
 def _cli_json(config: dict, command: list[str], *, input_text: str | None = None) -> object:
+    # Detached monitors may otherwise inherit a temporary tool-session proxy.
+    # Direct networking is an explicit operator choice, never the default.
+    environment = None
+    if config.get("direct_network") is True:
+        environment = {key: value for key, value in os.environ.items()
+                       if key.lower() not in {"http_proxy", "https_proxy", "all_proxy", "no_proxy"}}
     result = subprocess.run([config["railway_cli"], *command], capture_output=True, text=True,
-                            timeout=25, encoding="utf-8", errors="replace", input=input_text)
+                            timeout=25, encoding="utf-8", errors="replace", input=input_text, env=environment)
     if result.returncode:
         raise RuntimeError("railway_read_failed")
     return json.loads(result.stdout)
 
 
 def collect(config: dict) -> dict:
-    with urlopen(config["base_url"].rstrip("/") + "/readyz", timeout=25) as response:
+    open_url = build_opener(ProxyHandler({})).open if config.get("direct_network") is True else urlopen
+    with open_url(config["base_url"].rstrip("/") + "/readyz", timeout=25) as response:
         if response.status != 200:
             raise RuntimeError("readiness_http_failure")
         health = json.load(response)
@@ -195,10 +202,13 @@ def main() -> int:
             sample = collect(config)
         except Exception as exc:
             sample = {"readiness_ok": False, "safety_ok": False, "configuration_sha256": None,
-                      "failures": ["monitor_read_failed:" + type(exc).__name__]}
+                      "failures": ["monitor_read_failed:" + type(exc).__name__],
+                      "monitor_error": {"type": type(exc).__name__,
+                                        "cause_type": type(getattr(exc, "reason", None)).__name__}}
         observed = datetime.now(timezone.utc)
         sample.update(observed_at=observed.isoformat(), release_sha=config["release_sha"],
                       schema_head=config["schema_head"], environment_id=config["environment_id"],
+                      network_mode="direct" if config.get("direct_network") is True else "environment_default",
                       monitor_source_sha256=monitor_hash)
         samples.append(sample)
         with observations.open("a", encoding="utf-8") as handle:
