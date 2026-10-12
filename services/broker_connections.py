@@ -219,8 +219,11 @@ async def list_connections(user_id: int) -> list[dict[str, Any]]:
             .scalars()
             .all()
         )
+        # Rollback expires ORM attributes even with expire_on_commit=False.
+        # Build the public snapshots while the rows still belong to this session.
+        connections = [public_connection(row) for row in rows]
         await session.rollback()
-    return [public_connection(row) for row in rows]
+    return connections
 
 
 def _mask_account_ref(value: Any) -> str | None:

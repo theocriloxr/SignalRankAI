@@ -2143,12 +2143,11 @@ async def get_platform_metatrader_connection(
                 ).limit(1)
             )
         ).scalar_one_or_none()
-        await session.rollback()
-    if row is None:
-        return None
-    from services.broker_connections import public_connection
+        from services.broker_connections import public_connection
 
-    return public_connection(row)
+        connection = public_connection(row) if row is not None else None
+        await session.rollback()
+    return connection
 
 
 async def verify_platform_metatrader_connection(

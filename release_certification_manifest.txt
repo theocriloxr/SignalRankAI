@@ -1,4 +1,5 @@
 tests/test_provider_backed_asset_discovery.py
+tests/test_broker_connection_read_lifecycle.py
 tests/test_runtime_heartbeat_identity.py
 tests/test_ml_versioned_serving_contract.py
 tests/test_market_data_sdk_integration.py
