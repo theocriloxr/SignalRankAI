@@ -239,9 +239,9 @@ test("public redesign covers seven reference routes with canonical semantics and
 test("home page includes truthful market/workflow boundaries without fake live status",()=>{
   const home=readFileSync(new URL("../src/app/page.tsx",import.meta.url),"utf8");
   const css=readFileSync(new URL("../src/app/public-design.css",import.meta.url),"utf8");
-  assert.ok(home.includes("NOT LIVE MARKET DATA"));
-  assert.ok(home.includes("CONCEPTUAL VISUALIZATION — NOT A CHART"));
-  assert.ok(home.includes("NO TRADE"));
+  assert.ok(home.includes("SCHEMATIC / NOT LIVE"),"Public terminal must explicitly disclose illustrative evidence");
+  assert.ok(home.includes("This is a system illustration") || home.includes("No market data"),"Hero may not claim to show live prices");
+  assert.ok(home.includes("no trade") || home.includes("NO AUTO-TRADE CLAIM"),"No-trade / no automatic trade boundary must be visible");
   assert.ok(home.includes("paper") || home.includes("simulated"));
   assert.ok(home.includes("/risk"));
   assert.ok(home.includes("/login"));
