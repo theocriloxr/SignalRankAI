@@ -4,11 +4,11 @@
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0053_research_market_inputs
-Release-candidate branch: fix/provider-discovery-readiness-20260923
+Repository Alembic head: 0054_shadow_pending_index
+Release-candidate branch: fix/release-recovery-20261008
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
-Production runtime baseline: 8f8583933a853a54ba1b3585610ee466903c08fc
+Production runtime baseline: 9865a3d1bcee632bfd9347e50d5de34d355225d9 (schema 0053_research_market_inputs)
 Production live-money posture during certification: keep disabled / fail-closed
 ```
 
@@ -30,6 +30,8 @@ chain with:
 
 - `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.
 - `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.
+
+- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.
 
 The current release candidate also includes:
 

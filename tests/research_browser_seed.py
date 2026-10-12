@@ -21,11 +21,13 @@ async def main():
         raise RuntimeError('seed requires an explicitly owned local browser-test database')
     try:
         async with get_session() as session:
-            for tier in ('admin', 'free'):
+            for tier in ('admin', 'free', 'linked'):
                 uid = await create_email_account(session, email=f'research-{tier}@example.test',
                     password='LocalDrill-Only-20261003!', display_name=f'Synthetic research {tier}')
                 await session.execute(text("UPDATE users SET email_verified_at=NOW(),accepted_terms=TRUE,"
-                    "terms_accepted_at=NOW(),tier=:tier,premium_until=NOW()+INTERVAL '1 day' WHERE id=:uid"), {'tier': tier, 'uid': uid})
+                    "terms_accepted_at=NOW(),tier=:tier,premium_until=NOW()+INTERVAL '1 day' WHERE id=:uid"), {'tier': 'free' if tier == 'linked' else tier, 'uid': uid})
+                if tier == 'linked':
+                    await session.execute(text("UPDATE users SET telegram_user_id=777000001 WHERE id=:uid"), {'uid': uid})
             await session.execute(text("INSERT INTO adaptive_dataset_versions(dataset_version,content_hash) VALUES('synthetic-ui-dataset',:hash)"), {'hash': '1' * 64})
             await session.execute(text("INSERT INTO adaptive_feature_versions(feature_version,content_hash) VALUES('synthetic-ui-features',:hash)"), {'hash': '2' * 64})
             hypothesis = await register_hypothesis(session, trial_family='synthetic_ui_fixture',

@@ -11,6 +11,7 @@ on:
       - "feat/**"
       - "implementation/**"
       - implementation-of-master-blueprint
+      - design/signalrank-ui-rebuild-20261008
       - "release/**"
   pull_request:
 

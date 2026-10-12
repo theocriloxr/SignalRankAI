@@ -1,0 +1,30 @@
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm install --global npm@11.17.0
+COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/vendor ./vendor
+RUN npm ci --no-fund
+COPY frontend/ ./
+ARG SIGNALRANK_PLATFORM_API_ORIGIN
+ARG SIGNALRANK_WORKSPACE_MODE=next
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SIGNALRANK_PLATFORM_API_ORIGIN=$SIGNALRANK_PLATFORM_API_ORIGIN \
+    SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE \
+    SIGNALRANK_FRONTEND_COMMIT=$RAILWAY_GIT_COMMIT_SHA
+RUN npm run lint && npm run test:transport && npm run test:presentation \
+    && npm run test:dependencies && npm audit --audit-level=high && npm run build
+
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runtime
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=8080
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SIGNALRANK_FRONTEND_COMMIT=$RAILWAY_GIT_COMMIT_SHA
+ARG SIGNALRANK_WORKSPACE_MODE=next
+ENV SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
+USER node
+EXPOSE 8080
+CMD ["node", "server.js"]

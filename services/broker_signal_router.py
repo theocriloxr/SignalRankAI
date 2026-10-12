@@ -40,6 +40,7 @@ async def route_signal_to_broker(
     from core.execution_claims import execution_destination_lock
     from db.session import get_session
     from services.execution_evidence import get_execution_evidence
+    from services.broker_routing_policy import enforce_canonical_destination
 
     signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
     if not signal_id:
@@ -60,6 +61,16 @@ async def route_signal_to_broker(
                 "Execution destination is busy or unavailable",
                 status="deferred",
                 error="execution_destination_lock_unavailable",
+            )
+        destination_allowed, destination_reason = await enforce_canonical_destination(
+            int(telegram_user_id), connection_id
+        )
+        if not destination_allowed:
+            return BrokerRouteResult(
+                False,
+                "Select and verify a canonical trading account before broker execution",
+                status="deferred" if destination_reason == "canonical_destination_admission_unavailable" else "blocked",
+                error=destination_reason,
             )
         async with get_session(label="broker.destination_preflight", timeout_seconds=8.0) as session:
             before = await get_execution_evidence(
