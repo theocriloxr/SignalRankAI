@@ -1,5 +1,5 @@
 {
-  "file_count": 2064,
+  "file_count": 2065,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9843,11 +9843,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 109,
+      "line_count": 110,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f8bbf1f81ce20c0fe0d5f638f6fc6d18e6c16a636eca9704343672ae20517eb7",
-      "size_bytes": 6891
+      "sha256": "fd0d383c338f9b58ea13f5ab256f15f47e1b0b398ac66acc0aa326fcd43fb78f",
+      "size_bytes": 6938
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11267,11 +11267,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 826,
+      "line_count": 829,
       "path": "services/broker_connections.py",
       "reason": "production/build source",
-      "sha256": "963d36d9be5cce060cb7670e873afd912dd3a17ac6f598a7adf188fa2fdbc04b",
-      "size_bytes": 33412
+      "sha256": "1fe300d35ebc4b01c67f8df84a00aedc778f8f3a1a89ffd53e84f99bc1f92a4f",
+      "size_bytes": 33604
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11547,11 +11547,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2291,
+      "line_count": 2290,
       "path": "services/mt5_client.py",
       "reason": "production/build source",
-      "sha256": "a70e5d5740c472419111aab0b55d1d99ca6200aa8dec1b3ab0f498899f22c8c2",
-      "size_bytes": 86339
+      "sha256": "aa4be5755df84e4734c845321a41afbac9e2dbe0936352ccd5faa650647ecb21",
+      "size_bytes": 86364
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13384,6 +13384,14 @@
       "reason": "automated test evidence",
       "sha256": "8c723f66b8e67aebf128bd9d9bb6217e4ec4cc1467574114c20e2762e4e5ed36",
       "size_bytes": 6218
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 83,
+      "path": "tests/test_broker_connection_read_lifecycle.py",
+      "reason": "automated test evidence",
+      "sha256": "eb8e412be6f3194200157b7df8e88872bc505d399e91f41186b07307fb486d5d",
+      "size_bytes": 3870
     },
     {
       "disposition": "TEST_ONLY",
@@ -16528,6 +16536,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 476,
     "PRESERVE_BEHAVIOUR": 1216,
-    "TEST_ONLY": 371
+    "TEST_ONLY": 372
   }
 }
