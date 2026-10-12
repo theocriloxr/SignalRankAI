@@ -4,6 +4,7 @@ import { ThemeControl } from "./ThemeControl";
 import { ResponsiveDisclosure } from "./ResponsiveDisclosure";
 import { SessionExit } from "./SessionExit";
 import { OperationsNavLink } from "./OperationsNavLink";
+import { SiteCredit } from "./SiteCredit";
 
 const groups = [
   { label:"Decisions",items:[["Overview","/app"],["Signals","/app/signals"],["Markets","/app/markets"],["Research","/app/research"],["Watchlists","/app/watchlists"],["Alerts","/app/alerts"],["Notifications","/app/notifications"]] },
@@ -33,7 +34,7 @@ export function AppShell({ active, children }: { active: string; children: React
       <ResponsiveDisclosure className="sr-mobile-drawer" id="workspace-mobile-sections" label="Browse all workspace sections"><nav aria-label="All mobile workspace sections"><Navigation active={active}/></nav></ResponsiveDisclosure>
       <div className="sr-sidebar-foot"><ThemeControl/><SessionExit/><Link href="/" className="sr-secondary-link">Public website ↗</Link></div>
     </aside>
-    <main className="workspace" id="sr-main">{children}</main>
+    <main className="workspace" id="sr-main">{children}<div className="sr-workspace-foot"><SiteCredit compact /></div></main>
     <nav className="sr-bottom-tabs" aria-label="Primary mobile workspace navigation">
       <Link href="/app" aria-current={active==="Overview"?"page":undefined}>Overview</Link>
       <Link href="/app/signals" aria-current={active==="Signals"?"page":undefined}>Signals</Link>
