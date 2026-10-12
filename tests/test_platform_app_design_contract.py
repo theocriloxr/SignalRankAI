@@ -4,6 +4,8 @@ Read-only source tests: they never load credentials, issue orders or touch DB.
 """
 from pathlib import Path
 
+from scripts.assert_portal_assets import validate_shell_assets
+
 _ROOT = Path(__file__).resolve().parents[1]
 _UI = _ROOT / "web" / "platform_app"
 
@@ -54,11 +56,12 @@ def test_offline_css_version_and_pwa_theme_are_consistent():
     html = _read("index.html")
     service_worker = _read("service-worker.js")
     manifest = _read("manifest.webmanifest")
-    assert '/app-assets/styles.css?v=44' in html
-    assert "'/app-assets/styles.css?v=44'" in service_worker
-    assert "signalrank-shell-v44" in service_worker
+    version = validate_shell_assets(_ROOT, minimum_version=39)
+    assert f'/app-assets/styles.css?v={version}' in html
+    assert f"'/app-assets/styles.css?v={version}'" in service_worker
+    assert f"signalrank-shell-v{version}" in service_worker
     assert '"background_color": "#08120f"' in manifest
     assert '"theme_color": "#4ce0a4"' in manifest
     assert '<meta name="theme-color" content="#08120f"' in html
-    assert 'src="/app-assets/app.js?v=43"' in html
+    assert f'src="/app-assets/app.js?v={version}"' in html
     assert "url.pathname.startsWith('/api/')" in service_worker

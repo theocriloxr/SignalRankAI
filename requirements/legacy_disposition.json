@@ -406,8 +406,8 @@
       "line_count": null,
       "path": "Dockerfile.frontend",
       "reason": "production/build source",
-      "sha256": "63ee48c1bc9af823630757465d00e5c49333d3e6c0b6a7dce69c411d9e917502",
-      "size_bytes": 1346
+      "sha256": "c372f7192c84382142e03a23118ded499e51889e2ab57f6b37235d3084ab1a11",
+      "size_bytes": 1362
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 87,
+      "line_count": 91,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "8e14db6e35224e6d4c9da7af4323f5c816159f20e88fd8e8a2c29620a6f9bd15",
-      "size_bytes": 11709
+      "sha256": "8b862590bdfaa25005ee82dc27b3727bd01e243593827ab706f08e2f7367ba49",
+      "size_bytes": 12911
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11675,11 +11675,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 105,
+      "line_count": 106,
       "path": "scripts/verify_frontend_legacy_routing.py",
       "reason": "production/build source",
-      "sha256": "50aa1e541ce9d03dd09945daa04fff9e1e54eab7c1805b882968884025db6d49",
-      "size_bytes": 6657
+      "sha256": "fa8e50790e208b8826acc40104a8dc1a9cfa1f836f5d93e748ee88ff56148fd3",
+      "size_bytes": 6744
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15443,11 +15443,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 64,
+      "line_count": 67,
       "path": "tests/test_platform_app_design_contract.py",
       "reason": "automated test evidence",
-      "sha256": "2a21ccf3ca5ff155b382f7fb39e43107237efd82dcce2b3976d128a3568a2837",
-      "size_bytes": 2457
+      "sha256": "3946b9ddba0a89b42bbc8c34382e62900107d1a57e0e64854940d8d716f0a117",
+      "size_bytes": 2616
     },
     {
       "disposition": "TEST_ONLY",

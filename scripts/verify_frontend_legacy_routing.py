@@ -10,6 +10,7 @@ import re
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright, expect
+from scripts.assert_portal_assets import validate_shell_assets
 
 base = os.environ['FRONTEND_BROWSER_BASE_URL']
 if (os.environ.get('APP_ENV') != 'test' or os.environ.get('FRONTEND_BROWSER_WORKSPACE_MODE') != 'legacy'
@@ -62,7 +63,7 @@ with sync_playwright() as p:
             assert 'no-store' in response.headers.get('cache-control',''), (path,response.headers.get('cache-control'))
         report['checks'].append('workspace deep links map to existing signal, paper, broker, owner and account views')
 
-        for path,content in [('/app/service-worker.js','signalrank-shell-v44'),
+        for path,content in [('/app/service-worker.js',f'signalrank-shell-v{validate_shell_assets()}'),
                              ('/app/manifest.webmanifest','SignalRank'),('/app-assets/app.js','const API=')]:
             response = context.request.get(base+path)
             assert response.status == 200 and content in response.text(),path
