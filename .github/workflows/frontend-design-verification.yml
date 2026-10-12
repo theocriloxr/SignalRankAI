@@ -1,0 +1,49 @@
+name: SignalRankAI frontend design verification
+
+# This job is independent of (and does NOT replace) mandatory release certification.
+# It uses no staging/live credentials, brokerage connectivity, payments or DB writes.
+on:
+  pull_request:
+    branches:
+      - design/signalrank-ui-rebuild-20261008
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-design-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  nextjs-design:
+    name: Next.js UI build and contract tests (not release approval)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NODE_ENV: test
+      SIGNALRANK_PLATFORM_API_ORIGIN: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Use pinned npm version
+        run: npm install --global npm@11.17.0
+      - name: Install exactly locked packages
+        run: npm ci --ignore-scripts
+      - name: Lint frontend
+        run: npm run lint
+      - name: Test canonical transport, presentation and design
+        run: npm run test:transport
+      - name: Verify dependency safety contract
+        run: npm run test:dependencies
+      - name: TypeScript static check
+        run: npx tsc --noEmit
+      - name: Production compilation of isolated frontend
+        env:
+          NODE_ENV: production
+        run: npm run build
