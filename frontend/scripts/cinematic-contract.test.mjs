@@ -9,9 +9,9 @@ test("public site is a navigable product experience, not a fake trading terminal
   assert.match(page,/<SignalLifecycleExperience\s*\/>/);
   assert.match(page,/NOT LIVE|NOT LIVE MARKET DATA|NOT A LIVE|NOT LIVE\/NO ORDER CLAIM|SCHEMATIC \/ NOT LIVE/);
   assert.match(page,/href="\/login"/);
-  assert.match(page,/href="\/app\/signals"/);
-  assert.match(page,/href="\/app\/paper"/);
-  assert.match(page,/href="\/app\/brokers"/);
+  assert.ok(page.includes('href:"/app/signals"')||page.includes('href="/app/signals"'));
+  assert.ok(page.includes('href:"/app/paper"')||page.includes('href="/app/paper"'));
+  assert.ok(page.includes('href:"/app/brokers"')||page.includes('href="/app/brokers"'));
   assert.doesNotMatch(page,/\b(?:client|fetch)\.(?:POST|PUT|PATCH|DELETE)\s*\(/);
 });
 
