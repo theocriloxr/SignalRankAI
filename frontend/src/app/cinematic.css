@@ -291,3 +291,38 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-ser
  .sr-cinema-terminal,.sr-cinema-workstation,.sr-cinema-pillar,.sr-cinema-product-card{border:2px solid CanvasText}
  .sr-cinema-gates button.is-active{outline:2px solid Highlight}
 }
+
+/* Keep authentication credit and route-change experiences visually intentional. */
+.sr-auth-foot{width:min(1200px,calc(100% - 40px));margin:clamp(20px,3vw,45px) auto 0}
+.sr-auth-foot .sr-powered-credit{border-color:var(--line)}
+.sr-app-shell .sr-loading{
+  position:relative;min-height:135px;padding:30px;
+  border:1px solid var(--line);background:var(--panel);border-radius:6px;
+  display:flex;align-items:center;gap:18px;color:var(--muted)
+}
+.sr-app-shell .sr-loading:before{
+  content:"";width:22px;height:22px;border-radius:50%;flex:none;
+  border:2px solid var(--line);border-top-color:var(--accent);
+  animation:sr-wait-turn 1s linear infinite
+}
+@keyframes sr-wait-turn{to{transform:rotate(360deg)}}
+@media(max-width:980px){
+ .sr-auth-foot{width:calc(100% - 32px)}
+}
+@media(min-width:681px){
+ .sr-cinema-workstation[data-stage=strategy] .sr-cinema-mini-nodes>div:nth-child(2){
+   transform:translate3d(0,-28px,18px) rotateX(2deg)
+ }
+ .sr-cinema-workstation[data-stage=risk] .sr-cinema-mini-nodes>div:nth-child(3){
+   transform:translate3d(0,-20px,26px) rotateY(-4deg)
+ }
+ .sr-cinema-workstation[data-stage=delivery] .sr-cinema-mini-nodes>div{
+   transform:translate3d(0,0,8px);border-color:#a2e7bc
+ }
+ .sr-cinema-mini-graph{perspective:900px}
+ .sr-cinema-mini-nodes>div{transition:transform .55s var(--sr-ease),border-color .4s,background .4s;transform-style:preserve-3d}
+}
+@media(prefers-reduced-motion:reduce){
+ .sr-app-shell .sr-loading:before{animation:none;border-color:var(--accent)}
+ .sr-cinema-mini-nodes>div{transition:none!important}
+}
