@@ -693,26 +693,26 @@ def calculate_dynamic_risk(
     }
 
 
-def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
+def risk_check_with_reason(signal: Dict[str, Any], account_state: Any) -> tuple[bool, str]:
     """Enhanced risk check with realtime dynamic thresholds."""
     # Hard stops
     if hard_stop_active(account_state):
-        return False
+        return False, "account_drawdown"
 
     atr_raw = signal.get("atr_rel") if signal.get("atr_rel") is not None else signal.get("volatility", 0)
     atr_pct = finite_number(atr_raw)
     maximum_volatility = get_max_volatility(str(signal.get("asset_class") or "crypto"))
     if atr_pct is None or atr_pct < 0 or maximum_volatility <= 0 or atr_pct > maximum_volatility:
-        return False
+        return False, "volatility"
     minimum_rr = finite_number(os.getenv("MIN_RR_RISK", "1.5"))
     entry = finite_number(signal.get("entry"))
     stop = finite_number(signal.get("stop_loss") if signal.get("stop_loss") is not None else signal.get("stop"))
     target = best_target_for_direction(entry, stop, signal.get("take_profit"), signal.get("direction"))
     if minimum_rr is None or minimum_rr <= 0 or entry is None or stop is None or target is None:
-        return False
+        return False, "invalid_levels_or_rr_policy"
     ratio = abs(target - entry) / abs(entry - stop)
     if finite_number(ratio) is None or ratio < minimum_rr:
-        return False
+        return False, "minimum_rr"
 
     # Generation-time callers may not have stamped creation yet. Supplied
     # timestamps must be plausible and the bar budget is converted to seconds.
@@ -725,22 +725,22 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     multiplier = finite_number(signal.get("timeframe_mult", CANDLE_STALENESS_MULTIPLIER))
     minutes = finite_number(signal.get("timeframe_minutes", 60))
     if multiplier is None or minutes is None or min(multiplier, minutes) <= 0:
-        return False
+        return False, "invalid_freshness_policy"
     freshness_seconds = minutes * 60 * multiplier
     if not math.isfinite(freshness_seconds) or age_seconds < -5 or age_seconds > freshness_seconds:
-        return False
+        return False, "stale_or_future_candidate"
     expectancy = finite_number(signal["live_expectancy"]) if "live_expectancy" in signal else None
     if "live_expectancy" in signal and expectancy is None:
-        return False
+        return False, "invalid_expectancy"
     if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and (expectancy is None or expectancy < EXPECTANCY_MIN):
-        return False
+        return False, "expectancy_unavailable" if expectancy is None else "expectancy_below_minimum"
 
     # Correlation gate: block when new trade is too correlated with existing open positions.
     if _env_bool("ENABLE_CORRELATION_GATE", True):
         try:
             active_positions = signal.get("active_positions", [])
             if not isinstance(active_positions, (list, tuple, set)):
-                return False
+                return False, "active_positions_unavailable"
             price_series_by_symbol = signal.get("correlation_prices") or {}
             if not price_series_by_symbol and active_positions:
                 try:
@@ -769,12 +769,16 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
                 max_correlation=float(os.getenv("MAX_PORTFOLIO_CORRELATION", "0.85")),
             )
             if not ok:
-                return False
+                return False, "correlation:" + _reason
         except Exception:
             logger.warning("[risk] correlation evidence unavailable; entry blocked")
-            return False
+            return False, "correlation_evidence_unavailable"
 
-    return True
+    return True, "ok"
+
+def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
+    """Compatibility API retaining the same fail-closed risk policy."""
+    return risk_check_with_reason(signal, account_state)[0]
 
 
 def calculate_position_size(
