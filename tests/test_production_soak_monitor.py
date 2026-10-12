@@ -153,3 +153,42 @@ def test_configuration_changes_interrupt_availability_claim():
     now = datetime.now(timezone.utc)
     samples = [{**first, "observed_at": (now - timedelta(minutes=3)).isoformat()}, {**second, "observed_at": now.isoformat()}]
     assert summarize(samples, config, now=now)["configuration_stable"] is False
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_cli_proxy_policy_is_explicit_and_never_emits_private_environment(monkeypatch, direct):
+    from types import SimpleNamespace
+    from scripts import production_soak_monitor as monitor
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://temporary-session-proxy")
+    monkeypatch.setenv("RAILWAY_TOKEN", "never-emit-this-token")
+    seen = {}
+
+    def run(_command, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout='{"ok":true}')
+
+    monkeypatch.setattr(monitor.subprocess, "run", run)
+    assert monitor._cli_json({"railway_cli": "railway", "direct_network": direct}, ["api"]) == {"ok": True}
+    if direct:
+        assert "HTTPS_PROXY" not in seen["env"]
+        assert seen["env"]["RAILWAY_TOKEN"] == "never-emit-this-token"
+    else:
+        assert seen["env"] is None
+
+
+def test_direct_public_probe_uses_normal_tls_opener_and_still_checks_runtime(monkeypatch):
+    from io import StringIO
+    from types import SimpleNamespace
+    from scripts import production_soak_monitor as monitor
+
+    config, health, services = baseline()
+    config.update(direct_network=True, base_url="https://production.example", project_id="project", railway_cli="railway")
+    response = StringIO(json.dumps(health))
+    response.status = 200
+    monkeypatch.setattr(monitor, "build_opener", lambda *_args: SimpleNamespace(open=lambda *_args, **_kwargs: response))
+    monkeypatch.setattr(monitor, "urlopen", lambda *_args, **_kwargs: pytest.fail("must use explicit direct opener"))
+    monkeypatch.setattr(monitor, "_cli_json", lambda _config, command, **_kwargs:
+                        {"data": {"serviceInstance": services["worker"]["runtime"]}}
+                        if command[0] == "api" else services["worker"]["variables"])
+    assert monitor.collect(config)["readiness_ok"] is True
