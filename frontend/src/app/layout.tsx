@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./workspace-design.css";
 import "./public-design.css";
+import "./cinematic.css";
 
 export const metadata: Metadata = {
   title: { default: "SignalRankAI — Multi-Asset Trading Intelligence", template: "%s · SignalRankAI" },
