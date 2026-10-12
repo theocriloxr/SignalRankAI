@@ -7030,8 +7030,8 @@
       "line_count": 87,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e7b6d37d9312f1964186aaf28e1d38e54955d7335a2fc384779da64848c046b7",
-      "size_bytes": 11352
+      "sha256": "8e14db6e35224e6d4c9da7af4323f5c816159f20e88fd8e8a2c29620a6f9bd15",
+      "size_bytes": 11709
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8811,6 +8811,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 4,
+      "path": "frontend/src/app/frontend_health/route.ts",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "7414882e84e7f8f678059c52f8e06fa30053570ef77bfd69bd94c56f15df9186",
+      "size_bytes": 222
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 11,
       "path": "frontend/src/app/globals.css",
       "reason": "configuration, data, or product asset retained",
@@ -10446,7 +10454,7 @@
       "line_count": 10,
       "path": "railway.frontend.toml",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "f29888b2bd86a39cc345103d79db03a40808233ac5c4efc4d59057ddb3fdf4f1",
+      "sha256": "99cb1b25582685ba2d758dc2c2e73032c7cb6fe7b46500ae06a726d4ed99c748",
       "size_bytes": 283
     },
     {
@@ -10464,14 +10472,6 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "35faec1716cee2ff2644a0322864097af909a85380da4b8bb8448494439a645f",
       "size_bytes": 331
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 15,
-      "path": "railway.ui-backend.toml",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "948b2add7991995c053ec369ec05da13f315aa82e43de4d9207e7e1065b68c48",
-      "size_bytes": 483
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11675,19 +11675,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 98,
+      "line_count": 105,
       "path": "scripts/verify_frontend_legacy_routing.py",
       "reason": "production/build source",
-      "sha256": "142918965f579e4971100b83bc86807e5e7e9b6c9ef76f4c2fc8493df287ae12",
-      "size_bytes": 6167
+      "sha256": "50aa1e541ce9d03dd09945daa04fff9e1e54eab7c1805b882968884025db6d49",
+      "size_bytes": 6657
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 171,
+      "line_count": 178,
       "path": "scripts/verify_frontend_ui.py",
       "reason": "production/build source",
-      "sha256": "943240075e5a65d9ebb871d5824a4d81d9d41b85ef4099b12ef2d269c95b4ac9",
-      "size_bytes": 10076
+      "sha256": "f576550a22c446310d34be55594a5baa53c985c37d34eda32ee887c65f42627d",
+      "size_bytes": 10566
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

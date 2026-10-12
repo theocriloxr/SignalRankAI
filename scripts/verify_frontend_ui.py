@@ -44,6 +44,13 @@ with sync_playwright() as p:
     page = context.new_page()
     page.on('pageerror', lambda error: report['errors'].append(str(error)))
     try:
+        for health_path in ('/frontend_health', '/frontend-health'):
+            health = context.request.get(base+health_path)
+            assert health.status == 200
+            assert health.json()['commit'] == report['git_sha']
+            assert health.json()['financial_readiness_certified'] is False
+            assert 'no-store' in health.headers['cache-control']
+        report['checks'].append('both frontend health URLs prove candidate identity without financial certification')
         response = visit(page, '/')
         policy = response.headers.get('content-security-policy', '')
         nonce = re.search(r"'nonce-([^']+)'", policy).group(1)
