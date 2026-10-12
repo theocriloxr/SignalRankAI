@@ -90,7 +90,7 @@ def test_web_client_escapes_server_data_and_supports_new_views() -> None:
 
 
 def test_mobile_client_supports_mfa_recovery_and_full_product_views() -> None:
-    app = (ROOT / "mobile/App.tsx").read_text()
+    app = (ROOT / "mobile/App.tsx").read_text(encoding="utf-8")
     api = (ROOT / "mobile/src/api.ts").read_text()
     for screen in ("portfolio", "performance", "support"):
         assert f"'{screen}'" in app

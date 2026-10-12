@@ -48,6 +48,10 @@ Public pages include product, features, markets, strategies, AI, methodology, ri
 
 ## Local evidence
 
+The immutable `fae19b93` checkpoint passed both local browser modes and 56 frontend tests with zero frontend dependency audit findings. Its full backend run then exposed a mixed PWA asset generation and a Windows-default text decoding failure in a mobile source-contract test. The follow-up aligns every retained shell reference to generation 45 and reads the UTF-8 source explicitly; those original failed receipts remain preserved. Hosted checks on that checkpoint were rejected before starting because GitHub reports an account billing lock.
+
+An isolated Railway UI acceptance project now has its own PostgreSQL and Redis. `railway.ui-backend.toml` builds the canonical backend with its existing image checks and guarded migration command. The service must use the web-only role, new staging secrets, execution disabled, and no broker or delivery credentials. Provisioning infrastructure is not deployment or soak acceptance.
+
 Artifacts are under `artifacts/ui-refresh-20261003/manual-release-20261011/frontend-integration-20261012/` in the shared workspace. They are also emitted by the hosted browser workflow.
 
 - `browser-04`: new workspace passed real local FastAPI/Postgres login, HttpOnly cookies, refresh, CSRF writes, persisted watchlists, account isolation, owner denial, Telegram connection state and dark/light responsiveness at nine widths from 320 to 1920. This evidence predates the additional public pages and is from a dirty integration tree; it is not final-SHA evidence.
