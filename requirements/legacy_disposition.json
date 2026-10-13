@@ -1,5 +1,5 @@
 {
-  "file_count": 2160,
+  "file_count": 2163,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -379,11 +379,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 61,
+      "line_count": 89,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "c8af14560764c97020dbf25911e6ee149237705d0cee6cf7471fc7a0d6dd5524",
-      "size_bytes": 2835
+      "sha256": "a5de5ed14073431e9b8f9851296bab91db40b02f1c1524c78526fb52f68d65d8",
+      "size_bytes": 4771
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -438,8 +438,8 @@
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "c8af14560764c97020dbf25911e6ee149237705d0cee6cf7471fc7a0d6dd5524",
-      "size_bytes": 2835
+      "sha256": "a5de5ed14073431e9b8f9851296bab91db40b02f1c1524c78526fb52f68d65d8",
+      "size_bytes": 4771
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5875,6 +5875,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 34,
+      "path": "docs/RUNTIME_TOOLING_HARDENING_2026-10-13.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "0e3891699bc4799fc839eb5583d0a783052e5e436e1d0aa417b88fe9f17d228a",
+      "size_bytes": 2181
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 28,
       "path": "docs/SAME_ORIGIN_SESSION_DEPLOYMENT.md",
       "reason": "documentation/specification/evidence",
@@ -10539,11 +10547,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 111,
+      "line_count": 112,
       "path": "release_certification_manifest.txt",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "99d685ad776d2a681bc5f8bdc334b00dee882615ce2715cfaa0bdb92b685eb4c",
-      "size_bytes": 6982
+      "sha256": "5b19daeb8473fbcb81e39dc3315ab63d75fc03494d22fd8c1e90a5c4fd34b0a4",
+      "size_bytes": 7027
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11102,8 +11110,8 @@
       "line_count": 1596,
       "path": "scripts/deployment_diagnostics.py",
       "reason": "production/build source",
-      "sha256": "391df5c446ecc8ef707a7d36a529d5e82127f598e7abe61c2344989da3ecc7de",
-      "size_bytes": 66883
+      "sha256": "a4f41c834e905077f96339590c20e2c0cce114a2a582433a8d876251fbd559b6",
+      "size_bytes": 66907
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11768,6 +11776,14 @@
       "reason": "production/build source",
       "sha256": "711336a005e580539d716d589cbb967cb0f298eb720f12e2433240faf99d9aca",
       "size_bytes": 11055
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 58,
+      "path": "scripts/verify_runtime_dependencies.py",
+      "reason": "production/build source",
+      "sha256": "6ed5adb309a1e5aa21eb9e26ca3bd1203ff3b82f244befbd53066b1f3a4a6445",
+      "size_bytes": 2631
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13731,11 +13747,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 182,
+      "line_count": 189,
       "path": "start.sh",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bd4e7234d1fe0fecdc517b746aaf16188d85ec5e3200046d0c4e0392af70052c",
-      "size_bytes": 7898
+      "sha256": "ba80ca6eb5e10b028e2a60d97d3cb76d2748eece809a332e870010000a535b41",
+      "size_bytes": 8272
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14784,6 +14800,14 @@
       "reason": "automated test evidence",
       "sha256": "4d29fa5d10f9ad0178522c0ebb4b85f64f36879ff856006a80c36d8e6c70d4ed",
       "size_bytes": 642
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 65,
+      "path": "tests/test_immutable_runtime_dependencies.py",
+      "reason": "automated test evidence",
+      "sha256": "08e7c1c4282cd4b1e306104a96f5b601b1b6ceca0b70d5d68f2975823cad40b8",
+      "size_bytes": 3449
     },
     {
       "disposition": "TEST_ONLY",
@@ -17294,8 +17318,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 495,
-    "PRESERVE_BEHAVIOUR": 1289,
-    "TEST_ONLY": 375
+    "DOCUMENTATION_ONLY": 496,
+    "PRESERVE_BEHAVIOUR": 1290,
+    "TEST_ONLY": 376
   }
 }

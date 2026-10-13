@@ -2,6 +2,13 @@
 # Canonical SignalRankAI deployment entrypoint.
 set -euo pipefail
 
+# Release images contain their complete locked runtime. Installing code at boot
+# would change the accepted bytes and reintroduce removed package installers.
+if [ "${SIGNALRANK_IMMUTABLE_RUNTIME:-0}" = "1" ] && [ "${INSTALL_AT_BOOT:-false}" = "true" ]; then
+    echo "[FATAL] Immutable runtime prohibits installation at boot; rebuild the release image." >&2
+    exit 64
+fi
+
 # Emit version/build metadata at boot without exposing secrets.
 python -c "from core.version import get_version_banner; print('[boot] ' + get_version_banner())" || true
 

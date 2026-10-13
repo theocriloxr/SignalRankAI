@@ -35,12 +35,13 @@ RUN /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v
 # deploying an image whose release-critical regression set does not pass.
 RUN python scripts/run_release_manifest.py --environment image --group image
 
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS runtime
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS stripped-runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
     MARKET_DATA_SDK_PYTHON=/opt/market-data-sdk/bin/python \
+    SIGNALRANK_IMMUTABLE_RUNTIME=1 \
     PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update \
@@ -54,7 +55,34 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/market-data-sdk /opt/market-data-sdk
 COPY --from=builder --chown=signalrank:signalrank /app /app
 
-RUN chmod +x /app/start.sh
+RUN python -m pip uninstall --yes pip \
+    && /opt/market-data-sdk/bin/python -m pip uninstall --yes pip \
+    && rm -rf /usr/local/lib/python3.11/site-packages/pip /usr/local/lib/python3.11/site-packages/pip-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/setuptools /usr/local/lib/python3.11/site-packages/setuptools-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/_distutils_hack /usr/local/lib/python3.11/site-packages/pkg_resources \
+        /usr/local/lib/python3.11/site-packages/wheel /usr/local/lib/python3.11/site-packages/wheel-*.dist-info \
+        /usr/local/lib/python3.11/ensurepip \
+    && rm -f /usr/local/lib/python3.11/site-packages/distutils-precedence.pth \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.11 /usr/local/bin/wheel \
+    && python scripts/verify_runtime_dependencies.py \
+    && /opt/market-data-sdk/bin/python scripts/verify_runtime_dependencies.py \
+    && python -c "import importlib.util; assert importlib.util.find_spec('pip') is None" \
+    && /opt/market-data-sdk/bin/python -c "import importlib.util; assert importlib.util.find_spec('pip') is None" \
+    && /usr/local/bin/python -c "import importlib.util; assert importlib.util.find_spec('pip') is None; assert importlib.util.find_spec('setuptools') is None" \
+    && python -c "import numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2" \
+    && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v \
+    && chmod +x /app/start.sh
+
+# Publish the stripped filesystem, including OS package metadata for auditing.
+FROM scratch AS runtime
+COPY --from=stripped-runtime / /
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    MARKET_DATA_SDK_PYTHON=/opt/market-data-sdk/bin/python \
+    SIGNALRANK_IMMUTABLE_RUNTIME=1 \
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+WORKDIR /app
 USER 10001:10001
 
 EXPOSE 8080

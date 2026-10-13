@@ -419,7 +419,7 @@ def static_checks(report: Report) -> None:
     env_profiles = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "configs" / "env").glob("*.env.example"))
     commands = [
         ("compile_tracked_python", [python, "scripts/compile_tracked_python.py"], "critical"),
-        ("pip_dependency_check", [python, "-m", "pip", "check"], "high"),
+        ("runtime_dependency_check", [python, "scripts/verify_runtime_dependencies.py"], "high"),
         ("schema_audit", [python, "scripts/schema_audit.py"], "critical"),
         ("architecture_smoke", [python, "scripts/architecture_smoke.py"], "critical"),
         ("db_session_audit", [python, "scripts/audit_db_session_calls.py"], "high"),
