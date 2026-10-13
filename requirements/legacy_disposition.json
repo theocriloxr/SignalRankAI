@@ -1,5 +1,5 @@
 {
-  "file_count": 2156,
+  "file_count": 2158,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 118,
+      "line_count": 125,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f45afaef293ffbcd467487dbd69af81fdd462f08552835ceb21a3df9b4f78376",
-      "size_bytes": 19385
+      "sha256": "8248c101df461c8523c3c048dbd18d632a669de81055ad0d22b43031b94007b4",
+      "size_bytes": 21185
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8654,8 +8654,8 @@
       "line_count": 40,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c1e7bafd1a447f53709aa7fd190ed3de482a6a1e113a92f0d3c8d4fb4384ce59",
-      "size_bytes": 1280
+      "sha256": "616a085a17b1129b06ef7036eb00d0ff989266df5d3ba2958f3e3d55b08f8ec0",
+      "size_bytes": 1314
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8696,6 +8696,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "55995dfad6ecb4945a1e856ddca03c5e16aa5bf13fd21b4df6a74ae79357bcfc",
       "size_bytes": 1375
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 31,
+      "path": "frontend/public/retained-session-compat-v1.js",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "ba7b1924757fc3435e6fe075e1655d9f75f1fcbfe6b7054976f076277fa8403e",
+      "size_bytes": 1549
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8744,6 +8752,14 @@
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "5ae034c04f63c6dd5c413198b2853b20b2843fe2be967e75d06776bf6d7c6414",
       "size_bytes": 23684
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 36,
+      "path": "frontend/scripts/retained-session.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "a76d5eeffdd371b4f77bca94b39257c6dddfd83b7ceb47d86f34e8e614d03aff",
+      "size_bytes": 2065
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8907,11 +8923,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 28,
+      "line_count": 50,
       "path": "frontend/src/app/retained-workspace/route.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "775b378c519c53adfdf5d9ff9649514bbd790f7b2511666801b668a88bf3e941",
-      "size_bytes": 1926
+      "sha256": "6eee92992e90c9d3b8b946c99b55eb3009d0b37ea7883afe837ac5c324ea53cf",
+      "size_bytes": 2948
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17263,7 +17279,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 494,
-    "PRESERVE_BEHAVIOUR": 1286,
+    "PRESERVE_BEHAVIOUR": 1288,
     "TEST_ONLY": 375
   }
 }

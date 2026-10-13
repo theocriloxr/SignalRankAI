@@ -56,6 +56,13 @@ GitHub run `38321232173` on `6511b04e` was rejected before its jobs started: the
 
 ## Local evidence
 
+The final `e7ac20df` frontend image scan reported zero findings at all severities. Both staging applications, real account journeys and all 64 public accessibility scenarios passed. The separate production preview was updated without changing the existing domains/backend; its public accessibility audit passed all 64 scenarios. A credential-free 72-hour UI GET monitor started at 01:30:53 UTC on 13 October; its initial 12 checks passed. This is an ongoing UI-only observation, not a completed financial/ecosystem soak.
+
+Read-only production browser acceptance then exposed the old production workspace leaving failed refresh bodies unread on deep links. The new staging client already fixes this, while the retained production backend stays unchanged. A diagnostic browser-only clone-drain probe passed; it is explicitly excluded from acceptance. The frontend follow-up supplies a bounded, external compatibility adapter to the retained shell, preserving the original CSP, authentication status/error body and exactly one request. It only drains a clone of failed same-origin POST refresh responses; other reads/writes and successful refreshes remain untouched. Its actual local preflight passed all retained deep links/PWA checks; the final public status availability assertion failed and remains recorded. Fresh published/cloud checks are required.
+
+A fresh credential-free backend rootfs scan reports 44 high OS rows plus six high Python rows (50 total). Some older Python versions were analyzed from SBOM metadata, while the actual application/SDK metadata shows patched urllib3/msgpack/setuptools versions. The exact origin of those SBOM records and inherited vendored tools still needs reconciliation. No row is suppressed or declared resolved. Mobile and financial acceptance remain open.
+
+
 At `c7c86082`, both isolated application services were healthy, real Railway account journeys passed, and all 64 automated public accessibility scenarios passed with the source identity checked before and after the audit. The stripped final image rescan reported zero high/critical findings and verified that npm was absent in the actual container. One medium OS finding remained: zlib `1.3.2-r0`, CVE-2026-85091. Alpine's official v3.24 x86_64 package index contains fixed `1.3.2-r1`; the follow-up pins that patch before constructing the final filesystem. Its new scan remains required. The latest hosted browser job on `c7c86082` again failed before starting with the owner's billing-lock annotation.
 
 
