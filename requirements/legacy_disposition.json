@@ -10491,11 +10491,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 86,
+      "line_count": 89,
       "path": "pyright-critical.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "df21a118b80581af11dea4d04fabd4605e5682c0d333d1397fc27f96580caad0",
-      "size_bytes": 2877
+      "sha256": "3eefc6043f7b48bca58bf9e0b5ea369dd91cdf822c774f8aea23f70ae469fbde",
+      "size_bytes": 2985
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11782,8 +11782,8 @@
       "line_count": 58,
       "path": "scripts/verify_runtime_dependencies.py",
       "reason": "production/build source",
-      "sha256": "6ed5adb309a1e5aa21eb9e26ca3bd1203ff3b82f244befbd53066b1f3a4a6445",
-      "size_bytes": 2631
+      "sha256": "49df353fa44ec56579126f9d91d5921c3c0af5ed8b3b8ef5c7c966e0c4c8e725",
+      "size_bytes": 2627
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14803,11 +14803,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 65,
+      "line_count": 74,
       "path": "tests/test_immutable_runtime_dependencies.py",
       "reason": "automated test evidence",
-      "sha256": "08e7c1c4282cd4b1e306104a96f5b601b1b6ceca0b70d5d68f2975823cad40b8",
-      "size_bytes": 3449
+      "sha256": "db33ee4e24be12cbbb063837836697d2a7222865f81b2b44a83d7d0b17be2566",
+      "size_bytes": 3832
     },
     {
       "disposition": "TEST_ONLY",

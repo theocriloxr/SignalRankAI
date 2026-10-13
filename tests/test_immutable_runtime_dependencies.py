@@ -63,3 +63,12 @@ def test_immutable_boot_rejects_installation_before_running_python(tmp_path):
     assert result.returncode == 64
     assert 'Immutable runtime prohibits installation at boot' in result.stderr
     assert not sentinel.exists()
+
+
+def test_distribution_without_a_name_reports_invalid_metadata(tmp_path):
+    directory = tmp_path/'broken-1.0.dist-info'
+    directory.mkdir()
+    (directory/'METADATA').write_text('Metadata-Version: 2.1\nVersion: 1.0\n',encoding='utf-8')
+    assert dependency_findings(distributions(path=[str(tmp_path)])) == [
+        {'package':'unknown','reason':'missing_package_name'},
+    ]

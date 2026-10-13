@@ -15,7 +15,7 @@ def dependency_findings(installed: Iterable[Distribution]) -> list[dict[str, str
     versions: dict[str, str] = {}
     findings: list[dict[str, str]] = []
     for distribution in inventory:
-        name = canonicalize_name(distribution.metadata.get("Name", ""))
+        name = canonicalize_name(distribution.metadata["Name"] or "")
         if not name:
             findings.append({"package": "unknown", "reason": "missing_package_name"})
             continue
@@ -29,7 +29,7 @@ def dependency_findings(installed: Iterable[Distribution]) -> list[dict[str, str
             findings.append({"package": name, "reason": "conflicting_installed_versions"})
         versions[name] = version
     for distribution in inventory:
-        name = canonicalize_name(distribution.metadata.get("Name", "unknown"))
+        name = canonicalize_name(distribution.metadata["Name"] or "unknown")
         for raw in distribution.requires or ():
             try:
                 requirement = Requirement(raw)
