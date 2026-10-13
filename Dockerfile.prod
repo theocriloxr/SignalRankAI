@@ -75,7 +75,7 @@ RUN python -m pip uninstall --yes pip \
     && python scripts/build_minimal_runtime.py --docker-build \
     && chroot /signalrank-runtime /opt/venv/bin/python -c "import ssl, uuid, sqlite3, multiprocessing, zoneinfo, numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2; assert uuid.uuid4().version == 4; assert zoneinfo.ZoneInfo('Africa/Lagos')" \
     && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v' \
-    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/venv/bin/python -m pytest -q tests/test_minimal_runtime.py tests/test_posix_startup.py'
+    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/venv/bin/python -m pytest -q -s -p no:cacheprovider tests/test_minimal_runtime.py tests/test_posix_startup.py'
 
 # Publish the required runtime payload and accurate original OS package records.
 FROM scratch AS runtime

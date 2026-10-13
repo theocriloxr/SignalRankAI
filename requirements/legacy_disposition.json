@@ -382,8 +382,8 @@
       "line_count": 93,
       "path": "Dockerfile",
       "reason": "production/build source",
-      "sha256": "8cf4c913a0a0002ac8f1ef047522ddbac35b3a0178b68ba667d13028b1b7a468",
-      "size_bytes": 5385
+      "sha256": "a8d86d0011df6a8f2f1c2a99163660ea1fa7c25faabf1cfa0f67dd05c17183ef",
+      "size_bytes": 5408
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -438,8 +438,8 @@
       "line_count": null,
       "path": "Dockerfile.prod",
       "reason": "production/build source",
-      "sha256": "8cf4c913a0a0002ac8f1ef047522ddbac35b3a0178b68ba667d13028b1b7a468",
-      "size_bytes": 5385
+      "sha256": "a8d86d0011df6a8f2f1c2a99163660ea1fa7c25faabf1cfa0f67dd05c17183ef",
+      "size_bytes": 5408
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5451,11 +5451,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 34,
+      "line_count": 35,
       "path": "docs/MINIMAL_BACKEND_RUNTIME_20261013.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "470d4f80059e288c8b5e4f8424238b704d23a10a377c1318187b464d2bbdbfdc",
-      "size_bytes": 2198
+      "sha256": "64aca571157aaa9ce3a75c2af2be293c69b9ae183ddd88ca45f3e84e9e23c9c4",
+      "size_bytes": 2308
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11027,11 +11027,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 202,
+      "line_count": 203,
       "path": "scripts/build_minimal_runtime.py",
       "reason": "production/build source",
-      "sha256": "d3e59746a625b1521337f7e8b3d9a541b42b252b0e1813afbb4668648d5c0b48",
-      "size_bytes": 9543
+      "sha256": "788e3d4244dfdd9ee420b7c306bd51a12093fd43f76dca7eff73765ab74da145",
+      "size_bytes": 9614
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

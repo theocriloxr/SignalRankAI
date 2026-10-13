@@ -17,9 +17,9 @@ import sys
 
 
 DESTINATION = Path("/signalrank-runtime")
-# These optional CPython extensions serve interactive terminals or libuuid.
+# These optional CPython extensions serve desktops, interactive terminals or libuuid.
 # uuid.py supplies its standard, OS-random-backed pure-Python implementation.
-OPTIONAL_EXTENSIONS = ("_curses", "readline.", "_uuid.")
+OPTIONAL_EXTENSIONS = ("_curses", "readline.", "_uuid.", "_tkinter.")
 ABSENT_PACKAGES = {
     "bash", "bsdutils", "libacl1", "libblkid1", "liblastlog2-2", "libmount1",
     "libncursesw6", "libsmartcols1", "libsystemd0", "libtinfo6", "libudev1",
@@ -172,9 +172,10 @@ def assemble(destination: Path = DESTINATION) -> None:
     (destination / "bin").mkdir(exist_ok=True)
     (destination / "bin/sh").symlink_to("/usr/bin/dash")
     (destination / "usr/bin/sh").symlink_to("dash")
-    for directory in ("tmp", "run", "dev", "proc", "sys", "home/signalrank"):
+    for directory in ("tmp", "run", "dev/shm", "proc", "sys", "home/signalrank"):
         (destination / directory).mkdir(parents=True, exist_ok=True)
     (destination / "tmp").chmod(0o1777)
+    (destination / "dev/shm").chmod(0o1777)
     set_owner(destination / "home/signalrank", 10001, 10001)
     for path in (destination / "app").rglob("*"):
         set_owner(path, 10001, 10001)

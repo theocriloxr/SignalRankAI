@@ -22,10 +22,11 @@ helper. Current deployment configuration uses `sh start.sh`. Any service with an
 explicit old `bash start.sh` override needs that command updated with the image.
 Backup jobs using their separate PostgreSQL image are outside this change.
 
-Optional CPython `_curses`, `readline` and `_uuid` native extensions are omitted.
+Optional CPython `_curses`, `readline`, `_uuid` and `_tkinter` native extensions are omitted.
 They are not application requirements; Python's documented uuid fallback still
 supports UUID generation with OS randomness. Interactive terminal editing is not
-part of the runtime contract. The native import, UUID and SDK checks execute
+part of the runtime contract. The inherited slim image already lacks Tcl/Tk
+libraries required by its unused desktop extension. The native import, UUID and SDK checks execute
 inside the assembled filesystem, together with actual startup guard tests.
 
 Qualification requires a new rootfs scan, native/SDK build checks, isolated
