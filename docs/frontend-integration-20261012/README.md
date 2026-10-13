@@ -56,6 +56,9 @@ GitHub run `38321232173` on `6511b04e` was rejected before its jobs started: the
 
 ## Local evidence
 
+At `c7c86082`, both isolated application services were healthy, real Railway account journeys passed, and all 64 automated public accessibility scenarios passed with the source identity checked before and after the audit. The stripped final image rescan reported zero high/critical findings and verified that npm was absent in the actual container. One medium OS finding remained: zlib `1.3.2-r0`, CVE-2026-85091. Alpine's official v3.24 x86_64 package index contains fixed `1.3.2-r1`; the follow-up pins that patch before constructing the final filesystem. Its new scan remains required. The latest hosted browser job on `c7c86082` again failed before starting with the owner's billing-lock annotation.
+
+
 The clean `83f4a11e` follow-up passed both local browser modes, including the expired-mutation/no-replay regression, and 59 focused backend authentication/portal tests. The frontend quality gates passed. The deployed runtime still contained npm despite the final build assertion and baked receipt proving its absence at build time. The next container copies the stripped filesystem into an empty final image, retaining its OS libraries/metadata, Node and nonroot account without inherited package-manager layers. Its deployed rescan is required before any security closure claim.
 
 
