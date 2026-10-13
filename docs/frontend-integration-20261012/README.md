@@ -46,6 +46,14 @@ The generated [contract inventory](contract-inventory.json) resolves 67 frontend
 
 Public pages include product, features, markets, strategies, AI, methodology, risk, pricing, security, privacy, providers, documentation, FAQ, status and contact. The status view publishes only bounded, uncached availability observations; it never publishes raw diagnostics or claims broker readiness. Prices, performance figures and testimonials are not invented.
 
+## Verification checkpoint — 13 October 2026
+
+The clean published checkpoint `6511b04ec19fca9dfe36d4d12a112650cff7fae4` passed all 3,906 backend tests in 20 batches and all complete-system prechecks. Both local browser modes passed on that exact commit. Its separate Railway frontend and backend deployments are healthy and identify the same commit. Real Railway journeys passed registration/login, secure cookies, cross-account isolation, CSRF and operator denial, persisted watchlists, retained deep links and PWA assets. An initial unchanged-candidate navigation timeout is preserved alongside the successful rerun; stability and soak acceptance remain open.
+
+The subsequent public-page accessibility audit found low-contrast faded lifecycle text, light-theme colors on the homepage's dark surfaces, and redundant stage-button labels. The follow-up removes text fading, gives each surface readable colors and lets the buttons derive their accessible names from visible text. The production build, lint and all 56 frontend tests passed. An expanded local axe 4.14.0 check passed 64 scenarios: all 16 public pages, two themes and mobile/desktop widths. Automated results do not constitute manual assistive-device or native acceptance. The published follow-up must independently pass real Railway checks before promotion.
+
+GitHub run `38321232173` on `6511b04e` was rejected before its jobs started: the check annotation reports an account billing lock. Local results and manual isolated staging builds do not substitute for hosted release approval. Production remains on `9865a3d1`; its domains have not been switched and no execution flags were enabled.
+
 ## Local evidence
 
 The `84eb8021` run passed the new-workspace browser suite and 19 of 20 complete backend batches; the remaining backend failure and the retained-workspace browser failure both asserted the obsolete cache version 44. Those tests now derive the required generation from the validated shell. The original timeout in backend batch 1 remains recorded; the fresh retry passed all 255 tests. Its Railway backend image checks, guarded migration and readiness also passed. The frontend image stopped at `npm ci` because Docker omitted the tracked `.npmrc`; a fresh npm 11.17.0 install with that file passed with zero findings. The Docker build now includes the same configuration, without changing the lockfile or suppressing audit checks.

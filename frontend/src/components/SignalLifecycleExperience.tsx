@@ -55,8 +55,8 @@ export function SignalLifecycleExperience() {
         </div>
         <nav className="sr-cinema-gates" aria-label="Explore decision stages">{stages.map((stage,index)=>
           <button key={stage.index} type="button" onClick={()=>jump(index)} aria-current={active===index?"step":undefined}
-            aria-label={stage.index+" "+stage.tag} className={active===index?"is-active":""}>
-            <span>{stage.index}</span><strong>{stage.tag}</strong></button>)}</nav>
+            className={active===index?"is-active":""}>
+            <span>{stage.index}</span>{" "}<strong>{stage.tag}</strong></button>)}</nav>
       </div>
       <div className="sr-cinema-chapters">
         {stages.map((stage,index)=><article id={"gate-"+stage.slug} data-stage={index} key={stage.index}

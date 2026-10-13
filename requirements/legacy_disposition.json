@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 91,
+      "line_count": 99,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "8b862590bdfaa25005ee82dc27b3727bd01e243593827ab706f08e2f7367ba49",
-      "size_bytes": 12911
+      "sha256": "58836c18193be0f63291c350e0dcfebbf074188b8fa6c5fc8edf37b968092605",
+      "size_bytes": 14570
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8779,11 +8779,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 328,
+      "line_count": 331,
       "path": "frontend/src/app/cinematic.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "6e208002c8467b30ded4466b933aea06bfdb21bcc4ea5fd5b65d0fa4afba518e",
-      "size_bytes": 29779
+      "sha256": "2448e9a63b09ae4f2fa616736b7c0b96257ed3c387bcc0d598c0fc954caed4bc",
+      "size_bytes": 30036
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9102,8 +9102,8 @@
       "line_count": 74,
       "path": "frontend/src/components/SignalLifecycleExperience.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a1d34a2cd32fe58b2aedaef951c704c511810ea54802532fe447d470831138cb",
-      "size_bytes": 5672
+      "sha256": "0dc35a61adc8eb6840968f058d1745bc77235f844b843b163ca9613118ec121e",
+      "size_bytes": 5638
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
