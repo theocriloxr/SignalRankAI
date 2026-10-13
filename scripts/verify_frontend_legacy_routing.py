@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
+import time
+import traceback
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright, expect
@@ -26,6 +28,14 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(viewport={'width':1440,'height':1000})
     page = context.new_page()
+    pending_requests = {}
+    recent_responses = []
+    page.on('request', lambda request: pending_requests.update({id(request):
+        {'path':urlsplit(request.url).path,'started':time.monotonic()}}))
+    page.on('requestfinished', lambda request: pending_requests.pop(id(request), None))
+    page.on('requestfailed', lambda request: pending_requests.pop(id(request), None))
+    page.on('response', lambda response: recent_responses.append(
+        {'path':urlsplit(response.url).path,'status':response.status}))
     page.on('pageerror',lambda error:report['errors'].append(str(error)))
     try:
         for health_path in ('/frontend_health', '/frontend-health'):
@@ -53,6 +63,31 @@ with sync_playwright() as p:
         assert context.request.get(base+'/api/v1/platform/me').status == 200
         assert {c['name']:c for c in context.cookies()}['sr_access']['httpOnly']
         report['checks'].append('existing workspace login and same-origin HttpOnly session work through the frontend proxy')
+
+        # Expired writes may have reached their destination. A refresh must
+        # never silently replay a watchlist, broker or payment mutation.
+        expired_writes = []
+        refreshes = []
+        def reject_expired_write(route):
+            if route.request.method == 'POST':
+                expired_writes.append(route.request.method)
+                route.fulfill(status=401,content_type='application/json',body='{"detail":"expired"}')
+            else:
+                route.continue_()
+        def observe_refresh(request):
+            if urlsplit(request.url).path == '/api/v1/platform/auth/refresh':
+                refreshes.append(request.method)
+        page.on('request',observe_refresh)
+        page.route(base+'/api/v1/platform/watchlists',reject_expired_write)
+        result = page.evaluate("""async () => {
+          try { await request('/watchlists',{method:'POST',body:JSON.stringify({name:'Expired write'})}); }
+          catch(error) { return error.status; }
+          return 0;
+        }""")
+        assert result == 401 and expired_writes == ['POST'] and not refreshes
+        page.unroute(base+'/api/v1/platform/watchlists',reject_expired_write)
+        page.remove_listener('request',observe_refresh)
+        report['checks'].append('an expired mutation fails once without refreshing or replaying the write')
 
         for path,view in [('/app/signals','signals'),('/app/paper','paper'),('/app/brokers','account'),
                           ('/app/operations','ops'),('/app/settings','account')]:
@@ -99,6 +134,10 @@ with sync_playwright() as p:
         report['status'] = 'PASS'
     except Exception as exc:
         report['status']='FAIL'; report['failure']=str(exc)
+        report['traceback']=traceback.format_exc()
+        report['pending_requests']=[{'path':value['path'],'age_seconds':round(time.monotonic()-value['started'],2)}
+            for value in pending_requests.values()]
+        report['recent_responses']=recent_responses[-40:]
         page.screenshot(path=str(out/'failure.png'),full_page=True)
         raise
     finally:

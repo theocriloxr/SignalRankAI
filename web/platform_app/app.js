@@ -56,7 +56,7 @@ async function refreshBrowserSession(){
     const headers={'Content-Type':'application/json'};
     const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf;
     const response=await fetch(API+'/auth/refresh',{method:'POST',credentials:'include',headers,body:JSON.stringify({client_type:'web'})});
-    if(!response.ok)return false;
+    if(!response.ok){await response.body?.cancel().catch(()=>{});return false;}
     try{const data=await response.json();if(data?.user)state.user=data.user}catch{}
     return true
   })().finally(()=>{sessionRefreshPromise=null});
@@ -74,12 +74,13 @@ async function request(path,options={},allowSessionRefresh=true,transientAttempt
     const error=new Error('SignalRank connection was interrupted. Your session is safe; please retry.');error.status=0;error.cause=fetchError;throw error
   }
   if(safeRead&&[502,503,504].includes(response.status)&&transientAttempt<2){
+    await response.body?.cancel().catch(()=>{});
     await wait(350*(transientAttempt+1));
     return request(path,options,allowSessionRefresh,transientAttempt+1)
   }
   let data={};try{data=await response.json()}catch{}
   const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
-  if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
+  if(response.status===401&&safeRead&&allowSessionRefresh&&!authBootstrapPath){
     const refreshed=await refreshBrowserSession().catch(()=>false);
     if(refreshed)return request(path,options,false)
   }

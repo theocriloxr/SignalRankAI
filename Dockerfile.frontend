@@ -31,6 +31,9 @@ ENV SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+RUN test ! -e /usr/local/lib/node_modules/npm/package.json \
+    && test ! -e /usr/local/bin/npm \
+    && node -e "require('node:fs').writeFileSync('/etc/signalrank-runtime.json',JSON.stringify({npmAbsent:true,node:process.version}))"
 USER node
 EXPOSE 8080
 CMD ["node", "server.js"]

@@ -406,8 +406,8 @@
       "line_count": null,
       "path": "Dockerfile.frontend",
       "reason": "production/build source",
-      "sha256": "e9d1459eec207e2cadd4ef8ac47032de3e6c948c7866ee1bc8632cc1a477e737",
-      "size_bytes": 1810
+      "sha256": "4bdf78301bc911c5647db4a064e64e5875997b4fd78aace45098c290d2a07d12",
+      "size_bytes": 2045
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 107,
+      "line_count": 112,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "6ca8c73a95338c2f527ac317b911b7966235f325f4ebd8af90cd93702ff5bb3d",
-      "size_bytes": 16947
+      "sha256": "89a65670047cc0c217511f566c9a7ed81e8662531bca263409b24271bd80c399",
+      "size_bytes": 18097
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11699,11 +11699,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 106,
+      "line_count": 145,
       "path": "scripts/verify_frontend_legacy_routing.py",
       "reason": "production/build source",
-      "sha256": "fa8e50790e208b8826acc40104a8dc1a9cfa1f836f5d93e748ee88ff56148fd3",
-      "size_bytes": 6744
+      "sha256": "71e52d44588a4d8230c4e5978ee020f91428f0c57ee1b95d44edbe4e79157fd0",
+      "size_bytes": 8910
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17099,11 +17099,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1244,
+      "line_count": 1245,
       "path": "web/platform_app/app.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3a3dd91fa95cd32e086b8d8a30dc9c9d8140ba785ad9f5c571b523b0ae9c9a7f",
-      "size_bytes": 153691
+      "sha256": "ca86d7e949d9ae1e030e176e508892472edbbfb1f2cc8a7fa588bd8e8ef7b19e",
+      "size_bytes": 153796
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17118,7 +17118,7 @@
       "line_count": 751,
       "path": "web/platform_app/index.html",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "4747892f4d15e23b7ea590c5032f07d8855fce4c8befc07d79e35aaa80f0a79e",
+      "sha256": "2776bb33438f5f86bab9a630b6e96723d480e9b31d10d02b3552b56753dccd52",
       "size_bytes": 70271
     },
     {
@@ -17142,7 +17142,7 @@
       "line_count": 36,
       "path": "web/platform_app/service-worker.js",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bd9190f65d1f31dfb748ff615bdc1677bc6a992370dc76f4179561d9e9175bc4",
+      "sha256": "a1fcadf7bb59ed176b139721312a154c3babd18e71f5684f2b9807e29bf81d7e",
       "size_bytes": 1715
     },
     {
