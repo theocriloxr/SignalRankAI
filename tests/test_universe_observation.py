@@ -157,3 +157,35 @@ def test_missing_legacy_universe_retains_original_input_identity():
     captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
         universe_observation=sample_universe().envelope())
     assert captured.content_hash != legacy.content_hash
+
+
+def test_v2_records_full_queue_and_bounds_work_without_rewriting_v1():
+    legacy = sample_universe().envelope()
+    payload = legacy["payload"]
+    stages = deepcopy(payload["stages"])
+    stages["scheduled"] = list(stages["eligible"])
+    stages["selected"] = ["ETHUSDT"]
+    current = universe.capture_universe_observation(
+        sources=payload["sources"], stages=stages, discovery_source="database_registry",
+        profile_filter_applied=True, universe_cap=1, batch_size=1, observed_at=CAPTURED,
+        selection_policy="engine-class-round-robin-v2",
+    )
+    assert current.envelope()["payload"]["format_version"] == 2
+    assert current.envelope()["payload"]["policy"]["universe_cap_scope"] == "per_cycle_work"
+    assert universe.restore_universe_observation(current.envelope()) == current
+    assert universe.restore_universe_observation(legacy).envelope() == legacy
+    assert legacy["payload"]["format_version"] == 1
+    assert legacy["payload"]["stages"]["scheduled"] == ["BTCUSDT"]
+    universe.validate_universe_membership(current.envelope(), asset="ETHUSDT", decision_time=CAPTURED)
+    for change in ("prefix", "scope", "format", "budget"):
+        altered = current.envelope()
+        if change == "prefix":
+            altered["payload"]["stages"]["scheduled"] = ["BTCUSDT"]
+        elif change == "scope":
+            altered["payload"]["policy"]["universe_cap_scope"] = "full_universe"
+        elif change == "format":
+            altered["payload"]["format_version"] = 1
+        else:
+            altered["payload"]["stages"]["selected"] = ["BTCUSDT", "ETHUSDT"]
+        with pytest.raises(ValueError):
+            universe.restore_universe_observation(rehash(altered))

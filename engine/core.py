@@ -3087,19 +3087,14 @@ def main_loop(DRY_RUN: bool = False):
 
         _universe_cap = max(1, _env_int("ENGINE_UNIVERSE_CAP", 20))
         _eligible_universe = list(_all_open)
-        _all_open = _all_open[:_universe_cap]
-        # Feed the queue; refresh_universe only rebuilds once per hour
-        # (CYCLE_UNIVERSE_REFRESH_INTERVAL env var) unless this is wakeup #1.
-        _cycle_queue.refresh_universe(_all_open, force=(cycle_no == 1))
-
-        # Pop this batch from the queue.
+        # Bound work per wakeup, never permanently exclude the universe tail.
+        # Keep discovery refresh throttling and per-cycle work independent.
         _running_on_railway = bool(
             (os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
         )
         _default_cycle_batch = 20 if _running_on_railway else 20
         CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", _default_cycle_batch)
         CYCLE_BATCH_SIZE = max(1, min(CYCLE_BATCH_SIZE, _universe_cap))
-        assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
 
         # Guarantee class coverage: at least one asset per OPEN class each cycle.
         # If a class market is closed (no open assets in that class), it is skipped.
@@ -3130,56 +3125,12 @@ def main_loop(DRY_RUN: bool = False):
                 len(_required_classes),
             )
 
-        # Count selected assets by class.
-        _selected_counts: dict[str, int] = {k: 0 for k in _open_by_class.keys()}
-        for _a in assets:
-            _selected_counts[_asset_class(_a)] = _selected_counts.get(_asset_class(_a), 0) + 1
+        from engine.cycle_selection import schedule_cycle
 
-        # Inject one rotating anchor per missing open class.
-        _injected: list[str] = []
-        for _cls in _required_classes:
-            if _selected_counts.get(_cls, 0) > 0:
-                continue
-
-            _pool = _open_by_class.get(_cls) or []
-            _cand = None
-            for _ in range(len(_pool)):
-                _idx = _class_cursor.get(_cls, 0) % len(_pool)
-                _class_cursor[_cls] = _class_cursor.get(_cls, 0) + 1
-                _try = _pool[_idx]
-                if _try not in assets:
-                    _cand = _try
-                    break
-
-            if _cand is None:
-                continue
-
-            if len(assets) < CYCLE_BATCH_SIZE:
-                assets.append(_cand)
-            else:
-                # Replace from an overrepresented class first.
-                _replace_idx = None
-                for i in range(len(assets) - 1, -1, -1):
-                    _existing_cls = _asset_class(assets[i])
-                    if _selected_counts.get(_existing_cls, 0) > 1:
-                        _replace_idx = i
-                        _selected_counts[_existing_cls] -= 1
-                        break
-                if _replace_idx is not None:
-                    assets[_replace_idx] = _cand
-                else:
-                    # No safe replacement available this cycle.
-                    continue
-
-            _selected_counts[_cls] = _selected_counts.get(_cls, 0) + 1
-            _injected.append(_cand)
-
-        # Prevent injected anchors from reappearing later this round.
-        if _injected:
-            try:
-                _cycle_queue.remove_from_queue(_injected)
-            except Exception:
-                pass
+        assets, _selected_counts = schedule_cycle(
+            _cycle_queue, _all_open, pools=_open_by_class, cursors=_class_cursor,
+            classify=_asset_class, capacity=CYCLE_BATCH_SIZE, force_refresh=(cycle_no == 1),
+        )
 
         cycle_assets = len(assets)
 
@@ -3211,6 +3162,7 @@ def main_loop(DRY_RUN: bool = False):
                 discovery_source=_universe_source,
                 profile_filter_applied=_profile_universe_filter_applied,
                 universe_cap=_universe_cap, batch_size=CYCLE_BATCH_SIZE,
+                selection_policy="engine-class-round-robin-v2",
                 observed_at=cycle_started_at,
             )
         except (ValueError, TypeError, OverflowError):

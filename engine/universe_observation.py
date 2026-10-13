@@ -68,16 +68,20 @@ def capture_universe_observation(
     *, sources: Mapping[str, Sequence[str]], stages: Mapping[str, Sequence[str]],
     discovery_source: str, profile_filter_applied: bool, universe_cap: int,
     batch_size: int, observed_at: datetime | None = None,
+    selection_policy: str = "engine-class-round-robin-v1",
 ) -> UniverseObservation:
     if set(sources) != set(SOURCES) or set(stages) != set(STAGES):
         raise ValueError("universe_observation_stages_invalid")
-    payload = {"format_version": 1, "scope": "observed_engine_selection_only",
+    format_version = 2 if selection_policy == "engine-class-round-robin-v2" else 1
+    payload = {"format_version": format_version, "scope": "observed_engine_selection_only",
         "observed_at": _instant(observed_at or datetime.now(timezone.utc)).isoformat(),
         "sources": {key: _members(sources[key]) for key in SOURCES},
         "stages": {key: _members(stages[key]) for key in STAGES},
-        "policy": {"version": "engine-class-round-robin-v1", "discovery_source": discovery_source,
+        "policy": {"version": selection_policy, "discovery_source": discovery_source,
             "profile_filter_applied": profile_filter_applied, "universe_cap": universe_cap,
             "batch_size": batch_size}, "source_history": dict(HISTORY)}
+    if format_version == 2:
+        payload["policy"]["universe_cap_scope"] = "per_cycle_work"
     encoded = _json(payload)
     digest = hashlib.sha256(encoded.encode()).hexdigest()
     restore_universe_observation({"content_hash": digest, "payload": payload})
@@ -92,7 +96,7 @@ def restore_universe_observation(envelope: Any) -> UniverseObservation:
         "format_version", "scope", "observed_at", "sources", "stages", "policy", "source_history",
     }:
         raise ValueError("universe_observation_payload_invalid")
-    if type(payload["format_version"]) is not int or payload["format_version"] != 1:
+    if type(payload["format_version"]) is not int or payload["format_version"] not in (1, 2):
         raise ValueError("universe_observation_format_invalid")
     if payload["scope"] != "observed_engine_selection_only" or payload["source_history"] != HISTORY:
         raise ValueError("universe_observation_history_invalid")
@@ -106,11 +110,15 @@ def restore_universe_observation(envelope: Any) -> UniverseObservation:
         raise ValueError("universe_observation_stages_invalid")
     for members in (*sources.values(), *stages.values()):
         _members(members)
-    if not isinstance(policy, dict) or set(policy) != {
+    policy_keys = {
         "version", "discovery_source", "profile_filter_applied", "universe_cap", "batch_size",
-    }:
+    }
+    if payload["format_version"] == 2:
+        policy_keys.add("universe_cap_scope")
+    if not isinstance(policy, dict) or set(policy) != policy_keys:
         raise ValueError("universe_observation_policy_invalid")
-    if (policy["version"] != "engine-class-round-robin-v1"
+    if (policy["version"] != f'engine-class-round-robin-v{payload["format_version"]}'
+        or (payload["format_version"] == 2 and policy["universe_cap_scope"] != "per_cycle_work")
         or policy["discovery_source"] not in {"legacy_provider_discovery", "database_registry", "legacy_provider_discovery_fallback"}
         or type(policy["profile_filter_applied"]) is not bool
         or any(type(policy[key]) is not int or not 1 <= policy[key] <= MAX_MEMBERS for key in ("universe_cap", "batch_size"))
@@ -125,7 +133,8 @@ def restore_universe_observation(envelope: Any) -> UniverseObservation:
     # Class coverage anchors may come from eligible members outside the cap.
     # This distinction is preserved rather than falsely claiming cap membership.
     if (not stages["selected"] or not set(stages["selected"]).issubset(stages["eligible"])
-        or stages["scheduled"] != stages["eligible"][:policy["universe_cap"]]
+        or stages["scheduled"] != (stages["eligible"][:policy["universe_cap"]]
+                                   if payload["format_version"] == 1 else stages["eligible"])
         or len(stages["selected"]) > policy["batch_size"]):
         raise ValueError("universe_observation_selection_mismatch")
     encoded = _json(payload)

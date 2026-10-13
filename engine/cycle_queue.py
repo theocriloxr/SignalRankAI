@@ -156,6 +156,23 @@ class AssetCycleQueue:
             self._queue = deque([a for a in self._queue if a not in targets])
             return max(0, before - len(self._queue))
 
+    def return_to_front(self, assets: List[str]) -> None:
+        """Return unprocessed coverage replacements without losing round progress.
+
+        Disabled, completed and already pending assets cannot be reintroduced.
+        The caller supplies the original batch order, so repeatedly replacing a
+        tail asset cannot indefinitely move it behind fresh work.
+        """
+        with self._lock:
+            allowed = set(self._universe)
+            existing = set(self._queue) | self._done_this_round
+            returned: list[str] = []
+            for asset in assets:
+                if asset in allowed and asset not in existing:
+                    returned.append(asset)
+                    existing.add(asset)
+            self._queue.extendleft(reversed(returned))
+
     # ─────────────────────────── properties ───────────────────────────
 
     @property

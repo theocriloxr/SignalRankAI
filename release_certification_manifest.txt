@@ -105,6 +105,7 @@ tests/test_governance_reproducibility.py
 
 tests/test_market_input_snapshot.py
 tests/test_cycle_queue_eligibility.py
+tests/test_class_fair_scheduler_contract.py
 tests/test_universe_observation.py
 tests/test_generation_expectancy_admission.py
 tests/test_shadow_tracker_progress.py
