@@ -56,6 +56,9 @@ GitHub run `38321232173` on `6511b04e` was rejected before its jobs started: the
 
 ## Local evidence
 
+The clean `83f4a11e` follow-up passed both local browser modes, including the expired-mutation/no-replay regression, and 59 focused backend authentication/portal tests. The frontend quality gates passed. The deployed runtime still contained npm despite the final build assertion and baked receipt proving its absence at build time. The next container copies the stripped filesystem into an empty final image, retaining its OS libraries/metadata, Node and nonroot account without inherited package-manager layers. Its deployed rescan is required before any security closure claim.
+
+
 The clean `411add5d` checkpoint passed the new Next workspace locally and both application deployments are healthy on isolated Railway staging. Real Railway account journeys passed on that commit. The retained local workspace still timed out: diagnostics identified an unread failed refresh body. Framing and bounded proxy buffering did not resolve it; neither experiment is retained. The actual retained client now releases discarded refresh/retry bodies and restricts refresh retries to reads, preventing an expired mutation from being automatically replayed. Its browser preflight passed with the original waits; a new expired-write browser assertion requires one failed attempt and no refresh. Shell assets advance together to generation 46. Clean follow-up verification is still required.
 
 The `411add5d` runtime rescan still found the same 11 high rows. Read-only inventory confirmed global npm 10.9.9 was present in the audit container even though the build log included its removal. This discrepancy is unresolved. The next image has a final-stage absence assertion and a baked runtime receipt; no finding is suppressed or declared closed.

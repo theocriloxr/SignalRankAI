@@ -406,8 +406,8 @@
       "line_count": null,
       "path": "Dockerfile.frontend",
       "reason": "production/build source",
-      "sha256": "4bdf78301bc911c5647db4a064e64e5875997b4fd78aace45098c290d2a07d12",
-      "size_bytes": 2045
+      "sha256": "2e8cf3dfbcbd7badbb06d362316f6ebb2878c0fdec40bf4cbb99553db0529492",
+      "size_bytes": 2601
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 112,
+      "line_count": 115,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "89a65670047cc0c217511f566c9a7ed81e8662531bca263409b24271bd80c399",
-      "size_bytes": 18097
+      "sha256": "ae58566e06b2b9da90f247d5dc8433ec14f2d402cddf0d1a34201ffe0524f987",
+      "size_bytes": 18679
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
