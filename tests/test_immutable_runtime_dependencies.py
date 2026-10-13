@@ -48,8 +48,8 @@ def test_malformed_dependency_and_conflicting_distributions_fail_closed(tmp_path
 
 def test_immutable_boot_rejects_installation_before_running_python(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    bash = 'C:/Program Files/Git/bin/bash.exe' if os.name == 'nt' else shutil.which('bash')
-    assert bash and Path(bash).is_file(), 'the canonical entrypoint requires Bash'
+    bash = 'C:/Program Files/Git/bin/sh.exe' if os.name == 'nt' else shutil.which('sh')
+    assert bash and Path(bash).is_file(), 'the canonical entrypoint requires a POSIX shell'
     sentinel = tmp_path/'python-was-called'
     shim = tmp_path/'python'
     shim.write_text('#!/bin/sh\ntouch "'+sentinel.as_posix()+'"\nexit 99\n',encoding='utf-8')

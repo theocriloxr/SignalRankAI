@@ -110,3 +110,5 @@ tests/test_immutable_runtime_dependencies.py
 tests/test_universe_observation.py
 tests/test_generation_expectancy_admission.py
 tests/test_shadow_tracker_progress.py
+tests/test_minimal_runtime.py
+tests/test_posix_startup.py

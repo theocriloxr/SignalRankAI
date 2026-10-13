@@ -71,11 +71,15 @@ RUN python -m pip uninstall --yes pip \
     && /usr/local/bin/python -c "import importlib.util; assert importlib.util.find_spec('pip') is None; assert importlib.util.find_spec('setuptools') is None" \
     && python -c "import numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2" \
     && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v \
-    && chmod +x /app/start.sh
+    && chmod +x /app/start.sh \
+    && python scripts/build_minimal_runtime.py --docker-build \
+    && chroot /signalrank-runtime /opt/venv/bin/python -c "import ssl, uuid, sqlite3, multiprocessing, zoneinfo, numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2; assert uuid.uuid4().version == 4; assert zoneinfo.ZoneInfo('Africa/Lagos')" \
+    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v' \
+    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/venv/bin/python -m pytest -q tests/test_minimal_runtime.py tests/test_posix_startup.py'
 
-# Publish the stripped filesystem, including OS package metadata for auditing.
+# Publish the required runtime payload and accurate original OS package records.
 FROM scratch AS runtime
-COPY --from=stripped-runtime / /
+COPY --from=stripped-runtime /signalrank-runtime/ /
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
@@ -86,4 +90,4 @@ WORKDIR /app
 USER 10001:10001
 
 EXPOSE 8080
-ENTRYPOINT ["/bin/bash", "/app/start.sh"]
+ENTRYPOINT ["/bin/sh", "/app/start.sh"]

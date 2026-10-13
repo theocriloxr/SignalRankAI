@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 # Canonical SignalRankAI deployment entrypoint.
-set -euo pipefail
+set -eu
 
 # Release images contain their complete locked runtime. Installing code at boot
 # would change the accepted bytes and reintroduce removed package installers.
@@ -66,9 +66,9 @@ if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL:-}
 fi
 
 # Print repository and deployed migration identity on every database-backed boot.
-python -m alembic heads 2>&1 | sed 's/^/[boot] alembic_expected_head=/' || true
+python scripts/boot_schema_identity.py heads || true
 if [ -n "${DATABASE_URL:-}" ]; then
-    python -m alembic current 2>&1 | sed 's/^/[boot] alembic_current=/' || true
+    python scripts/boot_schema_identity.py current || true
 fi
 
 # Every database-backed role must prove schema compatibility before it starts.
@@ -95,7 +95,7 @@ esac
 
 _require_web_auth_secret() {
     _runtime_env="${ENVIRONMENT:-${RAILWAY_ENVIRONMENT_NAME:-${RAILWAY_ENVIRONMENT:-local}}}"
-    _runtime_env="${_runtime_env,,}"
+    _runtime_env="$(python -c 'import sys; print(sys.argv[1].lower())' "${_runtime_env}")"
     if [ "${_runtime_env}" = "production" ] || [ "${_runtime_env}" = "staging" ]; then
         _auth_secret="${APP_AUTH_SECRET:-}"
         if [ "${#_auth_secret}" -lt 32 ]; then

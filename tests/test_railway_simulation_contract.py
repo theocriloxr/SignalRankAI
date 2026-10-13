@@ -25,7 +25,7 @@ def test_procfile_web_matches_railway_monolith():
 
 def test_start_script_is_fail_fast_and_single_worker():
     source = Path("start.sh").read_text(encoding="utf-8")
-    assert "set -euo pipefail" in source
+    assert "set -eu" in source
     assert "--workers 1" in source
     assert "exec uvicorn railway_main:app" in source
 

@@ -129,7 +129,7 @@ def main() -> int:
     require(not live.allowed, "live execution fails closed without certification")
 
     railway = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
-    require((railway.get("deploy") or {}).get("startCommand") == "bash start.sh", "neutral Railway start command")
+    require((railway.get("deploy") or {}).get("startCommand") == "sh start.sh", "neutral Railway start command")
     require("healthcheckPath" not in (railway.get("deploy") or {}), "role-specific healthcheck preserved")
 
     print("overall=PASS release=v1.3.6.7 live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED")

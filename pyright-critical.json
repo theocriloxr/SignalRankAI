@@ -10,6 +10,8 @@
     "engine/cycle_queue.py",
     "engine/cycle_selection.py",
     "scripts/verify_runtime_dependencies.py",
+    "scripts/build_minimal_runtime.py",
+    "scripts/boot_schema_identity.py",
     "engine/adaptive/availability.py",
     "engine/adaptive/health_baselines.py",
     "core/env.py",
