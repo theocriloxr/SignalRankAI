@@ -19,8 +19,8 @@ export function workspaceMode(raw = process.env.SIGNALRANK_WORKSPACE_MODE): "nex
 }
 
 // These backend namespaces must survive a public-site cutover, including POST webhooks.
-export const backendNamespaces = ["api", "app-assets", "activate", "billing", "webhook", "webhooks",
-  "paystack", "broker", "payout", "signals", "health", "healthz", "ready", "readyz", "version", "metrics"];
+export const backendNamespaces = ["api", "app-assets", "activate", "billing", "webhook", "webhooks", "telegram",
+  "paystack", "broker", "payout", "signals", "health", "healthz", "livez", "ready", "readyz", "version", "metrics", "diagnostics"];
 
 export function backendOwnsPath(path: string, legacy: boolean): boolean {
   if (legacy && ["/login", "/recover", "/magic-login"].includes(path)) return true;

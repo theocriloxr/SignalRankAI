@@ -18,14 +18,16 @@ test('proxy origin accepts only operator-owned HTTPS origins in production',()=>
 
 test('public cutover preserves backend namespaces and only the configured workspace',()=>{
   for (const path of ['/api/v1/platform/me','/api/v1/telegram/webhook','/webhooks/paystack','/paystack/charge',
-    '/webhook/paystack','/broker/exchange/link','/payout/request','/app-assets/app.js','/readyz','/version']) {
+    '/webhook/paystack','/broker/exchange/link','/payout/request','/app-assets/app.js','/readyz','/version',
+    '/telegram/webhook','/telegram/webhook_status','/livez','/diagnostics/deployment']) {
     assert.equal(backendOwnsPath(path,false),true,path);
   }
   for (const path of ['/app','/app/settings','/app/service-worker.js','/login','/recover','/magic-login']) {
     assert.equal(backendOwnsPath(path,true),true,path);
     assert.equal(backendOwnsPath(path,false),false,path);
   }
-  for (const path of ['/product','/features','/markets','/api-evil','/app-malicious','/frontend-health']) {
+  for (const path of ['/product','/features','/markets','/api-evil','/app-malicious','/frontend-health',
+    '/telegram-malicious','/diagnostics-malicious']) {
     assert.equal(backendOwnsPath(path,true),false,path);
   }
   assert.equal(workspaceMode(''),'next');

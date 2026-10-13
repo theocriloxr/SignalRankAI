@@ -8795,11 +8795,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 64,
+      "line_count": 66,
       "path": "frontend/scripts/server-boundaries.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "a884d78686a47b7a4220a6ba6026f7ce59bb634d72545d1027849ebcad0a5bd3",
-      "size_bytes": 3905
+      "sha256": "15610ae559f069cf2a8eba4eb174fff8b21598a710b272c23b14619f27aec8b8",
+      "size_bytes": 4044
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9294,8 +9294,8 @@
       "line_count": 30,
       "path": "frontend/src/lib/server-origin.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9e0d907ca671b3b1303e5990094749ca397a31bd586aac240dde794f07bdb664",
-      "size_bytes": 1762
+      "sha256": "b140584bb13397a2ab8982e28256c4cdc960e480935358989217274b0da21d46",
+      "size_bytes": 1798
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
