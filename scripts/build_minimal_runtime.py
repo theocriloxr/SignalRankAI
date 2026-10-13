@@ -116,8 +116,17 @@ def assemble(destination: Path = DESTINATION) -> None:
             with path.open("rb") as stream:
                 if stream.read(4) != b"\x7fELF":
                     continue
-            result = subprocess.run(["/usr/bin/ldd", name], capture_output=True, text=True, check=False)
-            for dependency in sorted(parse_ldd(result.stdout + result.stderr, result.returncode)):
+            # Wheels can preload a co-located library from their parent module's
+            # RPATH. Inspecting that library by itself loses that parent context.
+            # Search only its own directory, never every wheel's library paths.
+            inspection_env = dict(os.environ, LD_LIBRARY_PATH=str(path.parent))
+            result = subprocess.run(["/usr/bin/ldd", name], capture_output=True, text=True,
+                                    check=False, env=inspection_env)
+            try:
+                dependencies = parse_ldd(result.stdout + result.stderr, result.returncode)
+            except RuntimeError as exc:
+                raise RuntimeError(f"{name}: {result.stdout.strip()} {result.stderr.strip()}") from exc
+            for dependency in sorted(dependencies):
                 if str(dependency) not in sources:
                     payload(dependency)
 

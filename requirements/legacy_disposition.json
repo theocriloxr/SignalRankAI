@@ -11027,11 +11027,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 193,
+      "line_count": 202,
       "path": "scripts/build_minimal_runtime.py",
       "reason": "production/build source",
-      "sha256": "e60cafa9c575f6e029409edecaa82b3895bc1adc971c5a86ee19bb18cd42cb39",
-      "size_bytes": 8959
+      "sha256": "d3e59746a625b1521337f7e8b3d9a541b42b252b0e1813afbb4668648d5c0b48",
+      "size_bytes": 9543
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
