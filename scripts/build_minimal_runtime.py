@@ -93,6 +93,12 @@ def assemble(destination: Path = DESTINATION) -> None:
     payload(Path("/etc/debian_version"))
     tree(Path("/etc/ssl/certs"))
     payload(Path("/etc/ssl/openssl.cnf"))
+    # CPython's linked OpenSSL defaults point here, not directly at /etc/ssl.
+    # Preserve the compiled-in CA/config file paths as well as their payloads.
+    tree(Path("/usr/lib/ssl"))
+    default_capath = destination / "usr/lib/ssl/certs"
+    default_capath.rmdir()  # The source is a directory symlink, not a second CA store.
+    default_capath.symlink_to("/etc/ssl/certs")
     tree(Path("/usr/share/zoneinfo"))
     # OpenSSL providers and iconv/SASL/Kerberos modules can be loaded via dlopen
     # and are not necessarily named in an executable's DT_NEEDED table.
