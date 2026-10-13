@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from urllib.parse import urlsplit, quote
 
 from playwright.sync_api import sync_playwright, expect
@@ -42,6 +43,14 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(viewport={'width':1440, 'height':1000})
     page = context.new_page()
+    pending_requests = {}
+    recent_responses = []
+    page.on('request', lambda request: pending_requests.update({id(request):
+        {'path': urlsplit(request.url).path, 'started': time.monotonic()}}))
+    page.on('requestfinished', lambda request: pending_requests.pop(id(request), None))
+    page.on('requestfailed', lambda request: pending_requests.pop(id(request), None))
+    page.on('response', lambda response: recent_responses.append(
+        {'path': urlsplit(response.url).path, 'status': response.status}))
     page.on('pageerror', lambda error: report['errors'].append(str(error)))
     try:
         for health_path in ('/frontend_health', '/frontend-health'):
@@ -176,6 +185,10 @@ with sync_playwright() as p:
     except Exception as exc:
         report['status'] = 'FAIL'
         report['failure'] = str(exc)
+        report['pending_requests'] = [{'path': item['path'],
+            'age_seconds': round(time.monotonic()-item['started'], 2)}
+            for item in pending_requests.values()]
+        report['recent_response_statuses'] = recent_responses[-40:]
         page.screenshot(path=str(out/'failure.png'),full_page=True)
         raise
     finally:

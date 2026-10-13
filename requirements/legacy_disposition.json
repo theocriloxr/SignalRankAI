@@ -406,8 +406,8 @@
       "line_count": null,
       "path": "Dockerfile.frontend",
       "reason": "production/build source",
-      "sha256": "c372f7192c84382142e03a23118ded499e51889e2ab57f6b37235d3084ab1a11",
-      "size_bytes": 1362
+      "sha256": "e9d1459eec207e2cadd4ef8ac47032de3e6c948c7866ee1bc8632cc1a477e737",
+      "size_bytes": 1810
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 103,
+      "line_count": 107,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "cdfdc62225cb8f271fdbc623595adbfdedec8f3d42e4e6478ab29c9e4ac6c9c2",
-      "size_bytes": 15746
+      "sha256": "6ca8c73a95338c2f527ac317b911b7966235f325f4ebd8af90cd93702ff5bb3d",
+      "size_bytes": 16947
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8755,11 +8755,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 159,
+      "line_count": 183,
       "path": "frontend/scripts/transport.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "acc36f99ad78227ecebafb3a81dc73495368f8b9b7ab248dc67835a0327ce6c7",
-      "size_bytes": 7752
+      "sha256": "0456385826b0efaf0cc017193c1ab2b94ea52bc15e52136c8418506cb813aadb",
+      "size_bytes": 9020
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9251,11 +9251,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 68,
+      "line_count": 77,
       "path": "frontend/src/lib/transport.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "3ed8b1ad8d8003ff090dd6d5b098304537243776b2b00b1f69e534bb8042890e",
-      "size_bytes": 3217
+      "sha256": "42c827f0acba27c951841b85872389e5ae95461729a6cbd099d5c945ae4a6294",
+      "size_bytes": 3598
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11707,11 +11707,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 184,
+      "line_count": 197,
       "path": "scripts/verify_frontend_ui.py",
       "reason": "production/build source",
-      "sha256": "aaeb2670c1abd79b0eda8dc18333592f7da019ea24111f1a13ba8f538bc0bc2f",
-      "size_bytes": 10937
+      "sha256": "e55adb4eeb597624166e8e047bdd4ef9b552063aca1b75e3897c4448a9d42b73",
+      "size_bytes": 11721
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

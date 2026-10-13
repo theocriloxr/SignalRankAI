@@ -157,3 +157,27 @@ test("missing refresh proof leaves expired account read unauthenticated",async()
   assert.equal((await api.platformFetch(new Request("https://local.test/api/v1/platform/me"))).status,401);
   assert.equal(count,1);
 });
+
+test('discarded expired-read and refresh streams release their connections before replay',async()=>{
+  const cancelled=[];
+  function stream(name,status) {
+    return new Response(new ReadableStream({cancel(){cancelled.push(name);}}),{status});
+  }
+  let reads=0;
+  const api=transport(async request=>{
+    if(new URL(request.url).pathname.endsWith('/auth/refresh'))return stream('refresh',200);
+    if(++reads===1)return stream('expired',401);
+    assert.deepEqual(cancelled,['refresh','expired']);
+    return new Response('{"restored":true}');
+  },'sr_csrf=proof');
+  assert.deepEqual(await (await api.platformFetch(new Request('https://local.test/api/v1/platform/me'))).json(),{restored:true});
+});
+
+test('failed refresh releases its own stream and leaves the original error readable',async()=>{
+  let cancelled=false;
+  const api=transport(async request=>new URL(request.url).pathname.endsWith('/auth/refresh')?
+    new Response(new ReadableStream({cancel(){cancelled=true;}}),{status:401}):new Response('expired',{status:401}),
+    'sr_csrf=proof');
+  const response=await api.platformFetch(new Request('https://local.test/api/v1/platform/me'));
+  assert.equal(response.status,401);assert.equal(await response.text(),'expired');assert.equal(cancelled,true);
+});

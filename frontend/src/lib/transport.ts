@@ -3,6 +3,12 @@
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 let pendingRefresh: Promise<boolean> | null = null;
 
+async function discardResponse(response: Response): Promise<void> {
+  // A streamed response that will never be returned must release its body.
+  // Otherwise expired reads/refreshes can retain an open browser connection.
+  try { await response.body?.cancel(); } catch {}
+}
+
 function assertPlatformDestination(input: Request): URL {
   const url = new URL(input.url);
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password ||
@@ -38,7 +44,9 @@ async function refreshCookieSession(requestUrl: string): Promise<boolean> {
           headers:{"Content-Type":"application/json","X-CSRF-Token":csrf,"X-SignalRank-Client":"web-next"},
           body:JSON.stringify({client_type:"web"}),
         }));
-        return result.ok;
+        const refreshed=result.ok;
+        await discardResponse(result);
+        return refreshed;
       }catch{return false;}
     })();
     pendingRefresh=task;
@@ -62,6 +70,7 @@ export async function platformFetch(input: Request): Promise<Response> {
   if(!path.startsWith("/api/v1/platform/")||path.startsWith("/api/v1/platform/auth/"))return first;
   const refreshed=await refreshCookieSession(input.url);
   if(!refreshed)return first;
+  await discardResponse(first);
   // One retry of an idempotent read only, using newly rotated HttpOnly cookies.
   // Another 401 remains 401; refresh loops and replay of writes are forbidden.
   return fetch(new Request(input, {credentials:"include",redirect:"error",headers}));
