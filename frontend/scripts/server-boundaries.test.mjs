@@ -45,9 +45,16 @@ test('public status is bounded, uncached and cannot publish upstream payloads',a
     });
     assert.equal(result.state,'available');
     assert.deepEqual(Object.keys(result).sort(),['observedAt','state']);
+    assert.equal((await observeService('/readyz',async()=>Response.json({status:'ready',ready:true,
+      checks:{database:{ok:true,detail:'private schema diagnostics'},redis:{ok:true}}}))).state,'available');
     for (const [body,status,state] of [
       [{status:'ready',checks:{database:false}},200,'degraded'],
       [{status:'ready',checks:{}},200,'degraded'], [{},200,'unavailable'],
+      [{status:'ready',checks:{database:{ok:false}}},200,'degraded'],
+      [{status:'ready',checks:{database:{ok:'true'}}},200,'degraded'],
+      [{status:'ready',ready:false,checks:{database:true}},200,'degraded'],
+      [{status:'ready'},200,'degraded'],
+      [{status:'ready',checks:[true]},200,'degraded'],
       [{secret:'raw-error'},503,'degraded'], [{},401,'unavailable'],
     ]) assert.equal((await observeService('/readyz',async()=>Response.json(body,{status}))).state,state);
     assert.equal((await observeService('/healthz',async()=>{throw new Error('private upstream exception')})).state,'unavailable');

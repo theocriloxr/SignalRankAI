@@ -16,10 +16,16 @@ export async function observeService(path: "/healthz"|"/readyz", request: typeof
     if (!body || typeof body !== "object" || !("status" in body) || typeof body.status !== "string") {
       return {state:"unavailable",observedAt};
     }
-    const healthy = ["healthy","ready","ok"].includes(body.status.toLowerCase());
+    const healthy = ["healthy","ready","ok"].includes(body.status.toLowerCase()) &&
+      (!("ready" in body) || body.ready === true);
     const checks = "checks" in body ? body.checks : undefined;
-    const checksPass = checks === undefined || (checks !== null && typeof checks === "object" &&
-      Object.keys(checks).length > 0 && Object.values(checks).every(value => value === true));
+    // Web-only readiness uses booleans; the production frontdoor uses {ok,...}
+    // records. Require explicit success in either schema and discard diagnostics.
+    const checksPass = (checks === undefined && path === "/healthz") ||
+      (checks !== null && typeof checks === "object" && !Array.isArray(checks) &&
+      Object.keys(checks).length > 0 && Object.values(checks).every(value => value === true ||
+        (value !== null && typeof value === "object" && !Array.isArray(value) &&
+          "ok" in value && value.ok === true)));
     return {state:healthy && checksPass ? "available" : "degraded",observedAt};
   } catch { return {state:"unavailable",observedAt}; }
 }

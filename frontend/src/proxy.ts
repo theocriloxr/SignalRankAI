@@ -34,5 +34,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static/|_next/image|brand/|favicon.ico).*)"],
+  // API responses need the backend-path cache policy as well, including errors.
+  matcher: ["/((?!_next/static/|_next/image|brand/|favicon.ico).*)"],
 };

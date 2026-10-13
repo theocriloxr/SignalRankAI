@@ -51,6 +51,9 @@ with sync_playwright() as p:
             assert health.json()['financial_readiness_certified'] is False
             assert 'no-store' in health.headers['cache-control']
         report['checks'].append('both frontend health URLs prove candidate identity without financial certification')
+        anonymous = context.request.get(base+'/api/v1/platform/me')
+        assert anonymous.status == 401
+        assert 'no-store' in anonymous.headers.get('cache-control', '')
         response = visit(page, '/')
         policy = response.headers.get('content-security-policy', '')
         nonce = re.search(r"'nonce-([^']+)'", policy).group(1)
@@ -110,10 +113,13 @@ with sync_playwright() as p:
         page.reload()
         page.wait_for_load_state('networkidle')
         expect(page.get_by_text('Browser acceptance watchlist',exact=True)).to_be_visible()
-        payload = context.request.get(base+'/api/v1/platform/watchlists').json()
+        account_response = context.request.get(base+'/api/v1/platform/watchlists')
+        assert 'no-store' in account_response.headers.get('cache-control', '')
+        payload = account_response.json()
         assert 'Browser acceptance watchlist' in json.dumps(payload)
         denied = context.request.post(base+'/api/v1/platform/watchlists',data={'name':'Missing CSRF should fail'})
         assert denied.status == 403
+        assert 'no-store' in denied.headers.get('cache-control', '')
         report['checks'].append('watchlist UI write persisted after refresh; missing CSRF rejected by backend')
 
         context.clear_cookies(name='sr_access')

@@ -1,5 +1,5 @@
 {
-  "file_count": 2153,
+  "file_count": 2156,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7027,11 +7027,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 99,
+      "line_count": 103,
       "path": "docs/frontend-integration-20261012/README.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "58836c18193be0f63291c350e0dcfebbf074188b8fa6c5fc8edf37b968092605",
-      "size_bytes": 14570
+      "sha256": "cdfdc62225cb8f271fdbc623595adbfdedec8f3d42e4e6478ab29c9e4ac6c9c2",
+      "size_bytes": 15746
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -8635,11 +8635,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 72,
+      "line_count": 74,
       "path": "frontend/next.config.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "e06e00915fb326f70c198fa46c9f9827f5ab2d7a383bbabad4b17fdb0a45fff4",
-      "size_bytes": 3520
+      "sha256": "446861d45bb5e0401d4de215296f0dd36a8ac234d80ef39aa54c9e2eb26b5c9d",
+      "size_bytes": 3761
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8654,8 +8654,8 @@
       "line_count": 40,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b7ecaa8a140d6cb37ed6289f0072ff2f02edb31d37700d2a9aa08cea667ff96a",
-      "size_bytes": 1248
+      "sha256": "c1e7bafd1a447f53709aa7fd190ed3de482a6a1e113a92f0d3c8d4fb4384ce59",
+      "size_bytes": 1280
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8731,6 +8731,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 67,
+      "path": "frontend/scripts/platform-proxy.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "14ca486d80701e8a449b2d90ed48e89c5a4d1df84ffdbbb36602cb1f0bb9165d",
+      "size_bytes": 4698
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 403,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
@@ -8739,11 +8747,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 57,
+      "line_count": 64,
       "path": "frontend/scripts/server-boundaries.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "716a22a7e13022c2b55a518f67715113725402f2be4d222131bbf2d4598507e7",
-      "size_bytes": 3382
+      "sha256": "a884d78686a47b7a4220a6ba6026f7ce59bb634d72545d1027849ebcad0a5bd3",
+      "size_bytes": 3905
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -8760,6 +8768,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "ab25f9909e183e68c515fb32068780dc6f78fc82540d1384c7d8e32fa9e0cbfc",
       "size_bytes": 15338
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 12,
+      "path": "frontend/src/app/api/v1/platform/[[...path]]/route.ts",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "4cdee0975ef2d1d2721138844be27c6f30284a13bc4f02f8f51d93ac7297dace",
+      "size_bytes": 432
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9187,6 +9203,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 57,
+      "path": "frontend/src/lib/platform-proxy.ts",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "47a21b3cded76d70109d29968610d6a5b3723840cfc3b5e2d4dced71041f474e",
+      "size_bytes": 3332
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 81,
       "path": "frontend/src/lib/presentation.ts",
       "reason": "configuration, data, or product asset retained",
@@ -9203,11 +9227,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 25,
+      "line_count": 31,
       "path": "frontend/src/lib/public-status.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "69b263167e30f28e314fd8b3e8f05a3427bcb94677a5f135fc9e54f690f0d7e1",
-      "size_bytes": 1579
+      "sha256": "0007922a38781a28f6f4b4d24059fcc968e29883bd8218d67e3a0da1c4b4ac12",
+      "size_bytes": 1982
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9235,11 +9259,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 38,
+      "line_count": 39,
       "path": "frontend/src/proxy.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "196373444fdd658e7063b5c28e9dd72d40c69cac8f4f3a959fb7523dc1825034",
-      "size_bytes": 1915
+      "sha256": "b5f8b8490122325217e7d1005994f4f3d1b9ed23b2d46b72698a0dffea2666af",
+      "size_bytes": 1991
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11683,11 +11707,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 178,
+      "line_count": 184,
       "path": "scripts/verify_frontend_ui.py",
       "reason": "production/build source",
-      "sha256": "f576550a22c446310d34be55594a5baa53c985c37d34eda32ee887c65f42627d",
-      "size_bytes": 10566
+      "sha256": "aaeb2670c1abd79b0eda8dc18333592f7da019ea24111f1a13ba8f538bc0bc2f",
+      "size_bytes": 10937
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17239,7 +17263,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 494,
-    "PRESERVE_BEHAVIOUR": 1283,
+    "PRESERVE_BEHAVIOUR": 1286,
     "TEST_ONLY": 375
   }
 }

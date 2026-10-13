@@ -55,7 +55,7 @@ const nextConfig: NextConfig = {
     // Missing origin is intentionally NOT replaced by an arbitrary public
     // backend. Requests remain same-origin and fail closed with 404.
     if (!origin) return [];
-    const beforeFiles = backendNamespaces.map(prefix => ({
+    const beforeFiles = backendNamespaces.filter(prefix=>prefix !== "api").map(prefix => ({
       source: `/${prefix}/:path*`, destination: `${origin}/${prefix}/:path*`,
     }));
     if (mode === "legacy") {
@@ -65,7 +65,9 @@ const nextConfig: NextConfig = {
       beforeFiles.push({source:"/app",destination:"/retained-workspace"});
       beforeFiles.push({source:"/app/:path*",destination:"/retained-workspace"});
     }
-    return {beforeFiles, afterFiles:[], fallback:[]};
+    // The canonical account Route Handler enforces private response headers.
+    // All other backend APIs retain their existing transparent rewrite.
+    return {beforeFiles, afterFiles:[], fallback:[{source:"/api/:path*",destination:`${origin}/api/:path*`}]};
   },
 };
 
