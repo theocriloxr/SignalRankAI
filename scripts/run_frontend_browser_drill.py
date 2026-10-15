@@ -87,7 +87,7 @@ def main() -> int:
     env.update(APP_ENV='test', ENVIRONMENT='test', SIGNALRANK_ALLOW_DOTENV='0',
         DATABASE_URL=owned.set(drivername='postgresql+asyncpg').render_as_string(hide_password=False),
         DATABASE_MIGRATION_URL=owned.set(drivername='postgresql').render_as_string(hide_password=False),
-        APP_COOKIE_SECURE='0', APP_AUTH_SECRET='synthetic-local-browser-test-secret-20261006',
+        APP_COOKIE_SECURE='0', APP_AUTH_SECRET='test-synthetic-local-browser-test-secret-20261006',
         APP_BASE_URL=web, SIGNALRANK_DISABLE_BACKGROUND_THREADS='1', GLOBAL_EXECUTION_KILL_SWITCH='1',
         REAL_EXECUTION_ENABLED='0', AUTO_EXECUTION_ENABLED='0', AUTO_TRADE_ENABLED='0',
         COPY_TRADE_ENABLED='0', PROP_EXECUTION_ENABLED='0', REAL_PAYOUTS_ENABLED='0',

@@ -27,6 +27,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python scripts/run_release_manifest.py --validate --environment ci
+      - run: python scripts/run_release_manifest.py --environment ci --group source
 
   static-quality-checks:
     needs: manifest

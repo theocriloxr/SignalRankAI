@@ -2892,7 +2892,7 @@ def main_loop(DRY_RUN: bool = False):
                         return await load_database_universe(
                             _universe_session,
                             asset_classes=_requested_universe_classes,
-                            limit=max(20, _env_int("ENGINE_DATABASE_UNIVERSE_LIMIT", 250)),
+                            page_size=max(20, _env_int("ENGINE_DATABASE_UNIVERSE_LIMIT", 250)),
                         )
 
                 _discovered_assets = [

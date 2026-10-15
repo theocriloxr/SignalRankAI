@@ -9,3 +9,7 @@ body{background:var(--bg);font-family:"Segoe UI",Helvetica,Arial,sans-serif}h1,h
 a:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.kpi{font-variant-numeric:tabular-nums}.small{font-size:14px;line-height:1.6}.workspace{padding:32px}.topbar{flex-wrap:wrap;height:auto;min-height:84px;padding:16px 0}
 @media(max-width:600px){.topbar{gap:12px}.topbar .appearanceControl{margin-left:auto}.topbar .button{width:100%}.heroGrid{padding-top:48px;gap:32px}.hero h1{font-size:44px;line-height:1.05}.workspace{padding:24px 16px}.sidebar .appearanceControl{margin-top:10px}.sideNav a{white-space:nowrap}.sideNav{max-width:100%;gap:8px}.workspaceHead{align-items:flex-start;flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
+
+.sr-account-consent { border: 1px solid var(--line, #294036); padding: 1rem; margin-block: 1rem; }
+.sr-account-consent label { display: block; margin-block: .75rem; }
+.sr-account-consent input[type="checkbox"] { width: auto; display: inline-block; margin-right: .5rem; accent-color: #08754e; }

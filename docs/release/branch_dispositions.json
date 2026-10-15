@@ -1,0 +1,2461 @@
+{
+  "baseline": "f8f371b2073e7eaa1565b85c740d5d227037301d",
+  "scope": "Engineering disposition of source integration, not functional verification; original refs and immutable source commits retained.",
+  "refs": [
+    {
+      "ref": "feat/master-blueprint-production-completion-20261001",
+      "sha": "3904a623afbeac2ff6aa0acd0e9d237d6d896726",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "The initial seven-file scaffold is superseded by current event bus/settings, FastAPI app and the expanded release manifest/ledger. Historical verified labels and obsolete CI commands are not restored.",
+      "evidence": "core/event_bus.py; core/settings.py; web/app.py; certification/release_manifest.yaml",
+      "branch_only_commits_at_snapshot": 2,
+      "unique_patch_commits": [
+        "3904a623afbeac2ff6aa0acd0e9d237d6d896726"
+      ]
+    },
+    {
+      "ref": "fix/24h-qa-consolidation-20260930",
+      "sha": "8f8583933a853a54ba1b3585610ee466903c08fc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "fix/provider-discovery-readiness-20260923",
+      "sha": "c7684b34178be6d69960c89b42a2805d6ccfb3ab",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "fix/release-recovery-20261008",
+      "sha": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "fix/stage1-canonical-reconciliation-20261014",
+      "sha": "f8f371b2073e7eaa1565b85c740d5d227037301d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "implementation-of-master-blueprint",
+      "sha": "36fd1b531e644a88cee8800ee01304963fc66ae1",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "implementation/20260930-master-blueprint",
+      "sha": "434f21faae0c5880c771a268b774c0501e12ba3e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/blueprint-source-pre-staging-alias-20260928",
+      "sha": "27667d59251003bff0f7e8ff469e322e883cf8dd",
+      "action": "PATCH_EQUIVALENT_OR_MERGE_ONLY",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 2,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/blueprint-source-pre-staging-cutover-20260928",
+      "sha": "91ca15ac908fff67fa24bd5a750611cc571fba98",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/live-prod-hotfix-certified-20260928",
+      "sha": "08c859ea012bfeeee81cf652f8f5dd642e095795",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current canonical session bootstrap and verified billing return handling retain the feature; isolated older shell/style/cache/production trigger snapshots are obsolete. Legal consent is merged on top of the recovered current auth protections.",
+      "evidence": "web/platform_api.py; web/platform_app/app.js; frontend/src/lib/retained-session.ts; tests/test_site_account_billing_hardening_20260928.py",
+      "branch_only_commits_at_snapshot": 13,
+      "unique_patch_commits": [
+        "09a4c694ebcf02ae2de57afe4157439b20dfb2aa",
+        "779ed26d33aef959e9fd5f264618a37c42cac2b3",
+        "4114b10099c6980cd02c14d88d7b308dc4de56d2",
+        "3802325cafe2f989775fb59325edb80e0d1435f2",
+        "b5a7e2f0ba12b4cb35fdcfad17589639403beaec",
+        "32724405a0e64768e670fee1178aabdc74ff82b1",
+        "08c859ea012bfeeee81cf652f8f5dd642e095795"
+      ]
+    },
+    {
+      "ref": "origin/archive/main-pre-canonical-20260928",
+      "sha": "e34b538cef85cf5966388c12717c04f89a907679",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/main-pre-consolidation-20260928",
+      "sha": "ed2661d5bad5e4e6c57bcccdb494cfd9ce441239",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/main-pre-final-consolidation-20260928",
+      "sha": "e766431eec68ecdcdb229ea1b52b56b7b5a74955",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/master-blueprint-pre-canonical-staging-20260928",
+      "sha": "b1e74e9a1e0e48f0a9cb376d6e8e7fa2c1e74bdc",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "b1e74e9a1e0e48f0a9cb376d6e8e7fa2c1e74bdc"
+      ]
+    },
+    {
+      "ref": "origin/archive/prod-source-alias-pre-canonical-20260928",
+      "sha": "08c859ea012bfeeee81cf652f8f5dd642e095795",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current canonical session bootstrap and verified billing return handling retain the feature; isolated older shell/style/cache/production trigger snapshots are obsolete. Legal consent is merged on top of the recovered current auth protections.",
+      "evidence": "web/platform_api.py; web/platform_app/app.js; frontend/src/lib/retained-session.ts; tests/test_site_account_billing_hardening_20260928.py",
+      "branch_only_commits_at_snapshot": 13,
+      "unique_patch_commits": [
+        "09a4c694ebcf02ae2de57afe4157439b20dfb2aa",
+        "779ed26d33aef959e9fd5f264618a37c42cac2b3",
+        "4114b10099c6980cd02c14d88d7b308dc4de56d2",
+        "3802325cafe2f989775fb59325edb80e0d1435f2",
+        "b5a7e2f0ba12b4cb35fdcfad17589639403beaec",
+        "32724405a0e64768e670fee1178aabdc74ff82b1",
+        "08c859ea012bfeeee81cf652f8f5dd642e095795"
+      ]
+    },
+    {
+      "ref": "origin/archive/production-live-ed266-20260928",
+      "sha": "ed2661d5bad5e4e6c57bcccdb494cfd9ce441239",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/provider-discovery-readiness-pre-prod-hotfix-20260928",
+      "sha": "d65d882cb6037ccdc7feca15175cf1a082883342",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/provider-source-pre-main-alias-20260928",
+      "sha": "6347d2d3e1d27154a0141704e51767f64bbd44e5",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/provider-source-pre-main-cutover-20260928",
+      "sha": "1a606a3479c634c6a4761a2358f2466e0ed1830e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/staging-operator-line-pre-final-20260928",
+      "sha": "53cc4869904b107801d076a2c39763e32b79e73c",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current platform API and workstation already expose owner maintenance, business/scan and confirmed force-signal operations; do not downgrade PWA v47 to v28-v30 or overwrite later ownership controls.",
+      "evidence": "web/platform_api.py::operator_force_signal; web/platform_app/app.js; tests/test_web_workstation_parity_20260928.py",
+      "branch_only_commits_at_snapshot": 26,
+      "unique_patch_commits": [
+        "28590c98ea63b9b4b9f97fcd87e11c2758ce0421",
+        "80497ca4be434d7be61514695aad4b4cb698c4ff",
+        "f50143be41b28d9781c87a75099ea5ec51705b46",
+        "2d31c5aab3e34c8fa0b8aaae32417a9b67252e64",
+        "0829cc5592a729ac58e38fe582aec1071a529ea4",
+        "36fde5e011616fc1d34017ed451088d15f2f82d5",
+        "b6e367cbd4a1ebe430d4023c373e99a07f4f5f96",
+        "ca74b9f4fade86bb9253f5d00c56307bb2ca23ea",
+        "7584a1b0e7923baa9a2e5ff9ed0c782d7124474e",
+        "9c758ed8e2326825238be4c22d11aa07f4fa46e8",
+        "3b29d408dd199cf0df293e9513d6d8cc3547e4b9",
+        "f1e8daec19e97e24a517c57fcdf2b6817f8c9ee4",
+        "c36ac2a17fd88f52777a781e26bfefbb6e051675",
+        "be8ea5516bbf1ebb96b181b7d66ef94d358e9dad",
+        "f43a0e21e0faa7b422da74013aeb1d1893791c67",
+        "f9d8479f2de05136a984101ccb47030ba8154e6d",
+        "d8e1c58122d2684d27d1641963cd4ee26b8d1a10",
+        "c6f5f309bd3454e543c7a34341381d4ecb2feeb9",
+        "f09630f5153315fe94c57e3d3a9cfe089fd6bc58",
+        "e4e39689bff484433cac2528bb517d8bbe3e2105",
+        "9530ee18d14bc0e63b1e81afc9d5c57ebcf7cedc",
+        "32b6a2efd3de7a678a591f8fbbf2a58154714702",
+        "fbc961f69f120c525f37b5165b30e69f241c2ae5",
+        "25d77b4a595fb356a2f645e75609123aa91560db",
+        "53cc4869904b107801d076a2c39763e32b79e73c"
+      ]
+    },
+    {
+      "ref": "origin/archive/staging-pre-canonical-sync-20260928",
+      "sha": "b24a37239b5facf6dc59897c3ed22b0bf7f9f964",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 3,
+      "unique_patch_commits": [
+        "b24a37239b5facf6dc59897c3ed22b0bf7f9f964"
+      ]
+    },
+    {
+      "ref": "origin/archive/staging-pre-main-sync-20260928-1128",
+      "sha": "e487a667787f174db54e4eb9705c787bae4f12d8",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/archive/staging-source-pre-canonical-20260928",
+      "sha": "e3cb64b4244fd969e867518e4fbbb3f0b01c8fe9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/backup/before-v1.0.1-hotfix",
+      "sha": "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b",
+      "action": "SUPERSEDED_LEGACY_BASELINE",
+      "reason": "July baseline spans session/delivery/outcome/V7/schema/recovery changes now present in later canonical implementations. Never restore desktop SQLite WALs, obsolete zip bundles, old migration versions or production environment activation values. Distinct documentation versions are retained for clause review.",
+      "evidence": "docs/release/evidence/historical-sources.json; db/session.py; engine/realtime_outcome_tracker.py; requirements/; db/migrations/",
+      "branch_only_commits_at_snapshot": 2,
+      "unique_patch_commits": [
+        "6c9759f124e639132bb2de7aac6dc14a170e3dcb",
+        "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b"
+      ]
+    },
+    {
+      "ref": "origin/backup/pre-final-release-2026-07-27",
+      "sha": "4107c5284f3cbf9785b05b7d7b98b06641e9cceb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/blackboxai/fix-import-error-web-app-startup",
+      "sha": "abc29b954d67e56072536b5cd65975479fcba3cc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/blackboxai/fix-prints-to-logger",
+      "sha": "f55ead523992d61916a873060126f3b48b2da385",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/blackboxai/fix-redis-url-and-outcome-columns",
+      "sha": "6188ba46bb6d588936855c5a819c0082598b0871",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/blackboxai/signalrank-80-winrate-upgrade",
+      "sha": "2b78e5925f8cfc1080ed59f3d5575c3d7a4f7b2e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/codex/signalrank-master-blueprint-20260925",
+      "sha": "8f8583933a853a54ba1b3585610ee466903c08fc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/codex/signalrank-site-account-billing-hardening-20260928",
+      "sha": "93039e2e77800c4aa6b9ba1b1a8ce45797814210",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/codex/signalrank-site-hardening-latest-20260928",
+      "sha": "3c1b2415638b7147238c5d2f9360c5422fd05c9e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/add-redis-queue-support",
+      "sha": "9f6943ce4470d8ef09ae42376d78b25002165d86",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/add-signal-expiry-checks",
+      "sha": "76166facb618f0a7527728bb88b128fa0c2d8153",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/add-tolerant-ticker-handling",
+      "sha": "2b4647e5c556775872bf209b99d29a11b7463486",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/complete-bot-functionality",
+      "sha": "ac636e2826e3ce3ca50856a4ccb076ada5165d85",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/ensure-signal-generation-robustness",
+      "sha": "5433530ac00e1783e1736768f7afe907c3316d35",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/expand-integration-tests-workflows",
+      "sha": "09731933c7f2ad67fbadd58b8a8b58f9ffb4166f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-all-issues",
+      "sha": "f60d0955cadcbabe73b35a550685849865b2b80f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-api-credit-errors",
+      "sha": "1348e33c3b76f7986d1a905820f69e0f3a74ed37",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-bot-delivery-logic",
+      "sha": "cdc7110bd1f9c491993e30b8a5d9393baabc0816",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-broken-commands-paystack",
+      "sha": "3af80c31d99a2a07eea8cd9e796ac51d15461eeb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-broken-features-and-ux",
+      "sha": "d28e57b27c35492ef8e8d6135b63e791e7a5cfad",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Older scheduler/async/session test repairs predate the current lifecycle, bounded admission and singleton scheduler contracts. Do not overwrite newer teardown, loop and DB protections.",
+      "evidence": "db/session.py; signalrank_telegram/bot.py; tests/test_scheduler_registry.py",
+      "branch_only_commits_at_snapshot": 3,
+      "unique_patch_commits": [
+        "1751e96844df3ef934500fb3a3b21ca0ef462e3c",
+        "d28e57b27c35492ef8e8d6135b63e791e7a5cfad"
+      ]
+    },
+    {
+      "ref": "origin/copilot/fix-bugs-and-issues",
+      "sha": "f4c4734dc17265efca60a86795c3639d12b194f3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-commodity-market-hours",
+      "sha": "1226699a6e1809a8d0d1f46d714fcdee76104eae",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-container-startup-failure",
+      "sha": "0e42b230c372906e801370409e409edade463336",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-database-connection-issue",
+      "sha": "e6ab07f7744c6fbb0d0d1659d84fd47dbd869069",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-engine-startup-call",
+      "sha": "dd036dbc373400bfb36b26981c2fa728c616bdce",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-gemini-feature-issues",
+      "sha": "02d9de1340758e5538a300e04cce06cfbb2d9daa",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-healthcheck-connectivity-issue",
+      "sha": "c5390bf2b130cf5973bddd6a9ffe238d29f9558f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-issue",
+      "sha": "6cff4af97a403dc09d2938918d669fd2b3ffe75a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-issues-in-log-telegram-bot",
+      "sha": "422713ff310e3568bc0240876a904e7bb5a61d38",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-issues-in-logs",
+      "sha": "cd80ac21e6b9c73f5b05bf5fd3eb72e7b79b4472",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-log-issues",
+      "sha": "6cff4af97a403dc09d2938918d669fd2b3ffe75a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-log-issues-again",
+      "sha": "6cff4af97a403dc09d2938918d669fd2b3ffe75a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-market-data-pipeline",
+      "sha": "fb49f327810d60249e6139b67289881016a30f26",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Historical Binance fallback/circular dependency repair is superseded by canonical live-price/fetcher/provider quality and trade tracker paths. Preserve the current provider authority and market classification.",
+      "evidence": "core/trade_tracker.py; data/get_live_price.py; data/fetcher.py",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "fb49f327810d60249e6139b67289881016a30f26"
+      ]
+    },
+    {
+      "ref": "origin/copilot/fix-production-stability-webhook-routing-issues",
+      "sha": "1aa840f7066bd33351e4a5afcc12179ce91d232d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-runtime-errors-syntax",
+      "sha": "39ccf44488db593f6c79817712a42dde020cf751",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-server-startup-issues",
+      "sha": "c436691bcf3e0375ab0227abee4806b37863b1da",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-signal-generation-distribution",
+      "sha": "e4bcf21d136d07c07ac16c48cd062cbd93d3228d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-snapshot-receiving-issues",
+      "sha": "3c4f11a193bfa6a40fd6ec5cd84dd861260e601f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-stale-signals-issue",
+      "sha": "5e00e7a11c0eb7f020364d53edc678594a5d5163",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/fix-webhook-timeout-issues",
+      "sha": "c9ac8f29ec5af003b69a8bbcdd7505f74b2c3053",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/gemini-review-and-signal-tracking",
+      "sha": "668ae777d3e53dbc5c2ce15373679b20e47316ef",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/implement-allow-all-tickers",
+      "sha": "bfbf40f85b912b1f205fdc1aa5987beb3714c693",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/implement-inventory-work-scanning-docs",
+      "sha": "268fcbdbcf13a6983e51b16d60f848ca988ce14c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/implement-production-hardening-fixes",
+      "sha": "ad8de1d56c2b83e79366b077945572068b9a2925",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/initialize-container-logging",
+      "sha": "de26f8117959aed2a84c187aacc7d6d75c153b44",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/make-yfinance-primary-source",
+      "sha": "6e910f0121ea9db605f810b44be7c800455e4792",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/monitor-server-startup-logs",
+      "sha": "d647a827039dab5d062db8280b4cbeb58a3ba51f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/optimize-signal-management",
+      "sha": "1ca82f0576c3c92d9e84513bc55d570ffad981d2",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/research-telegram-bot-issues",
+      "sha": "4c24417a85fd260b08fbd5519fc25393a9fa4c9d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/setup-telegram-webhook",
+      "sha": "6cc2a20a7f3bc822a046f4510864842926976156",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/update-environment-variables",
+      "sha": "0cf5460dd33cdac0f51f441d2fb2db4076b170e5",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/update-help-with-commands-and-tiers",
+      "sha": "5c966841472173d071aa2eef8a31aae9e4080442",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/update-logging-information",
+      "sha": "d2d329045d0af212b6d9430376281b8ba31dade6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/update-redis-queue-usage",
+      "sha": "3c2b6b2d0ddd37d6edbe68bf6c60cf728a7aee53",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/update-redis-webhook-usage",
+      "sha": "4ea0640ba90f5abd76a3d302c62c054de26be293",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/copilot/upgrade-signalrankai-bot",
+      "sha": "c9008ce178dc476965d1af633ec41cbdce4005f6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/deploy/signalrank-certification-20261008",
+      "sha": "7c8941e80e260047e51cad73f01a74e854b5cb16",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/design/signalrank-cinematic-terminal-20261012",
+      "sha": "704b973b1080c787a87a4f259796ec58b47595c3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/design/signalrank-ui-rebuild-20261008",
+      "sha": "f7ca87be51cad7f048b20b21e92437024104dc4b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ai-consensus-evidence-parity-20260929",
+      "sha": "ed5b0233bea9b0713b9dddfd472b2a1b226a7883",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ai-evidence-confidence-20260929",
+      "sha": "73f62d06d60a9c5a4c6798c869833ed5675be174",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ai-operator-controls-20260923",
+      "sha": "c0aa315217a7a8956123851120735102cd08be6c",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "AI status/test handlers and privileged command policy already exist in the current canonical path; retain newer multi-provider review/security behavior and registry instead of old Docker/registry snapshots.",
+      "evidence": "services/openai_ai.py; signalrank_telegram/commands.py::ai_status_command; core/tier_policy.py",
+      "branch_only_commits_at_snapshot": 8,
+      "unique_patch_commits": [
+        "7af1c2431a686fa235291517633cc81958dca461",
+        "3c359d8cb9472d221f4fd058ba39382110134b58",
+        "19e912c6d8aa6991bdb0bb52071c022712da135c",
+        "e2410594ef8f029d7f4cb86113444e47a3be1c07",
+        "2d9e10be85f45af4809e09e0586c3abadc58561d",
+        "ff1a682384fadea8d0f2309689d2425b16b28d90",
+        "a576d0c7a7261a0c6086df6e5d1aaaaa5ff235c5",
+        "c0aa315217a7a8956123851120735102cd08be6c"
+      ]
+    },
+    {
+      "ref": "origin/feat/final-trading-ecosystem-20260927",
+      "sha": "878747fcd084e572b8afcf18272e38ecf5db7bed",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/final-workstation-redesign-20260928",
+      "sha": "62fd6be852195cbec67eeea6ae59a0a69993d0bf",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/hierarchical-learning-catalogue-batching-20260929",
+      "sha": "2cb02a499cb03154bf1d35e212088408d6f37b87",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/master-blueprint-production-completion-20261001",
+      "sha": "3904a623afbeac2ff6aa0acd0e9d237d6d896726",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "The initial seven-file scaffold is superseded by current event bus/settings, FastAPI app and the expanded release manifest/ledger. Historical verified labels and obsolete CI commands are not restored.",
+      "evidence": "core/event_bus.py; core/settings.py; web/app.py; certification/release_manifest.yaml",
+      "branch_only_commits_at_snapshot": 2,
+      "unique_patch_commits": [
+        "3904a623afbeac2ff6aa0acd0e9d237d6d896726"
+      ]
+    },
+    {
+      "ref": "origin/feat/ml-candidate-forward-proof-20260929",
+      "sha": "5b2071a269f68c6c5bb0913dc6a33a39358a65fd",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ml-candidate-lease-20260929",
+      "sha": "bc30b7742fe8847df1dd558afd630d2960cb96a7",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ml-schema-promotion-guard-20260929",
+      "sha": "af63097648dd5c64edbd458ce615c2e4e3a6ae83",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ml-source-influence-governance-20260929",
+      "sha": "59b33e1fa9ef4e0c96acc29fae979ae04f3bb1b9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/ml-v4-leakage-free-challenger-20260929",
+      "sha": "9b6be26f07a4a6b669eedf5474bc2ed9b2c385d8",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/operator-signal-funnel-expanded-markets-20260928",
+      "sha": "eed2eae48f6386fcb3431bca7b4475ac4d54e369",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/owner-signal-drought-pulse-20260928",
+      "sha": "45dad1e832513ab7e9c9037793b0803cd39f0856",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/recovery-expected-r-guard-20260929",
+      "sha": "bef73bb325e1ae7756f74dd46767989fb6f4cf2c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/feat/web-telegram-parity-final-20260928",
+      "sha": "b479cb0894c18901dfee02c4c8f3b069c933a1fc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix-2",
+      "sha": "d92fb329b91f11a562a97a897db7fa73ff857df2",
+      "action": "SUPERSEDED_LEGACY_BASELINE",
+      "reason": "July baseline spans session/delivery/outcome/V7/schema/recovery changes now present in later canonical implementations. Never restore desktop SQLite WALs, obsolete zip bundles, old migration versions or production environment activation values. Distinct documentation versions are retained for clause review.",
+      "evidence": "docs/release/evidence/historical-sources.json; db/session.py; engine/realtime_outcome_tracker.py; requirements/; db/migrations/",
+      "branch_only_commits_at_snapshot": 34,
+      "unique_patch_commits": [
+        "3a0dad6a47065cf94aa2f36fe486fd06b48a7243",
+        "c7852c47bae518623b9c3e74601a08192051b7f0",
+        "6e8fb68fca93823d291fc4341ba46f8c2d1d7035",
+        "a4a3729907b3063351ed3ed7cce9399718d14c81",
+        "ebad5d26d44d23a0138214316697c828531ff2ad",
+        "554e32ea485c095bdad5bb3334578dbab443ba3a",
+        "91a6a178797742a4437ffe72257886d7ce1d541e",
+        "391d46ad946ce48445ef67ef24fff889feb974a7",
+        "94c7f516c5e9f514530f551fed34146d86c2d8e7",
+        "a4687203e821ce210d4b5a4e11f8b7e2c1741981",
+        "14d995a732835f67b1963cc1067b07fcefd88bd2",
+        "3abfbf81164e2ba072aa0a117a4b99d16b8d8d1f",
+        "51e270df4777302d9b38f6e21cffc204cfdcee68",
+        "9b0d93f2bd1af1f909428d03b1e43fc67120e792",
+        "5eaf1811a3f5c8a7a66bd1e43e7bf297ada3c857",
+        "93a7803a09f346abaf33134f000578a45458b324",
+        "87e1674b7eb5ed4f51814aedf3cee0ea0c502b74",
+        "eb2239ed139babbcd483f1fce01216f12d0174d2",
+        "ca304fca2f85d4cca3d8c13420843152491f8083",
+        "f22ca377980757b971d655eb87874a2de39903b0",
+        "17df0f395ea3018aed84a8bbc0ef80b212108808",
+        "ac86b22b5f56d55d72f7e7faba5ef763c6529b9c",
+        "83138104dad5bfb25667bec5d325119a845d1323",
+        "45a7fbebc014aa822d1afd2e8667cf0d2cd3fbad",
+        "28bdd0548456bc086f949a5173b69d0f0bebceee",
+        "1fe704e0be621474609db1f60d55e707548f8f8e",
+        "208b2935ee8f6f9fc5bea12f5b11b29d9dacc231",
+        "1a9076daf4e40dd27f8de43418df5ac8c2fe8f10",
+        "8cab47a89e0e4bf3bfd0bdf5c59765aca6302569",
+        "28ab8d33305fb706430496c9766bcd4ebe4c7c6c",
+        "33ba6605aa00400744443159cbdebe4c5386eb6b",
+        "887131505a485a73e4c67968b2bf7ae682fc8224",
+        "e4e1a2548f015365796502438b900dea31af4940",
+        "d92fb329b91f11a562a97a897db7fa73ff857df2"
+      ]
+    },
+    {
+      "ref": "origin/fix-branch",
+      "sha": "d0e769af5e6cb4bf4f07b79e13625f0520d22135",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/24h-qa-consolidation-20260930",
+      "sha": "8f8583933a853a54ba1b3585610ee466903c08fc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/adaptive-candle-write-transaction-20260928",
+      "sha": "2dd59679a3c5d46d28820fc26bf715f2afbd8637",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/adaptive-readonly-pool-recovery-20260928",
+      "sha": "13a95bddea014f9aa21ffa6af932f33dde6834ef",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ai-feedback-runtime-threshold-math-20260929",
+      "sha": "653b43aea97f46bd03a36f015b0b7b419e64c8cc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ai-provider-order-fallback-20260929",
+      "sha": "553cbc603c3423fcb0e07024feec07a1adab4d33",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ai-score-normalization-contract-20260929",
+      "sha": "c98646a50c37c3b4b5cf05d1e68a0aded3cacdde",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/canonical-final-ai-topology-20260928",
+      "sha": "decbde663c2693448ea419a50b0a41523d47a40a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/catalogue-canonical-symbols-20260929",
+      "sha": "f1e007d45454515e09881fe84fbf8f2ea59a1a81",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/certified-threshold-surface-parity-20260929",
+      "sha": "1cd06cec180166795b1561179062e17fa4c86d7c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/critical-tests-and-phase1-improvements",
+      "sha": "84bb0362348a4d60ae4ee5b8c19c5f8c70a8598b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/derivatives-squeeze-bias-20260928",
+      "sha": "0a9e865347c20a21516525451943bda7aa5347df",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/diagnostic-env-import-path-20260928",
+      "sha": "1aa0e713209ed1bb4d381bc309caf1f613b203c9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/env-example-duplicate-codex-20260928",
+      "sha": "d1ef39ab0cf690b1f1f81853388f777c5a0a640c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/full-platform-hardening-20260924",
+      "sha": "a133b8eb2eccdab5112877cd5c3e084a0b5955c6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/full-platform-hardening-prod-integration-20260924",
+      "sha": "a7c6554eae16abe624031df2cd380f07a9aec381",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/gpt6-release-contract-20260929",
+      "sha": "e35e60acb3ebb93164b00ed98e23f8f3af76d050",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/hierarchical-history-release-contract-20260929",
+      "sha": "f98b9c55901771624ddcde262461e1f898538d8d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/logo-theme-sidebar-production-20260928",
+      "sha": "e3c08f042df34e3de75b03a0c018abd63b313059",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/metaapi-regional-host-20260928",
+      "sha": "b9c6dae30290fb271dba54d1c512edb599018061",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-candidate-lease-detached-artifact-20260929",
+      "sha": "97544fa4cf5847616002d6b0e9738ce7c868b512",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-durable-parent-identity-20260929",
+      "sha": "5175badae9baf69f8eb41024a7bd5e87a4b7159b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-forward-proof-test-path-import-20260929",
+      "sha": "725b5b2c43ff4ef46b216522f3288fe594576abe",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-recovery-challenger-governance-20260929",
+      "sha": "a6293eabf5ce9f4576472c026d8d1d15a02085b7",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-recovery-shared-starvation-health-20260929",
+      "sha": "ebf5735f54356349873c0a45115a2362d9af76dc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-schema-forward-candidate-20260929",
+      "sha": "592d4819f4b3b61775fd4d17378b202a80dce21b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-shadow-hot-reload-20260929",
+      "sha": "b742baf985d8b21a83efedb1abdb0ee955facebb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-shadow-single-sync-prod-20260929",
+      "sha": "4a25189a6f36cf3ee4f41229e766043d190c8911",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-training-artifact-overwrite-20260929",
+      "sha": "a69f4b4df39dc4812d8fae964efa15161a73235e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ml-training-schema-version-import-20260929",
+      "sha": "65471331d2b3bf0639c46259ee360f9567e9e085",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/mt5-multiaccount-ux-telegram-20260927",
+      "sha": "93039e2e77800c4aa6b9ba1b1a8ce45797814210",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/official-logo-release-contract-20260928",
+      "sha": "61a802e197888415d6655610b2137fdc518f5178",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/ohlc-class-aware-fallback-20260923",
+      "sha": "e2b2474bce338c921da9138b632a65e1f2eba535",
+      "action": "PORT_VALID_MISSING_CHANGE",
+      "reason": "Port class-specific attempt budgets from 75a49fda while preserving current provider ordering and timeframe gates; recover behavioral tests 8dc7e5ca. Defaults and deployed settings unchanged.",
+      "evidence": "data/fetcher.py; tests/test_fetcher_async.py",
+      "branch_only_commits_at_snapshot": 3,
+      "unique_patch_commits": [
+        "75a49fda8292eaba6ef008fd5579dbef5165b970",
+        "8dc7e5ca86743f3cad0bc8a83b31386e84910240",
+        "e2b2474bce338c921da9138b632a65e1f2eba535"
+      ]
+    },
+    {
+      "ref": "origin/fix/openai-provider-controls-20260923",
+      "sha": "43bb231bcc2c0d26e0e3b29efaaf3fe8267dcc8e",
+      "action": "PORT_AND_SUPERSEDE",
+      "reason": "Port missing untouched-validation floors from 60657f28. Do not restore d4e52e81 whole-snapshot session: it catches query failures into empty/neutral training features and restores full ORM hydration; current bounded compact reads and immutable-evidence path are retained.",
+      "evidence": "ml/train_model.py; tests/test_stage1_recovered_ml.py",
+      "branch_only_commits_at_snapshot": 5,
+      "unique_patch_commits": [
+        "d4e52e81d68745c7ccc14fae22dfbac32ca1a4b0",
+        "64a78a2dc51be6b2acc13c650ba97382b5623dfd",
+        "60657f28260a1fca906356f6f87ffb7ef14eecfe",
+        "eb396f3731aa2976cb2516477f1f67f4703486e6",
+        "43bb231bcc2c0d26e0e3b29efaaf3fe8267dcc8e"
+      ]
+    },
+    {
+      "ref": "origin/fix/operator-recovery-delivery-20260929",
+      "sha": "d27dc1eda216aad75c4bd3eb3bbf8eaeaeba2db9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/operator-recovery-metadata-20260929",
+      "sha": "cbeae8de1b450d2e611113cfb23a68d4454c59d6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/paystack-and-signal-delivery",
+      "sha": "6eb612ad5881c2d15aa827825842c9a0b0a9df55",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current capability resolver, isolated staging tokens, Paystack canonical ingress/receipts and migration URL rules retain these capabilities. Historical environment activation values are not integration requirements.",
+      "evidence": "core/capability_resolver.py; db/migrations/env.py; payments/paystack_events.py; tests/test_environment_parity.py",
+      "branch_only_commits_at_snapshot": 6,
+      "unique_patch_commits": [
+        "8802241ad0d3de980ba8967052871cf44436f3cb",
+        "43daa625436558b70235faf3bb5ca9a89e979e24",
+        "4280ff004e97ae637ca985de5b3f770fc0430249",
+        "f430a5b56270d1700181f2176d0112a1598bfd4c",
+        "c5f4e85b407eccd22899ca11ec6eb09c1b44b860",
+        "6eb612ad5881c2d15aa827825842c9a0b0a9df55"
+      ]
+    },
+    {
+      "ref": "origin/fix/performance-reconciliation-session-isolation-20260928",
+      "sha": "a2f5ec014e58c44e9bcaa9b58f364a32eff76216",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/post-ml-funnel-gate-r2-20260929",
+      "sha": "64a0551013d74cb17ff0ff02ed8a559a775d324a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/post-ml-funnel-observability-20260929",
+      "sha": "37df6d9705a7d50555828bd0e2d6d6ff8418c548",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/post-ml-recovery-delivery-and-intelligence-20260929",
+      "sha": "44964823aa9146d2bd1e1f3fef8f5d82abbb6863",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/preserve-actionable-starvation-summary-20260929",
+      "sha": "2266d18123f17a222e4855dc270c156da0838ab0",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/provider-discovery-readiness-20260923",
+      "sha": "9865a3d1bcee632bfd9347e50d5de34d355225d9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/pwa-immediate-brand-refresh-20260928",
+      "sha": "444ba1745c2bf88810f54fb703ead89a6a1abc0b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/pwa-v31-contracts-20260928",
+      "sha": "31a969c9bf4b67d688fff75b00628b51ad578f07",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-24h-consolidation-20260930",
+      "sha": "fa6f8bf7feca77481be86dccffb0f58fd5596e17",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-24h-consolidation-r2-20260930",
+      "sha": "fd2d2eb1bde44fda76c6454ef3a10c3125d66803",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-24h-db-symbol-ingress-20260930",
+      "sha": "ad00e1758430e7b2374b676907405cccc53b175a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-candle-ml-starvation-20260929",
+      "sha": "d61588954d81dc6b676e28d86343abef85d647b2",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-intelligence-calculation-final-20260929",
+      "sha": "bb0804af08a91652860bc8d8a79538d92608d10a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-learning-admission-profile-parity-20260929",
+      "sha": "e3c3fb03644cfbfc143887b1a9b8fff2b29eab67",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-release-gate-r3-20260929",
+      "sha": "ce483e01a7ee182a5e32fa087524e5d91de961a6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-release-gate-training-cooldown-20260929",
+      "sha": "c27ae25a81f5f2f602bf469cc9099a4a54c04ca0",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/qa-session-freshness-retention-20260929",
+      "sha": "5ee9e7956e0930611e98e09495da88bd3e22268e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/railway-alembic-url",
+      "sha": "62f6593c9a2b89066eb37bbf0253a158a4887927",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current capability resolver, isolated staging tokens, Paystack canonical ingress/receipts and migration URL rules retain these capabilities. Historical environment activation values are not integration requirements.",
+      "evidence": "core/capability_resolver.py; db/migrations/env.py; payments/paystack_events.py; tests/test_environment_parity.py",
+      "branch_only_commits_at_snapshot": 8,
+      "unique_patch_commits": [
+        "8802241ad0d3de980ba8967052871cf44436f3cb",
+        "43daa625436558b70235faf3bb5ca9a89e979e24",
+        "4280ff004e97ae637ca985de5b3f770fc0430249",
+        "f430a5b56270d1700181f2176d0112a1598bfd4c",
+        "c5f4e85b407eccd22899ca11ec6eb09c1b44b860",
+        "76d9a05b2be7f19d03bb4b23ba8005610bec0a50",
+        "03cb544b3fb8866112f7b7a2d9ca6dc23c1b5c21",
+        "62f6593c9a2b89066eb37bbf0253a158a4887927"
+      ]
+    },
+    {
+      "ref": "origin/fix/railway-startup-readiness",
+      "sha": "eb7663d85830105a51be7365a35e3d7fab027dbc",
+      "action": "RETIRED_UNUSED_PROTOTYPE",
+      "reason": "This branch only adds an unreferenced ReadinessFlag with wait_forever. Current runtime uses guarded DB readiness/lifecycle state; introducing a second indefinite wait authority is not a valid integration.",
+      "evidence": "railway_main.py::_db_ready_lock; tests/test_railway_lifecycle.py",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "eb7663d85830105a51be7365a35e3d7fab027dbc"
+      ]
+    },
+    {
+      "ref": "origin/fix/recovery-quality-gate-consistency-20260929",
+      "sha": "1830b2fddf9245e3a3bc1e324f3c73d933d9f4ee",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/recovery-quality-rr-tolerance-20260929",
+      "sha": "8eaf1c4e7055daa5d85863dfef2e5d2ff863a3b9",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/recovery-queue-clamp-20260929",
+      "sha": "3f5d08300d597d0743a5526a0a76dd5a20d19c65",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/regime-aware-chop-filter-20260929",
+      "sha": "014dae7106867c7933304c626e68a4c1537b932a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/regime-aware-quality-gate-integration-r2-20260929",
+      "sha": "2afb9a0edda3aba80ff7a7144d94a02e4b6dac50",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/release-gate-env-helper-r3-20260928",
+      "sha": "7dbe64f09a785d1088280fdc8279ba2c2acedd15",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/release-gate-semantic-tests-20260928",
+      "sha": "c480de17080282a47ef60ac6b2fd2dc6b0eb92fb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/release-recovery-20261008",
+      "sha": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/remaining-staging-blockers",
+      "sha": "534a928e5a6ec854a23f268457abd5b69763f001",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current training retains class balance, independent calibration/validation and bounded compact candle cache. Old Docker gates and candle hydration must not overwrite newer qualification/evidence safeguards.",
+      "evidence": "ml/train_model.py::_class_balance_scale; _promotion_quality_gate; _candle_cache_bounds",
+      "branch_only_commits_at_snapshot": 6,
+      "unique_patch_commits": [
+        "1402e4d230891df48cde68aa2c21cc48a17a9110",
+        "e71ca16948f17dcc0add72dcd90e40d77a641727",
+        "540adba5ee80f9c487fba04b158ee82191de16f4",
+        "f4073b5cbb299df7a1f2bfa2867287226a9bcfd9"
+      ]
+    },
+    {
+      "ref": "origin/fix/site-hardening-build-gate-20260928",
+      "sha": "4dae3caebfe047905bcfa5d13b406dc5761c3cc8",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/site-hardening-selector-r3-20260928",
+      "sha": "210b7d7ce879e9e03963e650e9e0b52995bcfaa0",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/staging-hardening-integration-20260924",
+      "sha": "a133b8eb2eccdab5112877cd5c3e084a0b5955c6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/staging-web-readyz-alias-20260928",
+      "sha": "762aa5b9ecd0b97f9adeddc10e93fa6bf80ef0c2",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/staging-web-runtime-20260924",
+      "sha": "75d6d261345e8cf333fe9b8724da4be7adf044c5",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/tier-score-env-compat-20260929",
+      "sha": "67e6f5f3d87440495cb1d52012216a1980b8eab2",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/web-brand-contract-20260928",
+      "sha": "a7e9aa5819753410357a36f17d1576cb4a456537",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/web-health-count-type-20260928",
+      "sha": "9094674cab66235cad034c54dd79906c1cd4bc4e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/web-shell-release-gate-20260928",
+      "sha": "39c5ef06ae6c065461235cb074caf2255897e1bf",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/web-sidebar-logo-theme-20260928",
+      "sha": "ae99a34017a75cc6979a7529c4ea5bb17f6e88d6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/fix/worker-db-backpressure-observability-20260928",
+      "sha": "042f684328381787dcedf0e1781cdd7561e6fe3a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/flyio-new-files",
+      "sha": "9bc2c095f119b34111975b6229afb2fbec1c0ea6",
+      "action": "RETIRED_DEPLOYMENT_PROTOTYPE",
+      "reason": "Single historical fly.toml scaffolding is not the current Railway deployment contract; restoring it would invent a hosting migration. Source remains in Git.",
+      "evidence": "railway.json; railway_main.py; deploy/",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "9bc2c095f119b34111975b6229afb2fbec1c0ea6"
+      ]
+    },
+    {
+      "ref": "origin/hotfix/live-prod-site-hardening-20260928",
+      "sha": "81795e305f03a7c5e63bbd22bf4262be0f4aeb30",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/implementation-of-master-blueprint",
+      "sha": "8e46ca7d61df16a9b2820090162479fc8b390983",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/implementation/20260930-master-blueprint",
+      "sha": "434f21faae0c5880c771a268b774c0501e12ba3e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/integration/signalrank-canonical-20260928",
+      "sha": "b9ce473ab8aa1405fae4f34af239485c3467730a",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/legal-compliance-20261003",
+      "sha": "34f8071cb7a3ac9f8f394378ea23907f0e76f092",
+      "action": "INTEGRATED_WITH_REVIEW",
+      "reason": "Merge legal ancestry and consent/renewal/privacy controls; preserve newer Next/mobile identity, UI and PWA shell. Add strict booleans, migration 0055 and honest cancellation races.",
+      "evidence": "web/platform_api.py; services/subscription_cancellation.py; tests/test_stage1_commercial_safety.py",
+      "branch_only_commits_at_snapshot": 82,
+      "unique_patch_commits": [
+        "62ec964d619d801bbc4722a7333a76258f6390f2",
+        "5f4acf7d924f0ba70a42e621893dfeb027ebd88a",
+        "3e235ea9903ae542bf072ef1b92b78489c996278",
+        "533df519ba91096e6bb1c7f12d9a724da029459b",
+        "be56448c3f5759a24c2be64dedd04dc992a730cb",
+        "ebcf0968d92033ec250c4204371e91e2ad49d60c",
+        "cdb32971961fda80a671919f86ef43a371a3e519",
+        "0dc7cc317461907b7b54f5f5edb95fc2c966a093",
+        "9a687150a59e677f0eb694e79a68ff18436d697b",
+        "9b96940e76f4af3187a96d0a99f6dfc9c12e403d",
+        "92a00268768de7aced5ee9301a8ea4e50d1eac9a",
+        "f1331560a29fe954b6735257239f8c2721267d1b",
+        "fba10d7ed91c015cc789dbc92d98d7f76df240a2",
+        "36524ddf7f6ba1bf12bb63b9d447c3441518157c",
+        "46f73be65492398f3f3fe8f9c39b61cc6d7b5f93",
+        "0c72944fe836ee7a96c7e6e7856e42309fe22e55",
+        "266a30b219019170735a8bc00c882141948635e5",
+        "12cd10dbc25861c264da674f1687dd6357a3a066",
+        "f1c60f0b008f0dbbe538ceebc89ef28d0875f085",
+        "16242529b0552e0de5aa9402353a410375b8dd12",
+        "b151eddf834a2f4b4c0b10d74f2747ca85a6c5f6",
+        "5d9e0b38e2c37287a0d72c9e38e760e31229508d",
+        "0eed6538ec0578cbcd6199144f42100f5200fa31",
+        "7e51252c0e10686adbc8bebc9b0cd63c65f33a39",
+        "ebc6e2d53d8655d656119f6b1b7524719296ae2d",
+        "86035ea19de817d58461e086decd22829d9fae61",
+        "25450a6c2e6dea257936705e7839c32b761c02f3",
+        "a6531601c15b8cc2910080d3982658b5efd5458b",
+        "107b0330f63af33102644e8fd28580fde66721c6",
+        "8f0f7165442d7abc8f9aae4df1beb2d96232ca72",
+        "26e41dd30437e7b8654f3a27aa979ed8eb973332",
+        "fa15c23838312c0d9000c08aa955a9b41200bf6e",
+        "9a48edcb39d6d7d9434b353d09c6c18bd035a60a",
+        "e945b80648049735f914e57b77be24179439eb0e",
+        "74b4ab13cb00b86a385e95533b76f87752b3eaf3",
+        "a6a89f6d5de0aad5e9a0e8af069aecca6c61bad2",
+        "c5484101880177b8b49fa369e2576a863d9821ed",
+        "d14ccf8992ae12268e7a50305f78ce188d5455a5",
+        "928b32acf5014a5ce8f4e2b6a59dd534383a61a5",
+        "8916a96ea6d5e182fa03593e395a38797de4f606",
+        "61f3186af5acbc8caafc8ced1be84ba40dce0ddc",
+        "a6ba4d2777934f3f6333ede9ea4e17fa0bd192cc",
+        "431dfb84df19358e8db0c9a85874afcf9b6c177a",
+        "ba88f8179b6773e485147b8388b4282948ec487f",
+        "a9eaf60ff946c83b6ecce9e1a71f840728b3a4f2",
+        "23580ce013a2ba884dda80d6680b4da710516be0",
+        "287ca73dc2102cddf8161e7af6fa987172dafb5e",
+        "3f7eaec71cc2073b2705d2372a78f7e84c316180",
+        "45a1eb7c4d240d7722db2078c321f7b7e080c934",
+        "ae6204b6114845bab6fe14f2934206e9078e44b9",
+        "0209c4398ac6809f3ec0a2137ce29b41dbcc3b9b",
+        "8909997088387c0e7c2d37bfeb1ddb0558c26677",
+        "9b9e01425601380bf7086610a7aa247a4fcf5b8b",
+        "e10e02b8d921eef905e888ecaaf2e4d25373a6d5",
+        "a42d7c0b2bd38796725e3f6d99627288aabaec59",
+        "f86d7ee9ca0e9207a293683bb1afb5ac3ed5007e",
+        "155995972632ed1af86ec0498bc17a47c75819ba",
+        "fe313e232219407aae66b7f29e90f21a8da0567b",
+        "c203e74f8ba855f5a5855e75392c30d47df37ce4",
+        "3028ebe097c04dd2c90de72fdc22039700cae417",
+        "f78fc1079b45373bc6053648ad0e51fb3156626b",
+        "2e1bd74c0f3e955ccb208c114e748c93e9dad334",
+        "1960c5da39092a9ca82bf19e80c312b4c32790c1",
+        "52c2b29fb474701b776d948013e2a77ecbf1b394",
+        "4266a580c4900addd12faede308ef2c0cb882c3e",
+        "7aedc164591200a69076ee9378004240fc93fc8b",
+        "758d318596607d06b75b8dae40e7ec8fa1f9e55c",
+        "5303c41505793bae844a33c4556f3cd9a6a457d5",
+        "b77362baa9a13e77b88a33edffbbce81335b614f",
+        "eeb6788dc251f59c30d19e5634fb7755b0eeb2df",
+        "2243d6c07d7208ce5ede4fa0bd3b81df6b224094",
+        "ff56cd266966c072eea7a5fb452099e021b4b9b8",
+        "bb294180d03d8b3b8376c26435ade19856dd60db",
+        "a18829d4e13a4ac5c4896b2485bf3408e0090dff",
+        "5d5778dfb08fd0d867ebee83834de18116ea037d",
+        "90e8e9a63a8674ed6c863be872191d323f613743",
+        "21375a71c22f08ddc3704ba40e952735e02ce762",
+        "112bb99636869dceb37833d9afd926b73a69d374",
+        "34f8071cb7a3ac9f8f394378ea23907f0e76f092"
+      ]
+    },
+    {
+      "ref": "origin/main",
+      "sha": "98a5de18f92674c9e70ec61a802391bf984de8d6",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/obs/ml-structural-score-alignment-20260929",
+      "sha": "7737c2278f335266f49f180c963fba3cb0445638",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/ops/retry-site-hardening-staging-20260928",
+      "sha": "d48c7d585a5bb087102d27f483b483a20534328f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/final-2026-07-27",
+      "sha": "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b",
+      "action": "SUPERSEDED_LEGACY_BASELINE",
+      "reason": "July baseline spans session/delivery/outcome/V7/schema/recovery changes now present in later canonical implementations. Never restore desktop SQLite WALs, obsolete zip bundles, old migration versions or production environment activation values. Distinct documentation versions are retained for clause review.",
+      "evidence": "docs/release/evidence/historical-sources.json; db/session.py; engine/realtime_outcome_tracker.py; requirements/; db/migrations/",
+      "branch_only_commits_at_snapshot": 2,
+      "unique_patch_commits": [
+        "6c9759f124e639132bb2de7aac6dc14a170e3dcb",
+        "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b"
+      ]
+    },
+    {
+      "ref": "origin/release/production-account-shell-v35-20260928",
+      "sha": "a758a9f7d59738dc66314abed204bdb98ef06f58",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-adaptive-write-hotfix-20260928",
+      "sha": "98d1447032e6524b2832f94eb58bd045437dd596",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "98d1447032e6524b2832f94eb58bd045437dd596"
+      ]
+    },
+    {
+      "ref": "origin/release/production-ai-evidence-confidence-20260929",
+      "sha": "c7a36b24861ce4e6b6f5c01c251e0ec975232594",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ai-evidence-parity-20260929",
+      "sha": "d8b75fc47cde94dfaf7ff605860b43b207074c13",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ai-learning-calculation-qa-20260929",
+      "sha": "349f1f33397fac1660694afe3a6ec652f7f3f335",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "349f1f33397fac1660694afe3a6ec652f7f3f335"
+      ]
+    },
+    {
+      "ref": "origin/release/production-ai-profile-calc-qa-20260929",
+      "sha": "2dd619b17feb0565b88ce39a7180ea90b5094bb3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ai-profile-calc-qa-r2-20260929",
+      "sha": "a899af1bcb31faa68c23ffcf40ec79d4fbbec62d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ai-profile-calculation-r2-20260929",
+      "sha": "a4ef28d9388e2a7b4b3c00678b514fdd61f54afa",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "a4ef28d9388e2a7b4b3c00678b514fdd61f54afa"
+      ]
+    },
+    {
+      "ref": "origin/release/production-ai-profile-tier-calculation-20260929",
+      "sha": "db0c4f3cbb08ba7f0f04ee9479dbc32e7e54e14b",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-derivatives-squeeze-fix-20260928",
+      "sha": "860795a5377710c421ea6592abe7e12b609c8529",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "860795a5377710c421ea6592abe7e12b609c8529"
+      ]
+    },
+    {
+      "ref": "origin/release/production-diagnostics-import-fix-20260928",
+      "sha": "402efc0ca990a4b10736d7369e0acf766a0eb6d7",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-env-contract-cleanup-20260928",
+      "sha": "411b55bb8bdf5f6011767bc625ff954d8e7ba7e1",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-final-redesign-20260928",
+      "sha": "2a99ee4aa09da9188301bdb54b01a7922a7091ba",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-learning-quality-20260929",
+      "sha": "232f84b1cd4405b8f7c488671551cb4d78dec9d8",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-learning-quality-r2-20260929",
+      "sha": "b63f2aa8de0296a4b9c4f9086fd7e5bfafefade5",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ml-recovery-shared-health-20260929",
+      "sha": "ef76f3488153b0becfecc8438ef393838e2334fd",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ml-shadow-hot-reload-20260929",
+      "sha": "25b65957b0f5cb6ce28a52c9e615a10e0b272a04",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ml-shadow-single-sync-20260929",
+      "sha": "457862478c5c0d9e57f0ed328a5102bd1e5bca02",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-official-brand-v32-20260928",
+      "sha": "4c9d1929c8b269cf66478349bb84bd1186a5bbeb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-official-brand-v32-r2-20260928",
+      "sha": "02fd5dd00ea058b8469e2e96cc043deab547a2a3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-owner-drought-pulse-20260928",
+      "sha": "16ff35187c3e27394d14cecb479859def1cf1fb7",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-performance-isolation-20260928",
+      "sha": "06def114581e2bc82ca5f115fa3b0c3a2c82cbf3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-post-ml-funnel-20260929",
+      "sha": "f0883fd6c5a36613adf39401c3ea6c1ad84645e1",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-post-ml-funnel-r2-20260929",
+      "sha": "0c50610869aba02cd0bd1a668ffbea36678c0752",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-post-ml-recovery-tier-fix-20260929",
+      "sha": "1cd06cec180166795b1561179062e17fa4c86d7c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-qa-learning-profile-parity-20260929",
+      "sha": "612049b04d676a08b53de79d96f37dc420674c0f",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "612049b04d676a08b53de79d96f37dc420674c0f"
+      ]
+    },
+    {
+      "ref": "origin/release/production-qa-ml-candle-fixes-20260929",
+      "sha": "d1879dc17a5396f2dcfaa412895bbe8496a2eb30",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-qa-ml-candle-fixes-r2-20260929",
+      "sha": "ae60b47032dafa16b4bfbaca71e309221dc3f89d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-qa-ml-candle-fixes-r3-20260929",
+      "sha": "4bebe59df6954fcd2dd581c36d656d303bfa37fb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-quality-gate-repair-20260929",
+      "sha": "cad187c6d9037f094dd619cf1a58253f5ec2cdda",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-recovery-ev-guard-20260929",
+      "sha": "9248a3993924e4a18ad837a6d06cfc31c3e8fe5c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-recovery-quality-consistency-20260929",
+      "sha": "f52db9b20ceb1ffaf80530706dc705af567f6449",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-recovery-quality-consistency-r2-20260929",
+      "sha": "74f78b1471bad6b1a5d7fa91aa9579f8b30435fa",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-session-freshness-retention-20260929",
+      "sha": "2f269dcdc8a839cdd274a87533f73857091574b1",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-shell-v36-refresh-20260928",
+      "sha": "4741fa49d780ddfd515e40794b28b87fdff0d521",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-signal-funnel-markets-v33-20260928",
+      "sha": "c7ecc10e95282043a4af8defcdfa3cd9c8f0be89",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-smtp-smoke-20260928",
+      "sha": "ca3b48c31a3c37a6f12317cb7eaeedfe8716d17f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-starvation-ai-scale-20260929",
+      "sha": "440f4488bba84bc0461a93dcf2ba871ca39b66b3",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-starvation-ai-scale-r2-20260929",
+      "sha": "e991bfe78252294e1e97b468e8b41a2618928156",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-strategy-aware-quality-20260929",
+      "sha": "7e801abbdbe6fd2865651ae78cd55402baff79ba",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-strategy-aware-quality-r2-20260929",
+      "sha": "eeb44c9abf5879aad1244269cecee9ead878c9c0",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "eeb44c9abf5879aad1244269cecee9ead878c9c0"
+      ]
+    },
+    {
+      "ref": "origin/release/production-ui-brand-and-derivatives-20260928",
+      "sha": "44ec65c4c2c15c63a9d31ea9b7c8f477a9d4ba5d",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-ui-brand-final-20260928",
+      "sha": "ba29947835491b970de11e286b6ec19091ab4d74",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-v38-current-main-20260929",
+      "sha": "641fb6ba8aa9efa3eb74ce255c12e7048aacc1ec",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-web-brand-account-shell-20260928",
+      "sha": "70c60c7df2be67786134a2aa543121d360dde33c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/production-web-brand-account-shell-v34-r2-20260928",
+      "sha": "de181096b91f766c7d82b907c989827c3421717e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/site-account-billing-hardening-prod-20260928",
+      "sha": "4f080868c4685662d4dd59f012ad65da59597f64",
+      "action": "SUPERSEDED_IMPLEMENTATION",
+      "reason": "Current canonical session bootstrap and verified billing return handling retain the feature; isolated older shell/style/cache/production trigger snapshots are obsolete. Legal consent is merged on top of the recovered current auth protections.",
+      "evidence": "web/platform_api.py; web/platform_app/app.js; frontend/src/lib/retained-session.ts; tests/test_site_account_billing_hardening_20260928.py",
+      "branch_only_commits_at_snapshot": 11,
+      "unique_patch_commits": [
+        "670bda0c74c6919c8ba8f555002c0f2f0760986b",
+        "7c7ea50cefc18afa6823b21ac65ca60cb2e1e3b4",
+        "93b7a0fdf194497791538711a14f05c13a8c813e",
+        "ca881ff80bbfd4627fa0f8daed091539dbc7c7e0",
+        "b28984ae9cfd804eb38ca76cb82dae5fffc3f34e",
+        "4f080868c4685662d4dd59f012ad65da59597f64"
+      ]
+    },
+    {
+      "ref": "origin/release/staging-adaptive-write-hotfix-20260928",
+      "sha": "bdc5fa91ad35972efaa2f6ccd55bdee3c6d86b81",
+      "action": "RETIRED_RELEASE_TRIGGER",
+      "reason": "Unique commit only records/requests a historical rollout or certification. It adds no missing runtime feature; copying triggers could replay obsolete deployment intent.",
+      "evidence": "evidence/branch-audit.json::unique_commits",
+      "branch_only_commits_at_snapshot": 1,
+      "unique_patch_commits": [
+        "bdc5fa91ad35972efaa2f6ccd55bdee3c6d86b81"
+      ]
+    },
+    {
+      "ref": "origin/release/staging-certified-20260927-878747f",
+      "sha": "878747fcd084e572b8afcf18272e38ecf5db7bed",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-final-redesign-20260928",
+      "sha": "92acb6b68730c9d2249b4bcdc6669424df2c3987",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-metaapi-auth-fix-20260927-883b0a4",
+      "sha": "883b0a42a163c72437eaaaba413d842ef1acc566",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-metaapi-health-gate-20260927-c67b8be",
+      "sha": "c67b8bec15b1d1e9ad70cf0e9d8f9b68e26d9b1f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-mt5-authorized-20260927-93039e2",
+      "sha": "93039e2e77800c4aa6b9ba1b1a8ce45797814210",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-mt5-metaapi-auth-20260927-c67b8be",
+      "sha": "c67b8bec15b1d1e9ad70cf0e9d8f9b68e26d9b1f",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-mt5-multiaccount-ux-20260927-0aa0206",
+      "sha": "93039e2e77800c4aa6b9ba1b1a8ce45797814210",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-mt5-multiaccount-ux-20260927-93039e2",
+      "sha": "93039e2e77800c4aa6b9ba1b1a8ce45797814210",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/release/staging-performance-isolation-20260928",
+      "sha": "ec82e79287d1fcddabe5399b123e27fc4197b81e",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/repair/multi-asset-production-certification",
+      "sha": "72090536f70def89404c2a5e9675cb8ffcb693eb",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/staging",
+      "sha": "8f8583933a853a54ba1b3585610ee466903c08fc",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/sync/recent-requirements-to-main-20260928",
+      "sha": "0760102347ed05ee847dc0c1346d2b8282bd481c",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    },
+    {
+      "ref": "origin/test/ml-forward-proof-gates-20260929",
+      "sha": "08a38c12ae5c1a5ad2fcbace915ca1534bb6ba09",
+      "action": "ANCESTOR_PRESERVED",
+      "reason": "Reachability or patch-equivalence preserves this branch; no destructive rewrite or duplicate merge required.",
+      "evidence": "evidence/branch-audit.json",
+      "branch_only_commits_at_snapshot": 0,
+      "unique_patch_commits": []
+    }
+  ]
+}

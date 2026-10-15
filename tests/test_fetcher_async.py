@@ -80,6 +80,57 @@ class TestAsyncFetcher(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_fx_class_attempt_budget_reaches_third_provider(self):
+        calls = []
+
+        async def empty_one(symbol, tf, timeout=10):
+            calls.append("one")
+            return []
+
+        async def empty_two(symbol, tf, timeout=10):
+            calls.append("two")
+            return []
+
+        async def yahoo_ok(symbol, tf, timeout=10):
+            calls.append("yahoo")
+            return make_dummy_candles(30)
+
+        async def run_test():
+            env = {
+                "OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME": "2",
+                "OHLC_FX_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME": "3",
+            }
+            with patch.dict(os.environ, env, clear=False), patch(
+                "data.connector_registry.get_async_providers_for_asset",
+                return_value=[
+                    ("twelvedata_connector", empty_one),
+                    ("polygon_connector", empty_two),
+                    ("yfinance_connector", yahoo_ok),
+                ],
+            ):
+                from data.fetcher import async_get_candles
+
+                out = await async_get_candles("EURUSD", "1h")
+                self.assertGreaterEqual(len(out), 20)
+                self.assertEqual(calls, ["one", "two", "yahoo"])
+
+        asyncio.run(run_test())
+
+    def test_crypto_budget_remains_global_default_when_no_class_override(self):
+        from data.fetcher import _max_provider_attempts
+
+        with patch.dict(
+            os.environ,
+            {
+                "OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME": "2",
+                "OHLC_CRYPTO_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME": "",
+            },
+            clear=False,
+        ):
+            self.assertEqual(_max_provider_attempts("crypto"), 2)
+            self.assertEqual(_max_provider_attempts("fx"), 2)
+
+
     def test_crypto_registry_prefers_railway_safe_public_providers(self):
         from data.connector_registry import get_async_providers_for_asset
 

@@ -72,7 +72,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     class _Mappings:
         def one(self):
             result = {
-                "deployed_revision": "0054_shadow_pending_index",
+                "deployed_revision": "0055_user_renewal_default",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -142,7 +142,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     result = await railway_main._database_readiness_check()
 
     assert result["ok"] is (missing is None)
-    assert result["revision"] == "0054_shadow_pending_index"
+    assert result["revision"] == "0055_user_renewal_default"
     if missing is None:
         assert result["probe_timeout_seconds"] == 8.0
     else:

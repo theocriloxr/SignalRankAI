@@ -60,6 +60,24 @@ with sync_playwright() as p:
             assert health.json()['financial_readiness_certified'] is False
             assert 'no-store' in health.headers['cache-control']
         report['checks'].append('both frontend health URLs prove candidate identity without financial certification')
+        signup_context = browser.new_context()
+        try:
+            signup_page = signup_context.new_page()
+            visit(signup_page, '/login')
+            signup_page.get_by_role('button', name='New to SignalRank? Create an account').click()
+            signup_page.get_by_label('Email address', exact=True).fill('stage1-signup@example.test')
+            signup_page.get_by_label('Password', exact=True).fill('LocalDrill-Only-20261003!')
+            signup_page.get_by_label('Confirm password', exact=True).fill('LocalDrill-Only-20261003!')
+            for field in ('platform_terms_accepted','privacy_acknowledged','age_eligibility_confirmed'):
+                signup_page.locator(f'input[name={field}]').check()
+            assert not signup_page.locator('input[name=marketing_consent]').is_checked()
+            signup_page.get_by_role('button', name='Create account', exact=True).click()
+            signup_page.wait_for_url(base+'/app', timeout=30000)
+            signup_me = signup_context.request.get(base+'/api/v1/platform/me')
+            assert signup_me.status == 200 and signup_me.json()['user']['primary_email'] == 'stage1-signup@example.test'
+            report['checks'].append('explicit consent registration creates a real isolated database account and verified cookie session')
+        finally:
+            signup_context.close()
         anonymous = context.request.get(base+'/api/v1/platform/me')
         assert anonymous.status == 401
         assert 'no-store' in anonymous.headers.get('cache-control', '')

@@ -43,7 +43,11 @@ export function AccountEntry() {
           setMessage("Passwords do not match.");return;
         }
         response = await client.POST("/api/v1/platform/auth/register", {
-          body: { email: String(data.get("email")||"").trim(), password, display_name: String(data.get("name")||"").trim(), client_type:"web", signup_source:"web", landing_path:"/app" },
+          body: { email: String(data.get("email")||"").trim(), password, display_name: String(data.get("name")||"").trim(), client_type:"web", signup_source:"web", landing_path:"/app",
+            platform_terms_accepted:data.get("platform_terms_accepted")==="on",
+            privacy_acknowledged:data.get("privacy_acknowledged")==="on",
+            age_eligibility_confirmed:data.get("age_eligibility_confirmed")==="on",
+            marketing_consent:data.get("marketing_consent")==="on" },
         });
       } else {
         response = await client.POST("/api/v1/platform/auth/login", {
@@ -93,6 +97,13 @@ export function AccountEntry() {
           <label>Email address<input name="email" type="email" autoComplete="email" required maxLength={255}/></label>
           <label>Password<input name="password" type="password" autoComplete={mode==="register"?"new-password":"current-password"} minLength={mode==="register"?10:undefined} required/></label>
           {mode==="register"&&<label>Confirm password<input name="confirm_password" type="password" autoComplete="new-password" required/></label>}
+          {mode==="register"&&<fieldset className="sr-account-consent">
+            <legend>Account agreements</legend>
+            <label><input name="platform_terms_accepted" type="checkbox" required/>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a>.</label>
+            <label><input name="privacy_acknowledged" type="checkbox" required/>I have read the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.</label>
+            <label><input name="age_eligibility_confirmed" type="checkbox" required/>I confirm I am at least 18 and eligible to use the service.</label>
+            <label><input name="marketing_consent" type="checkbox"/>Send me optional product news and marketing emails.</label>
+          </fieldset>}
         </>}
         {message&&<p className="sr-form-message" role="status">{message}</p>}
         <button className="button" type="submit" disabled={busy}>{busy?"Verifying…":stage==="mfa"?"Verify code":mode==="register"?"Create account":"Sign in"}</button>

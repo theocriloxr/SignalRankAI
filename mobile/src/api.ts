@@ -185,11 +185,28 @@ export async function requestPasswordReset(email: string): Promise<void> {
   if (!response.ok) throw new Error('Could not request password reset');
 }
 
-export async function register(displayName: string, email: string, password: string): Promise<SessionPayload> {
+export async function register(
+  displayName: string,
+  email: string,
+  password: string,
+  platformTermsAccepted: boolean,
+  privacyAcknowledged: boolean,
+  ageEligibilityConfirmed: boolean,
+  marketingConsent: boolean,
+): Promise<SessionPayload> {
   const generation = sessionGeneration;
   const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/register`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({display_name: displayName, email, password, client_type: 'mobile'}),
+    body: JSON.stringify({
+      display_name: displayName,
+      email,
+      password,
+      client_type: 'mobile',
+      platform_terms_accepted: platformTermsAccepted,
+      privacy_acknowledged: privacyAcknowledged,
+      age_eligibility_confirmed: ageEligibilityConfirmed,
+      marketing_consent: marketingConsent,
+    }),
   });
   const payload = await response.json();
   assertGeneration(generation);
@@ -198,11 +215,33 @@ export async function register(displayName: string, email: string, password: str
   return payload;
 }
 
-export async function activateTelegram(tokenOrCode: string, email: string, password: string): Promise<SessionPayload> {
+export function legalUrl(path: string): string {
+  const root = API_URL.replace(/\/api(?:\/.*)?$/, '');
+  return `${root}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export async function activateTelegram(
+  tokenOrCode: string,
+  email: string,
+  password: string,
+  platformTermsAccepted: boolean,
+  privacyAcknowledged: boolean,
+  ageEligibilityConfirmed: boolean,
+  marketingConsent: boolean,
+): Promise<SessionPayload> {
   const generation = sessionGeneration;
   const response = await mobileFetch(`${API_URL}/api/v1/platform/auth/telegram/complete`, {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({token_or_code: tokenOrCode, email, password, client_type: 'mobile'}),
+    body: JSON.stringify({
+      token_or_code: tokenOrCode,
+      email,
+      password,
+      client_type: 'mobile',
+      platform_terms_accepted: platformTermsAccepted,
+      privacy_acknowledged: privacyAcknowledged,
+      age_eligibility_confirmed: ageEligibilityConfirmed,
+      marketing_consent: marketingConsent,
+    }),
   });
   const payload = await response.json();
   assertGeneration(generation);
@@ -322,19 +361,35 @@ export type BillingProduct = {
   duration_days: number;
   currency: string;
   price_ngn: number;
+  recurring?: boolean;
+  renewal_disclosure?: string;
 };
 
 export async function getBillingProducts(): Promise<{products: BillingProduct[]}> {
   return api('/billing/products');
 }
 
-export async function createBillingCheckout(productId: string): Promise<{authorization_url: string; reference: string}> {
+export async function createBillingCheckout(productId: string, recurringAcknowledged = false): Promise<{authorization_url: string; reference: string; recurring?: boolean}> {
   return api('/billing/checkout', {
     method: 'POST',
-    body: JSON.stringify({product_id: productId, currency: 'NGN'}),
+    body: JSON.stringify({product_id: productId, currency: 'NGN', recurring_acknowledged: recurringAcknowledged}),
   });
 }
 
-export async function getBilling(): Promise<{subscriptions: any[]; receipts: any[]}> {
+export async function getBilling(): Promise<{subscriptions: any[]; receipts: any[]; auto_renew?: boolean; provider_subscription_linked?: boolean}> {
   return api('/billing');
+}
+
+export async function cancelAutoRenew(): Promise<{success: boolean; policy?: string; provider_follow_up_required?: boolean; support_ticket_id?: string | null}> {
+  return api('/billing/cancel-auto-renew', {
+    method: 'POST',
+    body: JSON.stringify({confirm: true}),
+  });
+}
+
+export async function requestRefundReview(paymentReference: string, reason: string): Promise<{ticket_id?: string; message?: string}> {
+  return api('/billing/refund-request', {
+    method: 'POST',
+    body: JSON.stringify({payment_reference: paymentReference, reason}),
+  });
 }

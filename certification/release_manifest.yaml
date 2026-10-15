@@ -575,6 +575,18 @@
         "cleanroom",
         "local"
       ]
+    },
+    {
+      "id": "stage1-source-inventory",
+      "group": "source",
+      "description": "Repository source/interface accounting (requires Git checkout; no automatic verification claims)",
+      "command": "python scripts/build_release_inventory.py --check",
+      "severity": "critical",
+      "required": true,
+      "environments": [
+        "ci",
+        "local"
+      ]
     }
   ]
 }

@@ -1,5 +1,9 @@
 # SignalRankAI
 
+Current recovery authority: [Master execution contract](docs/release/MASTER_EXECUTION_CONTRACT.md).
+Read its baseline, blockers, traceability and evidence before continuing work.
+Historical completion reports do not certify the current integration or live trading.
+
 ## Railway monolith production notes
 
 ### Migrations

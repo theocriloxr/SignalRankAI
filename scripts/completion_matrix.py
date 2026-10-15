@@ -107,9 +107,46 @@ def validate_disposition(value: dict, entry: dict, root: Path) -> None:
                 raise ValueError("invalid_acceptance_identity_or_result")
             if proof["scope"] != value["status"]:
                 raise ValueError("acceptance_scope_mismatch")
+            validate_evidence_artifact(proof, entry, root)
             observed.update(proof.get("subrequirements", []))
         if observed != required or not evidence or value.get("missing_acceptance"):
             raise ValueError("full_section_acceptance_not_established")
+
+
+def validate_evidence_artifact(proof: dict, entry: dict, root: Path) -> None:
+    """A URL or a typed PASS is not retained acceptance evidence.
+
+    Require a content-addressed local receipt that binds the exact source clause,
+    code revision, scope and covered subrequirements. Receipts are review inputs,
+    not independent attestations of hosted or broker execution.
+    """
+    artifact = root / str(proof.get("artifact", ""))
+    if not artifact.resolve().is_relative_to(root.resolve()) or not artifact.is_file():
+        raise ValueError("acceptance_artifact_missing_or_external")
+    content = artifact.read_bytes()
+    if hashlib.sha256(content).hexdigest() != proof.get("artifact_sha256"):
+        raise ValueError("acceptance_artifact_digest_mismatch")
+    try:
+        receipt = json.loads(content)
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("acceptance_artifact_invalid_receipt") from exc
+    if not isinstance(receipt, dict):
+        raise ValueError("acceptance_artifact_invalid_receipt")
+    for key in ("sha", "environment", "timestamp", "command", "result", "scope"):
+        if receipt.get(key) != proof.get(key):
+            raise ValueError("acceptance_artifact_identity_mismatch:" + key)
+    if receipt.get("requirement_sha256") != entry["text_sha256"]:
+        raise ValueError("acceptance_artifact_source_mismatch")
+    if set(receipt.get("subrequirements", [])) != set(proof.get("subrequirements", [])):
+        raise ValueError("acceptance_artifact_coverage_mismatch")
+    # Failures, skips and incomplete collection must never be hidden by PASS.
+    if receipt.get("exit_code") != 0 or isinstance(receipt.get("exit_code"), bool):
+        raise ValueError("acceptance_artifact_execution_failed")
+    for key in ("failed", "errors", "skipped"):
+        if receipt.get(key) != 0 or isinstance(receipt.get(key), bool):
+            raise ValueError("acceptance_artifact_incomplete_execution")
+    if type(receipt.get("passed")) is not int or receipt["passed"] < 1:
+        raise ValueError("acceptance_artifact_no_executed_checks")
 
 
 def build(root: Path = ROOT) -> dict:

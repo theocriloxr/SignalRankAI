@@ -8574,20 +8574,24 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 			if result["gateway_cancelled"]
 			else "\u26a0\ufe0f Please also cancel via your Paystack dashboard if billed directly."
 		)
-		await query.edit_message_text(
-			f"\u2705 *Cancellation Confirmed*\n\n"
-			f"Your {tier} auto-renewal is now *OFF*. "
-			f"You keep full access until your billing cycle ends.\n\n"
-			f"{gateway_note}\n\n"
-			f"You can re-subscribe anytime with /upgrade. \U0001f64f",
-			parse_mode="MarkdownV2",
-		)
+		if result.get("escalate_admin"):
+			await query.edit_message_text(
+				"Cancellation pending\n\nProvider cancellation could not be confirmed. "
+				"Renewal may still occur. Contact /support before the next billing date. "
+				"Your current paid access is unchanged.",
+			)
+		else:
+			await query.edit_message_text(
+				f"Cancellation Confirmed\n\nYour {tier} auto-renewal is now OFF. "
+				f"You keep full access until your billing cycle ends.\n\n"
+				f"{gateway_note}\n\nYou can re-subscribe anytime with /upgrade.",
+			)
 		if result.get("escalate_admin"):
 			try:
 				admin_msg = (
 					f"⚠️ Paystack cancel gateway failed after retries.\n"
 					f"user_id={int(user_id)} tier={tier} attempts={int(result.get('retry_attempts') or 0)}\n"
-					"DB auto_renew was set to False."
+					"Provider stop is unconfirmed; renewal state has been preserved."
 				)
 				target_ids = set()
 				for _id in (list(ADMIN_IDS) + list(OWNER_IDS)):
