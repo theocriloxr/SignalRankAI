@@ -7278,7 +7278,7 @@
       "line_count": 10630,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "92eeb5a71098e1daf7b271f65f4d814b5a456df063e40000a3191e82f741fd57",
+      "sha256": "9f0c7c8149b36fe20d4ecce6d4bfbbae58b0b81ed6951169bc05aeaa59282ec9",
       "size_bytes": 4823488
     },
     {
@@ -7286,8 +7286,8 @@
       "line_count": 14,
       "path": "docs/release/baseline.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "60211c50363510f1e46f376752d308256235a4cbec9a1301d3b3ec70c1203bcb",
-      "size_bytes": 638
+      "sha256": "f5f51403410da07b682eede228d9879cbce1b2963be6d11d1d95403e2bc6e28c",
+      "size_bytes": 623
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7462,8 +7462,8 @@
       "line_count": 520176,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "bd59e6eb73d822a90d0075fb2223082e6b778344fec447c609940665831e0356",
-      "size_bytes": 24180384
+      "sha256": "068700e3d50e3a7a5e17c3a37b7a8a7565c33f621197f37bd9497c858b6fed88",
+      "size_bytes": 24180369
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
