@@ -1,3 +1,38 @@
+## Stage 1 focused-universe implementation and CI retry — 16 October 2026
+
+This continuation added a data-backed five-class candidate configuration at
+`configs/focused_universe.json`, a fail-closed classifier/selector at
+`core/focused_universe.py`, and an opt-in engine integration **after** managed,
+pinned and discovered candidate merging, before profile ranking.
+`FOCUSED_UNIVERSE_ENABLED` defaults to false. If enabled, the engine requires
+an explicit staging/development/test environment. Production cannot activate
+this unqualified experiment through a normal config flip.
+
+The current candidate universe is **not provider-certified, broker-certified or
+production active**; unsupported or misclassified instruments are excluded, and
+historical trades/open-position management are not mutated. Full enterprise-wide
+enforcement at new-order, Telegram, web, API and other signal entry points is
+still missing. New pytest tests cover alias deduplication, whitelist limits,
+empty/fallback rejection, staging-only activation and source-contract parity.
+Their existence is not evidence they executed successfully.
+
+A connector readback of seven files checked 31 structural and JSON contract
+assertions: **31 passed, 0 failed**, without executing Python or importing the
+application. This is static verification only. Existing retained local Python
+evidence (3,984 passes) remains scoped to c411ebbb; it does not cover these
+new commits.
+
+Hosted GitHub Actions run 38932482649 was retried (attempt 2); both failing
+jobs still have zero executed steps. Exact-head run 38943080448 also ended
+with failed manifest and release-certification jobs, **zero steps executed**.
+The documented billing-account restriction remains unresolved. No source-level
+pytest, full build or hosted regression pass can be claimed for this head.
+
+A read-only live website extraction on 16 October resolved `/` to `/app`
+and showed the retained SignalRankAI trading workstation and session-restoration
+screen. Direct `/login` returned HTTP 404. No authenticated session, order,
+payment, Telegram operation, deployment or staging soak was exercised.
+
 # Completion evidence
 
 ## Stage 1 continuation — 16 October 2026 (current user focus)
