@@ -2866,6 +2866,7 @@ def main_loop(DRY_RUN: bool = False):
         except Exception:
             pass
         _discovered_assets: List[str] = []
+        _focused_db_symbols: List[str] = []
         _universe_source = "legacy_provider_discovery"
         _dynamic_universe_enabled = _env_bool("DYNAMIC_UNIVERSE_ENABLED", True)
         _allow_static_fallback = _env_bool("ALLOW_STATIC_ASSET_FALLBACK", False)
@@ -2908,6 +2909,9 @@ def main_loop(DRY_RUN: bool = False):
                         or []
                     )
                 ]
+                # Retain the metadata-certified database subset before class
+                # completion may add provider-discovery candidates.
+                _focused_db_symbols = list(_discovered_assets)
                 from data.class_universe import build_class_complete_universe, default_discoverers
 
                 _discovered_assets, _class_universe_health = build_class_complete_universe(
@@ -2979,7 +2983,7 @@ def main_loop(DRY_RUN: bool = False):
                 )
                 _focused_available = []
             else:
-                _focused_available = _discovered_assets
+                _focused_available = _focused_db_symbols
             _focused = select_focused_assets(_focused_available)
             assets = list(_focused.assets)
             logger.info(
