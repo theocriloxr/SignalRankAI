@@ -2953,6 +2953,18 @@ def main_loop(DRY_RUN: bool = False):
         # managed/user-pinned assets) before profile ranking or scan scheduling.
         # This does NOT authorize live execution or change broker account policy.
         if _env_bool("FOCUSED_UNIVERSE_ENABLED", False):
+            _focused_environment = str(
+                os.getenv("RAILWAY_ENVIRONMENT_NAME")
+                or os.getenv("RAILWAY_ENVIRONMENT")
+                or os.getenv("APP_ENV")
+                or os.getenv("ENVIRONMENT")
+                or ""
+            ).strip().lower()
+            if _focused_environment not in {"staging", "stage", "development", "dev", "test"}:
+                # Candidate lists are not certification for a production scan
+                # or for broker live execution. Refuse even explicit opt-in
+                # until a separately reviewed production release is certified.
+                raise RuntimeError("focused_universe_requires_staging_certification")
             from core.focused_universe import select_focused_assets
 
             _focused = select_focused_assets(assets)
