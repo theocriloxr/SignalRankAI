@@ -128,13 +128,37 @@ def client_interfaces(paths: list[str]) -> list[dict]:
             rows.append(row("WEB", name, name, route, "frontend / Next.js",
                 "Page or route source exists; workspace mode and backend proxy determine the effective owner.",
                 "Browser journey in both next and legacy workspace modes; returning PWA, keyboard, mobile and authorization.", route=route))
+    # File-system catch-alls are declarations, not a route-by-route inventory.
+    # Expand the actual allowlists while retaining their declaration rows above.
+    public_source = "frontend/src/app/[slug]/page.tsx"
+    public_names = set()
+    for name in (public_source, "frontend/src/lib/public-pages.ts"):
+        public_names.update(re.findall(r"^  ([a-z][a-z0-9-]*): (?:\{|page\()", (ROOT/name).read_text("utf-8"), re.M))
+    workspace_source = "frontend/src/app/app/[...slug]/page.tsx"
+    workspace_text = (ROOT/workspace_source).read_text("utf-8")
+    section_set = re.search(r"const sections = new Set\(\[(.*?)\]\)", workspace_text, re.S)
+    if not public_names or not section_set:
+        raise ValueError("Client route allowlist syntax changed; update the inventory extractor")
+    workspace_names = re.findall(r'"([a-z]+)"', section_set.group(1))
+    concrete = [("/"+name, public_source) for name in sorted(public_names)]
+    concrete += [("/app/"+name, workspace_source) for name in sorted(workspace_names)]
+    if 'section === "signals" && slug.length === 2' in workspace_text:
+        concrete.append(("/app/signals/{signal_id}", workspace_source))
+    for route, source in concrete:
+        rows.append(row("WEB", source+":"+route, source, route, "frontend / Next.js route allowlist",
+            "Concrete accepted route. /privacy is owned by the recovered backend policy through the proxy; workspace mode selects Next or retained app ownership.",
+            "Exercise this route in its deployed workspace mode, including anonymous, entitled and cross-user access, empty/error and responsive states.",
+            route=route, route_kind="EXPANDED_ALLOWLIST"))
     shell = (ROOT/"web/platform_app/index.html").read_text("utf-8")
     for view in sorted(set(re.findall(r'id="([A-Za-z]+)View"',shell))):
         rows.append(row("WEB", "legacy:"+view, "web/platform_app/index.html", "/app?view="+view,
             "web/platform_app/app.js", "Retained workstation view; canonical platform API owns account data.",
-            "Load view and exercise its reads/writes, role restrictions, expired session and failure feedback."))
+            "Load view and exercise its reads/writes, role restrictions, expired session and failure feedback.", route="/app?view="+view))
     native = (ROOT/"mobile/App.tsx").read_text("utf-8")
-    for view in sorted(set(re.findall(r"screen==='([^']+)'",native))):
+    screens = re.search(r"type Screen = (.*?);", native)
+    if not screens:
+        raise ValueError("Native Screen union changed; update the inventory extractor")
+    for view in sorted(set(re.findall(r"'([^']+)'", screens.group(1)))):
         rows.append(row("MOBILE", view, "mobile/App.tsx", view, "mobile / Expo",
             "Native screen source exists; device/build/OS behavior remains separate acceptance.",
             "Type check, JS export and installed iOS/Android journey with device credential and push tests."))

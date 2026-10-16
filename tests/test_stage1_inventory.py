@@ -43,6 +43,16 @@ def test_every_snapshot_ref_has_an_explicit_non_destructive_disposition():
     assert all(r["reason"] and r["evidence"] and r["action"] != "DIVERGENT_REVIEW_REQUIRED" for r in reviewed["refs"])
 
 
+def test_catch_all_files_expand_to_concrete_product_routes():
+    rows = inventory.client_interfaces(inventory.tracked())
+    routes = {r["route"] for r in rows if r["kind"] == "WEB"}
+    assert routes >= {"/pricing", "/product", "/privacy", "/strategies", "/status",
+                      "/app/watchlists", "/app/settings", "/app/operations",
+                      "/app/signals/{signal_id}"}
+    assert len([r for r in rows if r.get("route_kind") == "EXPANDED_ALLOWLIST"]) == 31
+    assert {r["requirement"] for r in rows if r["kind"] == "MOBILE"} >= {"overview", "research", "account"}
+
+
 def test_all_historical_documentation_versions_are_retrievable_and_hash_bound():
     index = json.loads((ROOT / "docs/release/evidence/historical-documentation-index.json").read_text("utf-8"))
     archive = ROOT / index["archive"]
