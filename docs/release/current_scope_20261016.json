@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "requirement_id": "SR-FOCUS-20261015",
+  "source": "User instruction in SignalRankAI conversation, 2026-10-15: narrow active universe to 10-15 assets per class; reaffirmed in 2026-10-16 continuation",
+  "authority": "Current user scope overrides older all-asset expansion targets for active scanning/new entries, not historical research or management of existing positions.",
+  "stage": "1: requirements and safe foundation; runtime implementation/release certification still pending",
+  "status": "NOT_IMPLEMENTED",
+  "asset_classes": {
+    "crypto": {
+      "core": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BNBUSDT",
+        "DOGEUSDT",
+        "TRXUSDT",
+        "LINKUSDT",
+        "ADAUSDT",
+        "LTCUSDT"
+      ],
+      "optional": [
+        "AVAXUSDT",
+        "SUIUSDT",
+        "XLMUSDT",
+        "HYPEUSDT",
+        "BCHUSDT"
+      ]
+    },
+    "forex": {
+      "core": [
+        "EURUSD",
+        "USDJPY",
+        "GBPUSD",
+        "USDCHF",
+        "USDCAD",
+        "AUDUSD",
+        "NZDUSD",
+        "EURJPY",
+        "GBPJPY",
+        "EURGBP"
+      ],
+      "optional": [
+        "AUDJPY",
+        "CADJPY",
+        "GBPCHF",
+        "EURAUD",
+        "CHFJPY"
+      ]
+    },
+    "index": {
+      "core": [
+        "US500",
+        "NAS100",
+        "US30",
+        "GER40",
+        "UK100",
+        "JP225",
+        "FRA40",
+        "EU50",
+        "AUS200",
+        "HK50"
+      ],
+      "optional": [
+        "RUSSELL2000",
+        "CHINA50",
+        "ES35",
+        "SMI20",
+        "NETH25"
+      ]
+    },
+    "equity": {
+      "core": [
+        "NVDA",
+        "AAPL",
+        "MSFT",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "AMD",
+        "AVGO",
+        "JPM"
+      ],
+      "optional": [
+        "BRK.B",
+        "V",
+        "COST",
+        "NFLX",
+        "PLTR"
+      ]
+    },
+    "commodity": {
+      "core": [
+        "XAUUSD",
+        "XAGUSD",
+        "WTI",
+        "BRENT",
+        "NATGAS",
+        "XPTUSD",
+        "COPPER",
+        "CORN",
+        "WHEAT",
+        "SOYBEANS"
+      ],
+      "optional": [
+        "COFFEE",
+        "SUGAR",
+        "COCOA",
+        "XPDUSD",
+        "COTTON"
+      ]
+    }
+  },
+  "policy": {
+    "preferred_core_candidates_per_class": 10,
+    "max_active_per_class": 15,
+    "core_is_guaranteed_active": false,
+    "qualification_required": true,
+    "provider_mapping_required": true,
+    "broker_account_certification_required": true,
+    "execution_requires_independent_authorization": true,
+    "allow_unqualified_fallback": false,
+    "new_entry_blocked_for_excluded_instruments": true,
+    "manage_existing_positions_when_excluded": true,
+    "retain_historical_data": true,
+    "no_production_permission_change_authorized": true,
+    "no_live_order_tests_authorized": true
+  },
+  "acceptance": {
+    "status": "FAILED",
+    "reason": "Current candidate watchlists are recorded but no end-to-end enforced active-universe limit and account-specific execution certification have been verified.",
+    "next_action": "Validate provider and broker mappings, implement one active-universe eligibility authority and enforce it across discovery, scanning, user preferences, signals, learning, web, Telegram and new-order boundaries; run cross-system tests without modifying existing live position management."
+  }
+}
