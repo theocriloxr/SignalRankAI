@@ -2949,6 +2949,21 @@ def main_loop(DRY_RUN: bool = False):
             _allow_static_fallback,
         )
         assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
+        # Explicit staging-only opt-in. Restrict all merged sources (including
+        # managed/user-pinned assets) before profile ranking or scan scheduling.
+        # This does NOT authorize live execution or change broker account policy.
+        if _env_bool("FOCUSED_UNIVERSE_ENABLED", False):
+            from core.focused_universe import select_focused_assets
+
+            _focused = select_focused_assets(assets)
+            assets = list(_focused.assets)
+            logger.info(
+                "[engine] focused_universe enabled=1 selected=%s offered=%s excluded=%s by_class=%s",
+                len(assets),
+                _focused.offered_count,
+                _focused.excluded_count,
+                dict(_focused.selected_per_class),
+            )
         _universe_candidates = list(assets)
         _profile_universe_filter_applied = False
         if (
