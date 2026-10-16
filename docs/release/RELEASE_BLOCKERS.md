@@ -54,3 +54,45 @@ handoff. External blockers do not justify marking unrelated local work complete.
   broker-demo and staging Telegram tests, full Next public-site cutover,
   backup restoration and rolling/soak verification remain open. Do not merge
   draft PR #201 or deploy trading changes based on local/static review alone.
+
+
+## Connected Railway runtime reconnaissance — 16 October 2026
+
+Read-only connector inspection of Railway project `trading-bot-account2`
+(production environment) found:
+
+- API `SignalRankAI` and analytics worker deployed at
+  `9865a3d1bcee632bfd9347e50d5de34d355225d9`, from
+  `fix/provider-discovery-readiness-20260923`.
+- `SignalRankAI-Public-Web` deployed at
+  `f026bd16d90c0fbde2292e326525524fd75966ea`, from
+  `fix/release-recovery-20261008`. The web and backend are not on
+  one release SHA and neither runs the Stage 1 PR head.
+- The connected project has one Railway environment, `production`, and
+  no dedicated Railway staging environment. No staging soak for PR #201
+  can be inferred.
+- `signalrank-readonly-soak-20261012` is marked CRASHED. Its final
+  read-only sample at 2026-10-16 05:14 UTC recorded 72 hours of
+  process observations but explicitly returned
+  `release_soak_certified=false`,
+  `aggregate_database_observation_window_24h_passed=false` and
+  `financial_readiness_certified=false`.
+- The final sample reported no confirmed delivery within one hour,
+  no signal generation within 24 hours, and no verified broker connection.
+  It observed an MT5 credentials-saved record with `verified=0`,
+  `execution_enabled=0`, and broker reconciliation status UNKNOWN.
+  The sample included last confirmed delivery on 2026-10-06.
+  This is a scoped observer report, not a query of every customer
+  account or a claim that the trading engine is permanently broken.
+- Read-only inspection found the production Postgres online with two
+  warnings; verify their type before modifying storage.
+- Attempts to start an isolated Vercel sandbox against the PR head
+  were refused with 403 FORBIDDEN by the connected Vercel project.
+  Thus a fresh full-stack end-to-end test was not run in that environment.
+
+**Release impact:** The latest PR cannot be released/merged based on these
+observations. First restore independent CI, provision staging resources,
+run exact-SHA environment and broker-demo certification, resolve the
+reported delivery/scan drought and reconcile deployment identities.
+Do not restart/modify production trading workers as an unreviewed
+test workaround.
