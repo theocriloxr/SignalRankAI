@@ -1,4 +1,5 @@
 """Worker-owned reconciliation for SignalRankAI-managed Bybit positions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -54,11 +55,13 @@ async def _credentials(
         if connection_id:
             canonical = (
                 await session.execute(
-                    select(BrokerConnection).where(
+                    select(BrokerConnection)
+                    .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.connection_id == str(connection_id),
                         BrokerConnection.platform == "bybit",
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             if canonical is not None:
@@ -150,9 +153,7 @@ async def _mark(
 ) -> None:
     async with get_session(label="bybit.reconcile.write", timeout_seconds=8.0) as session:
         row = (
-            await session.execute(
-                select(BrokerExecution).where(BrokerExecution.id == int(row_id)).with_for_update()
-            )
+            await session.execute(select(BrokerExecution).where(BrokerExecution.id == int(row_id)).with_for_update())
         ).scalar_one_or_none()
         if row is None:
             return
@@ -203,7 +204,9 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                 .join(User, User.id == BrokerExecution.user_id)
                 .where(
                     BrokerExecution.provider == "bybit",
-                    BrokerExecution.status.in_(("reserved", "submitting", "ambiguous", "confirmed", "open", "reconciliation_pending")),
+                    BrokerExecution.status.in_(
+                        ("reserved", "submitting", "ambiguous", "confirmed", "open", "reconciliation_pending")
+                    ),
                 )
                 .order_by(BrokerExecution.created_at.asc())
                 .limit(max(1, int(limit)))
@@ -238,13 +241,10 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             positions = await client.get_positions(symbol=str(execution.symbol))
             active = next((item for item in positions if _as_float(item.get("size")) > 0), None)
             if active is not None:
-                position_event_time = str(
-                    active.get("updatedTime")
-                    or active.get("createdTime")
-                    or ""
-                ).strip()
+                position_event_time = str(active.get("updatedTime") or active.get("createdTime") or "").strip()
                 await _mark(
-                    int(execution.id), status="open",
+                    int(execution.id),
+                    status="open",
                     meta={
                         "order_status": order_status or None,
                         "position_size": active.get("size"),
@@ -262,11 +262,8 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                                 ),
                                 "correlation_id": str(execution.idempotency_key),
                                 "order_ref": execution.provider_order_id,
-                                "position_ref": str(
-                                    active.get("positionIdx")
-                                    or execution.provider_order_id
-                                    or ""
-                                ) or None,
+                                "position_ref": str(active.get("positionIdx") or execution.provider_order_id or "")
+                                or None,
                                 "provider_timestamp": (
                                     datetime.fromtimestamp(
                                         int(float(position_event_time)) / 1000.0,
@@ -293,24 +290,29 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             # Never infer closure before the entry order was filled or the row was previously open.
             if order_status not in _FILLED_ORDER_STATES and str(execution.status) != "open":
                 await _mark(
-                    int(execution.id), status=str(execution.status),
+                    int(execution.id),
+                    status=str(execution.status),
                     meta={"order_status": order_status or None, "last_reconciled_at": now_utc_naive().isoformat()},
                 )
                 continue
 
             closed_rows = await client.get_closed_pnl(
-                symbol=str(execution.symbol), start_time_ms=_created_ms(execution), limit=20,
+                symbol=str(execution.symbol),
+                start_time_ms=_created_ms(execution),
+                limit=20,
             )
             closed = next(
                 (
-                    item for item in closed_rows
+                    item
+                    for item in closed_rows
                     if int(_as_float(item.get("updatedTime") or item.get("createdTime"))) >= _created_ms(execution)
                 ),
                 None,
             )
             if closed is None:
                 await _mark(
-                    int(execution.id), status="reconciliation_pending",
+                    int(execution.id),
+                    status="reconciliation_pending",
                     meta={"order_status": order_status or None, "last_reconciled_at": now_utc_naive().isoformat()},
                 )
                 stats["errors"] += 1
@@ -318,11 +320,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             pnl = _as_float(closed.get("closedPnl"))
             entry_value = abs(_as_float(closed.get("cumEntryValue")))
             pnl_pct = (pnl / entry_value * 100.0) if entry_value > 0 else 0.0
-            close_event_time = str(
-                closed.get("updatedTime")
-                or closed.get("createdTime")
-                or ""
-            ).strip()
+            close_event_time = str(closed.get("updatedTime") or closed.get("createdTime") or "").strip()
             close_ref = str(
                 closed.get("orderId")
                 or execution.provider_order_id
@@ -385,7 +383,10 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                     }
                 )
             await _mark(
-                int(execution.id), status="closed", realized_pnl_pct=pnl_pct, closed=True,
+                int(execution.id),
+                status="closed",
+                realized_pnl_pct=pnl_pct,
+                closed=True,
                 meta={
                     "closed_pnl": pnl,
                     "closed_pnl_pct": pnl_pct,

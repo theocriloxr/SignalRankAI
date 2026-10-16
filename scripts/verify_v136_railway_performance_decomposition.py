@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static/runtime verifier for SignalRankAI v1.3.6.7 Railway decomposition."""
+
 from __future__ import annotations
 
 import json
@@ -88,12 +89,14 @@ def main() -> int:
 
     railway = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
     deploy = railway.get("deploy") or {}
-    require(deploy.get("startCommand") == "bash start.sh", "neutral Railway start command")
+    require(deploy.get("startCommand") == "sh start.sh", "neutral Railway start command")
     require("healthcheckPath" not in deploy, "healthcheck is frontdoor service-specific")
     require("preDeployCommand" not in deploy, "predeploy is frontdoor service-specific")
 
     require((ROOT / "db/migrations/versions/0033_ml_learning_runtime.py").exists(), "migration 0033 retained")
-    require((ROOT / "db/migrations/versions/0034_production_integrity.py").exists(), "migration 0034 integrity head present")
+    require(
+        (ROOT / "db/migrations/versions/0034_production_integrity.py").exists(), "migration 0034 integrity head present"
+    )
     print("overall=PASS release=v1.3.6.7")
     return 0
 

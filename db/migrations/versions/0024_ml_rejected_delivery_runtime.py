@@ -8,6 +8,7 @@ Railway's first live engine cycle proved that the canonical MLRejectedSignal
 ORM includes ``signal_id`` while the historical migration/auto-op table did
 not.  This forward-only repair is idempotent on clean and upgraded databases.
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -23,14 +24,10 @@ def upgrade() -> None:
     bind = op.get_bind()
     dialect = str(bind.dialect.name or "").lower()
     if dialect == "postgresql":
-        bind.execute(sa.text(
-            "ALTER TABLE ml_rejected_signals "
-            "ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)"
-        ))
-        bind.execute(sa.text(
-            "CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_signal_id "
-            "ON ml_rejected_signals (signal_id)"
-        ))
+        bind.execute(sa.text("ALTER TABLE ml_rejected_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)"))
+        bind.execute(
+            sa.text("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_signal_id ON ml_rejected_signals (signal_id)")
+        )
         return
 
     inspector = sa.inspect(bind)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static verifier for SignalRankAI v1.3.2 delivery/callback/monitor recovery."""
+
 from __future__ import annotations
 
 from pathlib import Path

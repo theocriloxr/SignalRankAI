@@ -113,7 +113,17 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
     if coin in _UNSUPPORTED_CACHE and _UNSUPPORTED_CACHE[coin] > time.monotonic():
         return []
     # Request roughly limit+1 candles worth of history from now.
-    seconds_per_interval = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400}
+    seconds_per_interval = {
+        "1m": 60,
+        "3m": 180,
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "1h": 3600,
+        "2h": 7200,
+        "4h": 14400,
+        "1d": 86400,
+    }
     span_ms = seconds_per_interval.get(interval, 3600) * max(1, int(limit or 200) + 1) * 1000
     payload = {
         "type": "candlesSnapshot",
@@ -130,7 +140,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
             _UNSUPPORTED_CACHE[coin] = time.monotonic() + _UNSUPPORTED_CACHE_TTL_SECONDS
         return []
     out: List[Dict[str, Any]] = []
-    for row in rows[-int(limit or 200):]:
+    for row in rows[-int(limit or 200) :]:
         try:
             out.append(
                 {

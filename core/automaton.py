@@ -8,9 +8,9 @@ are deterministic and virtual-treasury-only.
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 
 
 class AutomatonState(StrEnum):
@@ -71,7 +71,9 @@ def evaluate(inputs: AutomatonInputs) -> AutomatonDecision:
     balance = max(float(inputs.starting_balance), 1e-9)
     equity_ratio = float(inputs.equity) / balance
     if inputs.kill_switch:
-        return AutomatonDecision(AutomatonState.KILL_SWITCH, 0.0, 0.0, ("keep all risky actions paused",), ("kill_switch_enabled",))
+        return AutomatonDecision(
+            AutomatonState.KILL_SWITCH, 0.0, 0.0, ("keep all risky actions paused",), ("kill_switch_enabled",)
+        )
     if not inputs.db_healthy or not inputs.redis_healthy or not inputs.outcome_healthy:
         reasons.append("critical_dependency_degraded")
         recommendations.append("defer background work and preserve durable truth")
@@ -95,13 +97,21 @@ def evaluate(inputs: AutomatonInputs) -> AutomatonDecision:
     if inputs.win_rate >= 0.6 and inputs.expectancy_r > 0 and inputs.drawdown_pct < 10:
         recommendations.append("consider controlled paper scaling; human approval remains required")
         return AutomatonDecision(AutomatonState.SCALE, 1.0, 1.0, tuple(recommendations), ("positive_evidence",))
-    return AutomatonDecision(AutomatonState.OPTIMIZE, 0.75, 0.9, ("compare strategy and provider segments",), ("continue_evidence_review",))
+    return AutomatonDecision(
+        AutomatonState.OPTIMIZE, 0.75, 0.9, ("compare strategy and provider segments",), ("continue_evidence_review",)
+    )
 
 
 def status(inputs: AutomatonInputs | None = None) -> dict[str, Any]:
     values = inputs or AutomatonInputs(starting_balance=starting_balance(), equity=starting_balance())
     decision = evaluate(values)
-    return {"state": decision.state.value, "starting_balance": values.starting_balance, "inputs": asdict(values), "decision": decision.as_dict(), "real_money_enabled": False}
+    return {
+        "state": decision.state.value,
+        "starting_balance": values.starting_balance,
+        "inputs": asdict(values),
+        "decision": decision.as_dict(),
+        "real_money_enabled": False,
+    }
 
 
 __all__ = ["AutomatonInputs", "AutomatonDecision", "AutomatonState", "evaluate", "starting_balance", "status"]

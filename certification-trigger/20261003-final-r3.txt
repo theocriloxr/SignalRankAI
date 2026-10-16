@@ -1,0 +1,9 @@
+SignalRankAI final unified pushed-head certification r3
+branch=implementation-of-master-blueprint
+head_before_trigger=a65f6e9f5a35457ac0f140a1bc9a5363795ec074
+backend_cleanroom=required
+frontend_cleanroom=scoped-fresh-audit
+mobile_cleanroom=scoped-fresh-audit
+static_security_cleanroom=required
+hadolint_cleanroom=separately-green
+live_execution_authorized=false

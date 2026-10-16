@@ -33,8 +33,6 @@ def _provider_url() -> str:
     )
 
 
-
-
 def _truthy(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -53,6 +51,7 @@ def proxy_validation_enabled() -> bool:
     if "example.com" in lowered or lowered.startswith("changeme"):
         return False
     return True
+
 
 def _extract_proxy_candidates(payload: Any) -> list[str]:
     urls: list[str] = []
@@ -76,9 +75,7 @@ def _extract_proxy_candidates(payload: Any) -> list[str]:
 async def fetch_proxy_candidates() -> list[str]:
     url = _provider_url()
     if not proxy_validation_enabled():
-        logger.debug(
-            "[proxy_worker] disabled or provider URL missing/placeholder; no network request performed"
-        )
+        logger.debug("[proxy_worker] disabled or provider URL missing/placeholder; no network request performed")
         return []
     try:
         async with httpx.AsyncClient(timeout=_VALIDATION_TIMEOUT_S) as client:
@@ -120,9 +117,7 @@ async def _apply_proxy_result(
     checked_at: datetime,
 ) -> None:
     async with get_session() as session:
-        existing = await session.scalar(
-            select(ProxyNode).where(ProxyNode.proxy_url == proxy_url)
-        )
+        existing = await session.scalar(select(ProxyNode).where(ProxyNode.proxy_url == proxy_url))
         if existing is None:
             existing = ProxyNode(proxy_url=proxy_url)
             session.add(existing)
@@ -192,7 +187,9 @@ async def run_proxy_validation_cycle() -> dict[str, int]:
 
 def proxy_validation_job() -> None:
     if not proxy_validation_enabled():
-        logger.info("[proxy_worker] validation job disabled; set PROXY_VALIDATION_ENABLED=1 and a real PROXY_API_PROVIDER_URL")
+        logger.info(
+            "[proxy_worker] validation job disabled; set PROXY_VALIDATION_ENABLED=1 and a real PROXY_API_PROVIDER_URL"
+        )
         return
     try:
         run_sync(run_proxy_validation_cycle(), timeout=None)

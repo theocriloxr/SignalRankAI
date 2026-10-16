@@ -1,4 +1,5 @@
 """Marketstack v2 stock/index historical candle adapter."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -27,7 +28,9 @@ def _interval(timeframe: str) -> str | None:
     }.get(str(timeframe or "").lower())
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     key = str(os.getenv("MARKETSTACK_API_KEY") or "").strip()
     if not key:
         return []

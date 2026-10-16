@@ -63,9 +63,16 @@ def test_log_driven_pipeline_repairs_are_present() -> None:
     source = (ROOT / "engine/core.py").read_text(encoding="utf-8")
     assert "STAGING_QUALITY_GATES_ADVISORY" in source
     assert "_append_staging_advisory" in source
-    assert "'atr_pct': _filter_atr_pct" in source
-    assert "'ema_20': _safe_float" in source
-    assert "advanced_filters.run_all_filters(sig, market_filter_data, _filter_session)" in source
+    assert '"atr_pct": _filter_atr_pct' in source
+    assert '"ema_20": _safe_float' in source
+    import ast
+
+    assert any(
+        isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "advanced_filters.run_all_filters"
+        and [ast.unparse(arg) for arg in node.args] == ["sig", "market_filter_data", "_filter_session"]
+        for node in ast.walk(ast.parse(source))
+    )
     assert "_maybe_log_heatmap(asset, cycle_no, len(final_signals))" in source
 
 

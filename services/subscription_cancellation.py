@@ -2,9 +2,10 @@
 
 Cancelling auto-renew never deletes payment evidence, refunds funds, or
 immediately downgrades an active entitlement.  It disables recurring billing
-at the provider when possible and always records the account preference so the
-current paid period can expire naturally.
+at the provider when confirmed. Unknown or changed provider state remains pending;
+the current paid period and existing account records are preserved.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,17 +48,16 @@ async def _disable_paystack_subscription(code: str) -> tuple[bool, int]:
                 )
                 token = ""
                 if lookup.status_code < 400:
-                    token = str(
-                        (lookup.json().get("data") or {}).get("email_token")
-                        or ""
-                    ).strip()
+                    token = str((lookup.json().get("data") or {}).get("email_token") or "").strip()
                 response = await client.post(
                     "https://api.paystack.co/subscription/disable",
                     json={"code": code, "token": token},
                     headers=headers,
                 )
                 if response.status_code < 400:
-                    return True, attempt
+                    result = response.json()
+                    if isinstance(result, dict) and result.get("status") is True:
+                        return True, attempt
         except Exception:
             logger.warning(
                 "[subscription_cancel] provider attempt failed attempt=%s",
@@ -78,11 +78,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         label="subscription.cancel_snapshot",
         timeout_seconds=8.0,
     ) as session:
-        user = (
-            await session.execute(
-                select(User).where(User.id == canonical_id).limit(1)
-            )
-        ).scalar_one_or_none()
+        user = (await session.execute(select(User).where(User.id == canonical_id).limit(1))).scalar_one_or_none()
         if user is None:
             await session.rollback()
             return {
@@ -114,11 +110,10 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         tier = str(subscription.tier or user.tier or "free").strip().lower()
         expires_at = subscription.expires_at
         sub_code = str(user.paystack_subscription_code or "").strip()
+        was_auto_renew = bool(user.auto_renew)
         await session.rollback()
 
-    gateway_cancelled, retry_attempts = await _disable_paystack_subscription(
-        sub_code
-    )
+    gateway_cancelled, retry_attempts = await _disable_paystack_subscription(sub_code)
 
     # Re-lock only for the short local mutation.  Access itself is not
     # downgraded here; the active subscription still expires naturally.
@@ -128,9 +123,7 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
         timeout_seconds=8.0,
     ) as session:
         user = (
-            await session.execute(
-                select(User).where(User.id == canonical_id).with_for_update().limit(1)
-            )
+            await session.execute(select(User).where(User.id == canonical_id).with_for_update().limit(1))
         ).scalar_one_or_none()
         if user is None:
             await session.rollback()
@@ -140,21 +133,29 @@ async def cancel_auto_renew_for_user(user_id: int) -> dict[str, Any]:
                 "gateway_cancelled": bool(gateway_cancelled),
                 "retry_attempts": int(retry_attempts),
             }
-        user.auto_renew = False
+        # A failed provider request cannot be presented as a completed stop.
+        # Re-check the account binding after I/O; a new subscription must not be
+        # disabled locally using the receipt for the old subscription.
+        current_code = str(user.paystack_subscription_code or "").strip()
+        provider_follow_up = current_code != sub_code or bool(
+            (was_auto_renew or user.auto_renew or sub_code) and not gateway_cancelled
+        )
+        if not provider_follow_up:
+            user.auto_renew = False
+        current_auto_renew = bool(user.auto_renew)
         await session.commit()
 
     return {
         "success": True,
-        "reason": "cancelled",
+        "reason": "provider_follow_up_required" if provider_follow_up else "cancelled",
         "tier": tier,
-        "auto_renew": False,
+        "auto_renew": current_auto_renew,
         "expires_at": expires_at,
         "gateway_cancelled": bool(gateway_cancelled),
         "retry_attempts": int(retry_attempts),
-        "provider_follow_up_required": bool(
-            sub_code and not gateway_cancelled
-        ),
+        "provider_follow_up_required": provider_follow_up,
     }
+
 
 async def cancel_auto_renew_for_telegram_user(
     telegram_user_id: int,
@@ -166,11 +167,7 @@ async def cancel_auto_renew_for_telegram_user(
         timeout_seconds=8.0,
     ) as session:
         canonical_id = (
-            await session.execute(
-                select(User.id)
-                .where(User.telegram_user_id == int(telegram_user_id))
-                .limit(1)
-            )
+            await session.execute(select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
         ).scalar_one_or_none()
         await session.rollback()
     if canonical_id is None:

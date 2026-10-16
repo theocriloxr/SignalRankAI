@@ -26,9 +26,7 @@ def execution_claim_key(
     separate trading accounts never contend on the same signal.
     """
     scope = str(account_scope or "").strip() or "legacy"
-    digest = hashlib.sha256(
-        f"{int(user_id)}|{str(signal_id)}|{scope}".encode()
-    ).hexdigest()[:32]
+    digest = hashlib.sha256(f"{int(user_id)}|{str(signal_id)}|{scope}".encode()).hexdigest()[:32]
     return f"signalrank:execution-destination:{digest}"
 
 
@@ -38,10 +36,7 @@ def _production() -> bool:
 
 
 async def _release_redis_claim(redis_client, key: str, token: str) -> None:
-    script = (
-        "if redis.call('get', KEYS[1]) == ARGV[1] then "
-        "return redis.call('del', KEYS[1]) else return 0 end"
-    )
+    script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
     await asyncio.to_thread(redis_client.eval, script, 1, key, token)
 
 
@@ -74,9 +69,9 @@ async def execution_destination_lock(
         try:
             deadline = asyncio.get_running_loop().time() + max(0.1, float(timeout_seconds))
             while asyncio.get_running_loop().time() < deadline:
-                acquired = bool(await asyncio.to_thread(
-                    redis_client.set, key, token, ex=max(30, int(lease_seconds)), nx=True
-                ))
+                acquired = bool(
+                    await asyncio.to_thread(redis_client.set, key, token, ex=max(30, int(lease_seconds)), nx=True)
+                )
                 if acquired:
                     break
                 await asyncio.sleep(0.05)

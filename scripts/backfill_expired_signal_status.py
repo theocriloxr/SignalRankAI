@@ -4,6 +4,7 @@
 Dry-run by default. --apply updates only expired=true rows in active/open/issued
 states. Terminal outcome/closed/superseded states are intentionally untouched.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,20 +31,11 @@ async def _run(*, apply: bool) -> dict[str, int]:
         timeout_seconds=30.0,
         drop_if_busy=False,
     ) as session:
-        predicate = (
-            Signal.expired.is_(True)
-            & func.lower(func.coalesce(Signal.status, "")).in_(_OPEN_LIKE)
-        )
-        count = int((await session.execute(
-            select(func.count(Signal.signal_id)).where(predicate)
-        )).scalar() or 0)
+        predicate = Signal.expired.is_(True) & func.lower(func.coalesce(Signal.status, "")).in_(_OPEN_LIKE)
+        count = int((await session.execute(select(func.count(Signal.signal_id)).where(predicate))).scalar() or 0)
         updated = 0
         if apply and count:
-            result = await session.execute(
-                update(Signal)
-                .where(predicate)
-                .values(status="expired")
-            )
+            result = await session.execute(update(Signal).where(predicate).values(status="expired"))
             updated = int(result.rowcount or 0)
             await session.commit()
         else:
@@ -56,10 +48,13 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     result = asyncio.run(_run(apply=bool(args.apply)))
-    print("[expired_signal_status_backfill] " + json.dumps(
-        {"apply": bool(args.apply), **result},
-        sort_keys=True,
-    ))
+    print(
+        "[expired_signal_status_backfill] "
+        + json.dumps(
+            {"apply": bool(args.apply), **result},
+            sort_keys=True,
+        )
+    )
     return 0
 
 

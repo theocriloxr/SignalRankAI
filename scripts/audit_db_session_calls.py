@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail when production code still uses legacy DB session boolean flags."""
+
 from __future__ import annotations
 
 import ast
@@ -9,15 +10,15 @@ ROOTS = ("db", "engine", "worker", "signalrank_telegram", "services", "core", "d
 LEGACY = {"noncritical", "critical", "interactive"}
 
 
-def audit(root: Path = Path('.')) -> list[str]:
+def audit(root: Path = Path(".")) -> list[str]:
     findings: list[str] = []
     for folder in ROOTS:
         base = root / folder
         if not base.exists():
             continue
-        for path in base.rglob('*.py'):
+        for path in base.rglob("*.py"):
             try:
-                tree = ast.parse(path.read_text(encoding='utf-8'))
+                tree = ast.parse(path.read_text(encoding="utf-8"))
             except Exception as exc:
                 findings.append(f"{path}:parse_error:{type(exc).__name__}:{exc}")
                 continue
@@ -34,10 +35,10 @@ def audit(root: Path = Path('.')) -> list[str]:
     return findings
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     problems = audit()
     if problems:
-        print('[db_session_api] legacy_call_sites=%s' % len(problems))
-        print('\n'.join(problems))
+        print("[db_session_api] legacy_call_sites=%s" % len(problems))
+        print("\n".join(problems))
         raise SystemExit(1)
-    print('[db_session_api] legacy_call_sites=0')
+    print("[db_session_api] legacy_call_sites=0")

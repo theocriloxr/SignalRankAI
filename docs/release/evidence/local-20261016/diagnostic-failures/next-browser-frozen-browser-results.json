@@ -1,0 +1,246 @@
+{
+  "git_sha": "2e94cae344c18ac58810f43b86b9aa187465a5cb",
+  "candidate_dirty": false,
+  "scope": "NEXT_PRODUCTION_BUILD_REAL_FASTAPI_POSTGRES_SYNTHETIC_ACCOUNTS",
+  "native_devices_verified": false,
+  "checks": [
+    "both frontend health URLs prove candidate identity without financial certification",
+    "explicit consent registration creates a real isolated database account and verified cookie session",
+    "fresh nonces, caller nonce rejected, unauthorized inline script blocked"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/ai",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/contact",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/docs",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/faq",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/features",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/login",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/markets",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/methodology",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/pricing",
+      "status": 200,
+      "scope": "public"
+    }
+  ],
+  "errors": [],
+  "status": "FAIL",
+  "failure": "",
+  "pending_requests": [
+    {
+      "path": "/",
+      "age_seconds": 4.08
+    },
+    {
+      "path": "/recover",
+      "age_seconds": 4.08
+    },
+    {
+      "path": "/magic-login",
+      "age_seconds": 4.08
+    },
+    {
+      "path": "/risk",
+      "age_seconds": 4.08
+    }
+  ],
+  "recent_response_statuses": [
+    {
+      "path": "/_next/static/chunks/01ssmadbxh97-.css",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3s6nzrbk-8mnv.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/19mx3mg6lkumu.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3g4px251sg85e.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/2z-e6jheq0ftu.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/turbopack-03rfayxv7ep_b.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3fntmmi971322.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3t78jg6won4ki.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/288y1kwy9vt2r.js",
+      "status": 200
+    },
+    {
+      "path": "/brand/icon.svg",
+      "status": 304
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/product",
+      "status": 200
+    },
+    {
+      "path": "/markets",
+      "status": 200
+    },
+    {
+      "path": "/methodology",
+      "status": 200
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/risk",
+      "status": 200
+    },
+    {
+      "path": "/security",
+      "status": 200
+    },
+    {
+      "path": "/pricing",
+      "status": 200
+    },
+    {
+      "path": "/pricing",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/01ssmadbxh97-.css",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3s6nzrbk-8mnv.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/19mx3mg6lkumu.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3g4px251sg85e.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/2z-e6jheq0ftu.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/turbopack-03rfayxv7ep_b.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3fntmmi971322.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/3t78jg6won4ki.js",
+      "status": 200
+    },
+    {
+      "path": "/_next/static/chunks/288y1kwy9vt2r.js",
+      "status": 200
+    },
+    {
+      "path": "/brand/icon.svg",
+      "status": 304
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/product",
+      "status": 200
+    },
+    {
+      "path": "/markets",
+      "status": 200
+    },
+    {
+      "path": "/methodology",
+      "status": 200
+    },
+    {
+      "path": "/",
+      "status": 200
+    },
+    {
+      "path": "/risk",
+      "status": 200
+    },
+    {
+      "path": "/security",
+      "status": 200
+    },
+    {
+      "path": "/pricing",
+      "status": 200
+    },
+    {
+      "path": "/privacy",
+      "status": 200
+    },
+    {
+      "path": "/app-assets/legal.css",
+      "status": 200
+    },
+    {
+      "path": "/app-assets/icon.svg",
+      "status": 200
+    }
+  ]
+}

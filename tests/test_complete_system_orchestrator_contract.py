@@ -42,6 +42,7 @@ def test_orchestrator_covers_cross_subsystem_contracts():
 
 
 def test_orchestrator_streams_step_output_to_log(tmp_path):
+    import os
     import sys
     from scripts.run_complete_system_test import _run_step
 
@@ -49,13 +50,14 @@ def test_orchestrator_streams_step_output_to_log(tmp_path):
         "sample",
         [sys.executable, "-c", "print('captured-output')"],
         tmp_path,
-        {},
+        dict(os.environ),
     )
     assert result.ok is True
     assert "captured-output" in (tmp_path / "sample.log").read_text(encoding="utf-8")
 
 
 def test_orchestrator_timeout_is_portable_and_bounded(tmp_path):
+    import os
     import sys
     from scripts.run_complete_system_test import _run_step
 
@@ -63,7 +65,7 @@ def test_orchestrator_timeout_is_portable_and_bounded(tmp_path):
         "timeout",
         [sys.executable, "-c", "import time; time.sleep(60)"],
         tmp_path,
-        {"COMPLETE_SYSTEM_STEP_TIMEOUT_SECONDS": "1"},
+        {**os.environ, "COMPLETE_SYSTEM_STEP_TIMEOUT_SECONDS": "1"},
     )
     assert result.ok is False
     assert result.exit_code == 124

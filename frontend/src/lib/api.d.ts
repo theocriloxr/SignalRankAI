@@ -266,6 +266,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/operator/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operator Research */
+        get: operations["operator_research_api_v1_platform_operator_research_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/health-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Operator Health Baseline */
+        get: operations["operator_health_baseline_api_v1_platform_operator_health_baseline_get"];
+        put?: never;
+        /** Operator Approve Health Baseline */
+        post: operations["operator_approve_health_baseline_api_v1_platform_operator_health_baseline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/operator/business": {
         parameters: {
             query?: never;
@@ -456,6 +491,23 @@ export interface paths {
         put?: never;
         /** Logout All */
         post: operations["logout_all_api_v1_platform_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/auth/logout-mobile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout Mobile */
+        post: operations["logout_mobile_api_v1_platform_auth_logout_mobile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2208,52 +2260,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/readyz": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health
-         * @description Liveness + readiness probe.
-         *
-         *     Railway healthcheck - should return quickly even if DB is slow/unavailable.
-         *     Uses a deadline to avoid blocking Railway's healthcheck.
-         */
-        get: operations["health_readyz_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health
-         * @description Liveness + readiness probe.
-         *
-         *     Railway healthcheck - should return quickly even if DB is slow/unavailable.
-         *     Uses a deadline to avoid blocking Railway's healthcheck.
-         */
-        get: operations["health_ready_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -2263,10 +2269,7 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness + readiness probe.
-         *
-         *     Railway healthcheck - should return quickly even if DB is slow/unavailable.
-         *     Uses a deadline to avoid blocking Railway's healthcheck.
+         * @description Process liveness only. Never perform database/provider work here.
          */
         get: operations["health_healthz_get"];
         put?: never;
@@ -2286,12 +2289,77 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness + readiness probe.
-         *
-         *     Railway healthcheck - should return quickly even if DB is slow/unavailable.
-         *     Uses a deadline to avoid blocking Railway's healthcheck.
+         * @description Process liveness only. Never perform database/provider work here.
          */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readyz": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness
+         * @description Bounded dependency readiness for traffic admission.
+         *
+         *     Readiness is deliberately distinct from liveness: a process can stay alive
+         *     for diagnostics while refusing trading/API traffic when its durable state
+         *     dependencies are unavailable.
+         */
+        get: operations["readiness_readyz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness
+         * @description Bounded dependency readiness for traffic admission.
+         *
+         *     Readiness is deliberately distinct from liveness: a process can stay alive
+         *     for diagnostics while refusing trading/API traffic when its durable state
+         *     dependencies are unavailable.
+         */
+        get: operations["readiness_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version
+         * @description Immutable release provenance exposed without secrets.
+         */
+        get: operations["version_version_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2753,6 +2821,11 @@ export interface components {
              * @default NGN
              */
             currency: string;
+            /**
+             * Recurring Acknowledged
+             * @default false
+             */
+            recurring_acknowledged: boolean;
         };
         /** DemoCertificationPrepareRequest */
         DemoCertificationPrepareRequest: {
@@ -2801,10 +2874,6 @@ export interface components {
             status: string;
             /** Uptime */
             uptime: number;
-            /** Signals Active */
-            signals_active: number;
-            /** Cache Hit Rate */
-            cache_hit_rate: number;
         };
         /** JournalEntryRequest */
         JournalEntryRequest: {
@@ -2923,6 +2992,11 @@ export interface components {
             /** Subscriptions Active */
             subscriptions_active: number;
         };
+        /** MobileLogoutRequest */
+        MobileLogoutRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /** NotificationPreferenceRequest */
         NotificationPreferenceRequest: {
             /** Telegram Enabled */
@@ -2977,6 +3051,22 @@ export interface components {
              * @default operator_only
              */
             delivery_scope: string;
+        };
+        /** OperatorHealthBaselineRequest */
+        OperatorHealthBaselineRequest: {
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Version */
+            profile_version: number;
+            /** Conditions */
+            conditions: {
+                [key: string]: unknown;
+            };
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** OperatorKillSwitchRequest */
         OperatorKillSwitchRequest: {
@@ -3213,6 +3303,15 @@ export interface components {
             /** App Version */
             app_version?: string | null;
         };
+        /** ReadinessResponse */
+        ReadinessResponse: {
+            /** Status */
+            status: string;
+            /** Checks */
+            checks: {
+                [key: string]: boolean;
+            };
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
@@ -3238,6 +3337,26 @@ export interface components {
             password: string;
             /** Display Name */
             display_name?: string | null;
+            /**
+             * Platform Terms Accepted
+             * @default false
+             */
+            platform_terms_accepted: boolean;
+            /**
+             * Privacy Acknowledged
+             * @default false
+             */
+            privacy_acknowledged: boolean;
+            /**
+             * Age Eligibility Confirmed
+             * @default false
+             */
+            age_eligibility_confirmed: boolean;
+            /**
+             * Marketing Consent
+             * @default false
+             */
+            marketing_consent: boolean;
             /**
              * Client Type
              * @default web
@@ -3343,6 +3462,26 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+            /**
+             * Platform Terms Accepted
+             * @default false
+             */
+            platform_terms_accepted: boolean;
+            /**
+             * Privacy Acknowledged
+             * @default false
+             */
+            privacy_acknowledged: boolean;
+            /**
+             * Age Eligibility Confirmed
+             * @default false
+             */
+            age_eligibility_confirmed: boolean;
+            /**
+             * Marketing Consent
+             * @default false
+             */
+            marketing_consent: boolean;
             /**
              * Client Type
              * @default web
@@ -3566,6 +3705,23 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VersionResponse */
+        VersionResponse: {
+            /** Version */
+            version: string;
+            /** Git Sha */
+            git_sha: string;
+            /** Git Branch */
+            git_branch: string;
+            /** Build Id */
+            build_id: string;
+            /** Build Timestamp */
+            build_timestamp: string;
+            /** Image Digest */
+            image_digest: string;
+            /** Schema Head */
+            schema_head: string;
         };
         /** WatchlistCreateRequest */
         WatchlistCreateRequest: {
@@ -4078,6 +4234,107 @@ export interface operations {
             };
         };
     };
+    operator_research_api_v1_platform_operator_research_get: {
+        parameters: {
+            query?: {
+                asset?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_health_baseline_api_v1_platform_operator_health_baseline_get: {
+        parameters: {
+            query: {
+                profile_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_approve_health_baseline_api_v1_platform_operator_health_baseline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorHealthBaselineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     operator_business_api_v1_platform_operator_business_get: {
         parameters: {
             query?: never;
@@ -4420,6 +4677,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    logout_mobile_api_v1_platform_auth_logout_mobile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileLogoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7817,46 +8109,6 @@ export interface operations {
             };
         };
     };
-    health_readyz_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
-    health_ready_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
     health_healthz_get: {
         parameters: {
             query?: never;
@@ -7893,6 +8145,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    readiness_readyz_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    readiness_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    version_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionResponse"];
                 };
             };
         };

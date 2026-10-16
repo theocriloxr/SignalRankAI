@@ -1,0 +1,27 @@
+{
+  "name": "sdk-audit-frozen",
+  "sha": "49d754599223f5000238a769d31f19210875d5f4",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-15T12:33:11.590428+00:00",
+  "finished_at": "2026-10-15T12:33:20.371160+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-tools-venv\\Scripts\\python.exe",
+    "-m",
+    "pip_audit",
+    "-r",
+    "requirements-market-data-sdk.lock",
+    "--no-deps",
+    "--disable-pip",
+    "--format",
+    "json"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/sdk-audit-frozen.log",
+  "log_sha256": "33a41e2f4d52a3dcda5930bfde865c563251762746d4d1e8f29595ef25561a23",
+  "result": "PASS",
+  "source_fingerprint_before": "ad15e2e37f4a54a08c5ab61c2e6e497aba4e56bca13c5ee56dc78995aff4630d",
+  "source_fingerprint_after": "ad15e2e37f4a54a08c5ab61c2e6e497aba4e56bca13c5ee56dc78995aff4630d",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

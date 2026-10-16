@@ -1,0 +1,118 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_init, init tables
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_init, init tables
+INFO  [alembic.runtime.migration] Running upgrade 0001_init -> 0002_features, features
+INFO  [alembic.runtime.migration] Running upgrade 0001_init -> 0002_features, features
+INFO  [alembic.runtime.migration] Running upgrade 0002_features -> 0003_runtime_state, runtime state
+INFO  [alembic.runtime.migration] Running upgrade 0002_features -> 0003_runtime_state, runtime state
+INFO  [alembic.runtime.migration] Running upgrade 0003_runtime_state -> 0004_payment_events, payment events
+INFO  [alembic.runtime.migration] Running upgrade 0003_runtime_state -> 0004_payment_events, payment events
+INFO  [alembic.runtime.migration] Running upgrade 0004_payment_events -> 0005_bot_events, bot events
+INFO  [alembic.runtime.migration] Running upgrade 0004_payment_events -> 0005_bot_events, bot events
+INFO  [alembic.runtime.migration] Running upgrade 0005_bot_events -> 0006_bigint_telegram_ids, telegram ids bigint
+INFO  [alembic.runtime.migration] Running upgrade 0005_bot_events -> 0006_bigint_telegram_ids, telegram ids bigint
+INFO  [alembic.runtime.migration] Running upgrade 0006_bigint_telegram_ids -> 0007_market_data_cache, market data cache tables
+INFO  [alembic.runtime.migration] Running upgrade 0006_bigint_telegram_ids -> 0007_market_data_cache, market data cache tables
+INFO  [alembic.runtime.migration] Running upgrade 0007_market_data_cache -> 0008_user_tier_column, user tier column
+INFO  [alembic.runtime.migration] Running upgrade 0007_market_data_cache -> 0008_user_tier_column, user tier column
+INFO  [alembic.runtime.migration] Running upgrade 0008_user_tier_column -> 0009_archived_column, add archived column to signals
+INFO  [alembic.runtime.migration] Running upgrade 0008_user_tier_column -> 0009_archived_column, add archived column to signals
+INFO  [alembic.runtime.migration] Running upgrade 0009_archived_column -> 0010_consolidate_full_schema, Consolidate full schema — catch-up migration.
+INFO  [alembic.runtime.migration] Running upgrade 0009_archived_column -> 0010_consolidate_full_schema, Consolidate full schema — catch-up migration.
+INFO  [alembic.runtime.migration] Running upgrade 0010_consolidate_full_schema -> 0011_platform_harden_security, Platform hardening: webhook idempotency, api tokens, indexes, vip webhooks, shadow predictions
+INFO  [alembic.runtime.migration] Running upgrade 0010_consolidate_full_schema -> 0011_platform_harden_security, Platform hardening: webhook idempotency, api tokens, indexes, vip webhooks, shadow predictions
+INFO  [alembic.runtime.migration] Running upgrade 0011_platform_harden_security -> 0012_outcome_notify_state, Outcome per-recipient delivery state and idempotency.
+INFO  [alembic.runtime.migration] Running upgrade 0011_platform_harden_security -> 0012_outcome_notify_state, Outcome per-recipient delivery state and idempotency.
+INFO  [alembic.runtime.migration] Running upgrade 0012_outcome_notify_state -> 0013_proxy_nodes, Create proxy_nodes table for dynamic proxy pool.
+INFO  [alembic.runtime.migration] Running upgrade 0012_outcome_notify_state -> 0013_proxy_nodes, Create proxy_nodes table for dynamic proxy pool.
+INFO  [alembic.runtime.migration] Running upgrade 0013_proxy_nodes -> 0014_add_outcome_pnl_pct, Add pnl_pct column to outcomes table.
+INFO  [alembic.runtime.migration] Running upgrade 0013_proxy_nodes -> 0014_add_outcome_pnl_pct, Add pnl_pct column to outcomes table.
+INFO  [alembic.runtime.migration] Running upgrade 0014_add_outcome_pnl_pct -> 0015_active_signal_guard, Add active-signal uniqueness and hot-path indexes.
+INFO  [alembic.runtime.migration] Running upgrade 0014_add_outcome_pnl_pct -> 0015_active_signal_guard, Add active-signal uniqueness and hot-path indexes.
+INFO  [alembic.runtime.migration] No duplicate active signal rows required reconciliation.
+INFO  [alembic.runtime.migration] No duplicate active signal rows required reconciliation.
+INFO  [alembic.runtime.migration] Running upgrade 0015_active_signal_guard -> 0016_signal_profile_metadata, add signal profile routing metadata
+INFO  [alembic.runtime.migration] Running upgrade 0015_active_signal_guard -> 0016_signal_profile_metadata, add signal profile routing metadata
+INFO  [alembic.runtime.migration] Running upgrade 0016_signal_profile_metadata -> 0017_signal_delivery_proof, Signal delivery Telegram proof fields.
+INFO  [alembic.runtime.migration] Running upgrade 0016_signal_profile_metadata -> 0017_signal_delivery_proof, Signal delivery Telegram proof fields.
+INFO  [alembic.runtime.migration] Running upgrade 0017_signal_delivery_proof -> 0018_signal_lifecycle_events, Persist complete signal lifecycle and event notification state.
+INFO  [alembic.runtime.migration] Running upgrade 0017_signal_delivery_proof -> 0018_signal_lifecycle_events, Persist complete signal lifecycle and event notification state.
+INFO  [alembic.runtime.migration] Running upgrade 0018_signal_lifecycle_events -> 0019_user_timezone_privacy, Privacy-safe user timezone preferences and travel mode.
+INFO  [alembic.runtime.migration] Running upgrade 0018_signal_lifecycle_events -> 0019_user_timezone_privacy, Privacy-safe user timezone preferences and travel mode.
+INFO  [alembic.runtime.migration] Running upgrade 0019_user_timezone_privacy -> 0020_payment_receipts, Add and reconcile idempotent confirmed-payment receipts.
+INFO  [alembic.runtime.migration] Running upgrade 0019_user_timezone_privacy -> 0020_payment_receipts, Add and reconcile idempotent confirmed-payment receipts.
+WARNI [alembic.runtime.migration] payment_receipts schema reconciled idempotently; historical rows retained.
+WARNI [alembic.runtime.migration] payment_receipts schema reconciled idempotently; historical rows retained.
+INFO  [alembic.runtime.migration] Running upgrade 0020_payment_receipts -> 0021_runtime_truth_hardening, Repair runtime-truth schema drift and add proof-gate indexes.
+INFO  [alembic.runtime.migration] Running upgrade 0020_payment_receipts -> 0021_runtime_truth_hardening, Repair runtime-truth schema drift and add proof-gate indexes.
+INFO  [alembic.runtime.migration] Running upgrade 0021_runtime_truth_hardening -> 0022_active_guard_reconcile, Re-verify the active signal uniqueness guard on upgraded databases.
+INFO  [alembic.runtime.migration] Running upgrade 0021_runtime_truth_hardening -> 0022_active_guard_reconcile, Re-verify the active signal uniqueness guard on upgraded databases.
+INFO  [alembic.runtime.migration] Running upgrade 0022_active_guard_reconcile -> 0023_signal_runtime_schema, Repair Signal ORM runtime columns and reassert the active-thesis guard.
+INFO  [alembic.runtime.migration] Running upgrade 0022_active_guard_reconcile -> 0023_signal_runtime_schema, Repair Signal ORM runtime columns and reassert the active-thesis guard.
+INFO  [alembic.runtime.migration] Running upgrade 0023_signal_runtime_schema -> 0024_ml_rejected_delivery, Repair rejection telemetry schema and delivery-runtime admission contract.
+INFO  [alembic.runtime.migration] Running upgrade 0023_signal_runtime_schema -> 0024_ml_rejected_delivery, Repair rejection telemetry schema and delivery-runtime admission contract.
+INFO  [alembic.runtime.migration] Running upgrade 0024_ml_rejected_delivery -> 0025_adaptive_strategy, adaptive asset-specific strategy intelligence foundation
+INFO  [alembic.runtime.migration] Running upgrade 0024_ml_rejected_delivery -> 0025_adaptive_strategy, adaptive asset-specific strategy intelligence foundation
+INFO  [alembic.runtime.migration] Running upgrade 0025_adaptive_strategy -> 0026_adaptive_operational_hotfix, adaptive operational hotfix and schema compatibility repair
+INFO  [alembic.runtime.migration] Running upgrade 0025_adaptive_strategy -> 0026_adaptive_operational_hotfix, adaptive operational hotfix and schema compatibility repair
+INFO  [alembic.runtime.migration] Running upgrade 0026_adaptive_operational_hotfix -> 0027_launch_paper_trading, launch-grade per-user paper trading
+INFO  [alembic.runtime.migration] Running upgrade 0026_adaptive_operational_hotfix -> 0027_launch_paper_trading, launch-grade per-user paper trading
+INFO  [alembic.runtime.migration] Running upgrade 0027_launch_paper_trading -> 0028_outcome_projection_guard, Reconcile outcome projections and enforce one row per signal.
+INFO  [alembic.runtime.migration] Running upgrade 0027_launch_paper_trading -> 0028_outcome_projection_guard, Reconcile outcome projections and enforce one row per signal.
+INFO  [alembic.runtime.migration] Running upgrade 0028_outcome_projection_guard -> 0029_live_financial_ledger, Add provider-neutral execution and manually approved payout ledgers.
+INFO  [alembic.runtime.migration] Running upgrade 0028_outcome_projection_guard -> 0029_live_financial_ledger, Add provider-neutral execution and manually approved payout ledgers.
+INFO  [alembic.runtime.migration] Running upgrade 0029_live_financial_ledger -> 0030_signal_monitor_reliability, Canonical signal identity and per-recipient monitoring reliability.
+INFO  [alembic.runtime.migration] Running upgrade 0029_live_financial_ledger -> 0030_signal_monitor_reliability, Canonical signal identity and per-recipient monitoring reliability.
+INFO  [alembic.runtime.migration] Running upgrade 0030_signal_monitor_reliability -> 0031_perf_paper_reliability, canonical performance ledger and retryable paper trade attempts
+INFO  [alembic.runtime.migration] Running upgrade 0030_signal_monitor_reliability -> 0031_perf_paper_reliability, canonical performance ledger and retryable paper trade attempts
+INFO  [alembic.runtime.migration] Running upgrade 0031_perf_paper_reliability -> 0032_referral_reliability, canonical referral attribution and reward reliability
+INFO  [alembic.runtime.migration] Running upgrade 0031_perf_paper_reliability -> 0032_referral_reliability, canonical referral attribution and reward reliability
+INFO  [alembic.runtime.migration] Running upgrade 0032_referral_reliability -> 0033_ml_learning_runtime, durable multisource ML learning and runtime activation
+INFO  [alembic.runtime.migration] Running upgrade 0032_referral_reliability -> 0033_ml_learning_runtime, durable multisource ML learning and runtime activation
+INFO  [alembic.runtime.migration] Running upgrade 0033_ml_learning_runtime -> 0034_production_integrity, production integrity hardening
+INFO  [alembic.runtime.migration] Running upgrade 0033_ml_learning_runtime -> 0034_production_integrity, production integrity hardening
+INFO  [alembic.runtime.migration] Running upgrade 0034_production_integrity -> 0035_staging_certification, staging certification ecosystem (v1.4.0)
+INFO  [alembic.runtime.migration] Running upgrade 0034_production_integrity -> 0035_staging_certification, staging certification ecosystem (v1.4.0)
+INFO  [alembic.runtime.migration] Running upgrade 0035_staging_certification -> 0036_unified_platform_identity, Unified web/mobile/Telegram identity and product surface.
+INFO  [alembic.runtime.migration] Running upgrade 0035_staging_certification -> 0036_unified_platform_identity, Unified web/mobile/Telegram identity and product surface.
+INFO  [alembic.runtime.migration] Running upgrade 0036_unified_platform_identity -> 0037_unified_product_workspaces, Unified product workspaces, journal and professional API surfaces.
+INFO  [alembic.runtime.migration] Running upgrade 0036_unified_platform_identity -> 0037_unified_product_workspaces, Unified product workspaces, journal and professional API surfaces.
+INFO  [alembic.runtime.migration] Running upgrade 0037_unified_product_workspaces -> 0038_account_security_product, Complete account security, notifications and workspace collaboration.
+INFO  [alembic.runtime.migration] Running upgrade 0037_unified_product_workspaces -> 0038_account_security_product, Complete account security, notifications and workspace collaboration.
+INFO  [alembic.runtime.migration] Running upgrade 0038_account_security_product -> 0039_web_signup_acquisition, web-first signup acquisition and referral attribution
+INFO  [alembic.runtime.migration] Running upgrade 0038_account_security_product -> 0039_web_signup_acquisition, web-first signup acquisition and referral attribution
+INFO  [alembic.runtime.migration] Running upgrade 0039_web_signup_acquisition -> 0040_cross_channel_paper_receipt, canonical web paper-trading receipt provenance
+INFO  [alembic.runtime.migration] Running upgrade 0039_web_signup_acquisition -> 0040_cross_channel_paper_receipt, canonical web paper-trading receipt provenance
+INFO  [alembic.runtime.migration] Running upgrade 0040_cross_channel_paper_receipt -> 0041_broker_connection_registry, provider-neutral broker connection registry
+INFO  [alembic.runtime.migration] Running upgrade 0040_cross_channel_paper_receipt -> 0041_broker_connection_registry, provider-neutral broker connection registry
+INFO  [alembic.runtime.migration] Running upgrade 0041_broker_connection_registry -> 0042_ml_recovery_provenance, persist ML starvation recovery provenance on signals
+INFO  [alembic.runtime.migration] Running upgrade 0041_broker_connection_registry -> 0042_ml_recovery_provenance, persist ML starvation recovery provenance on signals
+INFO  [alembic.runtime.migration] Running upgrade 0042_ml_recovery_provenance -> 0043_account_execution_policy, multi-account execution, prop policy and decision provenance
+INFO  [alembic.runtime.migration] Running upgrade 0042_ml_recovery_provenance -> 0043_account_execution_policy, multi-account execution, prop policy and decision provenance
+INFO  [alembic.runtime.migration] Running upgrade 0043_account_execution_policy -> 0044_broker_credential_envelope, Versioned broker credential envelope metadata.
+INFO  [alembic.runtime.migration] Running upgrade 0043_account_execution_policy -> 0044_broker_credential_envelope, Versioned broker credential envelope metadata.
+INFO  [alembic.runtime.migration] Running upgrade 0044_broker_credential_envelope -> 0045_mt5_credential_retirement, Retire duplicate MT5 password persistence after canonical credential envelopes.
+INFO  [alembic.runtime.migration] Running upgrade 0044_broker_credential_envelope -> 0045_mt5_credential_retirement, Retire duplicate MT5 password persistence after canonical credential envelopes.
+INFO  [alembic.runtime.migration] Running upgrade 0045_mt5_credential_retirement -> 0046_decision_log, Unify rejected signals and pulse metrics into a comprehensive decision_log.
+INFO  [alembic.runtime.migration] Running upgrade 0045_mt5_credential_retirement -> 0046_decision_log, Unify rejected signals and pulse metrics into a comprehensive decision_log.
+INFO  [alembic.runtime.migration] Running upgrade 0046_decision_log -> 0047_event_outbox, Durable event outbox for Redis outage recovery.
+INFO  [alembic.runtime.migration] Running upgrade 0046_decision_log -> 0047_event_outbox, Durable event outbox for Redis outage recovery.
+INFO  [alembic.runtime.migration] Running upgrade 0047_event_outbox -> 0048_runtime_schema_bridge, Bridge legacy runtime schema repairs into the canonical Alembic chain.
+INFO  [alembic.runtime.migration] Running upgrade 0047_event_outbox -> 0048_runtime_schema_bridge, Bridge legacy runtime schema repairs into the canonical Alembic chain.
+INFO  [alembic.runtime.migration] Running upgrade 0048_runtime_schema_bridge -> 0049_research_trial_ledger, Append-only hypothesis versions, trial definitions and terminal evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0048_runtime_schema_bridge -> 0049_research_trial_ledger, Append-only hypothesis versions, trial definitions and terminal evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0049_research_trial_ledger -> 0050_profile_health_index, Add the profile/signal lookup used by bounded strategy-health surveillance.
+INFO  [alembic.runtime.migration] Running upgrade 0049_research_trial_ledger -> 0050_profile_health_index, Add the profile/signal lookup used by bounded strategy-health surveillance.
+INFO  [alembic.runtime.migration] Running upgrade 0050_profile_health_index -> 0051_strategy_health_baselines, Immutable delivery baselines, predefined conditions and health evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0050_profile_health_index -> 0051_strategy_health_baselines, Immutable delivery baselines, predefined conditions and health evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0051_strategy_health_baselines -> 0052_research_dataset_snapshots, Preserve the actual outcome rows consumed by adaptive research.
+INFO  [alembic.runtime.migration] Running upgrade 0051_strategy_health_baselines -> 0052_research_dataset_snapshots, Preserve the actual outcome rows consumed by adaptive research.
+INFO  [alembic.runtime.migration] Running upgrade 0052_research_dataset_snapshots -> 0053_research_market_inputs, Preserve the normalized inputs actually observed by adaptive components.
+INFO  [alembic.runtime.migration] Running upgrade 0052_research_dataset_snapshots -> 0053_research_market_inputs, Preserve the normalized inputs actually observed by adaptive components.
+INFO  [alembic.runtime.migration] Running upgrade 0053_research_market_inputs -> 0054_shadow_pending_index, Bound pending ML-shadow observation cost without blocking decision writes.
+INFO  [alembic.runtime.migration] Running upgrade 0053_research_market_inputs -> 0054_shadow_pending_index, Bound pending ML-shadow observation cost without blocking decision writes.
+INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users.
+INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users.

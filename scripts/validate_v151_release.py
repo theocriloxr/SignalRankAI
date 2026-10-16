@@ -4,6 +4,7 @@
 This certifies repository-level work only. It deliberately does not claim live
 provider, Railway, Telegram, payment, app-store or legal certification.
 """
+
 from __future__ import annotations
 
 import json

@@ -222,7 +222,10 @@ async def check_shadow_learning_heartbeat(
     """Verify the rejected-signal learner is alive using its shared Redis heartbeat."""
     env = os.environ if environ is None else environ
     required = str(env.get("PRODUCTION_HEALTH_REQUIRE_SHADOW_LEARNING") or "0").strip().lower() in {
-        "1", "true", "yes", "on"
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     if not required:
         return HealthCheck("shadow_learning", True, 0, "not_required")
@@ -233,6 +236,7 @@ async def check_shadow_learning_heartbeat(
     client = None
     try:
         import redis.asyncio as redis
+
         client = redis.from_url(
             state_url,
             decode_responses=True,
@@ -256,6 +260,7 @@ async def check_shadow_learning_heartbeat(
             detail = "heartbeat_timestamp_missing"
         else:
             from datetime import datetime, timezone
+
             heartbeat = datetime.fromisoformat(heartbeat_raw.replace("Z", "+00:00"))
             if heartbeat.tzinfo is None:
                 heartbeat = heartbeat.replace(tzinfo=timezone.utc)
@@ -285,9 +290,7 @@ def check_redis_topology(environ: Mapping[str, str] | None = None) -> HealthChec
     state_url = str(env.get("STATE_REDIS_URL") or env.get("REDIS_URL") or "").strip()
     delivery_url = str(env.get("DELIVERY_REDIS_URL") or "").strip()
     require_distinct = str(
-        env.get("REQUIRE_DISTINCT_DELIVERY_REDIS")
-        or env.get("PRODUCTION_HEALTH_REQUIRE_DISTINCT_REDIS")
-        or "1"
+        env.get("REQUIRE_DISTINCT_DELIVERY_REDIS") or env.get("PRODUCTION_HEALTH_REQUIRE_DISTINCT_REDIS") or "1"
     ).strip().lower() in {"1", "true", "yes", "on"}
     configured = bool(state_url and delivery_url)
     distinct = bool(state_url and delivery_url and state_url != delivery_url)
@@ -363,10 +366,7 @@ async def collect_health(
 def _print_human(result: dict[str, Any]) -> None:
     for item in result["checks"]:
         state = "PASS" if item["ok"] else "FAIL"
-        print(
-            f"[{state}] {item['name']} latency_ms={item['latency_ms']} "
-            f"detail={item['detail']}"
-        )
+        print(f"[{state}] {item['name']} latency_ms={item['latency_ms']} detail={item['detail']}")
     summary = result["summary"]
     print(
         f"overall={'PASS' if result['ok'] else 'FAIL'} "

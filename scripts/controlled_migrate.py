@@ -5,12 +5,14 @@ This command mutates the database only after the release source and production
 backup evidence are valid. It holds the SignalRankAI PostgreSQL advisory lock
 for the complete Alembic upgrade and proves the deployed revision afterwards.
 """
+
 from __future__ import annotations
 
 import argparse
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -35,7 +37,9 @@ def _truthy(name: str) -> bool:
 
 
 def _environment() -> str:
-    return (_value("RAILWAY_ENVIRONMENT_NAME") or _value("RAILWAY_ENVIRONMENT") or _value("APP_ENV") or "dev").lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("dev")
 
 
 def _parse_utc(value: str) -> datetime | None:
@@ -51,9 +55,12 @@ def _parse_utc(value: str) -> datetime | None:
 def _source_errors() -> list[str]:
     errors: list[str] = []
     railway = bool(_value("RAILWAY_SERVICE_NAME") or _value("RAILWAY_PROJECT_ID"))
-    protected = railway or _environment() in {"production", "prod"} or _value("SIGNALRANK_ENV_PROFILE") in {
-        "staging-certification", "production-advisory", "production-live-owner-canary"
-    }
+    protected = (
+        railway
+        or _environment() in {"production", "prod"}
+        or _value("SIGNALRANK_ENV_PROFILE")
+        in {"staging-certification", "production-advisory", "production-live-owner-canary"}
+    )
     if not protected:
         return errors
 
@@ -113,16 +120,57 @@ def _database_urls() -> tuple[str, str]:
     # verifying another.
     from db.database_urls import normalize_psycopg2_dsn, normalize_sync_postgres_url
 
-    raw = (
-        _value("DATABASE_MIGRATION_URL")
-        or _value("DATABASE_DIRECT_URL")
-        or _value("DATABASE_URL")
-    )
+    raw = _value("DATABASE_MIGRATION_URL") or _value("DATABASE_DIRECT_URL") or _value("DATABASE_URL")
     if not raw:
-        raise RuntimeError(
-            "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured"
-        )
+        raise RuntimeError("DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not configured")
     return normalize_sync_postgres_url(raw), normalize_psycopg2_dsn(raw)
+
+
+
+def _current_revision(connection) -> str | None:
+    """Read Alembic revision without failing on a brand-new empty database."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('public.alembic_version')")
+        exists = cursor.fetchone()
+        if not exists or exists[0] is None:
+            return None
+        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
+        row = cursor.fetchone()
+        return str(row[0]) if row else None
+
+def _storage_errors(connection, before: str | None) -> list[str]:
+    """Reject production upgrades whose estimated peak use exceeds recent capacity."""
+    if _environment() not in {"production", "prod"}:
+        return []
+    try:
+        capacity_mb = float(_value("PRODUCTION_DB_VOLUME_SIZE_MB"))
+    except ValueError:
+        return ["PRODUCTION_DB_VOLUME_SIZE_MB must match the observed Railway volume capacity"]
+    observed_at = _parse_utc(_value("PRODUCTION_DB_VOLUME_OBSERVED_AT"))
+    now = datetime.now(timezone.utc)
+    if not math.isfinite(capacity_mb) or capacity_mb <= 0:
+        return ["production volume capacity must be a positive finite number"]
+    if observed_at is None or observed_at > now or now - observed_at > timedelta(hours=1):
+        return ["production volume capacity observation must be no more than one hour old"]
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COALESCE(SUM(pg_database_size(oid)), 0) FROM pg_database")
+            data_bytes = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COALESCE(SUM(size), 0) FROM pg_ls_waldir()")
+            wal_bytes = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COALESCE(pg_total_relation_size(to_regclass('public.ml_rejected_signals')), 0)")
+            legacy_bytes = int(cursor.fetchone()[0])
+    except Exception:
+        return ["production migration storage metadata unavailable; verify headroom before upgrade"]
+    # 0046 temporarily holds both the original 1.5-GB rejection relation and
+    # its JSONB copy, plus WAL. Never count the later DROP as available space.
+    copy_bytes = legacy_bytes if before not in {"0046_decision_log", "0047_event_outbox"} else 0
+    reserve_bytes = max(512_000_000, 2 * copy_bytes + 256_000_000)
+    available_bytes = int(capacity_mb * 1_000_000) - data_bytes - wal_bytes
+    if available_bytes < reserve_bytes:
+        return [f"production migration headroom insufficient: estimated_available_bytes={available_bytes} "
+                f"required_reserve_bytes={reserve_bytes}; expand the Railway volume first"]
+    return []
 
 
 def migrate() -> dict[str, Any]:
@@ -131,7 +179,7 @@ def migrate() -> dict[str, Any]:
         raise RuntimeError("; ".join(source_errors))
 
     import psycopg2
-    from alembic import command
+    import alembic.command as command
     from alembic.config import Config
 
     expected = _expected_head()
@@ -147,10 +195,7 @@ def migrate() -> dict[str, Any]:
 
         # Fast-path routine deploys: if schema is already at repository head,
         # do not require a fresh backup and do not contend on the migration lock.
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-            row = cursor.fetchone()
-            before = str(row[0]) if row else None
+        before = _current_revision(connection)
         if before == expected:
             after = before
         else:
@@ -176,33 +221,26 @@ def migrate() -> dict[str, Any]:
                 if lock_acquired:
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(
-                        f"migration advisory lock busy after {lock_wait_seconds:.1f}s"
-                    )
+                    raise RuntimeError(f"migration advisory lock busy after {lock_wait_seconds:.1f}s")
                 time.sleep(0.5)
 
             try:
                 # Re-read under the lock because another migration owner may
                 # have completed while this deployment was waiting.
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                    row = cursor.fetchone()
-                    before = str(row[0]) if row else None
+                before = _current_revision(connection)
                 if before == expected:
                     after = before
                     migration_required = False
                 else:
+                    storage_errors = _storage_errors(connection, before)
+                    if storage_errors:
+                        raise RuntimeError("; ".join(storage_errors))
                     config = Config(str(ROOT / "alembic.ini"))
                     config.set_main_option("sqlalchemy.url", db_url)
                     command.upgrade(config, "head")
-                    with connection.cursor() as cursor:
-                        cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
-                        row = cursor.fetchone()
-                        after = str(row[0]) if row else None
+                    after = _current_revision(connection)
                     if after != expected:
-                        raise RuntimeError(
-                            f"migration verification failed: current={after} expected={expected}"
-                        )
+                        raise RuntimeError(f"migration verification failed: current={after} expected={expected}")
             finally:
                 if lock_acquired:
                     with connection.cursor() as cursor:

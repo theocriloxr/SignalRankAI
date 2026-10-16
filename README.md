@@ -1,5 +1,9 @@
 # SignalRankAI
 
+Current recovery authority: [Master execution contract](docs/release/MASTER_EXECUTION_CONTRACT.md).
+Read its baseline, blockers, traceability and evidence before continuing work.
+Historical completion reports do not certify the current integration or live trading.
+
 ## Railway monolith production notes
 
 ### Migrations
@@ -52,7 +56,7 @@ python -m scripts.wfo_run --input-dir ./raw_orderbooks --assets BTCUSDT --timefr
 - Web/PWA: `/app`
 - Unified API: `/api/v1/platform`
 - Mobile source: `mobile/`
-- Current migration head: `0045_mt5_credential_retirement`
+- Current migration head: `0049_research_trial_ledger`
 - Telegram bridge: `/app`, `/login_code`, `/link`, `/devices`, `/security`
 - Account flows: email verification, magic login, password reset and TOTP MFA
 - Product APIs: portfolio, performance, server-priced canonical billing, alerts, support and organizations

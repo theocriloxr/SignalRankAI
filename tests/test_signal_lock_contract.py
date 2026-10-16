@@ -12,8 +12,8 @@ async def _check_locked_result(fake_value):
             return True
 
         @staticmethod
-        def get_str_sync(_key):
-            return fake_value
+        def lease_blocked_sync(_key, _legacy_keys):
+            return bool(fake_value)
 
     original = sys.modules.get("core.redis_state")
     sys.modules["core.redis_state"] = types.SimpleNamespace(state=_FakeState())

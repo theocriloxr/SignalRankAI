@@ -104,8 +104,10 @@ def deterministic_paper_fill(
     requested_quantity = max(0.0, float(quantity))
     available = requested_quantity if available_quantity is None else max(0.0, float(available_quantity))
     filled_quantity = min(requested_quantity, available)
-    status = "rejected" if reject_reason or requested <= 0 or requested_quantity <= 0 else (
-        "partially_filled" if filled_quantity < requested_quantity else "filled"
+    status = (
+        "rejected"
+        if reject_reason or requested <= 0 or requested_quantity <= 0
+        else ("partially_filled" if filled_quantity < requested_quantity else "filled")
     )
     if status == "rejected":
         filled_quantity = 0.0
@@ -116,12 +118,22 @@ def deterministic_paper_fill(
     signal_id = str(signal.get("signal_id") or signal.get("id") or "")
     order_id = "paper_" + hashlib.sha256(f"{user_id}|{signal_id}|{requested}|{quantity}".encode()).hexdigest()[:20]
     return PaperFill(
-        order_id, int(user_id), signal_id, str(signal.get("asset") or "").upper(),
-        direction, requested_quantity, requested, fill_price, fee,
-        abs(fill_price - requested), status, filled_quantity, commission, funding,
-        max(0, int(latency_ms)), str(reject_reason)[:160] if reject_reason else (
-            "invalid_order" if status == "rejected" else None
-        ),
+        order_id,
+        int(user_id),
+        signal_id,
+        str(signal.get("asset") or "").upper(),
+        direction,
+        requested_quantity,
+        requested,
+        fill_price,
+        fee,
+        abs(fill_price - requested),
+        status,
+        filled_quantity,
+        commission,
+        funding,
+        max(0, int(latency_ms)),
+        str(reject_reason)[:160] if reject_reason else ("invalid_order" if status == "rejected" else None),
     )
 
 
@@ -134,11 +146,23 @@ def portfolio_snapshot(*, balance: float, fills: list[PaperFill], open_positions
         "open_positions": max(0, int(open_positions)),
         "provenance": "paper",
         "assumptions": {
-            "spread_bps": "explicit", "slippage_bps": "explicit", "fees": "explicit",
-            "commissions": "explicit", "funding": "explicit", "latency": "explicit",
-            "partial_fills": "liquidity_bounded", "rejections": "recorded",
+            "spread_bps": "explicit",
+            "slippage_bps": "explicit",
+            "fees": "explicit",
+            "commissions": "explicit",
+            "funding": "explicit",
+            "latency": "explicit",
+            "partial_fills": "liquidity_bounded",
+            "rejections": "recorded",
         },
     }
 
 
-__all__ = ["ConsentRecord", "PaperFill", "CopyTradeDecision", "copy_trade_decision", "deterministic_paper_fill", "portfolio_snapshot"]
+__all__ = [
+    "ConsentRecord",
+    "PaperFill",
+    "CopyTradeDecision",
+    "copy_trade_decision",
+    "deterministic_paper_fill",
+    "portfolio_snapshot",
+]

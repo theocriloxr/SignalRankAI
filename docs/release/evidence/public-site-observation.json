@@ -1,0 +1,39 @@
+{
+  "observed_at": "2026-10-15T12:02:26.369531+00:00",
+  "scope": "Unauthenticated public GET only; no configuration, data or trading permission writes",
+  "routes": [
+    {
+      "path": "/",
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 53,
+      "sha256": "0814315934dbe9269aee502338509e08560a1ae156e474ddc5bd9d84d08ada9e",
+      "public_response": "{\"service\":\"signalrankai\",\"status\":\"ok\",\"app\":\"/app\"}"
+    },
+    {
+      "path": "/login",
+      "error": "HTTP Error 404: Not Found"
+    },
+    {
+      "path": "/app",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "bytes": 70060,
+      "sha256": "8614f5bf9cced74c672669447c6dc928d78ca289cebd7e01c9321395e260dd95"
+    },
+    {
+      "path": "/healthz",
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 109,
+      "sha256": "8e918c8b2933da6e4947aa5e99a572ebb660713a9e9a1aa4e07a0afe0a1a052f"
+    },
+    {
+      "path": "/version",
+      "status": 200,
+      "content_type": "application/json",
+      "bytes": 256,
+      "sha256": "947c4e9c49cd643d552a09808d55df77e67f268de1bbb01b05adf49405e2d129"
+    }
+  ]
+}

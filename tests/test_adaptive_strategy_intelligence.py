@@ -44,4 +44,8 @@ def test_promotion_cannot_skip_human_approval_or_jump_to_approved():
     metrics={"sample_size":500,"positive_wfo_folds":5,"expectancy_r":0.2,"profit_factor":1.4,"max_drawdown_r":5,"brier_score":0.15}
     assert not evaluate_profile_promotion(metrics,human_approved=False,target_state="CANARY").eligible
     assert not evaluate_profile_promotion(metrics,human_approved=True,target_state="APPROVED").eligible
-    assert evaluate_profile_promotion(metrics,human_approved=True,target_state="CANARY").eligible
+    metrics.update(leakage_checks_passed=True, fold_count=5, worst_fold_expectancy=0.1)
+    metrics.update({key: True for key in ("integrity_audit_passed", "trial_history_verified", "selection_bias_passed",
+                                        "execution_stress_passed", "risk_survival_passed", "portfolio_validation_passed",
+                                        "kill_conditions_approved")})
+    assert evaluate_profile_promotion(metrics,human_approved=True,current_state="PAPER",target_state="CANARY").eligible

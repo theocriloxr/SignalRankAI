@@ -41,26 +41,55 @@ _FORBIDDEN = (
 )
 
 
-def _spec(name: str, role: str, inputs: Iterable[str], outputs: Iterable[str], approval: CouncilMode = CouncilMode.READ_ONLY) -> AgentSpec:
+def _spec(
+    name: str, role: str, inputs: Iterable[str], outputs: Iterable[str], approval: CouncilMode = CouncilMode.READ_ONLY
+) -> AgentSpec:
     return AgentSpec(name, role, tuple(inputs), tuple(outputs), _FORBIDDEN, approval)
 
 
 AGENT_SPECS: tuple[AgentSpec, ...] = (
-    _spec("market_data", "Market Data Agent", ("quotes", "provider_health"), ("trust_decision", "provider_recommendation")),
-    _spec("strategy_research", "Strategy Research Agent", ("outcomes", "evidence"), ("quarantine_recommendation", "promotion_candidate"), CouncilMode.PROPOSAL),
-    _spec("signal_quality", "Signal Quality Agent", ("candidate", "risk", "quote"), ("quality_explanation", "quality_flags")),
+    _spec(
+        "market_data", "Market Data Agent", ("quotes", "provider_health"), ("trust_decision", "provider_recommendation")
+    ),
+    _spec(
+        "strategy_research",
+        "Strategy Research Agent",
+        ("outcomes", "evidence"),
+        ("quarantine_recommendation", "promotion_candidate"),
+        CouncilMode.PROPOSAL,
+    ),
+    _spec(
+        "signal_quality",
+        "Signal Quality Agent",
+        ("candidate", "risk", "quote"),
+        ("quality_explanation", "quality_flags"),
+    ),
     _spec("risk_manager", "Risk Manager Agent", ("candidate", "portfolio", "drawdown"), ("risk_decision",)),
-    _spec("delivery_guard", "Final Delivery Guard Agent", ("quote", "freshness", "market_state"), ("delivery_decision",)),
+    _spec(
+        "delivery_guard", "Final Delivery Guard Agent", ("quote", "freshness", "market_state"), ("delivery_decision",)
+    ),
     _spec("outcome", "Outcome Agent", ("trusted_quotes", "lifecycle"), ("outcome_events",)),
     _spec("backtest", "Backtest Agent", ("historical_data", "manifest"), ("evidence_report",)),
     _spec("shadow", "Shadow Trading Agent", ("blocked_signals", "outcomes"), ("shadow_report",)),
     _spec("paper", "Paper Trading Agent", ("signal", "paper_account"), ("paper_fill", "paper_report")),
-    _spec("automaton", "Automaton Supervisor Agent", ("system_metrics", "evidence"), ("state_recommendation",), CouncilMode.PROPOSAL),
+    _spec(
+        "automaton",
+        "Automaton Supervisor Agent",
+        ("system_metrics", "evidence"),
+        ("state_recommendation",),
+        CouncilMode.PROPOSAL,
+    ),
     _spec("portfolio", "Portfolio Agent", ("positions", "risk"), ("exposure_report",)),
     _spec("business", "Business Agent", ("tier_events", "receipts"), ("product_recommendation",)),
     _spec("support", "Support Agent", ("tester_feedback",), ("support_summary",)),
     _spec("compliance", "Compliance and Trust Agent", ("public_copy", "metrics"), ("compliance_flags",)),
-    _spec("codexops", "CodexOps Agent", ("source", "logs", "tests"), ("audit_report", "patch_proposal"), CouncilMode.PROPOSAL),
+    _spec(
+        "codexops",
+        "CodexOps Agent",
+        ("source", "logs", "tests"),
+        ("audit_report", "patch_proposal"),
+        CouncilMode.PROPOSAL,
+    ),
     _spec("release_guard", "Release Guard Agent", ("tests", "health", "flags"), ("release_verdict",)),
 )
 

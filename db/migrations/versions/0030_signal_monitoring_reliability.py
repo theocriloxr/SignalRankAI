@@ -4,6 +4,7 @@ Revision ID: 0030_signal_monitor_reliability
 Revises: 0029_live_financial_ledger
 Create Date: 2026-07-31
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -52,8 +53,10 @@ def upgrade() -> None:
     )
     op.create_foreign_key(
         "fk_signal_lifecycle_terminal_event",
-        "signal_lifecycles", "signal_tracking_events",
-        ["terminal_event_id"], ["id"],
+        "signal_lifecycles",
+        "signal_tracking_events",
+        ["terminal_event_id"],
+        ["id"],
     )
     op.execute("""
         UPDATE signal_lifecycles
@@ -110,16 +113,24 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
         sa.UniqueConstraint("idempotency_key", name="uq_user_signal_monitoring_action_key"),
     )
-    op.create_index("ix_user_signal_monitoring_actions_monitoring_id", "user_signal_monitoring_actions", ["monitoring_id"])
+    op.create_index(
+        "ix_user_signal_monitoring_actions_monitoring_id", "user_signal_monitoring_actions", ["monitoring_id"]
+    )
     op.create_index("ix_user_signal_monitoring_actions_user_id", "user_signal_monitoring_actions", ["user_id"])
     op.create_index("ix_user_signal_monitoring_actions_signal_id", "user_signal_monitoring_actions", ["signal_id"])
 
-    op.add_column("signal_event_notifications", sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"))
+    op.add_column(
+        "signal_event_notifications", sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0")
+    )
     op.add_column("signal_event_notifications", sa.Column("last_attempt_at", sa.DateTime(), nullable=True))
-    op.add_column("signal_event_notifications", sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")))
+    op.add_column(
+        "signal_event_notifications",
+        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
+    )
     op.create_index(
         "ix_signal_event_notifications_claim",
-        "signal_event_notifications", ["delivery_state", "last_attempt_at"],
+        "signal_event_notifications",
+        ["delivery_state", "last_attempt_at"],
     )
 
     # Stale Free rows are quarantined, never emitted in a burst after rollout.

@@ -20,6 +20,7 @@ Key properties:
 This module performs no I/O itself; adapters own HTTP.  ``run_discovery`` only
 calls adapter callables with isolation, timeouts and per-provider cooldowns.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,6 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from data.canonical_instruments import CanonicalInstrument, InstrumentStatus, normalize_symbol
-from data.provider_activation import ProviderActivation, ProviderActivationState, resolve_activation
 from data.provider_contracts import AssetClass, CanonicalInstrumentId, InstrumentKind
 
 logger = logging.getLogger(__name__)
@@ -325,9 +325,7 @@ class DynamicInstrumentRegistry:
         return instrument.status is InstrumentStatus.ACTIVE
 
     @classmethod
-    def _canonicalize(
-        cls, provider: str, row: Mapping[str, Any] | ProviderInstrument
-    ) -> Optional[CanonicalInstrument]:
+    def _canonicalize(cls, provider: str, row: Mapping[str, Any] | ProviderInstrument) -> Optional[CanonicalInstrument]:
         if isinstance(row, ProviderInstrument):
             data: Mapping[str, Any] = {
                 "provider": row.provider,
@@ -433,8 +431,11 @@ def run_discovery(
         last = _DISCOVERY_COOLDOWNS.get(provider, 0.0)
         if last > time.monotonic():
             results[provider] = DiscoveryRunResult(
-                provider=provider, started_at=time.time(), duration_ms=0.0,
-                state="cooldown", reason="discovery_rate_limit",
+                provider=provider,
+                started_at=time.time(),
+                duration_ms=0.0,
+                state="cooldown",
+                reason="discovery_rate_limit",
             )
             continue
         started = time.monotonic()
@@ -471,9 +472,7 @@ def _accepts_top(fn: Callable) -> bool:
         sig = inspect.signature(fn)
     except (TypeError, ValueError):
         return False
-    return "top" in sig.parameters or any(
-        p.kind in (p.VAR_KEYWORD,) for p in sig.parameters.values()
-    )
+    return "top" in sig.parameters or any(p.kind in (p.VAR_KEYWORD,) for p in sig.parameters.values())
 
 
 __all__ = [

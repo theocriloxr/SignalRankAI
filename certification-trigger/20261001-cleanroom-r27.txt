@@ -1,0 +1,14 @@
+SignalRankAI unified certification r27
+branch=implementation-of-master-blueprint
+head_before_trigger=ca5f7b078673bb7a636cf9f6cff9d89c3fcaf802
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+signal_identity_immutability=required
+delivery_proven_paper_eligibility=required
+lifecycle_active_signal_projection=required
+missed_entry_zero_realized_r=required
+paper_skip_notification_idempotency=required
+outcome_notification_single_owner=required
+live_execution_authorized=false

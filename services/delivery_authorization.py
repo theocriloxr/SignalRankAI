@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.env import runtime_environment_name
-from core.tier_policy import get_entitlements, normalize_tier
+from core.tier_policy import get_entitlements
 from db.access import resolve_product_tier
 from db.models import SignalDelivery, User
 from utils.timeutils import now_utc_naive
@@ -26,7 +26,10 @@ class DeliveryAuthorization:
 def _restricted_audience() -> set[int]:
     app_env = runtime_environment_name("development")
     explicit = str(os.getenv("DELIVERY_AUDIENCE_RESTRICTION_MODE", "0") or "0").lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     # A configured list is diagnostic-only in normal production. Restriction
     # requires an explicit non-production/testing mode.
@@ -55,9 +58,7 @@ async def authorize_signal_delivery(
 ) -> DeliveryAuthorization:
     """Authorize a recipient without any manual owner-approval requirement."""
     user = (
-        await session.execute(
-            select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-        )
+        await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None:
         return DeliveryAuthorization(False, "USER_MISSING", "none", "user has not completed onboarding")
@@ -88,14 +89,19 @@ async def authorize_signal_delivery(
 
     if enforce_daily_limit:
         start = now_utc_naive().replace(hour=0, minute=0, second=0, microsecond=0)
-        delivered = int((await session.execute(
-            select(func.count(SignalDelivery.id)).where(
-                SignalDelivery.user_id == int(user.id),
-                SignalDelivery.sent_ok.is_(True),
-                SignalDelivery.telegram_message_id.is_not(None),
-                SignalDelivery.delivered_at >= start,
-            )
-        )).scalar() or 0)
+        delivered = int(
+            (
+                await session.execute(
+                    select(func.count(SignalDelivery.id)).where(
+                        SignalDelivery.user_id == int(user.id),
+                        SignalDelivery.sent_ok.is_(True),
+                        SignalDelivery.telegram_message_id.is_not(None),
+                        SignalDelivery.delivered_at >= start,
+                    )
+                )
+            ).scalar()
+            or 0
+        )
         if delivered >= int(policy.daily_signal_limit):
             return DeliveryAuthorization(False, "DAILY_LIMIT_REACHED", tier)
     return DeliveryAuthorization(True, "AUTHORIZED", tier)

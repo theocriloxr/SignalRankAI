@@ -54,9 +54,7 @@ def _api(token: str, method: str, data: dict[str, object] | None = None) -> dict
     except Exception as exc:
         raise RuntimeError(f"Telegram {method} failed: {type(exc).__name__}: {exc}") from None
     if not payload.get("ok"):
-        raise RuntimeError(
-            f"Telegram {method} failed: {payload.get('description', 'unknown error')}"
-        )
+        raise RuntimeError(f"Telegram {method} failed: {payload.get('description', 'unknown error')}")
     return payload
 
 

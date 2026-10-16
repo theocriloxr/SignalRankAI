@@ -51,6 +51,11 @@ def test_index_market_hours_supports_cfd_and_cash_modes(monkeypatch):
 
 def test_index_discovery_bucket_is_included(monkeypatch):
     monkeypatch.setenv("INDEX_TICKERS", "US500,GER40")
+    # This checks configured-symbol buckets. Provider-ranked discovery has its
+    # own tests and must not depend on live catalogues or earlier probe caches.
+    monkeypatch.setattr(pair_discovery, "_metaapi_symbols", lambda: [])
+    monkeypatch.setattr(pair_discovery, "_twelvedata_verified_configured", lambda symbols, category: [])
+    monkeypatch.setattr(pair_discovery, "_yahoo_verified_configured", lambda symbols: [])
     monkeypatch.setattr(pair_discovery, "get_trending_crypto_pairs", lambda top_n=20: ["BTCUSDT"])
     monkeypatch.setattr(pair_discovery, "get_trending_fx_pairs", lambda: ["EURUSD"])
     monkeypatch.setattr(pair_discovery, "get_trending_stock_tickers", lambda top_n=20: ["AAPL"])

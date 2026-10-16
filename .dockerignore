@@ -1,7 +1,25 @@
 # .dockerignore
 .git/
+.agents/
+.codex/
+.aws/
+.railway/
 .venv/
 venv/
+.audit-venv/
+.audit-tools-venv/
+.pytest-tmp/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+artifacts/
+evidence/
+logs/
+.diagnostics/
+**/node_modules/
+frontend/.next/
+mobile/dist-android/
+mobile/dist-ios/
 __pycache__/
 *.pyc
 *.pyo
@@ -49,3 +67,5 @@ Thumbs.db
 # Release-critical pytest gate runs inside the Railway image build.
 !tests/
 !tests/**
+!tests_sdk/
+!tests_sdk/**

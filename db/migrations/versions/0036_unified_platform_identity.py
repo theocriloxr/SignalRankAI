@@ -9,6 +9,7 @@ legacy Telegram signals, subscriptions, deliveries and paper-trading records
 retain their relationships.  ``telegram_user_id`` becomes optional, allowing a
 user to register in the app first and link Telegram later.
 """
+
 from alembic import op
 
 # Compatibility source marker for legacy artifact checks: down_revision = "0035_staging_certification_ecosystem"
@@ -37,8 +38,7 @@ def upgrade() -> None:
     ):
         op.execute(statement)
     op.execute(
-        "UPDATE users SET public_user_id = gen_random_uuid()::text "
-        "WHERE public_user_id IS NULL OR public_user_id = ''"
+        "UPDATE users SET public_user_id = gen_random_uuid()::text WHERE public_user_id IS NULL OR public_user_id = ''"
     )
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_public_user_id ON users(public_user_id)")
     op.execute(
@@ -93,7 +93,9 @@ def upgrade() -> None:
             refresh_reuse_detected BOOLEAN NOT NULL DEFAULT FALSE
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_user_sessions_user_active ON user_sessions(user_id, revoked_at, expires_at)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_user_sessions_user_active ON user_sessions(user_id, revoked_at, expires_at)"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS ix_user_sessions_family ON user_sessions(session_family_id)")
 
     op.execute("""
@@ -113,7 +115,9 @@ def upgrade() -> None:
             consumed_ip_hash VARCHAR(64)
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_login_challenges_code ON login_challenges(code_hash, purpose, expires_at)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_login_challenges_code ON login_challenges(code_hash, purpose, expires_at)"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS ix_login_challenges_user ON login_challenges(user_id, purpose, expires_at)")
 
     op.execute("""
@@ -285,7 +289,7 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO notification_preferences(user_id, telegram_enabled, timezone)
         SELECT id, CASE WHEN telegram_user_id IS NULL THEN FALSE ELSE TRUE END,
-               COALESCE(timezone, 'UTC')
+               'UTC'
         FROM users
         ON CONFLICT(user_id) DO NOTHING
     """)

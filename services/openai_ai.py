@@ -9,6 +9,7 @@ The provider is deliberately advisory:
 Uses the OpenAI Responses API directly through httpx so the project does not
 need a second large SDK dependency.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -66,11 +67,7 @@ def _api_key() -> str:
 
 
 def openai_available() -> bool:
-    return bool(
-        _api_key()
-        and _env_bool("OPENAI_AI_ENABLED", True)
-        and _env_bool("OPENAI_SIGNAL_REVIEW_ENABLED", True)
-    )
+    return bool(_api_key() and _env_bool("OPENAI_AI_ENABLED", True) and _env_bool("OPENAI_SIGNAL_REVIEW_ENABLED", True))
 
 
 def preferred_provider() -> str:
@@ -91,23 +88,19 @@ def provider_order() -> tuple[str, ...]:
 
 def _model(*, deep: bool = False) -> str:
     if deep:
-        return str(
-            os.getenv("OPENAI_DEEP_MODEL")
-            or os.getenv("OPENAI_GOVERNANCE_MODEL")
-            or "gpt-6-sol"
-        ).strip()
-    return str(
-        os.getenv("OPENAI_SIGNAL_REVIEW_MODEL")
-        or os.getenv("OPENAI_MODEL")
-        or "gpt-6-luna"
-    ).strip()
+        return str(os.getenv("OPENAI_DEEP_MODEL") or os.getenv("OPENAI_GOVERNANCE_MODEL") or "gpt-6-sol").strip()
+    return str(os.getenv("OPENAI_SIGNAL_REVIEW_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-6-luna").strip()
 
 
 def _reasoning_effort(*, deep: bool = False) -> str:
-    raw = str(
-        os.getenv("OPENAI_DEEP_REASONING_EFFORT" if deep else "OPENAI_REASONING_EFFORT")
-        or ("medium" if deep else "low")
-    ).strip().lower()
+    raw = (
+        str(
+            os.getenv("OPENAI_DEEP_REASONING_EFFORT" if deep else "OPENAI_REASONING_EFFORT")
+            or ("medium" if deep else "low")
+        )
+        .strip()
+        .lower()
+    )
     allowed = {"none", "low", "medium", "high", "xhigh", "max"}
     return raw if raw in allowed else ("medium" if deep else "low")
 
@@ -177,9 +170,7 @@ def _cache_key(
         "payload": payload,
         "schema_hash": _fingerprint(schema),
     }
-    return hashlib.sha256(
-        _bounded_json(material, max_chars=70000).encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(_bounded_json(material, max_chars=70000).encode("utf-8")).hexdigest()
 
 
 def _cache_get(key: str, ttl_seconds: float) -> dict[str, Any] | None:
@@ -408,8 +399,16 @@ _SIGNAL_REVIEW_SCHEMA: dict[str, Any] = {
         "data_quality_risk": {"type": "boolean"},
     },
     "required": [
-        "approved", "score", "confidence", "risk_level", "summary", "veto_reasons",
-        "retail_trap_risk", "late_entry_risk", "macro_conflict", "volatility_risk",
+        "approved",
+        "score",
+        "confidence",
+        "risk_level",
+        "summary",
+        "veto_reasons",
+        "retail_trap_risk",
+        "late_entry_risk",
+        "macro_conflict",
+        "volatility_risk",
         "data_quality_risk",
     ],
 }
@@ -421,37 +420,96 @@ def _signal_context(
     news_sentiment: float | None = None,
 ) -> dict[str, Any]:
     keys = (
-        "asset", "asset_class", "timeframe", "direction", "strategy_name", "strategy_group",
-        "entry", "stop_loss", "take_profit", "targets", "score", "confidence", "rr_ratio",
-        "regime", "session", "rsi", "macd_trend", "macd_hist", "trend_ema", "trend_sma",
-        "adx", "adx_trend", "volume_ratio", "relative_volume", "atr", "atr_rel", "atr_regime",
-        "mtf_4h_trend", "mtf_1d_trend", "mtf_alignment_score", "mtf_confidence_modifier",
-        "live_expectancy", "historical_evidence_actionable", "historical_evidence_scope",
-        "historical_evidence_fallback_depth", "historical_sample_size", "historical_decisive_samples",
-        "historical_win_rate", "historical_win_rate_lower_95", "historical_win_rate_upper_95",
-        "historical_avg_r", "historical_avg_win_r", "historical_avg_loss_r", "historical_profit_factor",
-        "opportunity_score", "asset_health_score", "market_session", "trade_type",
-        "trade_profile", "profile_min_rr", "profile_rr_ok", "time_to_target_score",
-        "rr_tp1", "rr_final", "quality_tp1_rr", "quality_final_rr",
-        "candle_evidence_score", "data_quality_score", "news_sentiment",
-        "ml_probability", "ml_probability_raw", "ml_probability_calibrated",
-        "ml_calibration_validated", "ml_recovery_mode",
-        "ml_recovery_challenger_probability", "ml_recovery_challenger_threshold",
-        "score_components", "confidence_breakdown", "opportunity_components",
-        "candle_evidence", "trade_health", "mission_recommendation",
-        "mission_recommendation_reason", "htf_bias", "ltf_bias",
-        "provider_health_score", "market_data_quality",
+        "asset",
+        "asset_class",
+        "timeframe",
+        "direction",
+        "strategy_name",
+        "strategy_group",
+        "entry",
+        "stop_loss",
+        "take_profit",
+        "targets",
+        "score",
+        "confidence",
+        "rr_ratio",
+        "regime",
+        "session",
+        "rsi",
+        "macd_trend",
+        "macd_hist",
+        "trend_ema",
+        "trend_sma",
+        "adx",
+        "adx_trend",
+        "volume_ratio",
+        "relative_volume",
+        "atr",
+        "atr_rel",
+        "atr_regime",
+        "mtf_4h_trend",
+        "mtf_1d_trend",
+        "mtf_alignment_score",
+        "mtf_confidence_modifier",
+        "live_expectancy",
+        "historical_evidence_actionable",
+        "historical_evidence_scope",
+        "historical_evidence_fallback_depth",
+        "historical_sample_size",
+        "historical_decisive_samples",
+        "historical_win_rate",
+        "historical_win_rate_lower_95",
+        "historical_win_rate_upper_95",
+        "historical_avg_r",
+        "historical_avg_win_r",
+        "historical_avg_loss_r",
+        "historical_profit_factor",
+        "opportunity_score",
+        "asset_health_score",
+        "market_session",
+        "trade_type",
+        "trade_profile",
+        "profile_min_rr",
+        "profile_rr_ok",
+        "time_to_target_score",
+        "rr_tp1",
+        "rr_final",
+        "quality_tp1_rr",
+        "quality_final_rr",
+        "candle_evidence_score",
+        "data_quality_score",
+        "news_sentiment",
+        "ml_probability",
+        "ml_probability_raw",
+        "ml_probability_calibrated",
+        "ml_calibration_validated",
+        "ml_recovery_mode",
+        "ml_recovery_challenger_probability",
+        "ml_recovery_challenger_threshold",
+        "score_components",
+        "confidence_breakdown",
+        "opportunity_components",
+        "candle_evidence",
+        "trade_health",
+        "mission_recommendation",
+        "mission_recommendation_reason",
+        "htf_bias",
+        "ltf_bias",
+        "provider_health_score",
+        "market_data_quality",
     )
     safe_signal = {key: signal.get(key) for key in keys if signal.get(key) is not None}
     safe_candles: list[dict[str, Any]] = []
     for row in list(candles or [])[-36:]:
         if not isinstance(row, Mapping):
             continue
-        safe_candles.append({
-            key: row.get(key)
-            for key in ("timestamp", "open", "high", "low", "close", "volume")
-            if row.get(key) is not None
-        })
+        safe_candles.append(
+            {
+                key: row.get(key)
+                for key in ("timestamp", "open", "high", "low", "close", "volume")
+                if row.get(key) is not None
+            }
+        )
     return {
         "signal": safe_signal,
         "news_sentiment": news_sentiment,
@@ -660,7 +718,9 @@ async def market_regime(asset: str, market_data: Mapping[str, Any]) -> dict[str,
     )
 
 
-async def risk_review(signal: Mapping[str, Any], market_context: Mapping[str, Any] | str | None = None) -> dict[str, Any]:
+async def risk_review(
+    signal: Mapping[str, Any], market_context: Mapping[str, Any] | str | None = None
+) -> dict[str, Any]:
     schema = {
         "type": "object",
         "additionalProperties": False,
@@ -763,28 +823,59 @@ async def choose_direction(
         "required": ["winner", "confidence", "reason"],
     }
     keys = (
-        "strategy_name", "strategy_group", "direction", "confidence", "strength",
-        "score", "rr_ratio", "rr_final", "ml_probability", "ml_probability_raw",
-        "historical_evidence_actionable", "historical_evidence_scope",
-        "historical_evidence_fallback_depth", "historical_sample_size",
-        "historical_decisive_samples", "historical_win_rate",
-        "historical_win_rate_lower_95", "historical_win_rate_upper_95",
-        "historical_avg_r", "historical_avg_win_r", "historical_avg_loss_r",
-        "historical_profit_factor", "opportunity_score", "opportunity_components",
-        "asset_health_score", "mtf_alignment_score", "mtf_confidence_modifier",
-        "regime", "market_session", "trade_type", "trade_profile",
-        "profile_min_rr", "profile_rr_ok", "time_to_target_score",
-        "candle_evidence_score", "data_quality_score", "provider_health_score",
-        "market_data_quality", "trade_health", "mission_recommendation",
-        "mission_recommendation_reason", "score_components", "confidence_breakdown",
+        "strategy_name",
+        "strategy_group",
+        "direction",
+        "confidence",
+        "strength",
+        "score",
+        "rr_ratio",
+        "rr_final",
+        "ml_probability",
+        "ml_probability_raw",
+        "historical_evidence_actionable",
+        "historical_evidence_scope",
+        "historical_evidence_fallback_depth",
+        "historical_sample_size",
+        "historical_decisive_samples",
+        "historical_win_rate",
+        "historical_win_rate_lower_95",
+        "historical_win_rate_upper_95",
+        "historical_avg_r",
+        "historical_avg_win_r",
+        "historical_avg_loss_r",
+        "historical_profit_factor",
+        "opportunity_score",
+        "opportunity_components",
+        "asset_health_score",
+        "mtf_alignment_score",
+        "mtf_confidence_modifier",
+        "regime",
+        "market_session",
+        "trade_type",
+        "trade_profile",
+        "profile_min_rr",
+        "profile_rr_ok",
+        "time_to_target_score",
+        "candle_evidence_score",
+        "data_quality_score",
+        "provider_health_score",
+        "market_data_quality",
+        "trade_health",
+        "mission_recommendation",
+        "mission_recommendation_reason",
+        "score_components",
+        "confidence_breakdown",
         "risk",
     )
+
     def _safe(items):
         return [
             {k: item.get(k) for k in keys if item.get(k) is not None}
             for item in list(items or [])[:5]
             if isinstance(item, Mapping)
         ]
+
     return await _structured_response(
         task="signalrank_direction_arbitration",
         system=(
@@ -822,8 +913,13 @@ async def evolution_proposal(context: Mapping[str, Any]) -> dict[str, Any]:
             "requires_owner_approval": {"type": "boolean"},
         },
         "required": [
-            "severity", "target_file", "reasoning", "code_diff", "test_plan",
-            "requires_forward_test", "requires_owner_approval",
+            "severity",
+            "target_file",
+            "reasoning",
+            "code_diff",
+            "test_plan",
+            "requires_forward_test",
+            "requires_owner_approval",
         ],
     }
     return await _structured_response(
@@ -845,11 +941,7 @@ async def evolution_proposal(context: Mapping[str, Any]) -> dict[str, Any]:
 async def threshold_recommendation(stats: Mapping[str, Any]) -> dict[str, Any]:
     payload = dict(stats or {})
     try:
-        current = float(
-            payload.get("current_base_threshold")
-            or payload.get("current_runtime_threshold")
-            or 0.50
-        )
+        current = float(payload.get("current_base_threshold") or payload.get("current_runtime_threshold") or 0.50)
     except Exception:
         current = 0.50
     current = max(0.05, min(0.95, current))

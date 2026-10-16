@@ -154,6 +154,7 @@ def _to_float(value: Any) -> float | None:
 def _asset_class(symbol: str) -> str:
     try:
         from services.asset_mapper import classify_asset
+
         cls = str(classify_asset(symbol)).lower()
         if cls == "forex":
             return "fx"
@@ -282,7 +283,9 @@ def evaluate_time_to_telegraph(
     created = _parse_created_at(signal.get("generated_at") or signal.get("created_at"))
     if created is None:
         if _env_bool("DELIVERY_TIME_TO_TELEGRAPH_REQUIRE_TIMESTAMP", True):
-            return DeliveryFreshnessResult(False, "missing_generated_at_for_queue_gate", state="BLOCKED_MISSING_QUEUE_TIMESTAMP")
+            return DeliveryFreshnessResult(
+                False, "missing_generated_at_for_queue_gate", state="BLOCKED_MISSING_QUEUE_TIMESTAMP"
+            )
         return DeliveryFreshnessResult(True, "missing_generated_at_allowed", state="LIVE_QUEUE_CHECK_SKIPPED")
     now_naive = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(tzinfo=None)
     queue_age = max(0.0, (now_naive - created).total_seconds())
@@ -378,12 +381,7 @@ def _first_target_hit(signal: dict[str, Any], live_price: float) -> bool:
 
 
 def _target_prices(signal: dict[str, Any]) -> list[float]:
-    raw = (
-        signal.get("take_profit")
-        or signal.get("take_profits")
-        or signal.get("targets")
-        or signal.get("tp")
-    )
+    raw = signal.get("take_profit") or signal.get("take_profits") or signal.get("targets") or signal.get("tp")
     if raw is None:
         return []
     if isinstance(raw, (int, float)):
@@ -562,7 +560,9 @@ async def validate_delivery_freshness(
             rule_results=("signal_age_failed",),
         )
 
-    require_price = _env_bool("DELIVERY_REQUIRE_LIVE_PRICE", True) if require_live_price is None else bool(require_live_price)
+    require_price = (
+        _env_bool("DELIVERY_REQUIRE_LIVE_PRICE", True) if require_live_price is None else bool(require_live_price)
+    )
     symbol = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
 
     queue_result = evaluate_time_to_telegraph(sig, symbol=symbol)
@@ -720,7 +720,11 @@ async def validate_delivery_freshness(
                 **quote_meta,
             )
         reason_l = str(reason or "").lower()
-        if require_price and live_price is None and any(marker in reason_l for marker in ("unavailable", "timeout", "error", "skip")):
+        if (
+            require_price
+            and live_price is None
+            and any(marker in reason_l for marker in ("unavailable", "timeout", "error", "skip"))
+        ):
             return DeliveryFreshnessResult(
                 False,
                 f"live_price_unavailable:{reason}",

@@ -69,7 +69,9 @@ def build_manifest(
     provenance: str = "backtest",
 ) -> EvidenceManifest:
     normalized_rows = list(rows or [])
-    dataset_hash = hashlib.sha256(_canonical({"dataset_id": dataset_id, "rows": normalized_rows}).encode("utf-8")).hexdigest()
+    dataset_hash = hashlib.sha256(
+        _canonical({"dataset_id": dataset_id, "rows": normalized_rows}).encode("utf-8")
+    ).hexdigest()
     return EvidenceManifest(
         dataset_id=str(dataset_id),
         dataset_hash=dataset_hash,
@@ -211,7 +213,16 @@ def evaluate_public_win_rate_claim(
     """Certify a public win-rate claim from unique, delivered OOS theses only."""
     delivered = [row for row in outcomes if bool(row.get("delivered")) and bool(row.get("out_of_sample"))]
     thesis_ids = {str(row.get("thesis_fingerprint") or "") for row in delivered if row.get("thesis_fingerprint")}
-    terminal_states = {"tp3", "stop_loss", "sl", "partial_profit", "breakeven", "expired", "cancelled", "data_unavailable"}
+    terminal_states = {
+        "tp3",
+        "stop_loss",
+        "sl",
+        "partial_profit",
+        "breakeven",
+        "expired",
+        "cancelled",
+        "data_unavailable",
+    }
     seen: set[str] = set()
     terminal: list[Mapping[str, Any]] = []
     for row in delivered:
@@ -222,11 +233,7 @@ def evaluate_public_win_rate_claim(
         seen.add(thesis)
         terminal.append(row)
     metrics = compute_metrics(terminal)
-    strict_wins = sum(
-        1
-        for row in terminal
-        if str(row.get("state") or row.get("outcome") or "").lower() == "tp3"
-    )
+    strict_wins = sum(1 for row in terminal if str(row.get("state") or row.get("outcome") or "").lower() == "tp3")
     strict_rate = strict_wins / len(terminal) if terminal else 0.0
     strict_confidence_low = _wilson_interval(strict_wins, len(terminal))[0]
     coverage = len(terminal) / len(delivered) if delivered else 0.0
@@ -285,7 +292,9 @@ def evaluate_promotion(
     if require_human_approval and not human_approved:
         reasons.append("human_approval_required")
     eligible = not reasons
-    return PromotionDecision(eligible, "ELIGIBLE" if eligible else "QUARANTINED", tuple(reasons), metrics, manifest.manifest_hash)
+    return PromotionDecision(
+        eligible, "ELIGIBLE" if eligible else "QUARANTINED", tuple(reasons), metrics, manifest.manifest_hash
+    )
 
 
 def register_candidate(manifest: EvidenceManifest, decision: PromotionDecision) -> dict[str, Any]:
@@ -307,6 +316,7 @@ def purged_walk_forward_splits(
     train_size: int,
     test_size: int,
     embargo: int = 0,
+    label_end_times: Sequence[Any] | None = None,
 ) -> list[tuple[list[int], list[int]]]:
     """Build chronological train/test folds with an embargo gap.
 
@@ -316,13 +326,24 @@ def purged_walk_forward_splits(
     n = len(timestamps)
     if train_size <= 0 or test_size <= 0:
         return []
+    if embargo < 0:
+        raise ValueError("negative_walk_forward_embargo")
+    if any(timestamps[i] > timestamps[i + 1] for i in range(n - 1)):
+        raise ValueError("walk_forward_timestamps_not_chronological")
+    if label_end_times is not None:
+        if len(label_end_times) != n or any(end < start for start, end in zip(timestamps, label_end_times)):
+            raise ValueError("invalid_walk_forward_label_availability")
     folds: list[tuple[list[int], list[int]]] = []
     start = 0
     while start + train_size + embargo + test_size <= n:
         train = list(range(start, start + train_size))
         test_start = start + train_size + max(0, embargo)
         test = list(range(test_start, test_start + test_size))
-        folds.append((train, test))
+        cutoff = timestamps[test_start]
+        train = [index for index in train if timestamps[index] < cutoff
+                 and (label_end_times is None or label_end_times[index] < cutoff)]
+        if train:
+            folds.append((train, test))
         start += test_size
     return folds
 

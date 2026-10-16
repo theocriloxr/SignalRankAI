@@ -4,6 +4,7 @@ Revision ID: 0027_launch_paper_trading
 Revises: 0026_adaptive_operational_hotfix
 Create Date: 2026-07-28
 """
+
 from alembic import op
 import sqlalchemy as sa
 

@@ -4,6 +4,7 @@ This module performs no Telegram or database I/O. It converts an eligible user
 set into stable shards and bounded batches, allowing queue workers to resume
 without creating one coroutine for every recipient.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

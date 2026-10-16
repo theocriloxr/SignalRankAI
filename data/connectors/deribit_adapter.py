@@ -4,10 +4,11 @@ Official endpoint: ``public/get_tradingview_chart_data``.  This adapter is
 read-only and requires no credential.  Instrument names must be canonical
 Deribit instruments, for example ``BTC-PERPETUAL`` or an option contract.
 """
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import logging
 from typing import Any, Dict, List
 
@@ -111,7 +112,9 @@ async def _async_get_candles(
         return rows
 
     try:
-        return await asyncio.wait_for(httpx_client.retry_async(_do, retries=2, backoff=0.35), timeout=request_timeout + 1)
+        return await asyncio.wait_for(
+            httpx_client.retry_async(_do, retries=2, backoff=0.35), timeout=request_timeout + 1
+        )
     except Exception as exc:
         logger.debug("deribit candle request failed: %s", exc)
         return []

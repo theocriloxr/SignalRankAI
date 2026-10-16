@@ -37,7 +37,10 @@ def test_pwa_does_not_cache_private_api() -> None:
 
 def test_mobile_uses_current_expo_and_secure_store() -> None:
     package = json.loads((ROOT / "mobile/package.json").read_text())
-    assert package["dependencies"]["expo"].startswith("~57")
+    lock = json.loads((ROOT / "mobile/package-lock.json").read_text())
+    # Verify the installed SDK and manifest agree; an exact pin is valid too.
+    assert lock["packages"]["node_modules/expo"]["version"].startswith("57.")
+    assert lock["packages"][""]["dependencies"]["expo"] == package["dependencies"]["expo"]
     assert "expo-secure-store" in package["dependencies"]
     assert "expo-notifications" in package["dependencies"]
     assert "expo-router" not in package["dependencies"]

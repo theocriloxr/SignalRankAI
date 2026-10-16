@@ -1,0 +1,24 @@
+{
+  "name": "full-20261016",
+  "sha": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-16T13:37:36.231140+00:00",
+  "finished_at": "2026-10-16T13:56:19.307913+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "scripts/run_complete_system_test.py",
+    "--full",
+    "--continue-on-failure",
+    "--output-dir",
+    "artifacts/stage1-20261014/full-20261016"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "step_timeout_seconds": 1200,
+  "log": "artifacts/stage1-20261014/full-20261016.log",
+  "log_sha256": "abbae182eef072b308a162d10d387d4c1b17ef195de7625b0e31ece53458017b",
+  "result": "PASS",
+  "source_fingerprint_before": "d63e989853ad0ed6eb180c60f658673008f145f7cdbfa95e3a192d5ed490b348",
+  "source_fingerprint_after": "d63e989853ad0ed6eb180c60f658673008f145f7cdbfa95e3a192d5ed490b348",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

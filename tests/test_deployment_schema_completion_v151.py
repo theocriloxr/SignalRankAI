@@ -67,7 +67,7 @@ def test_railway_completion_script_enforces_common_db_and_safe_flags():
         assert safe_flag in source
     assert "staging_migrate_and_bootstrap.py" in source
     assert "database_identity.py" in source
-    assert "0045_mt5_credential_retirement" in source
+    assert "0055_user_renewal_default" in source
     assert "UndefinedTableError" in source
     assert "UndefinedColumnError" in source
 
@@ -149,7 +149,7 @@ def test_runtime_certification_script_requires_real_recent_delivery_and_paper_pr
     assert "metrics" in source and "--since" in source
     assert "$proofArguments" in source
     assert "& python @args" not in source
-    assert '"--filter","alembic_current=0045_mt5_credential_retirement"' in source
+    assert '"--filter","alembic_current=0055_user_renewal_default"' in source
     assert '"--filter","patch=deployment-final-r4"' in source
     assert '@("service","list","--json")' in source
     assert '"service","status"' not in source
@@ -160,10 +160,10 @@ def test_r4_soak_certification_contract():
     assert '"--since", $hoursToken' in text
     assert '"metrics", "--all"' in text
     assert "patch=deployment-final-r4" in text
-    assert "alembic_current=0045_mt5_credential_retirement" in text
+    assert "alembic_current=0055_user_renewal_default" in text
     assert "AmbiguousParameterError" in text
     assert "staging_soak_summary.json" in text
-    assert '"--filter", "alembic_current=0045_mt5_credential_retirement"' in text
+    assert '"--filter", "alembic_current=0055_user_renewal_default"' in text
     assert '"--filter", "patch=deployment-final-r4"' in text
     assert '@("service", "list", "--json")' in text
     assert '"service", "status"' not in text
@@ -172,6 +172,38 @@ def test_r4_soak_certification_contract():
     assert "latestDeployment.createdAt" in text
     assert "$ageHours -lt $Hours" in text
     assert '"--filter", $blockerFilter' in text
+
+
+def test_0031_establishes_outcome_truth_columns_before_first_use():
+    source = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "versions"
+        / "0031_performance_paper_reliability.py"
+    ).read_text(encoding="utf-8")
+    upgrade = source[source.index("def upgrade()"):source.index("def downgrade()")]
+    first_use = upgrade.index("COALESCE(canonical_outcome")
+    for statement in (
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
+        "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_canonical_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_vip_fill_outcome",
+        "CREATE INDEX IF NOT EXISTS ix_outcomes_sentiment_outcome",
+    ):
+        assert statement in upgrade
+        assert upgrade.index(statement) < first_use
+
+
+def test_controlled_migrate_supports_brand_new_empty_database():
+    source = (ROOT / "scripts" / "controlled_migrate.py").read_text(encoding="utf-8")
+    helper = source[source.index("def _current_revision"):source.index("def migrate()")]
+    migrate = source[source.index("def migrate()"):source.index("def main()")]
+    assert "to_regclass('public.alembic_version')" in helper
+    assert 'SELECT version_num FROM alembic_version LIMIT 1' in helper
+    assert "before = _current_revision(connection)" in migrate
+    assert "after = _current_revision(connection)" in migrate
 
 
 def test_production_migration_fast_path_skips_backup_and_lock_at_head():
@@ -211,3 +243,39 @@ def test_current_release_and_railway_profiles_follow_repository_alembic_head():
     ):
         profile = (ROOT / filename).read_text(encoding="utf-8")
         assert f"EXPECTED_ALEMBIC_HEAD={expected}" in profile
+
+
+def test_production_migration_requires_space_for_original_copy_and_wal(monkeypatch):
+    from datetime import datetime, timezone
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "production")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_OBSERVED_AT", datetime.now(timezone.utc).isoformat())
+    class Cursor:
+        def __init__(self): self.values = iter([4_200_000_000, 300_000_000, 1_500_000_000])
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def execute(self, *args): pass
+        def fetchone(self): return (next(self.values),)
+    class Connection:
+        def cursor(self): return Cursor()
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "5000")
+    errors = migration._storage_errors(Connection(), "0045_mt5_credential_retirement")
+    assert len(errors) == 1 and "headroom insufficient" in errors[0]
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "10000")
+    assert migration._storage_errors(Connection(), "0045_mt5_credential_retirement") == []
+
+
+def test_production_migration_rejects_stale_or_invalid_capacity(monkeypatch):
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "production")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "10000")
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_OBSERVED_AT", "2020-01-01T00:00:00+00:00")
+    assert "observation" in migration._storage_errors(None, None)[0]
+    monkeypatch.setenv("PRODUCTION_DB_VOLUME_SIZE_MB", "nan")
+    assert "finite" in migration._storage_errors(None, None)[0]
+
+
+def test_staging_migration_does_not_accept_production_capacity_evidence(monkeypatch):
+    from scripts import controlled_migrate as migration
+    monkeypatch.setattr(migration, "_environment", lambda: "staging")
+    assert migration._storage_errors(None, None) == []

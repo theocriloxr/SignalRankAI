@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -113,7 +113,9 @@ def analyze_mtf_consensus(
     if higher_bias == desired_bias and alignment >= 65:
         trade_type = "Trend continuation"
         modifier = 1.05
-    elif higher_bias not in {"neutral", desired_bias} and (lower_bias in {"neutral", desired_bias} or execution_tf in aligned):
+    elif higher_bias not in {"neutral", desired_bias} and (
+        lower_bias in {"neutral", desired_bias} or execution_tf in aligned
+    ):
         trade_type = "Counter-trend pullback"
         modifier = 0.86
     elif higher_bias == desired_bias and lower_bias not in {"neutral", desired_bias}:
@@ -165,7 +167,6 @@ def mtf_to_signal_fields(consensus: MultiTimeframeConsensus) -> dict[str, Any]:
         "mtf_conflicting_timeframes": list(consensus.conflicting_timeframes),
         "mtf_explanation": consensus.explanation,
         "mtf_bias_by_timeframe": [
-            {"timeframe": b.timeframe, "bias": b.bias, "confidence": b.confidence}
-            for b in consensus.bias_by_timeframe
+            {"timeframe": b.timeframe, "bias": b.bias, "confidence": b.confidence} for b in consensus.bias_by_timeframe
         ],
     }

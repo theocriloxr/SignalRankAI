@@ -27,7 +27,9 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def _log(msg: str) -> None:
     logger.info(msg)

@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import asyncio
 
 import pytest
 
@@ -21,6 +22,7 @@ def _eligible_candidate(*, artifact="cand", parent="champ", schema=4):
                 "offline_quality_gate": {"passed": True},
                 "lineage": {"eligible": True},
                 "candidate_forward_gate": {"required": True},
+                "champion_comparison": {"enabled": True, "reason": "noninferior"},
             },
         },
     }
@@ -34,20 +36,106 @@ def test_candidate_outcome_normalization_excludes_ambiguous_results():
     assert _outcome_class("no_hit") is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [False, "false", "true", 0, 1, None, [True], {"passed": True}])
+@pytest.mark.parametrize("field,reason", [
+    ("offline", "offline_quality_evidence_missing_or_failed"),
+    ("admission", "candidate_not_admitted_to_forward_proof"),
+    ("calibration", "candidate_calibration_unvalidated"),
+    ("lineage", "candidate_lineage_invalid"),
+    ("forward", "forward_proof_not_eligible"),
+])
+async def test_non_boolean_qualification_never_reaches_registry_write(monkeypatch, field, reason, value):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate()
+    evidence = {"eligible": True, "status": "eligible"}
+    metadata = candidate["payload"]["training_meta"]
+    if field == "offline":
+        metadata["offline_quality_gate"]["passed"] = value
+    elif field == "admission":
+        metadata["candidate_forward_gate"]["required"] = value
+    elif field == "calibration":
+        candidate["metrics"]["calibration"]["validated"] = value
+    elif field == "lineage":
+        metadata["lineage"]["eligible"] = value
+    else:
+        evidence["eligible"] = value
+    writer = AsyncMock()
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value={"artifact_hash_sha256": "champ"}))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value=evidence))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    monkeypatch.setenv("ML_PROMOTION_REQUIRES_VALID_CALIBRATION", "1")
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == reason
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("primary_exists,comparison", [
+    (True, {}), (False, {}),
+    (True, {"enabled": False, "reason": "disabled"}),
+    (True, {"enabled": "false", "reason": "noninferior"}),
+    (True, {"enabled": 1, "reason": "noninferior"}),
+    (True, {"enabled": True, "reason": "no_existing_champion"}),
+    (False, {"enabled": True, "reason": "noninferior"}),
+])
+async def test_missing_or_inapplicable_champion_comparison_cannot_promote(monkeypatch, primary_exists, comparison):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate(parent="champ" if primary_exists else "")
+    candidate["payload"]["training_meta"]["champion_comparison"] = comparison
+    primary = {"artifact_hash_sha256": "champ"} if primary_exists else None
+    writer = AsyncMock()
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value=primary))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value={"eligible": True}))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == "candidate_offline_noninferiority_failed"
+    writer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("primary_exists", [True, False])
+async def test_typed_evidence_with_matching_comparison_reaches_registry_guard(monkeypatch, primary_exists):
+    from unittest.mock import AsyncMock
+    import ml.artifact_store as store
+    import ml.candidate_forward as forward
+
+    candidate = _eligible_candidate(parent="champ" if primary_exists else "")
+    candidate["payload"]["training_meta"]["champion_comparison"]["reason"] = (
+        "noninferior" if primary_exists else "no_existing_champion")
+    primary = {"artifact_hash_sha256": "champ", "schema_version": 4} if primary_exists else None
+    writer = AsyncMock(return_value={"ok": False, "reason": "synthetic_writer_stopped"})
+    monkeypatch.setattr(forward, "load_active_candidate", AsyncMock(return_value=candidate))
+    monkeypatch.setattr(forward, "load_active_primary", AsyncMock(return_value=primary))
+    monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", AsyncMock(return_value={"eligible": True}))
+    monkeypatch.setattr(store, "promote_active_candidate_artifact", writer)
+    result = await forward.promote_candidate_from_forward_proof(authorization_id="synthetic-approved-review")
+    assert result["ok"] is False and result["reason"] == "durable_promotion_failed"
+    writer.assert_awaited_once()
+
+
 def test_candidate_forward_decision_stats_use_realized_r():
     rows = [
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": True},
             "win",
         ),
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": True},
             "loss",
         ),
         (
-            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0"),
+            SimpleNamespace(entry=100.0, stop_loss=95.0, take_profit="110.0", direction="long"),
             {"candidate_passed": False},
             "win",
         ),
@@ -83,6 +171,98 @@ def test_candidate_observation_key_is_stable_and_artifact_scoped():
     )
     assert first == again
     assert first != other
+
+
+def test_no_loss_forward_cohort_has_undefined_profit_factor():
+    rows = [(SimpleNamespace(entry=100, stop_loss=95, take_profit="110", direction="long"), {"candidate_passed": True}, "win")]
+    assert _decision_stats(rows, "candidate_passed")["profit_factor"] is None
+
+
+@pytest.mark.parametrize("direction,stop,target", [("long", 105, 110), ("short", 95, 90), ("",95,110), ("long",95,"nan"), ("long",95,"inf")])
+def test_invalid_barrier_geometry_cannot_improve_forward_statistics(direction, stop, target):
+    row = SimpleNamespace(entry=100, stop_loss=stop, take_profit=target, direction=direction)
+    result = _decision_stats([(row, {"candidate_passed": True}, "win")], "candidate_passed")
+    assert result["resolved"] == 0 and result["invalid_geometry"] == 1
+    assert result["profit_factor"] is None
+
+
+@pytest.mark.asyncio
+async def test_disabled_recording_does_not_suppress_observation_after_enable(monkeypatch):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {}
+    calls = []
+    async def persist(**kwargs):
+        calls.append(kwargs)
+        return True
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", lambda coro, **kwargs: asyncio.create_task(coro))
+    signal = {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]}
+    candidate = {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8}
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "0")
+    module._persist_candidate_forward_observation(signal, candidate)
+    assert candidate["observation_status"] == "disabled_by_configuration"
+    assert seen == {} and calls == []
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    module._persist_candidate_forward_observation(signal, candidate)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert len(calls) == 1 and len(seen) == 1
+    assert candidate["observation_status"] == "submitted_not_yet_durable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["not_queued", "write_error", "submit_error"])
+async def test_unaccepted_observation_can_retry_immediately(monkeypatch, failure):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {}
+    calls = []
+    async def persist(**kwargs):
+        calls.append(kwargs)
+        if failure == "write_error":
+            raise RuntimeError("temporary write error")
+        return False
+    def submit(coro, **kwargs):
+        if failure == "submit_error":
+            raise RuntimeError("loop unavailable")
+        return asyncio.create_task(coro)
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", submit)
+    signal = {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]}
+    candidate = {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8}
+    for _ in range(2):
+        module._persist_candidate_forward_observation(signal, candidate)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert seen == {}
+    assert len(calls) == (0 if failure == "submit_error" else 2)
+
+
+@pytest.mark.asyncio
+async def test_observation_dedup_cache_stays_bounded_before_ttl_expiry(monkeypatch):
+    import engine.ml as module
+    import engine.signal_deduplicator as dedup
+    import utils.async_runner as runner
+    seen = {str(i): module.time.monotonic() for i in range(4096)}
+    async def persist(**kwargs):
+        return True
+    monkeypatch.setenv("REJECTION_LOG_WRITE_ENABLED", "1")
+    monkeypatch.setattr(module, "_CANDIDATE_FORWARD_SEEN", seen)
+    monkeypatch.setattr(dedup, "get_ml_rejection_tracker", lambda: SimpleNamespace(persist_rejection=persist))
+    monkeypatch.setattr(runner, "submit_background_coro", lambda coro, **kwargs: asyncio.create_task(coro))
+    module._persist_candidate_forward_observation(
+        {"asset": "BTCUSDT", "timeframe": "5m", "direction": "long", "entry": 100, "stop_loss": 95, "take_profit": [110]},
+        {"available": True, "artifact_hash_sha256": "a"*64, "probability": 0.7, "threshold": 0.8},
+    )
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert len(seen) == 4096 and "0" not in seen
 
 
 def test_shadow_rejected_effective_weight_is_bounded_by_proof(monkeypatch):

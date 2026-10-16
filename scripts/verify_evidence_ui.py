@@ -17,9 +17,15 @@ def main() -> None:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1536, "height": 1050}, device_scale_factor=1)
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
-        page.route("**/app-assets/styles.css", lambda route: route.fulfill(body=(APP / "styles.css").read_text(encoding="utf-8"), content_type="text/css"))
+        page.route(
+            "**/app-assets/styles.css",
+            lambda route: route.fulfill(body=(APP / "styles.css").read_text(encoding="utf-8"), content_type="text/css"),
+        )
         page.route("**/app-assets/app.js", lambda route: route.fulfill(body="", content_type="text/javascript"))
-        page.route("**/app-assets/icon.svg", lambda route: route.fulfill(body="<svg xmlns='http://www.w3.org/2000/svg'/>", content_type="image/svg+xml"))
+        page.route(
+            "**/app-assets/icon.svg",
+            lambda route: route.fulfill(body="<svg xmlns='http://www.w3.org/2000/svg'/>", content_type="image/svg+xml"),
+        )
         page.goto((APP / "index.html").as_uri(), wait_until="domcontentloaded")
         page.evaluate(
             """() => {

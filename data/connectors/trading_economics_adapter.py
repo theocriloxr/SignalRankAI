@@ -7,10 +7,11 @@ indicators, bond yields, commodity prices and earnings calendars.
 Dormant-by-default: without ``TRADING_ECONOMICS_API_KEY`` returns ``[]``/``None``
 and reports ``missing_credentials``.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from data.connectors._common import async_http_get_json, env_bool, env_str
 from utils.async_runner import run_sync
@@ -48,15 +49,17 @@ async def _async_fetch_calendar(
     out: List[Dict[str, Any]] = []
     for item in data:
         try:
-            out.append({
-                "country": item.get("Country"),
-                "category": item.get("Category"),
-                "event": item.get("Event"),
-                "timestamp": item.get("Date"),
-                "actual": item.get("Actual"),
-                "previous": item.get("Previous"),
-                "forecast": item.get("Forecast"),
-            })
+            out.append(
+                {
+                    "country": item.get("Country"),
+                    "category": item.get("Category"),
+                    "event": item.get("Event"),
+                    "timestamp": item.get("Date"),
+                    "actual": item.get("Actual"),
+                    "previous": item.get("Previous"),
+                    "forecast": item.get("Forecast"),
+                }
+            )
         except Exception:
             continue
     return out
@@ -72,10 +75,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "trading_economics",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("TRADING_ECONOMICS_API_KEY",),
         "api_url": API_URL,
     }

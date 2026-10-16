@@ -9,13 +9,14 @@ This module provides:
 
 Usage:
     from db.user_preferences import get_user_preferences, update_user_preferences
-    
+
     # Get user's trading preferences
     prefs = await get_user_preferences(user_id)
-    
+
     # Update preferences
     await update_user_preferences(user_id, {"trading_mode": "live", "auto_execute": True})
 """
+
 from utils.timeutils import now_utc_naive
 
 import logging
@@ -39,45 +40,46 @@ EXEC_MODE_SEMI_AUTO = "semi_auto"  # Signal + confirmation before execution
 @dataclass
 class UserTradingPreferences:
     """User's trading configuration."""
+
     user_id: int
-    
+
     # Trading mode
     trading_mode: str = TRADING_MODE_PAPER  # paper, live, both
-    
+
     # Execution preference
     execution_mode: str = EXEC_MODE_SIGNALS_ONLY  # signals_only, auto, semi_auto
-    
+
     # Position sizing
     default_position_size: float = 0.01  # Default lot size
     risk_per_trade_pct: float = 1.0  # Risk % per trade
-    
+
     # MT5 account (for live trading)
     default_mt5_account_id: Optional[str] = None
     execution_provider: str = "auto"  # auto, mt5, bybit
-    
+
     # Notifications
     notify_on_entry: bool = True
     notify_on_exit: bool = True
     notify_on_tp: bool = True
     notify_on_sl: bool = True
-    
+
     # Signal filters
     min_signal_score: float = 0.0  # 0 = no filter
     preferred_asset_class: Optional[str] = None  # crypto, forex, etc.
     preferred_timeframes: List[str] = None  # List of timeframes
-    
+
     # Risk limits
     max_daily_trades: int = 10
     max_concurrent_positions: int = 3
     max_daily_loss_pct: float = 5.0
-    
+
     # Paper trading
     paper_balance: float = 10000.0
     paper_reset_on_loss: bool = False  # Reset balance if below threshold
-    
+
     # Updated timestamp
     updated_at: Optional[datetime] = None
-    
+
     def __post_init__(self):
         if self.preferred_timeframes is None:
             self.preferred_timeframes = ["5m", "15m", "1h"]
@@ -86,7 +88,7 @@ class UserTradingPreferences:
 class UserPreferencesManager:
     """
     Manage user's trading preferences.
-    
+
     Allows users to configure how the bot helps them trade:
     - Paper vs Live trading mode
     - Auto-execute or signals only
@@ -94,15 +96,15 @@ class UserPreferencesManager:
     - Risk limits
     - Notifications
     """
-    
+
     @staticmethod
     async def get_preferences(user_id: int) -> UserTradingPreferences:
         """
         Get user's trading preferences.
-        
+
         Args:
             user_id: User ID
-            
+
         Returns:
             UserTradingPreferences with defaults if not set
         """
@@ -110,13 +112,9 @@ class UserPreferencesManager:
             from db.session import get_session
             from db.models import RuntimeState
             from sqlalchemy import select
-            
+
             async with get_session() as session:
-                result = await session.execute(
-                    select(RuntimeState).where(
-                        RuntimeState.key == f"user_prefs:{user_id}"
-                    )
-                )
+                result = await session.execute(select(RuntimeState).where(RuntimeState.key == f"user_prefs:{user_id}"))
                 state = result.scalar_one_or_none()
                 if state:
                     data = dict(state.value or {})
@@ -141,32 +139,29 @@ class UserPreferencesManager:
                         paper_balance=data.get("paper_balance", 10000.0),
                         paper_reset_on_loss=data.get("paper_reset_on_loss", False),
                     )
-        
+
         except Exception as e:
             logger.debug(f"[UserPreferences] Get prefs error: {e}")
-        
+
         # Return defaults
         return UserTradingPreferences(user_id=user_id)
-    
+
     @staticmethod
-    async def update_preferences(
-        user_id: int,
-        updates: Dict[str, Any]
-    ) -> bool:
+    async def update_preferences(user_id: int, updates: Dict[str, Any]) -> bool:
         """
         Update user's trading preferences.
-        
+
         Args:
             user_id: User ID
             updates: Dict of preferences to update
-            
+
         Returns:
             True if successful
         """
         try:
             # Get existing preferences
             prefs = await UserPreferencesManager.get_preferences(user_id)
-            
+
             # Apply updates
             prefs_dict = {
                 "trading_mode": prefs.trading_mode,
@@ -188,15 +183,15 @@ class UserPreferencesManager:
                 "paper_balance": prefs.paper_balance,
                 "paper_reset_on_loss": prefs.paper_reset_on_loss,
             }
-            
+
             # Merge updates
             prefs_dict.update(updates)
             prefs_dict["updated_at"] = now_utc_naive().isoformat()
-            
+
             # Save to DB
             from db.session import get_session
             from db.models import RuntimeState
-            
+
             async with get_session() as session:
                 key = f"user_prefs:{user_id}"
                 state = await session.get(RuntimeState, key)
@@ -206,28 +201,24 @@ class UserPreferencesManager:
                     state.value = prefs_dict
                     state.updated_at = now_utc_naive()
                 await session.commit()
-            
+
             logger.info(f"[UserPreferences] Updated preferences for user {user_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"[UserPreferences] Update error: {e}")
             return False
-    
+
     @staticmethod
-    async def set_trading_mode(
-        user_id: int,
-        mode: str,
-        mt5_account_id: Optional[str] = None
-    ) -> bool:
+    async def set_trading_mode(user_id: int, mode: str, mt5_account_id: Optional[str] = None) -> bool:
         """
         Set user's trading mode.
-        
+
         Args:
             user_id: User ID
             mode: TRADING_MODE_PAPER, TRADING_MODE_LIVE, or TRADING_MODE_BOTH
             mt5_account_id: Optional MT5 account for live trading
-            
+
         Returns:
             True if successful
         """
@@ -235,25 +226,22 @@ class UserPreferencesManager:
         if mode not in valid_modes:
             logger.warning(f"[UserPreferences] Invalid mode: {mode}")
             return False
-        
+
         updates = {"trading_mode": mode}
         if mt5_account_id:
             updates["default_mt5_account_id"] = mt5_account_id
-        
+
         return await UserPreferencesManager.update_preferences(user_id, updates)
-    
+
     @staticmethod
-    async def set_execution_mode(
-        user_id: int,
-        mode: str
-    ) -> bool:
+    async def set_execution_mode(user_id: int, mode: str) -> bool:
         """
         Set user's execution mode.
-        
+
         Args:
             user_id: User ID
             mode: EXEC_MODE_SIGNALS_ONLY, EXEC_MODE_AUTO, EXEC_MODE_SEMI_AUTO
-            
+
         Returns:
             True if successful
         """
@@ -261,40 +249,37 @@ class UserPreferencesManager:
         if mode not in valid_modes:
             logger.warning(f"[UserPreferences] Invalid execution mode: {mode}")
             return False
-        
+
         return await UserPreferencesManager.update_preferences(user_id, {"execution_mode": mode})
-    
+
     @staticmethod
     async def get_trading_mode(user_id: int) -> str:
         """Get user's current trading mode."""
         prefs = await UserPreferencesManager.get_preferences(user_id)
         return prefs.trading_mode
-    
+
     @staticmethod
     async def get_execution_mode(user_id: int) -> str:
         """Get user's execution mode."""
         prefs = await UserPreferencesManager.get_preferences(user_id)
         return prefs.execution_mode
-    
+
     @staticmethod
     async def should_auto_execute(user_id: int) -> bool:
         """Check if user wants auto-execution."""
         prefs = await UserPreferencesManager.get_preferences(user_id)
         return prefs.execution_mode == EXEC_MODE_AUTO
-    
+
     @staticmethod
     async def get_position_size(user_id: int) -> float:
         """Get user's preferred position size."""
         prefs = await UserPreferencesManager.get_preferences(user_id)
         return prefs.default_position_size
-    
+
     @staticmethod
     async def reset_paper_balance(user_id: int) -> bool:
         """Reset user's paper balance to default."""
-        return await UserPreferencesManager.update_preferences(
-            user_id, 
-            {"paper_balance": 10000.0}
-        )
+        return await UserPreferencesManager.update_preferences(user_id, {"paper_balance": 10000.0})
 
 
 # Convenience functions
@@ -303,19 +288,12 @@ async def get_user_preferences(user_id: int) -> UserTradingPreferences:
     return await UserPreferencesManager.get_preferences(user_id)
 
 
-async def update_user_preferences(
-    user_id: int,
-    updates: Dict[str, Any]
-) -> bool:
+async def update_user_preferences(user_id: int, updates: Dict[str, Any]) -> bool:
     """Update user's preferences."""
     return await UserPreferencesManager.update_preferences(user_id, updates)
 
 
-async def set_user_trading_mode(
-    user_id: int,
-    mode: str,
-    mt5_account_id: Optional[str] = None
-) -> bool:
+async def set_user_trading_mode(user_id: int, mode: str, mt5_account_id: Optional[str] = None) -> bool:
     """Set user's trading mode."""
     return await UserPreferencesManager.set_trading_mode(user_id, mode, mt5_account_id)
 
@@ -328,19 +306,19 @@ async def set_user_execution_mode(user_id: int, mode: str) -> bool:
 if __name__ == "__main__":
     # Quick test
     import asyncio
-    
+
     async def test():
         print("Testing User Preferences...")
-        
+
         # Get defaults
         prefs = await get_user_preferences(user_id=1)
         print(f"Defaults: trading_mode={prefs.trading_mode}, execution={prefs.execution_mode}")
-        
+
         # Update
         await update_user_preferences(1, {"trading_mode": "live", "execution_mode": "auto"})
-        
+
         # Get updated
         prefs = await get_user_preferences(1)
         print(f"Updated: trading_mode={prefs.trading_mode}, execution={prefs.execution_mode}")
-    
+
     asyncio.run(test())

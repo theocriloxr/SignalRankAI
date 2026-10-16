@@ -1,0 +1,4 @@
+SignalRankAI staging bootstrap certification
+parent=c267f7083b07608c0f5b1460d6dc01965a73fb2d
+purpose=bootstrap isolated PostgreSQL 18 staging schema and catalogue
+live_execution_authorized=false

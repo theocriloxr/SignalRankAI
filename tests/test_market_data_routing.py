@@ -3,16 +3,16 @@ import time
 import pytest
 
 
-def _candles(timeframe_seconds=300, *, stale=False):
+def _candles(timeframe_seconds=300, *, stale=False, base_price=100.0):
     end = time.time() - (timeframe_seconds * 10 if stale else 0)
     start = end - (29 * timeframe_seconds)
     return [
         {
             "timestamp": int((start + index * timeframe_seconds) * 1000),
-            "open": 100.0 + index,
-            "high": 101.0 + index,
-            "low": 99.0 + index,
-            "close": 100.5 + index,
+            "open": base_price + index,
+            "high": base_price + 1.0 + index,
+            "low": base_price - 1.0 + index,
+            "close": base_price + 0.5 + index,
             "volume": 1000.0,
         }
         for index in range(30)
@@ -147,3 +147,74 @@ async def test_stale_successful_provider_payload_is_rejected(monkeypatch):
     result = await market_data.fetch_market_data_cached("XAUUSD", ["1h"])
 
     assert "1h" not in result
+
+
+@pytest.mark.asyncio
+async def test_staging_decision_path_never_uses_yfinance_as_primary(monkeypatch):
+    from data import market_data
+
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "staging")
+    monkeypatch.setenv("YFINANCE_ENABLED", "1")
+    monkeypatch.setenv("MARKET_CACHE_ENABLED", "0")
+    monkeypatch.setenv("MARKET_CACHE_WRITE_THROUGH", "0")
+    monkeypatch.setenv("MARKET_ALTERNATIVE_SIGNALS_ENABLED", "0")
+    monkeypatch.setenv("TRADINGVIEW_ENABLED", "0")
+
+    async def provider(asset, timeframe):
+        return _candles(3600, base_price=2500.0)
+
+    monkeypatch.setattr(market_data, "async_get_candles", provider)
+    monkeypatch.setattr(market_data, "_get_last_provider_used", lambda asset, tf: "twelvedata_connector")
+    monkeypatch.setattr(
+        market_data,
+        "_fetch_yfinance_with_timeout",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("yfinance must not run")),
+    )
+
+    result = await market_data.fetch_market_data_cached("XAUUSD", ["1h"])
+
+    assert result["1h"]["source"] == "twelvedata_connector"
+
+
+@pytest.mark.asyncio
+async def test_staging_analysis_scope_can_use_yfinance_but_marks_it_ineligible(monkeypatch):
+    from data import market_data
+
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "staging")
+    monkeypatch.setenv("YFINANCE_ENABLED", "1")
+    monkeypatch.setenv("MARKET_CACHE_ENABLED", "0")
+    monkeypatch.setenv("MARKET_CACHE_WRITE_THROUGH", "0")
+    monkeypatch.setenv("MARKET_ALTERNATIVE_SIGNALS_ENABLED", "0")
+    monkeypatch.setenv("TRADINGVIEW_ENABLED", "0")
+
+    async def yf(asset, timeframe, limit):
+        return _candles(3600, base_price=2500.0)
+
+    async def no_provider(asset, timeframe):
+        raise AssertionError("provider waterfall should not be needed after research payload")
+
+    monkeypatch.setattr(market_data, "_fetch_yfinance_with_timeout", yf)
+    monkeypatch.setattr(market_data, "async_get_candles", no_provider)
+
+    result = await market_data.fetch_market_data_cached(
+        "XAUUSD",
+        ["1h"],
+        diagnostic_scope="analysis",
+    )
+
+    assert result["1h"]["source"] == "yfinance"
+    assert result["1h"]["source_category"] == "analysis_only"
+    assert result["1h"]["execution_eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_legacy_router_skips_yahoo_in_execution_sensitive_runtime(monkeypatch):
+    from data.fetcher_router import DataRouter
+
+    monkeypatch.setenv("SIGNALRANK_ENVIRONMENT_OVERRIDE", "production")
+    router = DataRouter()
+    router._stock_providers = [("yahoo", lambda symbol, timeframe: _candles(3600))]
+
+    result = await router.fetch_price("AAPL", "stock")
+
+    assert result is None

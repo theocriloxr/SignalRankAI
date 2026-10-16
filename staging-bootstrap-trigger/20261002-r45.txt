@@ -1,0 +1,5 @@
+SignalRankAI staging replay trigger r45
+branch=implementation-of-master-blueprint
+parent=f678b8caf8fcbe07c31cc77b01588fdce39043d4
+purpose=build exact-source Oct-1 paper/lifecycle replay against isolated PostgreSQL 18 staging
+live_execution_authorized=false

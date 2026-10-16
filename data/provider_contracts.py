@@ -5,6 +5,7 @@ production-certified. Concrete adapters must pass connector-specific contract,
 sandbox/testnet, restart-reconciliation and secret-leak tests before their
 capabilities are marked certified.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

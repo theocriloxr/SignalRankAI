@@ -84,9 +84,9 @@ def test_ultra_quality_reads_stop_loss_and_structured_targets() -> None:
 
 def test_signal_pipeline_orders_risk_and_context_before_ultra_gate() -> None:
     source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
-    stop_index = source.index("sig['stop_loss'] = sl")
-    regime_index = source.index("sig['regime'] = str(regime", stop_index)
-    ultra_index = source.index("if _env_bool('ULTRA_QUALITY_ENABLED'", stop_index)
+    stop_index = source.index('sig["stop_loss"] = sl')
+    regime_index = source.index('sig["regime"] = str(regime', stop_index)
+    ultra_index = source.index('if _env_bool("ULTRA_QUALITY_ENABLED"', stop_index)
     assert stop_index < ultra_index
     assert regime_index < ultra_index
     assert "regime = detect_market_regime(" in source

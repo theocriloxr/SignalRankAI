@@ -6,6 +6,7 @@ Nothing in this module applies code, changes trading thresholds, deploys, or
 activates financial features. Proposals are evidence for an admin-reviewed
 experiment only.
 """
+
 from __future__ import annotations
 
 from utils.timeutils import now_utc_naive
@@ -31,16 +32,13 @@ Never apply or deploy changes yourself."""
 class EvolutionAgent:
     def __init__(self, model_name: str | None = None):
         self.model_name = str(
-            model_name
-            or os.getenv("GEMINI_EVOLUTION_MODEL")
-            or os.getenv("GEMINI_MODEL")
-            or "gemini-3.8-flash"
+            model_name or os.getenv("GEMINI_EVOLUTION_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
         ).strip()
 
     def _get_tail_logs(self, filepath: str, lines: int = 50) -> str:
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as handle:
-                return "".join(handle.readlines()[-max(1, min(int(lines), 200)):])
+                return "".join(handle.readlines()[-max(1, min(int(lines), 200)) :])
         except FileNotFoundError:
             return "No local error log file was found."
         except Exception as exc:
@@ -118,6 +116,7 @@ class EvolutionAgent:
     async def _openai_proposal(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             from services.openai_ai import evolution_proposal, openai_available
+
             if not openai_available():
                 return None
             result = await evolution_proposal(context)
@@ -138,12 +137,12 @@ class EvolutionAgent:
     async def _gemini_proposal(self, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             from services.gemini_ml import _call_gemini, gemini_available
+
             if not gemini_available():
                 return None
             prompt = (
-                EVOLUTION_SYSTEM_PROMPT
-                + "\nReturn JSON only with keys severity, target_file, reasoning, code_diff, "
-                  "test_plan, requires_forward_test, requires_owner_approval.\nEVIDENCE:\n"
+                EVOLUTION_SYSTEM_PROMPT + "\nReturn JSON only with keys severity, target_file, reasoning, code_diff, "
+                "test_plan, requires_forward_test, requires_owner_approval.\nEVIDENCE:\n"
                 + json.dumps(context, default=str)[:14000]
             )
             raw = await _call_gemini(prompt, max_tokens=1200)

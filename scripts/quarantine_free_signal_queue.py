@@ -5,6 +5,7 @@ Dry-run is the default. Use only in staging/owner recovery after accidental free
 signal distribution. The command never deletes rows; it moves selected queued
 rows to a non-deliverable status with an auditable timestamp.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,24 +38,28 @@ async def run(*, apply: bool, max_age_minutes: int, status: str) -> dict:
             or 0
         )
         sample_rows = (
-            await session.execute(
-                select(
-                    FreeSignalQueue.id,
-                    FreeSignalQueue.user_id,
-                    FreeSignalQueue.signal_id,
-                    FreeSignalQueue.asset,
-                    FreeSignalQueue.timeframe,
-                    FreeSignalQueue.queued_at,
-                    FreeSignalQueue.deliver_after,
+            (
+                await session.execute(
+                    select(
+                        FreeSignalQueue.id,
+                        FreeSignalQueue.user_id,
+                        FreeSignalQueue.signal_id,
+                        FreeSignalQueue.asset,
+                        FreeSignalQueue.timeframe,
+                        FreeSignalQueue.queued_at,
+                        FreeSignalQueue.deliver_after,
+                    )
+                    .where(
+                        FreeSignalQueue.status == "queued",
+                        FreeSignalQueue.queued_at <= cutoff,
+                    )
+                    .order_by(FreeSignalQueue.queued_at.asc())
+                    .limit(100)
                 )
-                .where(
-                    FreeSignalQueue.status == "queued",
-                    FreeSignalQueue.queued_at <= cutoff,
-                )
-                .order_by(FreeSignalQueue.queued_at.asc())
-                .limit(100)
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         changed = 0
         if apply and count:
             result = await session.execute(

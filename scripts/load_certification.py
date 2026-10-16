@@ -11,6 +11,7 @@ It deliberately does not infer queue/database/delivery correctness from HTTP
 latency. Those metrics must be supplied from the real staging observability
 surface before a profile can PASS.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,6 @@ from dataclasses import asdict, dataclass
 import json
 import math
 from pathlib import Path
-import statistics
 import time
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -85,9 +85,7 @@ def build_plan(
         raise ValueError("invalid_shard_index")
 
     normalized_paths = tuple(
-        path if str(path).startswith("/") else f"/{path}"
-        for path in [str(value).strip() for value in paths]
-        if path
+        path if str(path).startswith("/") else f"/{path}" for path in [str(value).strip() for value in paths] if path
     )
     if not normalized_paths:
         raise ValueError("at_least_one_path_required")
@@ -96,7 +94,7 @@ def build_plan(
     if total_concurrency < 1:
         raise ValueError("profile_concurrency_missing")
 
-    duration = int(duration_seconds or max(60, int(spec.get("required_soak_hours") or 1) * 60))
+    duration = int(duration_seconds if duration_seconds is not None else max(60, int(spec.get("required_soak_hours") or 1) * 3600))
     if duration < 10:
         raise ValueError("duration_too_short")
 
@@ -152,7 +150,7 @@ async def _worker(
             requests += 1
             key = str(int(response.status_code))
             status_counts[key] = status_counts.get(key, 0) + 1
-            if response.status_code >= 500:
+            if not 200 <= response.status_code < 300:
                 errors += 1
         except Exception:
             elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -178,6 +176,13 @@ async def execute_shard(
             "schema_version": 1,
             "kind": "signalrank_load_shard",
             "plan": asdict(plan),
+            "profile": plan.profile,
+            "shards": plan.shards,
+            "shard_index": plan.shard_index,
+            "target": plan.base_url,
+            "paths": list(plan.paths),
+            "configured_total_concurrency": plan.total_concurrency,
+            "shard_concurrency": 0,
             "requests": 0,
             "errors": 0,
             "duration_seconds": 0.0,
@@ -245,24 +250,46 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
     reports = list(reports)
     if not reports:
         raise ValueError("no_shard_reports")
+    if any(type(report.get("shards")) is not int or type(report.get("shard_index")) is not int for report in reports):
+        raise ValueError("invalid_shard_identity")
 
     profiles = {str(report.get("profile") or "") for report in reports}
     targets = {str(report.get("target") or "") for report in reports}
     shard_counts = {int(report.get("shards") or 0) for report in reports}
-    indices = [
-        int(report["shard_index"]) if report.get("shard_index") is not None else -1
-        for report in reports
-    ]
+    indices = [int(report["shard_index"]) if report.get("shard_index") is not None else -1 for report in reports]
     if len(profiles) != 1 or len(targets) != 1 or len(shard_counts) != 1:
         raise ValueError("incompatible_shard_reports")
     expected = next(iter(shard_counts))
     if expected < 1 or sorted(indices) != list(range(expected)):
         raise ValueError("incomplete_or_duplicate_shard_set")
 
+    concurrency_values = {report.get("configured_total_concurrency") for report in reports}
+    if len(concurrency_values) != 1:
+        raise ValueError("incompatible_shard_concurrency")
+    concurrency = next(iter(concurrency_values))
+    if type(concurrency) is not int or concurrency < 1:
+        raise ValueError("invalid_shard_concurrency")
+    for report in reports:
+        share = _ceil_share(concurrency, expected, report["shard_index"])
+        if report.get("shard_concurrency") != share:
+            raise ValueError("shard_concurrency_not_proven")
+        for name in ("requests", "errors"):
+            if type(report.get(name)) is not int or report[name] < 0:
+                raise ValueError("invalid_shard_counters")
+        if report["errors"] > report["requests"]:
+            raise ValueError("invalid_shard_counters")
+        duration_value = report.get("duration_seconds")
+        if isinstance(duration_value, bool) or not isinstance(duration_value, (int, float)) or not math.isfinite(duration_value) or duration_value < 0 or (share and duration_value == 0):
+            raise ValueError("invalid_shard_duration")
+        statuses = report.get("status_counts")
+        if not isinstance(statuses, dict) or any(type(value) is not int or value < 0 for value in statuses.values()) or sum(statuses.values()) != report["requests"]:
+            raise ValueError("shard_status_counters_do_not_reconcile")
+
     requests = sum(int(report.get("requests") or 0) for report in reports)
     errors = sum(int(report.get("errors") or 0) for report in reports)
-    duration = max(float(report.get("duration_seconds") or 0) for report in reports)
-    throughput = sum(float(report.get("throughput_rps") or 0) for report in reports)
+    active = [report for report in reports if report["shard_concurrency"] > 0]
+    duration = min(float(report["duration_seconds"]) for report in active)
+    throughput = sum(report["requests"] / report["duration_seconds"] for report in active)
 
     # Exact global percentiles require raw samples or histograms. Each shard
     # reports conservative maxima of shard percentiles so certification cannot
@@ -273,6 +300,10 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
             for report in reports
             if report.get("latency_ms", {}).get(metric) is not None
         ]
+        if any(not math.isfinite(value) or value < 0 for value in values):
+            raise ValueError("invalid_shard_latency")
+        if len(values) != len(active):
+            raise ValueError("shard_latency_not_proven")
         return max(values) if values else None
 
     statuses: dict[str, int] = {}
@@ -286,10 +317,7 @@ def merge_shard_reports(reports: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "profile": next(iter(profiles)),
         "target": next(iter(targets)),
         "shards": expected,
-        "configured_total_concurrency": max(
-            int(report.get("configured_total_concurrency") or 0)
-            for report in reports
-        ),
+        "configured_total_concurrency": max(int(report.get("configured_total_concurrency") or 0) for report in reports),
         "requests": requests,
         "errors": errors,
         "error_rate": errors / requests if requests else 0.0,
@@ -321,12 +349,18 @@ def evaluate_certification(
     results: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     failed: list[str] = []
+    if not required_slos:
+        missing.append("profile_slo_configuration")
 
     for name, expected in required_slos.items():
         if name not in metrics:
             missing.append(name)
             continue
         actual = metrics[name]
+        if isinstance(actual, bool) or not isinstance(actual, (int, float)) or not math.isfinite(actual) or actual < 0 or (name.startswith("duplicate_") and not float(actual).is_integer()) or (name == "projection_coverage_min" and actual > 1):
+            results[name] = {"actual": None, "expected": expected, "passed": False, "reason": "invalid_metric"}
+            failed.append(name)
+            continue
         if name.endswith("_max") or name.startswith("duplicate_"):
             passed = float(actual) <= float(expected)
         elif name.endswith("_min"):
@@ -343,12 +377,23 @@ def evaluate_certification(
         if not passed:
             failed.append(name)
 
-    concurrency_ok = (
-        int(merged.get("configured_total_concurrency") or 0)
-        >= int(spec.get("concurrent_users") or 0)
-    )
+    configured = merged.get("configured_total_concurrency")
+    concurrency_ok = type(configured) is int and configured >= int(spec.get("concurrent_users") or 0)
     if not concurrency_ok:
         failed.append("configured_total_concurrency")
+    duration = merged.get("duration_seconds")
+    required_duration = float(spec.get("required_soak_hours") or 0) * 3600
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration < required_duration:
+        failed.append("required_observed_duration")
+    if type(merged.get("requests")) is not int or merged["requests"] <= 0:
+        failed.append("load_requests_not_proven")
+    if type(merged.get("errors")) is not int or merged["errors"] != 0:
+        failed.append("load_errors")
+    statuses = merged.get("status_counts") or {}
+    if not isinstance(statuses, dict) or any(not str(code).isdigit() or not 200 <= int(code) < 300 or type(count) is not int or count < 0 for code, count in statuses.items()):
+        failed.append("non_success_http_responses")
+    elif sum(statuses.values()) != merged.get("requests"):
+        failed.append("load_status_counters_do_not_reconcile")
 
     status = "PASS" if not missing and not failed else "BLOCKED"
     return {
@@ -357,7 +402,7 @@ def evaluate_certification(
         "profile": profile,
         "status": status,
         "concurrency": {
-            "actual": int(merged.get("configured_total_concurrency") or 0),
+            "actual": configured,
             "required": int(spec.get("concurrent_users") or 0),
             "passed": concurrency_ok,
         },
@@ -391,7 +436,7 @@ def main() -> int:
     run_cmd.add_argument("--path", action="append", default=["/healthz"])
     run_cmd.add_argument("--shards", type=int, default=1)
     run_cmd.add_argument("--shard-index", type=int, required=True)
-    run_cmd.add_argument("--duration-seconds", type=int)
+    run_cmd.add_argument("--duration-seconds", type=int, required=True)
     run_cmd.add_argument("--timeout-seconds", type=float, default=10.0)
     run_cmd.add_argument("--output", required=True)
     run_cmd.add_argument("--acknowledge-authorized-target", action="store_true")
@@ -421,9 +466,7 @@ def main() -> int:
             return 0
         if not args.acknowledge_authorized_target:
             raise SystemExit("load_run_requires_--acknowledge-authorized-target")
-        report = asyncio.run(
-            execute_shard(plan, timeout_seconds=float(args.timeout_seconds))
-        )
+        report = asyncio.run(execute_shard(plan, timeout_seconds=float(args.timeout_seconds)))
         Path(args.output).write_text(
             json.dumps(report, sort_keys=True, indent=2) + "\n",
             encoding="utf-8",

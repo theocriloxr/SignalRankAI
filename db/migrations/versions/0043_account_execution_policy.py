@@ -3,6 +3,7 @@
 Revision ID: 0043_account_execution_policy
 Revises: 0042_ml_recovery_provenance
 """
+
 from __future__ import annotations
 
 import sqlalchemy as sa
@@ -402,10 +403,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP TRIGGER IF EXISTS trg_trading_account_ledger_immutable "
-        "ON trading_account_ledger_entries"
-    )
+    op.execute("DROP TRIGGER IF EXISTS trg_trading_account_ledger_immutable ON trading_account_ledger_entries")
     op.execute("DROP FUNCTION IF EXISTS prevent_trading_account_ledger_mutation()")
     op.drop_index(
         "ix_trading_account_ledger_user_type",

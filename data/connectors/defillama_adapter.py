@@ -8,6 +8,7 @@ Roles (provider addendum §20):
 All endpoints are public and keyless; ``DEFILLAMA_PRO_ENABLED`` gates the paid
 (``api.llama.fi`` premium) surface when the deployment actually subscribes.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,12 +31,14 @@ def _enabled() -> bool:
 async def _async_stablecoin_totals() -> Optional[Dict[str, Any]]:
     if not _enabled():
         return None
-    data = await async_http_get_json(
-        f"{STABLECOINS_API_URL}/stablecoincharts/all", name="defillama", timeout=8.0
-    )
+    data = await async_http_get_json(f"{STABLECOINS_API_URL}/stablecoincharts/all", name="defillama", timeout=8.0)
     if not isinstance(data, list) or not data:
         return None
-    return {"source": "stablecoins.llama.fi", "points": len(data), "latest_total_usd": data[-1].get("totalCirculatingUSD")}
+    return {
+        "source": "stablecoins.llama.fi",
+        "points": len(data),
+        "latest_total_usd": data[-1].get("totalCirculatingUSD"),
+    }
 
 
 def get_stablecoin_totals() -> Optional[Dict[str, Any]]:
@@ -71,8 +74,10 @@ async def _async_discover_instruments(*, top: int = 200) -> List[Dict[str, Any]]
         return []
     out: List[Dict[str, Any]] = []
     coins = await async_http_get_json(
-        f"{STABLECOINS_API_URL}/stablecoins", name="defillama",
-        params={"includePrices": "false"}, timeout=10.0,
+        f"{STABLECOINS_API_URL}/stablecoins",
+        name="defillama",
+        params={"includePrices": "false"},
+        timeout=10.0,
     )
     if isinstance(coins, dict):
         for item in (coins.get("peggedAssets") or [])[: max(1, top)]:
@@ -80,21 +85,23 @@ async def _async_discover_instruments(*, top: int = 200) -> List[Dict[str, Any]]
                 symbol = str(item.get("symbol") or "").upper().strip()
                 if not symbol:
                     continue
-                out.append({
-                    "provider": "defillama",
-                    "venue": "defillama",
-                    "provider_symbol": f"{symbol}USDT",
-                    "asset_class": "crypto",
-                    "instrument_type": "spot",
-                    "base": symbol,
-                    "quote": "USDT",
-                    "market_status": "active",
-                    "metadata": {
-                        "pegged_to": item.get("pegType"),
-                        "chains": item.get("chains"),
-                        "source": "stablecoins",
-                    },
-                })
+                out.append(
+                    {
+                        "provider": "defillama",
+                        "venue": "defillama",
+                        "provider_symbol": f"{symbol}USDT",
+                        "asset_class": "crypto",
+                        "instrument_type": "spot",
+                        "base": symbol,
+                        "quote": "USDT",
+                        "market_status": "active",
+                        "metadata": {
+                            "pegged_to": item.get("pegType"),
+                            "chains": item.get("chains"),
+                            "source": "stablecoins",
+                        },
+                    }
+                )
             except Exception:
                 continue
     return out

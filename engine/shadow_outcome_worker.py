@@ -5,6 +5,7 @@ after the transaction is closed, and updates are committed in a second short
 transaction.  This prevents provider network latency from occupying scarce DB
 connections.
 """
+
 from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
@@ -12,6 +13,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -31,6 +33,30 @@ class ShadowOutcomeWorker:
         self._min_age_minutes = max(1, int(os.getenv("REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES", "5") or 5))
         self._batch_size = max(1, min(250, int(os.getenv("SHADOW_TRACKER_BATCH_SIZE", "50") or 50)))
         self._price_concurrency = max(1, min(8, int(os.getenv("SHADOW_PRICE_CONCURRENCY", "3") or 3)))
+        self._scan_after_id = 0
+        self._pending_scan_after_id = 0
+
+    def _restore_scan_cursor(self) -> None:
+        try:
+            from core.redis_state import state
+
+            self._scan_after_id = max(0, int(state.get_sync("shadow:tracker:scan_after_id") or 0))
+        except (TypeError, ValueError, OverflowError):
+            self._scan_after_id = 0
+        except Exception:
+            logger.debug("[shadow_tracker] cursor restore unavailable", exc_info=True)
+
+    def _checkpoint_scan_cursor(self) -> None:
+        # The cursor is scheduling state, never an outcome or performance claim.
+        # Revisit unresolved rows after wrapping instead of pinning every pass
+        # to the same oldest batch. A lost checkpoint only repeats safe work.
+        self._scan_after_id = self._pending_scan_after_id
+        try:
+            from core.redis_state import state
+
+            state.set_sync("shadow:tracker:scan_after_id", str(self._scan_after_id), ex=86400)
+        except Exception:
+            logger.debug("[shadow_tracker] cursor checkpoint unavailable", exc_info=True)
 
     def _publish_health(
         self,
@@ -55,6 +81,7 @@ class ShadowOutcomeWorker:
                 "scanned": max(0, int(scanned or 0)),
                 "evaluated": max(0, int(evaluated or 0)),
                 "tracked": max(0, int(tracked or 0)),
+                "scan_after_id": self._scan_after_id,
                 "error": str(error)[:240] if error else None,
             }
             state.set_sync(
@@ -64,10 +91,12 @@ class ShadowOutcomeWorker:
             )
         except Exception:
             logger.debug("[shadow_tracker] health publication failed", exc_info=True)
+
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        self._restore_scan_cursor()
         self._publish_health("starting")
         self._task = asyncio.create_task(self._run_loop(), name="shadow-outcome-tracker")
         logger.info("[shadow_tracker] started interval=%ss batch=%s", self._interval, self._batch_size)
@@ -81,9 +110,8 @@ class ShadowOutcomeWorker:
         self._publish_health("stopped")
 
     async def _load_rows(self) -> list[dict[str, Any]]:
-        from db.models import MLRejectedSignal
-        from db.priority import DBPriority
-        from db.session import AnalyticsWorkDeferred, NoncriticalWriteDropped, get_session
+        from db.models import DecisionLog
+        from db.session import NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
         cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
@@ -94,22 +122,42 @@ class ShadowOutcomeWorker:
                 timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
                 drop_if_busy=False,
             ) as session:
-                rows = list((await session.execute(
-                    select(MLRejectedSignal)
-                    .where(MLRejectedSignal.outcome_tracked_at.is_(None))
-                    .where(MLRejectedSignal.created_at <= cutoff)
-                    .order_by(MLRejectedSignal.created_at.asc())
+                query = (
+                    select(DecisionLog)
+                    .where(DecisionLog.decision == "rejected")
+                    .where(DecisionLog.meta["layer"].as_string() == "ml")
+                    .where(DecisionLog.meta["outcome_tracked_at"].as_string().is_(None))
+                    .where(DecisionLog.created_at <= cutoff)
+                    .order_by(DecisionLog.id.asc())
                     .limit(self._batch_size)
-                )).scalars().all())
+                )
+                rows = list((await session.execute(query.where(DecisionLog.id > self._scan_after_id))).scalars().all())
+                if not rows and self._scan_after_id:
+                    # At most two bounded keyset queries; no OFFSET scan and no
+                    # provider calls while the transaction is open.
+                    rows = list((await session.execute(query)).scalars().all())
+                self._pending_scan_after_id = int(rows[-1].id) if rows else 0
                 # Copy only primitive values before closing the session.
-                return [{
-                    "id": int(r.id), "signal_id": r.signal_id, "asset": r.asset,
-                    "timeframe": r.timeframe, "direction": r.direction,
-                    "entry": float(r.entry or 0.0), "stop_loss": float(r.stop_loss or 0.0),
-                    "take_profit": r.take_profit, "ml_probability": float(r.ml_probability or 0.0),
-                    "rejection_reason": r.rejection_reason, "features": dict(r.features or {}),
-                    "created_at": r.created_at,
-                } for r in rows]
+                snapshots: list[dict[str, Any]] = []
+                for record in rows:
+                    meta = dict(record.meta or {})
+                    snapshots.append(
+                        {
+                            "id": int(record.id),
+                            "signal_id": record.signal_id,
+                            "asset": record.asset,
+                            "timeframe": record.timeframe,
+                            "direction": str(meta.get("direction") or ""),
+                            "entry": float(meta.get("entry") or 0.0),
+                            "stop_loss": float(meta.get("stop_loss") or 0.0),
+                            "take_profit": meta.get("take_profit"),
+                            "ml_probability": float(meta.get("ml_probability") or 0.0),
+                            "rejection_reason": record.reason,
+                            "features": dict(meta.get("features") or {}),
+                            "created_at": record.created_at,
+                        }
+                    )
+                return snapshots
         except NoncriticalWriteDropped:
             logger.info("[shadow_tracker] deferred reason=db_background_capacity")
             return []
@@ -117,6 +165,7 @@ class ShadowOutcomeWorker:
     async def _evaluate_rows(self, rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]:
         from data.fetcher import async_get_candles
         from engine.realtime_outcome_tracker import _check_hit, _get_live_price, _parse_tp_levels
+
         semaphore = asyncio.Semaphore(self._price_concurrency)
 
         def candle_value(candle: Any, *names: str) -> float | None:
@@ -205,8 +254,11 @@ class ShadowOutcomeWorker:
             if price is None:
                 return None
             hit = _check_hit(
-                str(row["direction"]), float(row["entry"]), float(row["stop_loss"]),
-                _parse_tp_levels(row["take_profit"]), float(price),
+                str(row["direction"]),
+                float(row["entry"]),
+                float(row["stop_loss"]),
+                _parse_tp_levels(row["take_profit"]),
+                float(price),
             )
             return (row, str(hit).lower()) if hit else None
 
@@ -217,8 +269,7 @@ class ShadowOutcomeWorker:
         if not evaluated:
             return 0
         from core.redis_state import state
-        from db.models import MLRejectedSignal, MLShadowPrediction
-        from db.priority import DBPriority
+        from db.models import DecisionLog, MLShadowPrediction
         from db.session import NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
@@ -232,90 +283,89 @@ class ShadowOutcomeWorker:
                 timeout_seconds=float(os.getenv("SHADOW_OUTCOME_DB_TIMEOUT_SECONDS", "20") or 20),
                 drop_if_busy=False,
             ) as session:
-                db_rows = list((await session.execute(
-                    select(MLRejectedSignal).where(MLRejectedSignal.id.in_(ids)).with_for_update(skip_locked=True)
-                )).scalars().all())
+                db_rows = list(
+                    (
+                        await session.execute(
+                            select(DecisionLog)
+                            .where(DecisionLog.id.in_(ids))
+                            .where(DecisionLog.decision == "rejected")
+                            .where(DecisionLog.meta["layer"].as_string() == "ml")
+                            .with_for_update(skip_locked=True)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 tracked = 0
+                metric_deltas: Counter[str] = Counter()
                 for record in db_rows:
                     source, outcome = by_id.get(int(record.id), ({}, ""))
-                    if not outcome or record.outcome_tracked_at is not None:
+                    record_meta = dict(record.meta or {})
+                    if not outcome or record_meta.get("outcome_tracked_at"):
                         continue
                     source_features = dict(source.get("features") or {})
                     is_candidate_forward = (
-                        str(source_features.get("rejection_type") or "")
-                        .strip()
-                        .lower()
-                        == "candidate_shadow"
+                        str(source_features.get("rejection_type") or "").strip().lower() == "candidate_shadow"
                     )
-                    session.add(MLShadowPrediction(
-                        signal_id=source.get("signal_id"),
-                        model_name=(
-                            "candidate_forward_outcome"
-                            if is_candidate_forward
-                            else "rejection_outcome_tracker"
-                        ),
-                        model_version=(
-                            str(
-                                source_features.get(
-                                    "candidate_model_version"
-                                )
-                                or "unknown"
-                            )
-                            if is_candidate_forward
-                            else os.getenv("ML_MODEL_VERSION", "v1")
-                        ),
-                        probability=float(source.get("ml_probability") or 0.0),
-                        is_shadow=True, feature_schema_ok=True,
-                        meta={
-                            "asset": source.get("asset"), "direction": source.get("direction"),
-                            "entry": source.get("entry"), "stop_loss": source.get("stop_loss"),
-                            "take_profit": str(source.get("take_profit")), "actual_outcome": outcome,
-                            "rejection_reason": source.get("rejection_reason"),
-                            "learning_category": source_features.get(
-                                "learning_category",
-                                (
-                                    "CANDIDATE_FORWARD"
-                                    if is_candidate_forward
-                                    else "SHADOW_REJECTED"
+                    session.add(
+                        MLShadowPrediction(
+                            signal_id=source.get("signal_id"),
+                            model_name=(
+                                "candidate_forward_outcome" if is_candidate_forward else "rejection_outcome_tracker"
+                            ),
+                            model_version=(
+                                str(source_features.get("candidate_model_version") or "unknown")
+                                if is_candidate_forward
+                                else os.getenv("ML_MODEL_VERSION", "v1")
+                            ),
+                            probability=float(source.get("ml_probability") or 0.0),
+                            is_shadow=True,
+                            feature_schema_ok=True,
+                            meta={
+                                "asset": source.get("asset"),
+                                "direction": source.get("direction"),
+                                "entry": source.get("entry"),
+                                "stop_loss": source.get("stop_loss"),
+                                "take_profit": str(source.get("take_profit")),
+                                "actual_outcome": outcome,
+                                "rejection_reason": source.get("rejection_reason"),
+                                "learning_category": source_features.get(
+                                    "learning_category",
+                                    ("CANDIDATE_FORWARD" if is_candidate_forward else "SHADOW_REJECTED"),
                                 ),
-                            ),
-                            "candidate_artifact_hash_sha256": source_features.get(
-                                "candidate_artifact_hash_sha256"
-                            ),
-                            "candidate_observation_key": source_features.get(
-                                "candidate_observation_key"
-                            ),
-                            "rejection_id": int(record.id),
-                        }, created_at=now,
-                    ))
-                    record.actual_outcome = outcome[:32]
-                    record.outcome_tracked_at = now
+                                "candidate_artifact_hash_sha256": source_features.get("candidate_artifact_hash_sha256"),
+                                "candidate_observation_key": source_features.get("candidate_observation_key"),
+                                "rejection_id": int(record.id),
+                            },
+                            created_at=now,
+                        )
+                    )
+                    record.meta = {
+                        **record_meta,
+                        "actual_outcome": outcome[:32],
+                        "outcome_tracked_at": now.isoformat(),
+                    }
                     tracked += 1
-                    try:
-                        if is_candidate_forward:
-                            bucket = (
-                                "win"
-                                if outcome.startswith("tp")
-                                else "loss"
-                                if outcome == "sl"
-                                else "other_outcome"
-                            )
-                            state.incr_sync(
-                                f"candidate_forward:counts:{bucket}",
-                                1,
-                            )
-                            state.incr_sync(
-                                "candidate_forward:counts:total_tracked",
-                                1,
-                            )
-                        else:
-                            bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
-                            state.incr_sync(f"shadow:counts:{bucket}", 1)
-                            state.incr_sync("shadow:counts:total_tracked", 1)
-                    except Exception:
-                        logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
+                    if is_candidate_forward:
+                        bucket = "win" if outcome.startswith("tp") else "loss" if outcome == "sl" else "other_outcome"
+                        metric_deltas[f"candidate_forward:counts:{bucket}"] += 1
+                        metric_deltas["candidate_forward:counts:total_tracked"] += 1
+                    else:
+                        bucket = "false_negative" if outcome.startswith("tp") else "correct_block" if outcome == "sl" else "other_outcome"
+                        metric_deltas[f"shadow:counts:{bucket}"] += 1
+                        metric_deltas["shadow:counts:total_tracked"] += 1
                 await session.commit()
-                return tracked
+            # Redis counters are projections. Never advertise outcomes whose
+            # authoritative transaction failed to commit. incr_sync's second
+            # argument is expiry, not increment; these totals must not expire
+            # after one second. The database remains the authoritative ledger.
+            for key, delta in metric_deltas.items():
+                try:
+                    for _ in range(delta):
+                        state.incr_sync(key)
+                except Exception:
+                    logger.debug("[shadow_tracker] redis metric failed", exc_info=True)
+            return tracked
         except NoncriticalWriteDropped:
             logger.info("[shadow_tracker] write deferred reason=db_background_capacity")
             return 0
@@ -323,10 +373,12 @@ class ShadowOutcomeWorker:
     async def run_once(self) -> int:
         rows = await self._load_rows()
         if not rows:
+            self._checkpoint_scan_cursor()
             self._publish_health("idle")
             return 0
         evaluated = await self._evaluate_rows(rows)
         tracked = await self._persist(evaluated)
+        self._checkpoint_scan_cursor()
         self._publish_health(
             "healthy",
             scanned=len(rows),

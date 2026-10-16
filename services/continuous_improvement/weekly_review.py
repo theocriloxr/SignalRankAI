@@ -29,9 +29,13 @@ def detect_incidents(snapshot: dict[str, Any]) -> tuple[dict[str, Any], ...]:
     deliveries = dict(snapshot.get("deliveries") or {})
     incidents: list[dict[str, Any]] = []
     if int(summary.get("signals") or 0) > 0 and int(deliveries.get("reserved") or 0) == 0:
-        incidents.append({"code": "INC-SIGNAL-STORAGE", "severity": "high", "reason": "signals_without_delivery_reservations"})
+        incidents.append(
+            {"code": "INC-SIGNAL-STORAGE", "severity": "high", "reason": "signals_without_delivery_reservations"}
+        )
     if int(deliveries.get("reserved") or 0) > 0 and int(deliveries.get("sent_ok") or 0) == 0:
-        incidents.append({"code": "INC-DELIVERY", "severity": "high", "reason": "reservations_without_confirmed_delivery"})
+        incidents.append(
+            {"code": "INC-DELIVERY", "severity": "high", "reason": "reservations_without_confirmed_delivery"}
+        )
     return tuple(incidents)
 
 

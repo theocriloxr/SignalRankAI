@@ -198,7 +198,7 @@ function Prepare-NeutralRailwayConfig {
             builder = "NIXPACKS"
         }
         deploy = [ordered]@{
-            startCommand = "bash start.sh"
+            startCommand = "sh start.sh"
             restartPolicyType = "ON_FAILURE"
             restartPolicyMaxRetries = 5
         }
@@ -348,13 +348,13 @@ Set-ServiceVariables -Service $WorkerService -Variables @{
 
 $preDeploy = "python scripts/controlled_migrate.py --output /tmp/signalrank_migration_evidence.json && python scripts/deployment_diagnostics.py --phase predeploy --profile production-advisory --strict-core --output /tmp/signalrank_predeploy_diagnostics.json"
 
-Set-ServiceConfig -Service $SourceService -Path "startCommand" -Value "bash start.sh" -Message "Configure SignalRankAI front door"
+Set-ServiceConfig -Service $SourceService -Path "startCommand" -Value "sh start.sh" -Message "Configure SignalRankAI front door"
 Set-ServiceConfig -Service $SourceService -Path "healthcheckPath" -Value "/readyz" -Message "Configure front-door readiness"
 Set-ServiceConfig -Service $SourceService -Path "healthcheckTimeout" -Value "300" -Message "Configure front-door healthcheck timeout"
 Set-ServiceConfig -Service $SourceService -Path "preDeployCommand" -Value $preDeploy -Message "Assign migrations to front door"
 
-Set-ServiceConfig -Service $EngineService -Path "startCommand" -Value "bash start.sh" -Message "Configure engine role"
-Set-ServiceConfig -Service $WorkerService -Path "startCommand" -Value "bash start.sh" -Message "Configure worker role"
+Set-ServiceConfig -Service $EngineService -Path "startCommand" -Value "sh start.sh" -Message "Configure engine role"
+Set-ServiceConfig -Service $WorkerService -Path "startCommand" -Value "sh start.sh" -Message "Configure worker role"
 
 Set-OneReplicaIfRequested -Service $SourceService
 Set-OneReplicaIfRequested -Service $EngineService

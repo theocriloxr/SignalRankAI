@@ -62,7 +62,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatch) -> None:
+@pytest.mark.parametrize("missing", [None, "research_experiments_table", "research_append_only_triggers", "adaptive_profile_health_index", "strategy_health_schema", "research_snapshot_schema"])
+async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatch, missing) -> None:
     import db.session as db_session
     import railway_main
 
@@ -70,8 +71,8 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
 
     class _Mappings:
         def one(self):
-            return {
-                "deployed_revision": "0045_mt5_credential_retirement",
+            result = {
+                "deployed_revision": "0055_user_renewal_default",
                 "decision_log_created_at": True,
                 "signals_mfe_pct": True,
                 "signals_mae_pct": True,
@@ -86,6 +87,13 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "broker_reconciliation_state_table": True,
                 "trading_account_ledger_entries_table": True,
                 "broker_execution_decisions_table": True,
+                "research_hypotheses_table": True,
+                "research_experiments_table": True,
+                "research_experiment_results_table": True,
+                "research_append_only_triggers": True,
+                "adaptive_profile_health_index": True,
+                "strategy_health_schema": True,
+                "research_snapshot_schema": True,
                 "broker_connections_credential_format": True,
                 "broker_connections_credential_version": True,
                 "broker_connections_credential_key_id": True,
@@ -94,11 +102,21 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
                 "mt5_credentials_password_nullable": True,
                 "broker_executions_connection_id": True,
                 "mt5_executions_connection_id": True,
+                "users_accepted_terms": True,
+                "users_execution_mode": True,
+                "signals_status": True,
+                "signals_trade_profile": True,
+                "signal_deliveries_sent_ok": True,
+                "signal_deliveries_generated_at_utc": True,
+                "outcomes_canonical_outcome": True,
                 "trading_account_ledger_immutable": True,
                 "active_guard_present": True,
                 "outcome_duplicate_groups": 0,
                 "outcome_guard_present": True,
             }
+            if missing:
+                result[missing] = False
+            return result
 
     class _Result:
         def mappings(self):
@@ -123,9 +141,12 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
 
     result = await railway_main._database_readiness_check()
 
-    assert result["ok"] is True
-    assert result["revision"] == "0045_mt5_credential_retirement"
-    assert result["probe_timeout_seconds"] == 8.0
+    assert result["ok"] is (missing is None)
+    assert result["revision"] == "0055_user_renewal_default"
+    if missing is None:
+        assert result["probe_timeout_seconds"] == 8.0
+    else:
+        assert result["detail"] in {"required_ecosystem_tables_missing", "research_evidence_immutability_guards_missing", "adaptive_profile_health_index_missing_or_invalid", "strategy_health_baseline_schema_or_guards_missing", "research_dataset_snapshot_schema_or_guards_missing"}
     assert captured["rolled_back"] is True
     assert captured["kwargs"]["label"] == "readiness"
     assert captured["kwargs"]["timeout_seconds"] == 8.0
@@ -137,4 +158,7 @@ async def test_database_readiness_returns_ready_from_consolidated_row(monkeypatc
     assert "credential_revision" in captured["statement"]
     assert "mt5_credentials" in captured["statement"]
     assert "is_nullable" in captured["statement"]
+    assert "accepted_terms" in captured["statement"]
+    assert "generated_at_utc" in captured["statement"]
+    assert "canonical_outcome" in captured["statement"]
     assert "trg_trading_account_ledger_immutable" in captured["statement"]

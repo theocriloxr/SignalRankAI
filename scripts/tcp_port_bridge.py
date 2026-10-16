@@ -5,6 +5,7 @@ This process never runs SignalRank application code. It only forwards bytes from
 one local TCP port to the already-running frontdoor port, so enabling an
 additional Railway target port cannot duplicate schedulers, webhooks, or workers.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -71,8 +72,7 @@ async def _run(*, listen_host: str, listen_port: int, target_host: str, target_p
         port=listen_port,
     )
     print(
-        f"[port_bridge] listening {listen_host}:{listen_port} -> "
-        f"{target_host}:{target_port}",
+        f"[port_bridge] listening {listen_host}:{listen_port} -> {target_host}:{target_port}",
         flush=True,
     )
 

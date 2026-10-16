@@ -52,7 +52,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
         payload = resp.json() or {}
         if str(payload.get("retCode") or "0") != "0":
             return []
-        rows = ((payload.get("result") or {}).get("list") or [])
+        rows = (payload.get("result") or {}).get("list") or []
         if not isinstance(rows, list):
             return []
         out: List[Dict[str, Any]] = []

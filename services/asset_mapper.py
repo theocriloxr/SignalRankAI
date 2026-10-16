@@ -14,6 +14,7 @@ Usage:
 
     asset_class  = classify_asset("BTCUSDT")        # -> "crypto"
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -227,20 +228,33 @@ _INDEX_MAP: Dict[str, Dict[str, str]] = {
 
 # Additional registry-backed instruments that previously drifted into the US
 # equity default or had no deterministic provider mapping.
-_INDEX_MAP.update({
-    "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "N225", "mt5": "JP225"},
-    "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
-    "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
-    "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
-    "HK50": {"yfinance": "^HSI", "polygon": None, "twelvedata": "HSI", "mt5": "HK50"},
-})
-_COMMODITY_MAP.update({
-    "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
-    "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "XBR/USD", "mt5": "UKOIL"},
-})
-_CRYPTO_MAP.update({
-    "XAUTUSDT": {"binance": "XAUTUSDT", "coingecko": "tether-gold", "yfinance": "XAUT-USD", "polygon": None, "twelvedata": "XAUT/USD", "mt5": "XAUTUSD"},
-})
+_INDEX_MAP.update(
+    {
+        "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "N225", "mt5": "JP225"},
+        "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
+        "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
+        "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
+        "HK50": {"yfinance": "^HSI", "polygon": None, "twelvedata": "HSI", "mt5": "HK50"},
+    }
+)
+_COMMODITY_MAP.update(
+    {
+        "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
+        "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "XBR/USD", "mt5": "UKOIL"},
+    }
+)
+_CRYPTO_MAP.update(
+    {
+        "XAUTUSDT": {
+            "binance": "XAUTUSDT",
+            "coingecko": "tether-gold",
+            "yfinance": "XAUT-USD",
+            "polygon": None,
+            "twelvedata": "XAUT/USD",
+            "mt5": "XAUTUSD",
+        },
+    }
+)
 
 # Combined lookup: canonical -> providers
 _ALL_MAPS: Dict[str, Dict[str, str]] = {}
@@ -442,7 +456,6 @@ def get_instrument_spec(symbol: str) -> InstrumentSpec:
         final_quote_kinds=final_quote_kinds,
         provider_symbols=get_all_providers_for_asset(spec.canonical_symbol),
     )
-
 
 
 __all__ = [

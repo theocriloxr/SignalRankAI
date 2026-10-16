@@ -216,7 +216,7 @@ COMMAND_HELP = {
             ("notify",               "Notification preferences (assets/TFs)"),
             ("filter",               "Custom signal filters (score/RR/regime)"),
             ("feedback",             "Rate a signal or report an issue"),
-            ("apikey",               "API key for programmatic signal access"),
+            ("apikey",               "View API-key status and open secure web management"),
             ("mystats",              "MT5 execution stats"),
             ("setlot",               "Set fixed lot size for MT5 execution"),
             ("setrisk",              "Set max risk % for VIP execution preflight"),
@@ -514,7 +514,7 @@ def get_help_message(tier: str) -> str:
     # --- Advanced Features Section ---
     adv_cmds = [
         ("dashboard", "• /dashboard – Open your analytics dashboard"),
-        ("apikey", "• /apikey – Get your API key for programmatic access"),
+        ("apikey", "• /apikey – View API-key status and open secure web management"),
         ("filter", "• /filter – Set custom signal filters (min_score, rr, regime)"),
         ("reports", "• /reports – Opt-in/out of daily/weekly performance reports"),
         ("notify", "• /notify – Customize which assets, timeframes, or strategies you receive"),
@@ -525,7 +525,7 @@ def get_help_message(tier: str) -> str:
         ("analyze", "• /analyze – AI analysis for a specific pair"),
     ]
     adv_usage = [
-        ("apikey", "- /apikey regenerate – Reset your API key"),
+        ("apikey", "- /apikey – View key metadata; create/rotate/revoke only in the authenticated web app"),
         ("filter", "- /filter min_score 60 – Set minimum score"),
         ("filter", "- /filter rr 2.0 – Set minimum risk/reward"),
         ("filter", "- /filter regime TRENDING – Set regime filter"),

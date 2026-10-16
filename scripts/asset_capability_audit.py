@@ -28,7 +28,6 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 logging.basicConfig(
@@ -92,6 +91,7 @@ RELEASE_RINGS = {
 @dataclass
 class AssetCapability:
     """Result of one asset's capability check."""
+
     asset: str = ""
     asset_class: str = ""
     session: str = ""
@@ -247,7 +247,11 @@ async def check_asset_ohlc(asset: str, asset_info: dict[str, Any]) -> tuple[bool
         if candles and len(candles) > 0:
             last_candle = candles[-1] if isinstance(candles, list) else None
             if last_candle:
-                provider = str(getattr(last_candle, "source", None) or (last_candle.get("source") if isinstance(last_candle, dict) else None) or "unknown")
+                provider = str(
+                    getattr(last_candle, "source", None)
+                    or (last_candle.get("source") if isinstance(last_candle, dict) else None)
+                    or "unknown"
+                )
             return True, provider, elapsed
 
         # Fallback: try sync fetch
@@ -265,7 +269,9 @@ async def check_asset_ohlc(asset: str, asset_info: dict[str, Any]) -> tuple[bool
         return False, provider, elapsed
 
 
-async def check_asset_live_quote(asset: str, asset_info: dict[str, Any]) -> tuple[bool, str, float, float | None, float | None]:
+async def check_asset_live_quote(
+    asset: str, asset_info: dict[str, Any]
+) -> tuple[bool, str, float, float | None, float | None]:
     """Check live quote availability for an asset. Returns (available, provider, latency_ms, bid, ask)."""
     start = time.perf_counter()
     try:
@@ -341,7 +347,9 @@ async def run_capability_check(
     elif ohlc_ok and not quote_ok:
         capability.capability_state = "DISABLED_NO_LIVE_QUOTE"
         capability.release_ring = 0
-        capability.reason = f"OHLC available ({ohlc_provider}) but live quote unavailable (last tried: {quote_provider})"
+        capability.reason = (
+            f"OHLC available ({ohlc_provider}) but live quote unavailable (last tried: {quote_provider})"
+        )
     elif not ohlc_ok and quote_ok:
         capability.capability_state = "DISABLED_NO_OHLC"
         capability.release_ring = 0
@@ -369,7 +377,9 @@ async def run_capability_check(
     return capability
 
 
-def print_asset_table(results: list[AssetCapability], *, class_filter: str | None = None, show_all: bool = False) -> None:
+def print_asset_table(
+    results: list[AssetCapability], *, class_filter: str | None = None, show_all: bool = False
+) -> None:
     """Print a formatted table of asset capability results."""
     header = (
         f"{'Asset':<12} {'Class':<10} {'Session':<12} {'OHLC':<8} {'Provider':<14} "
@@ -377,7 +387,12 @@ def print_asset_table(results: list[AssetCapability], *, class_filter: str | Non
     )
     separator = "-" * len(header)
 
-    filtered = [r for r in results if (class_filter is None or r.asset_class == class_filter) and (show_all or r.capability_state != "DISABLED_NO_OHLC")]
+    filtered = [
+        r
+        for r in results
+        if (class_filter is None or r.asset_class == class_filter)
+        and (show_all or r.capability_state != "DISABLED_NO_OHLC")
+    ]
 
     logger.info("\n%s", separator)
     logger.info("Asset Capability Report")
@@ -448,7 +463,9 @@ async def main() -> int:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--concurrency", type=int, default=5, help="Concurrent checks (default: 5)")
     parser.add_argument("--show-failed", action="store_true", help="Show failed assets too")
-    parser.add_argument("--registry-only", action="store_true", help="Validate registry/session mappings without network calls")
+    parser.add_argument(
+        "--registry-only", action="store_true", help="Validate registry/session mappings without network calls"
+    )
     parser.add_argument("--output", type=str, default=None, help="Write report to CSV file")
 
     args = parser.parse_args()
@@ -477,10 +494,7 @@ async def main() -> int:
         cls = args.asset_class.strip().lower()
         aliases = {"forex": "forex", "fx": "forex", "stocks": "stock", "indices": "index", "commodities": "commodity"}
         resolved_cls = aliases.get(cls, cls)
-        assets_to_test = {
-            sym: info for sym, info in ASSET_REGISTRY.items()
-            if info["class"] == resolved_cls
-        }
+        assets_to_test = {sym: info for sym, info in ASSET_REGISTRY.items() if info["class"] == resolved_cls}
     elif args.all:
         assets_to_test = dict(ASSET_REGISTRY)
     else:
@@ -494,9 +508,7 @@ async def main() -> int:
 
     if args.ring is not None:
         ring = int(args.ring)
-        assets_to_test = {
-            sym: info for sym, info in assets_to_test.items()
-        }
+        assets_to_test = {sym: info for sym, info in assets_to_test.items()}
         # Ring filtering is done after capability check
 
     logger.info("Testing %d asset(s)...", len(assets_to_test))
@@ -509,7 +521,9 @@ async def main() -> int:
             if args.registry_only:
                 analysis_only = bool(info.get("analysis_only"))
                 actionable = bool(info.get("actionable", True))
-                state = "ANALYSIS_ONLY" if analysis_only else ("REGISTRY_VALID" if actionable else "DISABLED_UNSUPPORTED")
+                state = (
+                    "ANALYSIS_ONLY" if analysis_only else ("REGISTRY_VALID" if actionable else "DISABLED_UNSUPPORTED")
+                )
                 return AssetCapability(
                     asset=asset,
                     asset_class=str(info.get("class") or "unknown"),
@@ -558,19 +572,43 @@ async def main() -> int:
 
         with open(args.output, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Asset", "Class", "Session", "OHLC_OK", "OHLC_Provider", "OHLC_Latency_ms",
-                "Quote_OK", "Quote_Provider", "Quote_Latency_ms", "Spread_Pct",
-                "State", "Ring", "Public_Test_Eligible", "Reason",
-            ])
+            writer.writerow(
+                [
+                    "Asset",
+                    "Class",
+                    "Session",
+                    "OHLC_OK",
+                    "OHLC_Provider",
+                    "OHLC_Latency_ms",
+                    "Quote_OK",
+                    "Quote_Provider",
+                    "Quote_Latency_ms",
+                    "Spread_Pct",
+                    "State",
+                    "Ring",
+                    "Public_Test_Eligible",
+                    "Reason",
+                ]
+            )
             for c in capabilities:
-                writer.writerow([
-                    c.asset, c.asset_class, c.session,
-                    c.ohlc_fresh, c.ohlc_provider, f"{c.ohlc_latency_ms:.0f}",
-                    c.quote_fresh, c.live_quote_provider, f"{c.quote_latency_ms:.0f}",
-                    f"{c.spread_pct:.3f}" if c.spread_pct > 0 else "",
-                    c.capability_state, c.release_ring, c.public_test_eligible, c.reason,
-                ])
+                writer.writerow(
+                    [
+                        c.asset,
+                        c.asset_class,
+                        c.session,
+                        c.ohlc_fresh,
+                        c.ohlc_provider,
+                        f"{c.ohlc_latency_ms:.0f}",
+                        c.quote_fresh,
+                        c.live_quote_provider,
+                        f"{c.quote_latency_ms:.0f}",
+                        f"{c.spread_pct:.3f}" if c.spread_pct > 0 else "",
+                        c.capability_state,
+                        c.release_ring,
+                        c.public_test_eligible,
+                        c.reason,
+                    ]
+                )
         logger.info("CSV report written to: %s", args.output)
 
     # Final summary
@@ -581,7 +619,11 @@ async def main() -> int:
     logger.info("\n=== CAPABILITY AUDIT COMPLETE ===")
     logger.info(
         "Assets tested: %d, Active: %d, Registry-valid: %d, Analysis-only: %d, Failed/Unsupported: %d",
-        len(capabilities), active_count, registry_valid_count, analysis_only_count, failed_count,
+        len(capabilities),
+        active_count,
+        registry_valid_count,
+        analysis_only_count,
+        failed_count,
     )
 
     return 0

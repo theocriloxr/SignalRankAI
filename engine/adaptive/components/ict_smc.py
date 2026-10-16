@@ -33,12 +33,18 @@ class ICTSmartMoneyComponent:
         confidence = 0.0
         zones: list[PriceZone] = []
         if swept_low or bos_long:
-            direction, setup = Direction.LONG, ("sell_side_liquidity_sweep" if swept_low else "bullish_break_of_structure")
+            direction, setup = (
+                Direction.LONG,
+                ("sell_side_liquidity_sweep" if swept_low else "bullish_break_of_structure"),
+            )
             entry = last_close
             stop = min(last_low, prior_low) - tr * 0.15
             confidence = 0.68 + min(0.16, displacement * 0.06)
         elif swept_high or bos_short:
-            direction, setup = Direction.SHORT, ("buy_side_liquidity_sweep" if swept_high else "bearish_break_of_structure")
+            direction, setup = (
+                Direction.SHORT,
+                ("buy_side_liquidity_sweep" if swept_high else "bearish_break_of_structure"),
+            )
             entry = last_close
             stop = max(last_high, prior_high) + tr * 0.15
             confidence = 0.68 + min(0.16, displacement * 0.06)
@@ -49,28 +55,69 @@ class ICTSmartMoneyComponent:
             left_high, left_low = highs[-4], lows[-4]
             right_high, right_low = highs[-2], lows[-2]
             if right_low > left_high:
-                zones.append(PriceZone("bullish_fvg", left_high, right_low, confidence=0.65, created_index=last-2, invalidation=left_low))
+                zones.append(
+                    PriceZone(
+                        "bullish_fvg",
+                        left_high,
+                        right_low,
+                        confidence=0.65,
+                        created_index=last - 2,
+                        invalidation=left_low,
+                    )
+                )
             if right_high < left_low:
-                zones.append(PriceZone("bearish_fvg", right_high, left_low, confidence=0.65, created_index=last-2, invalidation=left_high))
+                zones.append(
+                    PriceZone(
+                        "bearish_fvg",
+                        right_high,
+                        left_low,
+                        confidence=0.65,
+                        created_index=last - 2,
+                        invalidation=left_high,
+                    )
+                )
         score = clamp(confidence * context.data_quality.score)
-        return (StrategyEvidence(
-            strategy_id=self.strategy_id,
-            strategy_version=self.version,
-            family=self.family,
-            asset=context.asset,
-            asset_class=context.asset_class,
-            timeframe=context.timeframe,
-            direction=direction,
-            setup_type=setup,
-            confidence=score,
-            raw_score=score * 100,
-            zones=tuple(zones),
-            entry_proposal=entry,
-            stop_proposal=stop,
-            target_proposals=targets(entry, stop, direction.value) if entry is not None and stop is not None else (),
-            invalidation=f"close beyond {stop:.8g}" if stop is not None else None,
-            regime_compatibility=0.9 if str(context.regime).upper() in {"TRENDING", "VOLATILE", "BREAKOUT"} else 0.65,
-            data_quality=context.data_quality,
-            evidence={"prior_swing_high": prior_high, "prior_swing_low": prior_low, "displacement_atr": displacement, "swept_high": swept_high, "swept_low": swept_low, "bos_long": bos_long, "bos_short": bos_short},
-            duplicate_fingerprint=fingerprint({"a": context.asset, "tf": context.timeframe, "family": self.family, "setup": setup, "ph": round(prior_high, 8), "pl": round(prior_low, 8)}),
-        ),)
+        return (
+            StrategyEvidence(
+                strategy_id=self.strategy_id,
+                strategy_version=self.version,
+                family=self.family,
+                asset=context.asset,
+                asset_class=context.asset_class,
+                timeframe=context.timeframe,
+                direction=direction,
+                setup_type=setup,
+                confidence=score,
+                raw_score=score * 100,
+                zones=tuple(zones),
+                entry_proposal=entry,
+                stop_proposal=stop,
+                target_proposals=targets(entry, stop, direction.value)
+                if entry is not None and stop is not None
+                else (),
+                invalidation=f"close beyond {stop:.8g}" if stop is not None else None,
+                regime_compatibility=0.9
+                if str(context.regime).upper() in {"TRENDING", "VOLATILE", "BREAKOUT"}
+                else 0.65,
+                data_quality=context.data_quality,
+                evidence={
+                    "prior_swing_high": prior_high,
+                    "prior_swing_low": prior_low,
+                    "displacement_atr": displacement,
+                    "swept_high": swept_high,
+                    "swept_low": swept_low,
+                    "bos_long": bos_long,
+                    "bos_short": bos_short,
+                },
+                duplicate_fingerprint=fingerprint(
+                    {
+                        "a": context.asset,
+                        "tf": context.timeframe,
+                        "family": self.family,
+                        "setup": setup,
+                        "ph": round(prior_high, 8),
+                        "pl": round(prior_low, 8),
+                    }
+                ),
+            ),
+        )

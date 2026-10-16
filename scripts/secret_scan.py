@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Fail-closed source secret scan for deployable files.
 
-The scan ignores generated environments, VCS metadata and documentation while
-checking production source/config files for token-shaped literals and private
-keys. Environment variable names and obvious test placeholders are allowed.
+The scan checks release source, configuration and documentation for token-shaped
+literals and private keys. Ignored local artifacts are outside the release scope;
+tracked files remain in scope even inside ignored directories. Environment
+variable references and explicit test placeholders are allowed.
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 import re
-import sys
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED_PARTS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules", ".pytest-tmp"}
+EXCLUDED_PARTS = {".git", ".venv", "venv", ".audit-venv", ".audit-tools-venv", "__pycache__", ".pytest_cache", "node_modules", ".pytest-tmp"}
 ALLOWED_SUFFIXES = {
     ".py",
     ".toml",
@@ -60,11 +62,27 @@ PATTERNS = [
 
 
 def iter_files(root: Path):
-    for path in root.rglob("*"):
-        if not path.is_file() or any(part in EXCLUDED_PARTS for part in path.parts):
-            continue
-        if path.suffix.lower() in ALLOWED_SUFFIXES or path.name in {"Dockerfile", "Procfile", "start.sh"}:
-            yield path
+    import os
+
+    # Release scans cover tracked and non-ignored candidate source, including
+    # tracked files beneath otherwise ignored directories. Local audit downloads
+    # and generated test keys are not inputs to a committed release.
+    if (root / ".git").exists():
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=root, capture_output=True, check=True,
+        )
+        for name in sorted(set(result.stdout.decode("utf-8").split("\0")) - {""}):
+            path = root / name
+            if path.is_file() and (path.suffix.lower() in ALLOWED_SUFFIXES or path.name in {"Dockerfile", "Procfile", "start.sh"}):
+                yield path
+        return
+    for directory, subdirs, names in os.walk(root):
+        subdirs[:] = [name for name in subdirs if name not in EXCLUDED_PARTS]
+        for name in names:
+            path = Path(directory) / name
+            if path.suffix.lower() in ALLOWED_SUFFIXES or name in {"Dockerfile", "Procfile", "start.sh"}:
+                yield path
 
 
 def main() -> int:
@@ -95,11 +113,28 @@ def main() -> int:
                 else:
                     value = match.group(0)
                 lowered = value.lower()
+                # "test" in sk_test_ identifies a real provider credential mode,
+                # not a dummy value. Never waive a token for an internal substring.
+                placeholder_value = lowered
+                if label == "paystack_secret":
+                    placeholder_value = lowered.split("_", 2)[-1]
+                elif re.fullmatch(r"\d{5,12}:[A-Za-z0-9_-]+", value):
+                    placeholder_value = lowered.split(":", 1)[-1]
+                obvious_placeholder = any(
+                    placeholder_value == marker or placeholder_value.startswith(marker + "_")
+                    or placeholder_value.startswith(marker + "-")
+                    or (marker.endswith("_") and placeholder_value.startswith(marker))
+                    for marker in PLACEHOLDERS
+                )
                 if (
                     value.startswith("${{")
                     or value.startswith("<")
-                    or any(marker in lowered for marker in PLACEHOLDERS)
-                    or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is not None
+                    or obvious_placeholder
+                    # Only an unquoted symbolic environment/config reference is
+                    # exempt. Token-shaped quoted literals and provider tokens
+                    # must not be allowed just because they are valid identifiers.
+                    or (label == "sensitive_assignment" and match.group(2) is not None
+                        and re.fullmatch(r"[A-Z_][A-Z0-9_]*", value) is not None)
                     or value.startswith(("config.", "os.getenv", "settings."))
                 ):
                     continue

@@ -22,6 +22,7 @@ CYCLE_BATCH_SIZE
 CYCLE_UNIVERSE_REFRESH_INTERVAL
     Seconds between full universe rebuilds from pair-discovery (default 3600).
 """
+
 from __future__ import annotations
 
 import logging
@@ -41,8 +42,8 @@ class AssetCycleQueue:
     * ``refresh_universe(assets)`` — update the canonical asset universe;
       newly-discovered assets are appended to the *tail* of the current queue
       so they are included in this round without discarding already-queued
-      work.  Runs at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL`` seconds
-      unless *force=True*.
+      work. Additions run at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL``
+      seconds unless *force=True*. Removals apply on every call.
 
     * ``pop_batch(n)`` — pop up to *n* assets for processing; triggers a new
       round automatically when the queue drains.
@@ -59,9 +60,8 @@ class AssetCycleQueue:
         self._round_no: int = 0
         self._last_refresh: float = 0.0
         import os
-        self._refresh_interval: float = float(
-            os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600") or "3600"
-        )
+
+        self._refresh_interval: float = float(os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600") or "3600")
         # Round-level stats
         self._round_signals: int = 0
         self._round_assets_done: int = 0
@@ -72,19 +72,16 @@ class AssetCycleQueue:
         """Merge *assets* into the canonical universe.
 
         New assets not yet seen this round are appended to the queue tail.
-        Already-queued and already-done assets are left untouched.  The rebuild
-        only fires once per ``_refresh_interval`` unless *force=True*.
+        Eligible queued and already-done assets retain their round position.
+        Removals apply immediately; additions wait for ``_refresh_interval``
+        unless *force=True*.
         """
         now = time.monotonic()
         with self._lock:
-            if not force and (now - self._last_refresh) < self._refresh_interval:
-                return
-            self._last_refresh = now
-
             # De-duplicate while preserving order.
             ordered: list[str] = []
             seen: set[str] = set()
-            for a in (assets or []):
+            for a in assets or []:
                 a = str(a or "").strip()
                 if a and a not in seen:
                     ordered.append(a)
@@ -95,6 +92,12 @@ class AssetCycleQueue:
             # so an older queue snapshot cannot leak them into later batches.
             allowed = set(ordered)
             self._queue = deque(a for a in self._queue if a in allowed)
+            # Prune the refill snapshot as well. A drained queue must not
+            # resurrect an asset disabled since the last scheduled refresh.
+            self._universe = [a for a in self._universe if a in allowed]
+            if not force and (now - self._last_refresh) < self._refresh_interval:
+                return
+            self._last_refresh = now
 
             # Append assets brand-new to this round.
             existing = set(self._queue) | self._done_this_round
@@ -106,9 +109,11 @@ class AssetCycleQueue:
 
             self._universe = ordered
             logger.info(
-                "[cycle_queue] universe updated: %d assets total, "
-                "+%d new appended, queue_remaining=%d, round=%d",
-                len(ordered), added, len(self._queue), self._round_no,
+                "[cycle_queue] universe updated: %d assets total, +%d new appended, queue_remaining=%d, round=%d",
+                len(ordered),
+                added,
+                len(self._queue),
+                self._round_no,
             )
 
     def pop_batch(self, size: int = 10) -> List[str]:
@@ -131,7 +136,7 @@ class AssetCycleQueue:
     def mark_done(self, assets: List[str], signals_generated: int = 0) -> None:
         """Record *assets* as processed this round and accumulate stats."""
         with self._lock:
-            for a in (assets or []):
+            for a in assets or []:
                 self._done_this_round.add(str(a or "").strip())
             self._round_assets_done += len(assets)
             self._round_signals += max(0, int(signals_generated))
@@ -150,6 +155,23 @@ class AssetCycleQueue:
             before = len(self._queue)
             self._queue = deque([a for a in self._queue if a not in targets])
             return max(0, before - len(self._queue))
+
+    def return_to_front(self, assets: List[str]) -> None:
+        """Return unprocessed coverage replacements without losing round progress.
+
+        Disabled, completed and already pending assets cannot be reintroduced.
+        The caller supplies the original batch order, so repeatedly replacing a
+        tail asset cannot indefinitely move it behind fresh work.
+        """
+        with self._lock:
+            allowed = set(self._universe)
+            existing = set(self._queue) | self._done_this_round
+            returned: list[str] = []
+            for asset in assets:
+                if asset in allowed and asset not in existing:
+                    returned.append(asset)
+                    existing.add(asset)
+            self._queue.extendleft(reversed(returned))
 
     # ─────────────────────────── properties ───────────────────────────
 
@@ -173,11 +195,7 @@ class AssetCycleQueue:
         with self._lock:
             total = len(self._universe)
             done = len(self._done_this_round)
-            return (
-                f"round={self._round_no} "
-                f"progress={done}/{total} "
-                f"queue_left={len(self._queue)}"
-            )
+            return f"round={self._round_no} progress={done}/{total} queue_left={len(self._queue)}"
 
     # ─────────────────────────── internals ────────────────────────────
 
@@ -193,5 +211,8 @@ class AssetCycleQueue:
         logger.info(
             "[cycle_queue] ══ Round %d started ══ %d assets queued "
             "(prev round: %d assets processed, %d signals generated)",
-            self._round_no, len(self._queue), prev_done, prev_sigs,
+            self._round_no,
+            len(self._queue),
+            prev_done,
+            prev_sigs,
         )

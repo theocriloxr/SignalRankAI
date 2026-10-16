@@ -75,6 +75,16 @@ class CommandResponseCache:
                 age_seconds=max(0.0, now - entry.created_at),
             )
 
+    def delete_prefix(self, prefix: str) -> int:
+        normalized = str(prefix)
+        removed = 0
+        with self._lock:
+            keys = [key for key in self._entries if key.startswith(normalized)]
+            for key in keys:
+                if self._entries.pop(key, None) is not None:
+                    removed += 1
+        return removed
+
     def clear(self) -> None:
         with self._lock:
             self._entries.clear()

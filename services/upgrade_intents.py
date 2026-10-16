@@ -38,9 +38,7 @@ async def record_upgrade_intent(
 
         async with get_session(priority=DBPriority.ANALYTICS) as session:
             user = (
-                await session.execute(
-                    select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-                )
+                await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
             ).scalar_one_or_none()
             if user is None:
                 return False

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build a redacted certification bundle without manufacturing PASS results."""
+
 from __future__ import annotations
 
 import argparse
@@ -8,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 from typing import Any
@@ -120,7 +120,11 @@ def _deployment_payload(profile: str) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("staging-certification", "production-advisory", "production-live-owner-canary"), default=_value("SIGNALRANK_ENV_PROFILE") or "production-advisory")
+    parser.add_argument(
+        "--profile",
+        choices=("staging-certification", "production-advisory", "production-live-owner-canary"),
+        default=_value("SIGNALRANK_ENV_PROFILE") or "production-advisory",
+    )
     parser.add_argument("--deployment-id", default=_value("RAILWAY_DEPLOYMENT_ID"))
     parser.add_argument("--output-root", default="artifacts/certification")
     args = parser.parse_args()

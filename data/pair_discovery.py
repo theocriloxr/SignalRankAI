@@ -1,22 +1,32 @@
 import os
+
+
 # --- Commodity asset discovery ---
 def get_trending_commodity_tickers(top_n=10):
     """Discover broker commodities and verify configured symbols via provider reference data."""
     manual = (os.getenv("COMMODITY_TICKERS") or "").strip()
-    manual_symbols = _record_provider_symbols(
-        _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
-        "manual_config",
-    ) if manual else []
+    manual_symbols = (
+        _record_provider_symbols(
+            _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
+            "manual_config",
+        )
+        if manual
+        else []
+    )
     try:
         broker_symbols = _metaapi_symbols()
     except NameError:  # helpers are defined later in the module
         broker_symbols = []
     markers = ("XAU", "XAG", "XPT", "XPD", "GOLD", "SILVER", "WTI", "BRENT", "OIL", "NGAS", "COPPER")
     discovered = [symbol for symbol in broker_symbols if any(marker in str(symbol).upper() for marker in markers)]
-    broker_commodities = _record_provider_symbols(
-        _dedupe_limit(discovered, max(1, int(top_n))),
-        "metaapi",
-    ) if discovered else []
+    broker_commodities = (
+        _record_provider_symbols(
+            _dedupe_limit(discovered, max(1, int(top_n))),
+            "metaapi",
+        )
+        if discovered
+        else []
+    )
     verified_manual = _twelvedata_verified_configured(manual_symbols, "commodities")
     merged = _merge_provider_results(
         [broker_commodities, verified_manual, manual_symbols],
@@ -88,6 +98,7 @@ def asset_discovery_sources(asset: str) -> tuple[str, ...]:
     with _ASSET_DISCOVERY_PROVENANCE_LOCK:
         return tuple(sorted(_ASSET_DISCOVERY_PROVENANCE.get(symbol) or set()))
 
+
 def _refresh_asset_universe():
     global _ASSET_UNIVERSE_CACHE, _ASSET_UNIVERSE_LAST_REFRESH
     with _ASSET_UNIVERSE_LOCK:
@@ -99,11 +110,17 @@ def _refresh_asset_universe():
         _ASSET_UNIVERSE_CACHE = get_all_tradable_assets()
         _ASSET_UNIVERSE_LAST_REFRESH = time.time()
 
+
 def get_latest_asset_universe(force_refresh=False):
     now = time.time()
-    if force_refresh or _ASSET_UNIVERSE_CACHE is None or (now - _ASSET_UNIVERSE_LAST_REFRESH > _ASSET_UNIVERSE_REFRESH_INTERVAL):
+    if (
+        force_refresh
+        or _ASSET_UNIVERSE_CACHE is None
+        or (now - _ASSET_UNIVERSE_LAST_REFRESH > _ASSET_UNIVERSE_REFRESH_INTERVAL)
+    ):
         _refresh_asset_universe()
     return _ASSET_UNIVERSE_CACHE
+
 
 def _asset_universe_auto_refresh_thread():
     while True:
@@ -133,19 +150,20 @@ def start_asset_universe_refresh_thread() -> bool:
         _ASSET_UNIVERSE_THREAD = thread
         return True
 
+
 import requests
 from utils import proxy_manager
 from core.env import runtime_environment_name
 
-BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
-BYBIT_API = 'https://api.bybit.com/v5/market/tickers'
-BYBIT_CATEGORY = 'linear'
-OKX_TICKERS_API = 'https://www.okx.com/api/v5/market/tickers'
-OKX_INSTRUMENTS_API = 'https://www.okx.com/api/v5/public/instruments'
-BYBIT_INSTRUMENTS_API = 'https://api.bybit.com/v5/market/instruments-info'
-COINBASE_PRODUCTS_API = 'https://api.exchange.coinbase.com/products'
-COINBASE_PRODUCT_STATS_API = 'https://api.exchange.coinbase.com/products/{product_id}/stats'
-FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
+BINANCE_API = "https://api.binance.com/api/v3/ticker/24hr"
+BYBIT_API = "https://api.bybit.com/v5/market/tickers"
+BYBIT_CATEGORY = "linear"
+OKX_TICKERS_API = "https://www.okx.com/api/v5/market/tickers"
+OKX_INSTRUMENTS_API = "https://www.okx.com/api/v5/public/instruments"
+BYBIT_INSTRUMENTS_API = "https://api.bybit.com/v5/market/instruments-info"
+COINBASE_PRODUCTS_API = "https://api.exchange.coinbase.com/products"
+COINBASE_PRODUCT_STATS_API = "https://api.exchange.coinbase.com/products/{product_id}/stats"
+FX_API = "https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}"
 
 _BINANCE_DISABLED_REASON: str | None = None
 _BYBIT_DISABLED_REASON: str | None = None
@@ -158,20 +176,53 @@ _DEFAULT_CRYPTO_BLACKLIST = {"DOGEIDR"}
 # Hardcoded fallback crypto pairs - used when all providers fail
 # These are the top-tier liquid pairs that work even when APIs are blocked/rate-limited
 _HARDCODED_CRYPTO_PAIRS: list[str] = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
-    "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT",
-    "AVAXUSDT", "LINKUSDT", "ATOMUSDT", "UNIUSDT", "XLMUSDT",
-    "ETCUSDT", "XMRUSDT", "BCHUSDT", "ALGOUSDT", "XLMUSDT",
-    "AAVEUSDT", "FILUSDT", "APEUSDT", "SANDUSDT", "MANAUSDT",
-    "OPUSDT", "ARBUSDT", "NEARUSDT", "APTUSDT", "RNDRUSDT",
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "SOLUSDT",
+    "DOGEUSDT",
+    "DOTUSDT",
+    "MATICUSDT",
+    "LTCUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "ATOMUSDT",
+    "UNIUSDT",
+    "XLMUSDT",
+    "ETCUSDT",
+    "XMRUSDT",
+    "BCHUSDT",
+    "ALGOUSDT",
+    "XLMUSDT",
+    "AAVEUSDT",
+    "FILUSDT",
+    "APEUSDT",
+    "SANDUSDT",
+    "MANAUSDT",
+    "OPUSDT",
+    "ARBUSDT",
+    "NEARUSDT",
+    "APTUSDT",
+    "RNDRUSDT",
 ]
 
 # Stablecoin pairs to exclude from trading (Bug Fix: "Stablecoin Trap")
 # These pairs have minimal volatility and should not generate "trend" signals
 STABLECOIN_PAIRS: set[str] = {
-    "USDCUSDT", "USDCPERF", "DAIUSDT", "BUSDUSDT", "FDUSDUSDT",
-    "USDTUSDC", "USDTUSDT", "TUSDUSDT", "USDEUSDT", "USDDUSDT",
-    "FRAXUSDT", "MIMUSDT",
+    "USDCUSDT",
+    "USDCPERF",
+    "DAIUSDT",
+    "BUSDUSDT",
+    "FDUSDUSDT",
+    "USDTUSDC",
+    "USDTUSDT",
+    "TUSDUSDT",
+    "USDEUSDT",
+    "USDDUSDT",
+    "FRAXUSDT",
+    "MIMUSDT",
 }
 
 
@@ -179,10 +230,24 @@ def _is_non_trading_quote_asset(symbol: str) -> bool:
     """Reject quote/stablecoin inventory mapped into synthetic USDT pairs."""
     value = str(symbol or "").upper().strip()
     base = value[:-4] if value.endswith("USDT") else value
-    return base in {"U", "UB"} or base.startswith("USD") or base in {
-        "USAT", "USBD", "USDCV", "DAI", "BUSD", "FDUSD", "TUSD",
-        "USDE", "USDD", "FRAX", "MIM",
-    }
+    return (
+        base in {"U", "UB"}
+        or base.startswith("USD")
+        or base
+        in {
+            "USAT",
+            "USBD",
+            "USDCV",
+            "DAI",
+            "BUSD",
+            "FDUSD",
+            "TUSD",
+            "USDE",
+            "USDD",
+            "FRAX",
+            "MIM",
+        }
+    )
 
 
 def _load_crypto_blacklist() -> set[str]:
@@ -284,13 +349,17 @@ def _binance_top_crypto_pairs(top_n: int) -> list[str]:
                 if not os.getenv("CRYPTO_DATA_PROVIDER"):
                     os.environ["CRYPTO_DATA_PROVIDER"] = "cryptocompare"
                     os.environ.setdefault("CRYPTO_WS_PROVIDER", "cryptocompare")
-                    logger.info("[pair_discovery] Switched crypto data provider to cryptocompare to bypass Binance geoblock")
+                    logger.info(
+                        "[pair_discovery] Switched crypto data provider to cryptocompare to bypass Binance geoblock"
+                    )
                 return []
             raise RuntimeError(f"Binance API error: code={code} msg={msg}")
         if not isinstance(data, list):
             raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
         sorted_pairs = sorted(data, key=lambda x: float(x["quoteVolume"]), reverse=True)
-        return _record_provider_symbols(_filter_blacklisted([x["symbol"] for x in sorted_pairs[: max(1, int(top_n))]]), "binance")
+        return _record_provider_symbols(
+            _filter_blacklisted([x["symbol"] for x in sorted_pairs[: max(1, int(top_n))]]), "binance"
+        )
     except Exception as e:
         logger.warning("[pair_discovery] Binance provider failed: %s", e)
         return []
@@ -406,8 +475,7 @@ def _okx_top_crypto_pairs(top_n: int) -> list[str]:
         active = {
             str(row.get("instId") or "").upper().strip()
             for row in (instrument_payload.get("data") or [])
-            if str(row.get("state") or "live").lower() == "live"
-            and str(row.get("quoteCcy") or "").upper() == "USDT"
+            if str(row.get("state") or "live").lower() == "live" and str(row.get("quoteCcy") or "").upper() == "USDT"
         }
         minimum_quote_volume = float(os.getenv("ASSET_DISCOVERY_MIN_QUOTE_VOLUME_USD", "1000000") or 1000000)
         ranked = sorted(
@@ -500,11 +568,7 @@ def _coinbase_top_crypto_pairs(top_n: int) -> list[str]:
 def _metaapi_symbols() -> list[str]:
     """Discover the exact instrument universe available on the configured MT account."""
     global _METAAPI_SYMBOL_CACHE, _METAAPI_SYMBOL_CACHE_AT
-    token = str(
-        os.getenv("META_API_TOKEN")
-        or os.getenv("METAAPI_TOKEN")
-        or ""
-    ).strip()
+    token = str(os.getenv("META_API_TOKEN") or os.getenv("METAAPI_TOKEN") or "").strip()
     account_id = str(
         os.getenv("META_API_MARKET_DATA_ACCOUNT_ID")
         or os.getenv("META_API_ACCOUNT_ID")
@@ -540,11 +604,7 @@ def _metaapi_symbols() -> list[str]:
 
 
 def _twelvedata_api_key() -> str:
-    return str(
-        os.getenv("TWELVEDATA_API_KEY")
-        or os.getenv("TWELVE_DATA_API_KEY")
-        or ""
-    ).strip()
+    return str(os.getenv("TWELVEDATA_API_KEY") or os.getenv("TWELVE_DATA_API_KEY") or "").strip()
 
 
 def _twelvedata_reference_rows(endpoint: str) -> list[dict]:
@@ -569,11 +629,7 @@ def _twelvedata_reference_rows(endpoint: str) -> list[dict]:
             timeout=12,
         )
         payload = response.json() if response.ok else {}
-        if (
-            not response.ok
-            or not isinstance(payload, dict)
-            or str(payload.get("status") or "ok").lower() == "error"
-        ):
+        if not response.ok or not isinstance(payload, dict) or str(payload.get("status") or "ok").lower() == "error":
             return []
         rows = payload.get("data")
         if not isinstance(rows, list):
@@ -674,7 +730,6 @@ def _twelvedata_probe_configured(symbols: list[str]) -> list[str]:
     return _record_provider_symbols(confirmed, "twelvedata_timeseries")
 
 
-
 def _yahoo_verified_configured(symbols: list[str]) -> list[str]:
     """Verify configured symbols against Yahoo's timestamped chart feed."""
     if not symbols:
@@ -740,13 +795,12 @@ def _yahoo_verified_configured(symbols: list[str]) -> list[str]:
     return _record_provider_symbols(confirmed, "yahoo")
 
 
-
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "").strip().lower()
     EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
-    
+
     def exclude_pairs(pairs):
         out = []
         for p in pairs:
@@ -755,27 +809,29 @@ def get_trending_crypto_pairs(top_n=20):
                 continue
             out.append(sym)
         return out
-    
+
     # Manual symbols supplement provider discovery by default. They become an
     # absolute universe only when explicitly requested; this prevents a stale
     # CRYPTO_PAIRS variable from silently disabling online asset discovery.
     manual = (os.getenv("CRYPTO_PAIRS") or "").strip()
     manual_pairs = [x.strip().upper() for x in manual.split(",") if x.strip()] if manual else []
-    manual_symbols = exclude_pairs(
-        _record_provider_symbols(_filter_blacklisted(manual_pairs), "manual_config")
-    ) if manual_pairs else []
+    manual_symbols = (
+        exclude_pairs(_record_provider_symbols(_filter_blacklisted(manual_pairs), "manual_config"))
+        if manual_pairs
+        else []
+    )
     discovery_mode = str(os.getenv("ASSET_DISCOVERY_MODE") or "auto").strip().lower()
     if manual_symbols and discovery_mode in {"manual", "fixed", "allowlist"}:
         logger.warning("[pair_discovery] explicit manual-only crypto universe enabled")
         return manual_symbols[: max(1, int(top_n))]
-    
+
     # FIX: Default to CryptoCompare because Railway IP ranges are geo-blocked by Binance
     # Check if running on Railway - default to CryptoCompare to avoid geoblock issues
     is_railway = bool(str(os.getenv("RAILWAY_SERVICE_NAME") or "").strip()) or bool(
         str(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "").strip()
     )
     static_allowed = _is_true(os.getenv("ALLOW_STATIC_ASSET_FALLBACK"), False)
-    
+
     # Explicit provider override remains supported.
     if provider == "cryptocompare":
         result = _cryptocompare_top_crypto_pairs(top_n)
@@ -784,9 +840,11 @@ def get_trending_crypto_pairs(top_n=20):
         # Fallback to hardcoded if CryptoCompare explicitly requested but fails
         if static_allowed:
             logger.warning("[pair_discovery] CryptoCompare failed; using explicitly enabled static fallback")
-            return exclude_pairs(_record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback"))
+            return exclude_pairs(
+                _record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback")
+            )
         return []
-    
+
     if provider == "binance":
         binance_only = _binance_top_crypto_pairs(top_n)
         if binance_only:
@@ -797,10 +855,12 @@ def get_trending_crypto_pairs(top_n=20):
         # Fallback to hardcoded if Binance requested but fails
         if static_allowed:
             logger.warning("[pair_discovery] Binance failed; using explicitly enabled static fallback")
-            return exclude_pairs(_record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback"))
+            return exclude_pairs(
+                _record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback")
+            )
         return []
-    
-# On Railway use the same public source that currently succeeds for candles.
+
+    # On Railway use the same public source that currently succeeds for candles.
     if is_railway:
         logger.info("[pair_discovery] Railway detected, trying OKX discovery first")
         result = _okx_top_crypto_pairs(top_n)
@@ -820,7 +880,9 @@ def get_trending_crypto_pairs(top_n=20):
         # Final fallback to hardcoded
         if static_allowed:
             logger.warning("[pair_discovery] All providers failed on Railway; static fallback explicitly enabled")
-            return exclude_pairs(_record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback"))
+            return exclude_pairs(
+                _record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback")
+            )
         logger.error("[pair_discovery] provider-backed crypto discovery unavailable; failing closed")
         return []
 
@@ -845,7 +907,14 @@ def get_trending_crypto_pairs(top_n=20):
                     logger.warning("[pair_discovery] crypto provider %s failed: %s", name, e)
                     results[name] = []
         merged = _merge_provider_results(
-            [results.get("okx", []), results.get("bybit", []), results.get("coinbase", []), results.get("cryptocompare", []), results.get("binance", []), manual_symbols],
+            [
+                results.get("okx", []),
+                results.get("bybit", []),
+                results.get("coinbase", []),
+                results.get("cryptocompare", []),
+                results.get("binance", []),
+                manual_symbols,
+            ],
             limit=max(1, int(top_n)),
         )
         if merged:
@@ -867,27 +936,34 @@ def get_trending_crypto_pairs(top_n=20):
     fallback = _cryptocompare_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(_filter_blacklisted(fallback))
-    
+
     # Then try Binance
     fallback = _binance_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(fallback)
-    
+
     # CRITICAL FIX: Use hardcoded pairs when ALL providers fail (the "Total Scanned: 0" fix)
     if static_allowed:
         logger.warning("[pair_discovery] all providers failed; static fallback explicitly enabled")
-        return exclude_pairs(_record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback"))
+        return exclude_pairs(
+            _record_provider_symbols(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]), "static_fallback")
+        )
     if runtime_environment_name("development") == "production":
         logger.error("[pair_discovery] production discovery failed closed; no hardcoded assets admitted")
     return []
 
+
 def get_trending_fx_pairs():
     """Discover/verify FX pairs from trusted providers, preserving configured scope."""
     raw = (os.getenv("FX_PAIRS") or "").strip()
-    manual_symbols = _record_provider_symbols(
-        _dedupe_limit([x.strip().upper() for x in raw.split(",") if x.strip()], 100),
-        "manual_config",
-    ) if raw else []
+    manual_symbols = (
+        _record_provider_symbols(
+            _dedupe_limit([x.strip().upper() for x in raw.split(",") if x.strip()], 100),
+            "manual_config",
+        )
+        if raw
+        else []
+    )
 
     broker_symbols = _metaapi_symbols()
     fx = []
@@ -896,14 +972,18 @@ def get_trending_fx_pairs():
         if (
             len(symbol) >= 6
             and symbol[:6].isalpha()
-            and symbol[:3] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
-            and symbol[3:6] in {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
+            and symbol[:3] in {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
+            and symbol[3:6] in {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
         ):
             fx.append(raw_symbol)
-    broker_fx = _record_provider_symbols(
-        _dedupe_limit(fx, max(1, int(os.getenv("FX_UNIVERSE_TOP_N", "40") or 40))),
-        "metaapi",
-    ) if fx else []
+    broker_fx = (
+        _record_provider_symbols(
+            _dedupe_limit(fx, max(1, int(os.getenv("FX_UNIVERSE_TOP_N", "40") or 40))),
+            "metaapi",
+        )
+        if fx
+        else []
+    )
     verified_manual = _twelvedata_verified_configured(manual_symbols, "forex_pairs")
     limit = max(
         1,
@@ -920,6 +1000,7 @@ def get_trending_fx_pairs():
         )
     return []
 
+
 # Combine all pairs for strategy engine
 def get_all_trending_pairs():
     try:
@@ -932,7 +1013,9 @@ def get_all_trending_pairs():
             "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
             "fx": ex.submit(get_trending_fx_pairs),
             "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
-            "indices": ex.submit(partial(get_trending_index_tickers, top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))),
+            "indices": ex.submit(
+                partial(get_trending_index_tickers, top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))
+            ),
             "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
         }
         out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "indices": [], "commodities": []}
@@ -953,10 +1036,14 @@ def get_all_trending_pairs():
 def get_trending_stock_tickers(top_n=20):
     """Discover liquid equities from configured providers and the broker universe."""
     manual = (os.getenv("STOCK_TICKERS") or "").strip()
-    manual_symbols = _record_provider_symbols(
-        _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
-        "manual_config",
-    ) if manual else []
+    manual_symbols = (
+        _record_provider_symbols(
+            _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
+            "manual_config",
+        )
+        if manual
+        else []
+    )
     discovery_mode = str(os.getenv("ASSET_DISCOVERY_MODE") or "auto").strip().lower()
     twelvedata_verified = _twelvedata_verified_configured(manual_symbols, "stocks")
     yahoo_verified = _yahoo_verified_configured(manual_symbols)
@@ -970,16 +1057,17 @@ def get_trending_stock_tickers(top_n=20):
     # Broker equity symbols often include suffixes (.US, .NAS, _US). Preserve the
     # native symbol and let services.asset_mapper normalize provider-specific names.
     broker_equities = []
-    fx_ccy = {"USD","EUR","GBP","JPY","AUD","NZD","CAD","CHF"}
+    fx_ccy = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
     try:
         from data.fetcher import KNOWN_STOCK_TICKERS
+
         known_stock_tickers = {str(x).upper() for x in KNOWN_STOCK_TICKERS}
     except Exception:
         known_stock_tickers = set()
     for symbol in broker_symbols:
         native = str(symbol or "").upper().strip()
         compact = native.replace(".", "").replace("_", "").replace("-", "")
-        if not compact or any(x in compact for x in ("US500","NAS100","US30","XAU","XAG","WTI","BRENT")):
+        if not compact or any(x in compact for x in ("US500", "NAS100", "US30", "XAU", "XAG", "WTI", "BRENT")):
             continue
         # MetaApi stock-CFD catalogues commonly append the quote currency
         # (BACUSD, JPMUSD, MSFTUSD). Normalize a verified equity base before
@@ -990,6 +1078,7 @@ def get_trending_stock_tickers(top_n=20):
             compact = native
         try:
             from core.asset_registry import resolve_asset_spec
+
             if resolve_asset_spec(native).asset_class != "stock":
                 continue
         except Exception:
@@ -1016,11 +1105,14 @@ def get_trending_stock_tickers(top_n=20):
             tickers_data = (resp.json() or {}).get("tickers", [])
             sorted_tickers = sorted(tickers_data, key=lambda x: x.get("day", {}).get("v", 0), reverse=True)
             minimum_volume = float(os.getenv("STOCK_DISCOVERY_MIN_DAILY_VOLUME", "1000000") or 1000000)
-            return _record_provider_symbols([
-                str(t.get("ticker") or "").upper().strip()
-                for t in sorted_tickers
-                if float((t.get("day") or {}).get("v") or 0.0) >= minimum_volume
-            ], "polygon")
+            return _record_provider_symbols(
+                [
+                    str(t.get("ticker") or "").upper().strip()
+                    for t in sorted_tickers
+                    if float((t.get("day") or {}).get("v") or 0.0) >= minimum_volume
+                ],
+                "polygon",
+            )
         except Exception as exc:
             logger.warning("[pair_discovery] Polygon stocks fetch failed: %s", exc)
             return []
@@ -1036,25 +1128,52 @@ def get_trending_stock_tickers(top_n=20):
     if merged:
         return merged
     if _is_true(os.getenv("ALLOW_STATIC_ASSET_FALLBACK"), False):
-        return _record_provider_symbols(["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD", "JPM", "XOM"][:top_n], "static_fallback")
+        return _record_provider_symbols(
+            ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD", "JPM", "XOM"][:top_n], "static_fallback"
+        )
     return []
 
 
 def get_trending_index_tickers(top_n=20):
     """Discover broker indices and provider-verify the configured index universe."""
     manual = (os.getenv("INDEX_TICKERS") or "").strip()
-    manual_symbols = _record_provider_symbols(
-        _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
-        "manual_config",
-    ) if manual else []
+    manual_symbols = (
+        _record_provider_symbols(
+            _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], max(1, int(top_n))),
+            "manual_config",
+        )
+        if manual
+        else []
+    )
 
     broker_symbols = _metaapi_symbols()
-    markers = ("US500", "SPX", "NAS", "USTEC", "US30", "DJ", "GER", "DE40", "UK100", "FTSE", "JP225", "NIKKEI", "FRA40", "EU50", "AUS200", "HK50")
+    markers = (
+        "US500",
+        "SPX",
+        "NAS",
+        "USTEC",
+        "US30",
+        "DJ",
+        "GER",
+        "DE40",
+        "UK100",
+        "FTSE",
+        "JP225",
+        "NIKKEI",
+        "FRA40",
+        "EU50",
+        "AUS200",
+        "HK50",
+    )
     discovered = [symbol for symbol in broker_symbols if any(marker in str(symbol).upper() for marker in markers)]
-    broker_indices = _record_provider_symbols(
-        _dedupe_limit(discovered, max(1, int(top_n))),
-        "metaapi",
-    ) if discovered else []
+    broker_indices = (
+        _record_provider_symbols(
+            _dedupe_limit(discovered, max(1, int(top_n))),
+            "metaapi",
+        )
+        if discovered
+        else []
+    )
     verified_manual = _twelvedata_verified_configured(manual_symbols, "indices")
     yahoo_verified = _yahoo_verified_configured(manual_symbols)
     merged = _merge_provider_results(
@@ -1074,7 +1193,7 @@ def get_trending_index_tickers(top_n=20):
 def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     """
     Get all tradable assets (crypto + FX + stocks + indices + commodities).
-    
+
     Returns:
         dict with keys: crypto, fx, stocks, indices, commodities
     """
@@ -1153,6 +1272,7 @@ def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:
         },
         "error": error,
     }
+
 
 # Example usage:
 # pairs = get_all_trending_pairs()

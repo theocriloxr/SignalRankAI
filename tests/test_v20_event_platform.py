@@ -1,6 +1,8 @@
 """Regression tests: V2.0 event envelope, catalogue, outbox/inbox/relay."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from core.durable_event_stream import EventEnvelope
@@ -13,6 +15,7 @@ from core.event_catalogue import (
 from core.transactional_outbox import (
     IdempotentInbox,
     MemoryTransactionalOutbox,
+    PostgresTransactionalOutbox,
     OutboxRelay,
 )
 
@@ -229,3 +232,34 @@ async def test_relay_skips_already_processed_duplicates() -> None:
     await relay.run_once()
     assert calls == []
     assert relay.metrics["duplicates"] == 1
+
+
+def test_postgres_outbox_contract_is_durable_and_short_transactional() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "core/transactional_outbox.py").read_text(encoding="utf-8")
+    migration = (root / "db/migrations/versions/0047_event_outbox.py").read_text(encoding="utf-8")
+    assert PostgresTransactionalOutbox
+    assert "FOR UPDATE SKIP LOCKED" in source
+    assert "ON CONFLICT(idempotency_key)" in source
+    assert "available_at=NOW()" in source
+    assert "CREATE TABLE IF NOT EXISTS event_outbox" in migration
+    assert 'down_revision = "0046_decision_log"' in migration
+
+
+def test_event_bus_uses_db_outbox_before_rejecting_production_events() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "core/event_bus.py").read_text(encoding="utf-8")
+    publish = source[source.index("    async def publish("):source.index("    async def subscribe(")]
+    assert "await self._persist_to_outbox(event, channel)" in publish
+    assert publish.index("await self._persist_to_outbox(event, channel)") < publish.index("if not self._memory_fallback_allowed")
+    assert "publish_outbox_entry" in source
+    assert "event_redis_unavailable" in source
+
+
+def test_worker_replays_event_outbox_without_network_work_inside_claim_transaction() -> None:
+    root = Path(__file__).resolve().parents[1]
+    worker = (root / "worker/worker.py").read_text(encoding="utf-8")
+    assert '"event_outbox_relay"' in worker
+    assert "PostgresTransactionalOutbox" in worker
+    assert "processor=publish_outbox_entry" in worker
+    assert "EVENT_OUTBOX_MAX_ATTEMPTS" in worker

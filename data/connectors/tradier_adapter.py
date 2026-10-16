@@ -1,4 +1,5 @@
 """Tradier market time-sales adapter for stock symbols."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,9 @@ def _interval(value: str) -> str | None:
     return {"1m": "1min", "5m": "5min", "15m": "15min"}.get(str(value or "").lower())
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     token = str(os.getenv("TRADIER_TOKEN") or "").strip()
     interval = _interval(timeframe)
     if not token or not interval:
@@ -37,7 +40,9 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
     if client is None:
         return []
     try:
-        response = await client.get(f"{base}/markets/timesales", params=params, headers=headers, timeout=min(12.0, max(1.0, float(timeout))))
+        response = await client.get(
+            f"{base}/markets/timesales", params=params, headers=headers, timeout=min(12.0, max(1.0, float(timeout)))
+        )
         if response.status_code != 200:
             return []
         payload = response.json() or {}

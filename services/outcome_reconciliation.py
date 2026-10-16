@@ -1,4 +1,5 @@
 """Canonical reconciliation for proof-backed delivery outcome projections."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,11 +8,13 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from types import SimpleNamespace
 
 from sqlalchemy import and_, case, func, or_, select
 
 from core.signal_lifecycle import (
     BREAKEVEN_STOP,
+    CLOSED_TIME_STOP,
     EXPIRED,
     MISSED_ENTRY,
     SL_HIT,
@@ -21,7 +24,8 @@ from core.signal_lifecycle import (
     is_terminal_signal_state,
     outcome_status_for_lifecycle,
 )
-from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle
+from core.outcome_accounting import outcome_price_metrics
+from db.models import Outcome, Signal, SignalDelivery, SignalLifecycle, SignalTrackingEvent
 from db.pg_features import queue_outcome_notifications_for_outcome, upsert_outcome
 
 _PROOF_STATES = ("sent", "delivered", "confirmed", "reconciled", "updated")
@@ -68,6 +72,8 @@ def _terminal_price(lifecycle: SignalLifecycle | None, signal: Signal) -> float 
         getattr(lifecycle, "last_price", None) if lifecycle is not None else None,
         getattr(signal, "entry", None),
     ):
+        if value is None:
+            continue
         try:
             number = float(value)
             if number > 0:
@@ -87,6 +93,7 @@ def _expected_status_expression():
         (state == BREAKEVEN_STOP, "partial_win_be"),
         (state == MISSED_ENTRY, "missed_entry"),
         (state == EXPIRED, "expired"),
+        (state == CLOSED_TIME_STOP, "time_stop"),
         else_=None,
     )
 
@@ -95,9 +102,7 @@ def _canonical_outcome(status: str, highest_tp: int) -> str:
     status_l = str(status or "").lower()
     if status_l in {"tp", "tp3"}:
         return "win"
-    if status_l in {"tp1", "tp2", "partial_win_be"} or (
-        status_l == "sl" and int(highest_tp or 0) > 0
-    ):
+    if status_l in {"tp1", "tp2", "partial_win_be"} or (status_l == "sl" and int(highest_tp or 0) > 0):
         return "partial_win"
     if status_l == "sl":
         return "loss"
@@ -109,7 +114,7 @@ def _canonical_outcome(status: str, highest_tp: int) -> str:
 
 
 def _projection_metrics(
-    signal: Signal,
+    signal: Signal | SimpleNamespace,
     lifecycle: SignalLifecycle | None,
     status: str,
     price: float | None,
@@ -130,17 +135,21 @@ def _projection_metrics(
     stop = float(getattr(signal, "stop_loss", 0) or 0)
     price_f = float(price or 0)
     direction = str(getattr(signal, "direction", "") or "").strip().lower()
-    if entry > 0 and price_f > 0:
+    if status_l not in {"sl", "partial_win_be"} or highest_tp == 0:
+        r_multiple, percent = outcome_price_metrics(signal, status_l, price)
+    elif entry > 0 and price_f > 0:
         signed_move = (entry - price_f) if direction in {"short", "sell", "bearish"} else (price_f - entry)
         percent = (signed_move / entry) * 100.0
         risk_distance = abs(entry - stop) if stop > 0 else 0.0
         r_multiple = signed_move / risk_distance if risk_distance > 0 else None
-        if status_l == "sl" and r_multiple is not None:
-            r_multiple = -abs(r_multiple)
-            percent = -abs(percent)
-        elif status_l in {"tp", "tp1", "tp2", "tp3"} and r_multiple is not None:
-            r_multiple = abs(r_multiple)
-            percent = abs(percent)
+
+    missed_entry_observed_r = None
+    missed_entry_observed_pct = None
+    if status_l == "missed_entry":
+        missed_entry_observed_r = r_multiple
+        missed_entry_observed_pct = percent
+        r_multiple = None
+        percent = None
 
     partial = None
     if highest_tp > 0 and status_l in {"partial_win_be", "sl"}:
@@ -176,10 +185,13 @@ def _projection_metrics(
         "observation_low": evidence.get("observation_low"),
         "observation_range_time": evidence.get("observation_range_time"),
         "partial_exit_policy": getattr(partial, "policy_version", None),
+        "partial_exit_accounting_basis": getattr(partial, "accounting_basis", None),
         "partial_exit_realized_r": getattr(partial, "realized_r", None),
         "partial_exit_realized_percent": getattr(partial, "realized_percent", None),
         "partial_exit_fractions": list(getattr(partial, "fractions", ()) or ()),
         "partial_exit_tp_r_multiples": list(getattr(partial, "tp_r_multiples", ()) or ()),
+        "missed_entry_observed_r": missed_entry_observed_r,
+        "missed_entry_observed_pct": missed_entry_observed_pct,
     }
     return r_multiple, percent, meta
 
@@ -215,7 +227,7 @@ def build_outcome_reconciliation_query(*, cutoff: datetime, limit: int):
     )
     expected_status = _expected_status_expression()
     lifecycle_terminal = func.upper(func.coalesce(SignalLifecycle.state, "")).in_(
-        (TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED)
+        (TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED, CLOSED_TIME_STOP)
     )
     return (
         select(Signal, SignalLifecycle, Outcome)
@@ -254,10 +266,26 @@ async def ensure_outcome_projections(
 
     examined = created = projected = repaired = unchanged = failed = 0
     terminal_statuses = {
-        "tp", "tp3", "win", "sl", "loss", "stop", "stop_loss",
-        "be", "breakeven", "break_even", "partial_win", "partial_win_be",
-        "time_stop", "expired", "missed_entry", "cancel", "cancelled",
-        "tracking_failed", "invalid", "invalidated",
+        "tp",
+        "tp3",
+        "win",
+        "sl",
+        "loss",
+        "stop",
+        "stop_loss",
+        "be",
+        "breakeven",
+        "break_even",
+        "partial_win",
+        "partial_win_be",
+        "time_stop",
+        "expired",
+        "missed_entry",
+        "cancel",
+        "cancelled",
+        "tracking_failed",
+        "invalid",
+        "invalidated",
     }
     for signal, lifecycle, outcome in rows:
         examined += 1
@@ -266,22 +294,16 @@ async def ensure_outcome_projections(
         # expired after a savepoint rollback and must not be accessed in the except
         # handler.
         signal_id = str(getattr(signal, "signal_id", "") or "")
-        lifecycle_state_for_log = (
-            str(getattr(lifecycle, "state", "") or "")
-            if lifecycle is not None
-            else ""
-        )
-        existing_status_for_log = (
-            str(getattr(outcome, "status", "") or "")
-            if outcome is not None
-            else ""
-        )
+        lifecycle_state_for_log = str(getattr(lifecycle, "state", "") or "") if lifecycle is not None else ""
+        existing_status_for_log = str(getattr(outcome, "status", "") or "") if outcome is not None else ""
 
         try:
             # A savepoint keeps a malformed historical row from aborting every
             # remaining signal in the recovery batch.
             async with session.begin_nested():
-                lifecycle_status = outcome_status_for_lifecycle(getattr(lifecycle, "state", None)) if lifecycle else None
+                lifecycle_status = (
+                    outcome_status_for_lifecycle(getattr(lifecycle, "state", None)) if lifecycle else None
+                )
                 status = str(lifecycle_status or "pending")
                 terminal = bool(lifecycle and is_terminal_signal_state(getattr(lifecycle, "state", None)))
                 current_status = str(getattr(outcome, "status", "") or "").lower() if outcome is not None else ""
@@ -313,7 +335,29 @@ async def ensure_outcome_projections(
                     continue
 
                 terminal_price = _terminal_price(lifecycle, signal)
-                r_multiple, percent, meta = _projection_metrics(signal, lifecycle, status, terminal_price)
+                from types import SimpleNamespace
+                from engine.realtime_outcome_tracker import _confirmed_delivery_snapshot_map, _snapshot_targets
+                from core.production_integrity import canonical_direction
+
+                snapshots, conflicts = await _confirmed_delivery_snapshot_map(session, SignalDelivery, [signal_id])
+                if signal_id in conflicts:
+                    raise ValueError("outcome_delivery_plan_conflict")
+                snapshot = snapshots.get(signal_id, {})
+                plan = SimpleNamespace(
+                    entry=snapshot.get("entry", signal.entry),
+                    stop_loss=snapshot.get("stop_loss", signal.stop_loss),
+                    direction=canonical_direction(snapshot.get("direction") or signal.direction),
+                    take_profit=_snapshot_targets(snapshot, signal.take_profit),
+                )
+                if status in {"tp", "tp1", "tp2", "tp3"}:
+                    event_type = f"{'tp3' if status == 'tp' else status}_hit"
+                    event_price = (await session.execute(select(SignalTrackingEvent.price).where(
+                        SignalTrackingEvent.signal_id == signal_id, SignalTrackingEvent.event_type == event_type,
+                    ))).scalar_one_or_none()
+                    if event_price is None:
+                        raise ValueError("outcome_target_event_evidence_missing")
+                    terminal_price = float(event_price)
+                r_multiple, percent, meta = _projection_metrics(plan, lifecycle, status, terminal_price)
                 highest_tp = int(meta.get("tp_hit_index") or 0)
                 canonical = _canonical_outcome(status, highest_tp)
                 if status == "sl" and highest_tp > 0 and meta.get("partial_exit_policy"):
@@ -323,14 +367,16 @@ async def ensure_outcome_projections(
                 # Existing finalized rows are immutable by design.  Recovery is
                 # therefore an attributed system correction, not a silent edit.
                 if outcome is not None and current_status in terminal_statuses:
-                    meta.update({
-                        "audited_correction": True,
-                        "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
-                        "correction_reason": (
-                            "repair lifecycle/outcome disagreement or missing terminal timestamp "
-                            "after v1.3.6.8 outcome persistence failure"
-                        ),
-                    })
+                    meta.update(
+                        {
+                            "audited_correction": True,
+                            "corrected_by": "system:v1.3.6.9-outcome-reconciliation",
+                            "correction_reason": (
+                                "repair lifecycle/outcome disagreement or missing terminal timestamp "
+                                "after v1.3.6.8 outcome persistence failure"
+                            ),
+                        }
+                    )
                     try:
                         from db.staging_remediation import record_outcome_correction
 
@@ -376,11 +422,7 @@ async def ensure_outcome_projections(
                 # ``upsert_outcome`` only queues when it detects a changed row.
                 # This idempotent call also repairs terminal rows that predate the
                 # outbox or were closed during the v1.3.6.8 persistence outage.
-                if (
-                    queue_notifications
-                    and terminal
-                    and getattr(projected_outcome, "closed_at", None) is not None
-                ):
+                if queue_notifications and terminal and getattr(projected_outcome, "closed_at", None) is not None:
                     await queue_outcome_notifications_for_outcome(
                         session,
                         int(getattr(projected_outcome, "id")),
@@ -390,8 +432,7 @@ async def ensure_outcome_projections(
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_reconciliation] signal repair failed "
-                "signal=%s lifecycle=%s existing=%s error=%s",
+                "[outcome_reconciliation] signal repair failed signal=%s lifecycle=%s existing=%s error=%s",
                 signal_id,
                 lifecycle_state_for_log,
                 existing_status_for_log,
@@ -411,12 +452,18 @@ async def repair_outcome_notification_outbox(
     days = max(1, int(days or os.getenv("OUTCOME_OUTBOX_REPAIR_DAYS", "30") or 30))
     limit = max(1, min(10000, int(limit or os.getenv("OUTCOME_OUTBOX_REPAIR_LIMIT", "2000") or 2000)))
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-    outcomes = list((await session.execute(
-        select(Outcome)
-        .where(Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff)
-        .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
-        .limit(limit)
-    )).scalars().all())
+    outcomes = list(
+        (
+            await session.execute(
+                select(Outcome)
+                .where(Outcome.closed_at.is_not(None), Outcome.closed_at >= cutoff)
+                .order_by(Outcome.closed_at.asc(), Outcome.id.asc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
     queued = failed = 0
     for outcome in outcomes:
         outcome_id = int(getattr(outcome, "id"))
@@ -434,8 +481,7 @@ async def repair_outcome_notification_outbox(
         except Exception as exc:
             failed += 1
             logger.exception(
-                "[outcome_outbox_repair] failed "
-                "outcome_id=%s signal=%s status=%s error_type=%s error=%r",
+                "[outcome_outbox_repair] failed outcome_id=%s signal=%s status=%s error_type=%s error=%r",
                 outcome_id,
                 outcome_signal_id,
                 outcome_status,
@@ -463,26 +509,36 @@ async def outcome_projection_health(session, *, days: int = 30) -> dict[str, flo
         SignalDelivery.delivered_at_utc,
         SignalDelivery.delivered_at,
     )
-    delivered = int((await session.execute(
-        select(func.count(func.distinct(SignalDelivery.signal_id))).where(
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
-            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
-            proof_time >= cutoff,
-        )
-    )).scalar_one() or 0)
-    with_outcome = int((await session.execute(
-        select(func.count(func.distinct(SignalDelivery.signal_id)))
-        .join(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
-        .where(
-            SignalDelivery.sent_ok.is_(True),
-            SignalDelivery.telegram_chat_id.is_not(None),
-            SignalDelivery.telegram_message_id.is_not(None),
-            func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
-            proof_time >= cutoff,
-        )
-    )).scalar_one() or 0)
+    delivered = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(SignalDelivery.signal_id))).where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_chat_id.is_not(None),
+                    SignalDelivery.telegram_message_id.is_not(None),
+                    func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
+                    proof_time >= cutoff,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
+    with_outcome = int(
+        (
+            await session.execute(
+                select(func.count(func.distinct(SignalDelivery.signal_id)))
+                .join(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+                .where(
+                    SignalDelivery.sent_ok.is_(True),
+                    SignalDelivery.telegram_chat_id.is_not(None),
+                    SignalDelivery.telegram_message_id.is_not(None),
+                    func.lower(SignalDelivery.delivery_state).in_(_PROOF_STATES),
+                    proof_time >= cutoff,
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     coverage = with_outcome / delivered if delivered else 1.0
     return {
         "ok": coverage >= float(os.getenv("OUTCOME_PROJECTION_MIN_COVERAGE", "0.99") or 0.99),

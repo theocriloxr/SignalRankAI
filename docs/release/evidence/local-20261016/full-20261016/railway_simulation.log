@@ -1,0 +1,8 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/simulate_railway.py --port 8877
+
+ATTEMPT 1/1
+
+[railway_simulation] health=PASS
+[railway_simulation] webhook=PASS backend=pending
+[railway_simulation] real_integrations=DISABLED
+[railway_simulation] log=C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.pytest-tmp\railway-simulation.log

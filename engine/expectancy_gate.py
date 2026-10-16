@@ -4,6 +4,7 @@ The engine uses realized signed R multiples from eligible, closed outcomes. It
 never invents average win/loss assumptions. A small or unavailable sample is
 reported as non-actionable rather than fabricated into a performance claim.
 """
+
 from __future__ import annotations
 
 import logging
@@ -201,9 +202,7 @@ async def get_live_performance_context(
         n = float(decisive)
         denominator = 1.0 + (z * z / n)
         center = win_rate + (z * z / (2.0 * n))
-        margin = z * math.sqrt(
-            (win_rate * (1.0 - win_rate) / n) + (z * z / (4.0 * n * n))
-        )
+        margin = z * math.sqrt((win_rate * (1.0 - win_rate) / n) + (z * z / (4.0 * n * n)))
         wilson_lower = max(0.0, (center - margin) / denominator)
         wilson_upper = min(1.0, (center + margin) / denominator)
     try:
@@ -326,6 +325,7 @@ async def get_best_live_performance_context(
         "fallback_depth": 0,
     }
 
+
 async def get_live_expectancy(
     asset: str,
     strategy: Optional[str] = None,
@@ -389,6 +389,7 @@ async def expectancy_gate(signal: Dict[str, Any]) -> bool:
 
 async def global_expectancy_check(global_dd: float) -> bool:
     from core.tier_constants import DD_HARD_LIMIT
+
     return global_dd < DD_HARD_LIMIT
 
 

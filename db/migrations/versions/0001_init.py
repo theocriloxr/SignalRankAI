@@ -1,7 +1,7 @@
 """init tables
 
 Revision ID: 0001_init
-Revises: 
+Revises:
 Create Date: 2026-01-01
 
 """

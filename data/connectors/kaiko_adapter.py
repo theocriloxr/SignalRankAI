@@ -7,6 +7,7 @@ users.  Regional endpoints follow ``KAIKO_REGION``.
 Dormant-by-default: without ``KAIKO_API_KEY`` returns ``None`` and reports
 ``missing_credentials``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,9 @@ async def _async_reference_data() -> Optional[Dict[str, Any]]:
         return None
     data = await async_http_get_json(
         f"{api_url()}/v2/reference/exchanges",
-        name="kaiko", headers=_headers(), timeout=10.0,
+        name="kaiko",
+        headers=_headers(),
+        timeout=10.0,
     )
     if not isinstance(data, dict):
         return None
@@ -60,7 +63,9 @@ async def _async_ohlcv(exchange: str, pair: str) -> Optional[Dict[str, Any]]:
         return None
     data = await async_http_get_json(
         f"{api_url()}/v2/data/trades.v1/spot_exchange_rate/{exchange}/{pair}",
-        name="kaiko", headers=_headers(), timeout=10.0,
+        name="kaiko",
+        headers=_headers(),
+        timeout=10.0,
     )
     if not isinstance(data, dict):
         return None
@@ -77,10 +82,7 @@ def health() -> Dict[str, Any]:
     return {
         "provider_id": "kaiko",
         "enabled": enabled,
-        "state": (
-            "disabled" if not enabled
-            else ("healthy" if has_key else "missing_credentials")
-        ),
+        "state": ("disabled" if not enabled else ("healthy" if has_key else "missing_credentials")),
         "required_env": ("KAIKO_API_KEY",),
         "api_url": api_url(),
         "region": env_str("KAIKO_REGION", "us"),

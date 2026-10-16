@@ -8,19 +8,31 @@ Provider Priority (from config.py or defaults):
 - Crypto:     Bybit -> CryptoCompare -> CoinGecko (bypasses geo-blocks)
 - Forex:      Polygon.io -> Twelve Data -> OANDA (high precision for pips)
 - Stocks:     Polygon.io -> Twelve Data -> Finnhub (official SIP data)
-- Commodities: Twelve Data -> Yahoo Finance (best Gold/Oil coverage)
+- Commodities: Twelve Data -> Yahoo Finance (analysis/development fallback only)
 
 Usage:
     from data.fetcher_router import DataRouter
-    
+
     router = DataRouter()
     candles = await router.fetch_price("BTCUSDT", "crypto")
 """
+
 import os
 import logging
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
+
+
+def _execution_sensitive_runtime() -> bool:
+    names = (
+        os.getenv("SIGNALRANK_ENVIRONMENT_OVERRIDE"),
+        os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+        os.getenv("RAILWAY_ENVIRONMENT"),
+        os.getenv("APP_ENV"),
+        os.getenv("ENVIRONMENT"),
+    )
+    return any(str(value or "").strip().lower() in {"staging", "production", "prod"} for value in names)
 
 
 # Provider health tracking for automatic fallback
@@ -31,7 +43,7 @@ def _mark_provider_result(provider_name: str, ok: bool) -> None:
     """Track provider success/failure for intelligent fallback."""
     if provider_name not in _PROVIDER_HEALTH:
         _PROVIDER_HEALTH[provider_name] = {"failures": 0, "successes": 0}
-    
+
     if ok:
         _PROVIDER_HEALTH[provider_name]["successes"] += 1
     else:
@@ -52,65 +64,67 @@ def _is_provider_healthy(provider_name: str) -> bool:
 
 class DataRouter:
     """Routes data fetching to appropriate providers based on asset class."""
-    
+
     def __init__(self):
         self._providers_initialized = False
         self._init_providers()
-    
+
     def _init_providers(self) -> None:
         """Initialize provider instances lazily."""
         if self._providers_initialized:
             return
-        
+
         # Crypto providers (CCXT-based)
         self._crypto_providers: List[tuple[str, callable]] = []
         self._fx_providers: List[tuple[str, callable]] = []
         self._stock_providers: List[tuple[str, callable]] = []
         self._commodity_providers: List[tuple[str, callable]] = []
-        
+
         # Try importing from connectors first, then fall back to legacy providers
         try:
             from data import connectors as conn
+
             self._connectors = conn
         except ImportError:
             self._connectors = None
-        
+
         try:
             from data import providers as prov
+
             self._legacy_providers = prov
         except ImportError:
             self._legacy_providers = None
-        
+
         # Crypto: Bybit -> CryptoCompare -> CoinGecko
         self._crypto_providers = [
             ("bybit", self._get_bybit_candles),
             ("cryptocompare", self._get_cryptocompare_candles),
             ("coingecko", self._get_coingecko_candles),
         ]
-        
+
         # Forex: Polygon -> Twelve Data -> OANDA
         self._fx_providers = [
             ("polygon", self._get_polygon_candles),
             ("twelvedata", self._get_twelvedata_candles),
             ("oanda", self._get_oanda_candles),
         ]
-        
-        # Stocks: Polygon -> Twelve Data -> Yahoo
+
+        # Stocks: Polygon -> Twelve Data -> Yahoo (analysis/dev fallback only)
         self._stock_providers = [
             ("polygon", self._get_polygon_candles),
             ("twelvedata", self._get_twelvedata_candles),
             ("yahoo", self._get_yahoo_candles),
         ]
-        
-        # Commodities: Twelve Data -> Yahoo
+
+        # Commodities: Twelve Data -> Yahoo (analysis/dev fallback only)
         self._commodity_providers = [
             ("twelvedata", self._get_twelvedata_candles),
             ("yahoo", self._get_yahoo_candles),
         ]
-        
+
         self._providers_initialized = True
         logger.info("[router] providers initialized")
-    
+
     def _get_bybit_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch crypto candles from Bybit via CCXT."""
         try:
@@ -118,15 +132,16 @@ class DataRouter:
                 return self._connectors.bybit_get_candles(symbol, timeframe) or []
         except Exception:
             pass
-        
+
         # Fallback: direct bybit API call
         try:
             from data.fetcher import get_crypto_candles
+
             return get_crypto_candles(symbol, timeframe)
         except Exception:
             pass
         return []
-    
+
     def _get_cryptocompare_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch crypto from CryptoCompare."""
         try:
@@ -135,7 +150,7 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_coingecko_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from CoinGecko."""
         try:
@@ -144,7 +159,7 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_polygon_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from Polygon.io."""
         try:
@@ -153,7 +168,7 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_twelvedata_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from Twelve Data."""
         try:
@@ -162,7 +177,7 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_oanda_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from OANDA."""
         try:
@@ -171,7 +186,7 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_yahoo_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from Yahoo Finance."""
         try:
@@ -180,11 +195,11 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
+
     def _get_providers_for_asset_class(self, asset_class: str) -> List[tuple[str, callable]]:
         """Get provider list for asset class."""
         asset_class = (asset_class or "").lower().strip()
-        
+
         if asset_class == "crypto":
             return self._crypto_providers
         elif asset_class == "fx" or asset_class == "forex":
@@ -193,34 +208,45 @@ class DataRouter:
             return self._commodity_providers
         else:
             return self._stock_providers
-    
+
     async def fetch_price(self, symbol: str, asset_class: str) -> Optional[Dict]:
         """Fetch price data for symbol using appropriate provider.
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT", "EURUSD")
             asset_class: "crypto", "fx", "stock", or "commodity"
-        
+
         Returns:
             Dictionary with price data or None if all providers fail
         """
         # Get timeframe from env or use default
         timeframe = os.getenv("DEFAULT_TIMEFRAME", "1h")
-        
+
         providers = self._get_providers_for_asset_class(asset_class)
-        
+
         # Try healthy providers first, then all providers
         healthy = [p for p in providers if _is_provider_healthy(p[0])]
         unhealthy = [p for p in providers if not _is_provider_healthy(p[0])]
-        
+
         for provider_name, fetch_func in healthy + unhealthy:
+            if _execution_sensitive_runtime() and provider_name in {"yahoo", "yfinance"}:
+                logger.warning(
+                    "[router] analysis-only provider skipped in execution-sensitive runtime provider=%s symbol=%s class=%s",
+                    provider_name,
+                    symbol,
+                    asset_class,
+                )
+                continue
             try:
                 candles = fetch_func(symbol, timeframe)
                 if candles and len(candles) >= 20:
                     _mark_provider_result(provider_name, True)
                     logger.info(
                         "[router] provider=%s symbol=%s class=%s candles=%d",
-                        provider_name, symbol, asset_class, len(candles)
+                        provider_name,
+                        symbol,
+                        asset_class,
+                        len(candles),
                     )
                     return {
                         "candles": candles,
@@ -233,22 +259,16 @@ class DataRouter:
                     _mark_provider_result(provider_name, False)
             except Exception as e:
                 _mark_provider_result(provider_name, False)
-                logger.warning(
-                    "[router] provider=%s failed for %s: %s",
-                    provider_name, symbol, e
-                )
+                logger.warning("[router] provider=%s failed for %s: %s", provider_name, symbol, e)
                 continue
-        
-        logger.warning(
-            "[router] all providers failed for symbol=%s class=%s",
-            symbol, asset_class
-        )
+
+        logger.warning("[router] all providers failed for symbol=%s class=%s", symbol, asset_class)
         return None
-    
+
     async def fetch_with_fallback(self, symbol: str, asset_class: str) -> Optional[Dict]:
         """Fetch with explicit fallback chain - tries all providers in order."""
         from data.fetcher import get_candles as fetcher_get_candles
-        
+
         # Use the existing multi-provider fetcher as primary
         try:
             candles = fetcher_get_candles(symbol, asset_class)
@@ -261,7 +281,7 @@ class DataRouter:
                 }
         except Exception as e:
             logger.warning("[router] fetcher fallback failed: %s", e)
-        
+
         return None
 
 

@@ -7,6 +7,7 @@ Exits non-zero when certification blockers exist (schema behind head, missing
 release identity in certification mode, unsafe live-risk flags, registry
 failures).  Never exposes credentials.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,21 +24,25 @@ def _env() -> dict[str, str]:
 
 
 def environment_name() -> str:
-    return str(
-        os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or os.getenv("APP_ENV")
-        or "local"
-    ).lower()
+    from core.env import runtime_environment_name
+
+    return runtime_environment_name("local")
 
 
 REGISTRIES = (
-    "provider_registry", "instrument_registry", "entitlement_catalogue",
-    "strategy_registry", "model_registry",
+    "provider_registry",
+    "instrument_registry",
+    "entitlement_catalogue",
+    "strategy_registry",
+    "model_registry",
 )
 LIVE_FLAGS = (
-    "REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED",
-    "COPY_TRADE_ENABLED", "MT5_ALLOW_LIVE_ACCOUNTS", "REAL_PAYOUTS_ENABLED",
+    "REAL_EXECUTION_ENABLED",
+    "AUTO_EXECUTION_ENABLED",
+    "AUTO_TRADE_ENABLED",
+    "COPY_TRADE_ENABLED",
+    "MT5_ALLOW_LIVE_ACCOUNTS",
+    "REAL_PAYOUTS_ENABLED",
     "PAYSTACK_TRANSFERS_ENABLED",
 )
 
@@ -82,7 +87,9 @@ def collect_report(*, runtime_schema: bool = False) -> dict:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
 
-        script = ScriptDirectory.from_config(Config(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini")))
+        script = ScriptDirectory.from_config(
+            Config(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini"))
+        )
         heads = script.get_heads()
         report["schema"] = {"expected_head": heads[0] if len(heads) == 1 else None, "single_head": len(heads) == 1}
     except Exception as exc:

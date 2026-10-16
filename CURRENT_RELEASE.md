@@ -1,68 +1,93 @@
 # Current SignalRankAI Release
 
+The authoritative recovery/handoff contract is now
+[`docs/release/MASTER_EXECUTION_CONTRACT.md`](docs/release/MASTER_EXECUTION_CONTRACT.md),
+with exact source revisions in [`baseline.json`](docs/release/baseline.json).
+Stage 1 acceptance and current evidence are recorded there. Production baseline
+values below are historical observations, not a fresh deployment certification.
+
 ```text
 Version: 1.5.1
-Patch level: blueprint-hardening-20260926
-Fingerprint: signalrank-blueprint-0045-multi-account-execution-hardening-20260926
-Repository Alembic head: 0045_mt5_credential_retirement
-Staging schema: certified at 0045_mt5_credential_retirement
-Staging topology: decomposed frontdoor + engine + delivery + analytics
-Staging live-money posture: disabled / fail-closed
-Current verified frontdoor release: c4d1e6d6ec5e968497d080b7fc288704b561bbd4
-Current read-only demo preflight: 9757cac0-7f68-466a-a9a0-8e458f1390cd on 3656eabaf56a... (BLOCKED_EXTERNAL; 0 canonical broker connections)
-Production promotion: separate controlled gate; not implied by staging health
+Patch level: master-blueprint-release-candidate-20261001
+Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
+Repository Alembic head: 0055_user_renewal_default
+Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
+Release-candidate status: NOT YET LIVE-CERTIFIED
+Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
+Production runtime baseline: 9865a3d1bcee632bfd9347e50d5de34d355225d9 (schema 0053_research_market_inputs)
+Production live-money posture during certification: keep disabled / fail-closed
 ```
 
-The current release line includes the 2026-09-25/26 multi-user,
-multi-account, execution-safety, broker-credential, ML-lineage, delivery,
-runtime-ownership, dependency-lock and supply-chain provenance hardening.
+This file summarizes release provenance. Historical staging,
+production and clean-room reports remain evidence for the exact older SHAs they
+name; they do **not** certify the current release candidate.
 
-Current deterministic release controls include:
+## Current release-candidate changes
 
-- exact release-source admission before business work;
-- Alembic/schema admission before business work;
-- locked Python dependency graph with `--no-deps` installation and
-  `pip check`;
-- Railway image build regression/readiness gate;
-- zero-secret clean-room compile, migration-chain, schema-audit and targeted
-  safety/regression verification;
-- deterministic CycloneDX SBOM and release-provenance generation/self-check;
-- role-specific staging rollout isolation;
-- global/live-money execution and payout gates independent of ordinary health;
-- live/public certification for every enabled staging market-data provider,
-  with optional uncertified providers explicitly disabled behind operator gates.
+The repository schema now extends the previously certified credential-retirement
+chain with:
 
-The shared staging database and all four long-lived staging roles have passed
-the `0045_mt5_credential_retirement` admission contract with real-money
-execution disabled. Production remains a separate controlled rollout and must
-satisfy its own backup, release, provider, demo/canary, legal and owner
-authorization gates.
+- `0046_decision_log`: unified decision/rejection evidence;
+- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;
+- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;
+- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.
+- `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.
+- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.
 
-Staging disaster recovery is independently verified through a full isolated
-PostgreSQL restore drill. Canonical demo broker connections currently present
-in staging: **0**. The latest secure Broker Hub handoff is live on frontdoor
-deployment `68219e01-9b4a-48a8-8abb-9e4372f634f9` at
-`c4d1e6d6ec5e...`. Telegram no longer collects broker passwords in chat; users
-are handed off to the authenticated Broker Hub, where canonical ownership,
-credential-envelope storage, read-only verification and the explicit
-fail-closed **Prepare DEMO certification** workflow apply. Linking/provisioning
-does not grant execution permission; provider-backed read-only
-verification/reconciliation → bounded `DEMO/MANUAL` policy → execution remains
-OFF.
+- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.
+- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.
 
-Clean-room `c4d1e6d6...` passed Alembic 0045/schema/provenance and **469
-targeted tests**; the frontdoor image passed **356 build tests** plus all 12
-readiness checks. Runtime ownership is frontdoor-only (http+Telegram on;
-engine+worker off), webhook pending=0, and /healthz=200. The post-secure-link
-read-only preflight `9757cac0-7f68-466a-a9a0-8e458f1390cd` on marker
-`3656eabaf56a...` still found zero canonical broker connections and confirmed
-activation=false, orders=0 and secrets_returned=false. Demo execution
-certification therefore remains blocked only until an explicitly owned DEMO
-account is linked and the external broker lifecycle is proven.
-Environment-level broker credential variables are not treated as account
-ownership or execution authorization.
+- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.
 
-Current completion boundary:
+- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.
+
+The current release candidate also includes:
+
+- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;
+- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;
+- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;
+- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));
+- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;
+- immediate removal of ineligible assets from pending and refill scanner queues;
+- exact-branch CI/release-manifest gating;
+- web fan-out ORM materialization before SQLAlchemy session expiry;
+- bounded adaptive-candle database transaction wall time;
+- separate Telegram queue-delay and handler-duration SLOs;
+- Redis-first event publication with durable PostgreSQL fallback and replay;
+- process-only liveness plus dependency readiness;
+- explicit build/version provenance;
+- a real Next.js SignalRankAI public/application shell instead of the default
+  Create Next App page.
+
+## Certification boundary
+
+This release candidate is **not** production/live-money certified until all
+required gates in `certification/release_manifest.yaml` pass for one immutable
+SHA. Required external/runtime evidence includes:
+
+1. clean-room compile/schema/targeted regression pass;
+2. GitHub/static security and frontend/mobile build gates or equivalent
+   independent evidence;
+3. isolated Railway staging using separate PostgreSQL and Redis state;
+4. current-head migration and restore drill;
+5. provider freshness certification for each enabled asset class;
+6. demo broker lifecycle and reconciliation certification;
+7. database storage headroom and session-hold SLOs;
+8. Telegram/web delivery and outcome reconciliation SLOs;
+9. 24–72 hour immutable-SHA staging soak;
+10. explicit human approval for any controlled live-money pilot.
+
+No successful build or deployment by itself changes this boundary.
+
+The [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0
+corrections, local PostgreSQL evidence, the GitHub billing blocker, active
+branch governance and remaining dependency/runtime certification gaps.
+No local result grants exact-SHA staging or live-money certification.
+
+## Historical evidence retained
+
+The following remain useful historical references but apply only to the older
+release they document:
 
 - `FINAL_COMPLETION_REPORT_20260926.md`
 - `BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md`
@@ -71,5 +96,7 @@ Current completion boundary:
 - `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`
 - `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`
 
-Older R4/v1.5.1 reports remain historical evidence and must not be used as the
-current deployment/schema authority.
+Production promotion remains a separate controlled operation. Real execution,
+automatic execution, copy trading, prop execution and real payouts must remain
+disabled until the exact release candidate is certified and the user explicitly
+authorizes a controlled pilot.

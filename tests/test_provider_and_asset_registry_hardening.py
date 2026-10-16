@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 
 
 def _candles(count: int = 25) -> list[dict]:
+    latest = time.time() - 30
     return [
         {
-            "timestamp": 1_700_000_000 + i * 300,
+            "timestamp": latest - (count - 1 - i) * 300,
             "open": 100 + i,
             "high": 101 + i,
             "low": 99 + i,

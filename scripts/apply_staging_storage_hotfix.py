@@ -43,7 +43,7 @@ def patch_repository() -> None:
     text = replace_once(
         text,
         "            session.add_all([DecisionLog(**item) for item in batch])\n",
-        "            session.add_all([\n                DecisionLog(**{**item, \"meta\": strict_json_safe(item.get(\"meta\") or {})})\n                for item in batch\n            ])\n",
+        '            session.add_all([\n                DecisionLog(**{**item, "meta": strict_json_safe(item.get("meta") or {})})\n                for item in batch\n            ])\n',
         "decision retry flush sanitation",
     )
     path.write_text(text, encoding="utf-8")
@@ -52,8 +52,11 @@ def patch_repository() -> None:
 def patch_railway_main() -> None:
     path = Path("railway_main.py")
     text = path.read_text(encoding="utf-8")
-    anchor = '''    _monitor_tasks.append(asyncio.create_task(_run_deployment_diagnostics_once()))\n    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "deployment-diagnostics"))\n'''
-    replacement = anchor + '''\n    # Bound append-only learning telemetry. Disabled by default and enabled per\n    # environment so production retention can be longer than staging retention.\n    if _db_ready and startup_work_enabled and _env_bool("LEARNING_HISTORY_RETENTION_ENABLED", False):\n        try:\n            from db.storage_maintenance import learning_history_maintenance_loop\n\n            _monitor_tasks.append(asyncio.create_task(learning_history_maintenance_loop()))\n            _monitor_tasks[-1].add_done_callback(\n                lambda t: _log_task_failure(t, "learning-history-retention")\n            )\n            logger.info("[storage_maintenance] periodic learning-history retention task started")\n        except Exception as exc:\n            logger.warning("[storage_maintenance] could not start retention loop: %s", exc)\n'''
+    anchor = """    _monitor_tasks.append(asyncio.create_task(_run_deployment_diagnostics_once()))\n    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "deployment-diagnostics"))\n"""
+    replacement = (
+        anchor
+        + """\n    # Bound append-only learning telemetry. Disabled by default and enabled per\n    # environment so production retention can be longer than staging retention.\n    if _db_ready and startup_work_enabled and _env_bool("LEARNING_HISTORY_RETENTION_ENABLED", False):\n        try:\n            from db.storage_maintenance import learning_history_maintenance_loop\n\n            _monitor_tasks.append(asyncio.create_task(learning_history_maintenance_loop()))\n            _monitor_tasks[-1].add_done_callback(\n                lambda t: _log_task_failure(t, "learning-history-retention")\n            )\n            logger.info("[storage_maintenance] periodic learning-history retention task started")\n        except Exception as exc:\n            logger.warning("[storage_maintenance] could not start retention loop: %s", exc)\n"""
+    )
     text = replace_once(text, anchor, replacement, "railway retention task")
     path.write_text(text, encoding="utf-8")
 

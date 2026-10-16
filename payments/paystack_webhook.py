@@ -31,7 +31,7 @@ router = APIRouter()
 async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Receive and process Paystack webhook events.
-    
+
     Security flow:
     1. Check request IP against Paystack whitelist
     2. Read raw body bytes (MUST be before await request.json())
@@ -53,6 +53,7 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # Skip IP check in dev/test mode
     import os
+
     dev_mode = os.getenv("DEV_MODE", "0").lower() in ("1", "true", "yes")
     if not dev_mode and PAYSTACK_WEBHOOK_IP_WHITELIST and client_ip not in PAYSTACK_WEBHOOK_IP_WHITELIST:
         logger.warning("[paystack_webhook] Rejected request from IP: %s", client_ip)
@@ -75,7 +76,7 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     event = str(body.get("event") or "")
-    data  = body.get("data") or {}
+    data = body.get("data") or {}
 
     # Persist the signed payload before acknowledging it.  A process crash
     # after this point is recovered by the worker-owned inbox loop.
@@ -142,6 +143,7 @@ async def _process_event(event: str, data: dict) -> None:
 
         elif event in {"transfer.success", "transfer.failed", "transfer.reversed"}:
             from payments.payout_service import apply_transfer_event
+
             applied = await apply_transfer_event(event, data)
             if not applied:
                 logger.warning("[paystack_webhook] transfer event did not match a payout request")
@@ -164,6 +166,7 @@ async def _handle_payment_failed(data: dict) -> None:
             return
 
         from payments.paystack import _lookup_user_by_email
+
         telegram_user_id = await _lookup_user_by_email(email)
         if not telegram_user_id:
             return
@@ -195,6 +198,7 @@ async def _handle_subscription_not_renew(data: dict) -> None:
             return
 
         from payments.paystack import _lookup_user_by_email
+
         telegram_user_id = await _lookup_user_by_email(email)
         if not telegram_user_id:
             return
@@ -211,8 +215,8 @@ async def _handle_subscription_not_renew(data: dict) -> None:
             text=(
                 "📋 <b>Subscription Update</b>\n\n"
                 "Your subscription is set to expire and will not auto-renew.\n"
-                + (f"\nExpiry date: <b>{next_payment}</b>\n" if next_payment else "\n") +
-                "Use /upgrade to resubscribe and maintain access."
+                + (f"\nExpiry date: <b>{next_payment}</b>\n" if next_payment else "\n")
+                + "Use /upgrade to resubscribe and maintain access."
             ),
             parse_mode="HTML",
         )

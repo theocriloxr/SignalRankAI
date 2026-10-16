@@ -4,6 +4,7 @@ This module deliberately stops short of execution enablement. It refreshes
 provider-backed read-only proof and applies a bounded MANUAL DEMO policy while
 leaving the broker connection execution toggle disabled.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -93,12 +94,8 @@ def _bounded_demo_policy_kwargs(policy: Mapping[str, Any]) -> dict[str, Any]:
             _DEMO_MAX_SLIPPAGE_BPS,
             _DEMO_MAX_SLIPPAGE_BPS,
         ),
-        "min_confidence": _decimal(
-            policy.get("min_confidence"), Decimal("0")
-        ),
-        "min_expected_rr": _decimal(
-            policy.get("min_expected_rr"), Decimal("0")
-        ),
+        "min_confidence": _decimal(policy.get("min_confidence"), Decimal("0")),
+        "min_expected_rr": _decimal(policy.get("min_expected_rr"), Decimal("0")),
         "safety_buffer_pct": Decimal("0"),
         "external_max_daily_loss_pct": None,
         "external_max_weekly_loss_pct": None,
@@ -125,9 +122,7 @@ async def _connections(user_id: int) -> list[dict[str, Any]]:
 async def _verify(user_id: int, connection_id: str) -> dict[str, Any]:
     from services.broker_verification import verify_broker_connection_read_only
 
-    return await verify_broker_connection_read_only(
-        int(user_id), str(connection_id)
-    )
+    return await verify_broker_connection_read_only(int(user_id), str(connection_id))
 
 
 async def _policy(user_id: int, connection_id: str) -> dict[str, Any]:
@@ -156,9 +151,7 @@ async def _configure(
     )
 
 
-def _find_owned_connection(
-    rows: list[dict[str, Any]], connection_id: str
-) -> dict[str, Any]:
+def _find_owned_connection(rows: list[dict[str, Any]], connection_id: str) -> dict[str, Any]:
     target = str(connection_id or "").strip()
     for row in rows:
         if str(row.get("connection_id") or "") == target:
@@ -168,9 +161,7 @@ def _find_owned_connection(
 
 def _assert_provider_demo_identity(connection: Mapping[str, Any]) -> None:
     environment = str(connection.get("environment") or "").strip().lower()
-    classification = str(
-        connection.get("account_classification") or ""
-    ).strip().upper()
+    classification = str(connection.get("account_classification") or "").strip().upper()
     if environment != "demo" or classification != "DEMO":
         raise PermissionError("provider_proven_demo_account_required")
 
@@ -188,9 +179,7 @@ async def prepare_demo_certification(
 
     verification = await _verify(int(user_id), str(connection_id))
     if verification.get("success") is not True:
-        raise PermissionError(
-            str(verification.get("error") or "demo_read_only_verification_required")
-        )
+        raise PermissionError(str(verification.get("error") or "demo_read_only_verification_required"))
 
     refreshed = _find_owned_connection(
         await _connections(int(user_id)),
@@ -204,13 +193,8 @@ async def prepare_demo_certification(
 
     reconciliation = verification.get("reconciliation")
     if not isinstance(reconciliation, Mapping):
-        reconciliation = await _reconciliation(
-            int(user_id), str(connection_id)
-        )
-    if (
-        str(reconciliation.get("status") or "").strip().upper() != "HEALTHY"
-        or reconciliation.get("ready") is not True
-    ):
+        reconciliation = await _reconciliation(int(user_id), str(connection_id))
+    if str(reconciliation.get("status") or "").strip().upper() != "HEALTHY" or reconciliation.get("ready") is not True:
         raise PermissionError("demo_reconciliation_not_healthy")
 
     current_policy = await _policy(int(user_id), str(connection_id))

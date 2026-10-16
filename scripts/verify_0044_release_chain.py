@@ -1,4 +1,5 @@
 """Hermetic Alembic release-chain verification for broker credential envelopes."""
+
 from __future__ import annotations
 
 import os
@@ -18,14 +19,10 @@ def main() -> int:
     script = ScriptDirectory.from_config(cfg)
     heads = list(script.get_heads())
     if heads != [EXPECTED_HEAD]:
-        raise SystemExit(
-            f"ALEMBIC_HEAD_BLOCKED expected={[EXPECTED_HEAD]} actual={heads}"
-        )
+        raise SystemExit(f"ALEMBIC_HEAD_BLOCKED expected={[EXPECTED_HEAD]} actual={heads}")
 
     env = os.environ.copy()
-    env["DATABASE_MIGRATION_URL"] = (
-        "postgresql+psycopg2://cleanroom:cleanroom@localhost/cleanroom"
-    )
+    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://cleanroom:cleanroom@localhost/cleanroom"
     proc = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
         cwd=ROOT,
@@ -37,9 +34,7 @@ def main() -> int:
     )
     if proc.returncode != 0:
         sys.stderr.write(proc.stderr)
-        raise SystemExit(
-            f"ALEMBIC_OFFLINE_RENDER_BLOCKED exit={proc.returncode}"
-        )
+        raise SystemExit(f"ALEMBIC_OFFLINE_RENDER_BLOCKED exit={proc.returncode}")
 
     rendered = proc.stdout
     required = (
@@ -56,14 +51,9 @@ def main() -> int:
     )
     missing = [marker for marker in required if marker not in rendered]
     if missing:
-        raise SystemExit(
-            "ALEMBIC_OFFLINE_RENDER_BLOCKED missing=" + ",".join(missing)
-        )
+        raise SystemExit("ALEMBIC_OFFLINE_RENDER_BLOCKED missing=" + ",".join(missing))
 
-    print(
-        "ALEMBIC_RELEASE_CHAIN_PASS "
-        f"head={EXPECTED_HEAD} required_markers={len(required)}"
-    )
+    print(f"ALEMBIC_RELEASE_CHAIN_PASS head={EXPECTED_HEAD} required_markers={len(required)}")
     return 0
 
 

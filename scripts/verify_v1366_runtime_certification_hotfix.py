@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Source-level verifier for the v1.3.6.7 runtime certification hotfix."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -30,9 +31,7 @@ def main() -> None:
     )
 
     sql = str(
-        build_outcome_reconciliation_query(
-            cutoff=datetime(2026, 7, 1), limit=5000
-        ).compile(
+        build_outcome_reconciliation_query(cutoff=datetime(2026, 7, 1), limit=5000).compile(
             dialect=postgresql.dialect(),
             compile_kwargs={"literal_binds": True},
         )
@@ -41,9 +40,7 @@ def main() -> None:
     check("reconciliation groups delivery proof", "GROUP BY SIGNAL_DELIVERIES.SIGNAL_ID" in sql)
     check("reconciliation selects missing outcomes", "OUTCOMES.ID IS NULL" in sql)
 
-    quality_ok, min_accuracy, min_auc = _promotion_quality_gate(
-        {"accuracy": 0.50, "auc": 0.575}, deployed_runtime=True
-    )
+    quality_ok, min_accuracy, min_auc = _promotion_quality_gate({"accuracy": 0.50, "auc": 0.575}, deployed_runtime=True)
     check("weak logged ML model rejected", not quality_ok)
     check("deployed ML accuracy threshold", min_accuracy == 0.55)
     check("deployed ML AUC threshold", min_auc == 0.60)
@@ -77,10 +74,7 @@ def main() -> None:
         "evaluate_live_signal_admission" in router_source,
     )
 
-    print(
-        "overall=PASS release=v1.3.6.7 "
-        "live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED"
-    )
+    print("overall=PASS release=v1.3.6.7 live_activation=BLOCKED_UNTIL_RUNTIME_CERTIFIED")
 
 
 if __name__ == "__main__":

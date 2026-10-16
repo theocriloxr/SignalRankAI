@@ -67,16 +67,12 @@ async def resolve_signal_reference(
     identity = "none"
     if canonical_user_id is not None:
         user_id = (
-            await session.execute(
-                select(User.id).where(User.id == int(canonical_user_id)).limit(1)
-            )
+            await session.execute(select(User.id).where(User.id == int(canonical_user_id)).limit(1))
         ).scalar_one_or_none()
         identity = "platform"
     elif telegram_user_id is not None:
         user_id = (
-            await session.execute(
-                select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-            )
+            await session.execute(select(User.id).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
         ).scalar_one_or_none()
         identity = "telegram"
     if require_delivery_proof and user_id is None:
@@ -103,18 +99,16 @@ async def resolve_signal_reference(
         ref = normalize_signal_reference(raw)
         if not ref:
             raise SignalReferenceNotFound("invalid signal reference")
-        query = select(Signal).where(
-            or_(Signal.signal_id == ref, Signal.display_id == ref)
-        )
+        query = select(Signal).where(or_(Signal.signal_id == ref, Signal.display_id == ref))
         exact = list((await session.execute(query.limit(2))).scalars().all())
         if exact:
             matches = exact
             matched_by = "uuid" if any(str(row.signal_id).lower() == ref for row in exact) else "display_id"
         else:
             # Backward compatibility for old 8+ character UUID-prefix buttons.
-            matches = list((await session.execute(
-                select(Signal).where(Signal.signal_id.like(f"{ref}%")).limit(2)
-            )).scalars().all())
+            matches = list(
+                (await session.execute(select(Signal).where(Signal.signal_id.like(f"{ref}%")).limit(2))).scalars().all()
+            )
             matched_by = "legacy_prefix"
 
         if require_delivery_proof and matches:
@@ -122,13 +116,15 @@ async def resolve_signal_reference(
             for row in matches:
                 telegram_proof = (
                     await session.execute(
-                        select(SignalDelivery.id).where(
+                        select(SignalDelivery.id)
+                        .where(
                             SignalDelivery.user_id == int(user_id),
                             SignalDelivery.signal_id == str(row.signal_id),
                             SignalDelivery.sent_ok.is_(True),
                             SignalDelivery.telegram_chat_id.is_not(None),
                             SignalDelivery.telegram_message_id.is_not(None),
-                        ).limit(1)
+                        )
+                        .limit(1)
                     )
                 ).scalar_one_or_none()
                 web_proof = None

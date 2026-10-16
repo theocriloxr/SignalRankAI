@@ -1,0 +1,2 @@
+# Isolated browser-test tooling; excluded from application runtime images.
+playwright==1.58.0

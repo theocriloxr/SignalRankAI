@@ -3,6 +3,7 @@
 Ambiguous Telegram/app duplicates are deliberately not auto-merged. This tool
 provides owner/support evidence for a controlled review workflow.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,15 +22,19 @@ async def _run(limit: int) -> list[dict]:
         timeout_seconds=15,
     ) as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT merge_id,canonical_user_id,merged_user_id,status,evidence,created_by,created_at "
-                    "FROM account_merge_records WHERE status='pending_review' "
-                    "ORDER BY created_at ASC LIMIT :limit"
-                ),
-                {"limit": max(1, min(int(limit), 500))},
+            (
+                await session.execute(
+                    text(
+                        "SELECT merge_id,canonical_user_id,merged_user_id,status,evidence,created_by,created_at "
+                        "FROM account_merge_records WHERE status='pending_review' "
+                        "ORDER BY created_at ASC LIMIT :limit"
+                    ),
+                    {"limit": max(1, min(int(limit), 500))},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         return [dict(row) for row in rows]
 
 

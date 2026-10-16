@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 
 class Direction(str, Enum):
@@ -178,6 +178,7 @@ class AdaptiveAssessment:
     data_quality_score: float
     sequence_references: tuple[Mapping[str, Any], ...]
     runtime_mode: str
+    input_snapshots: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {

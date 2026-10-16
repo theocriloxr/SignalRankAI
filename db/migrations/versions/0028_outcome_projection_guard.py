@@ -4,6 +4,7 @@ Revision ID: 0028_outcome_projection_guard
 Revises: 0027_launch_paper_trading
 Create Date: 2026-07-30
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -101,10 +102,7 @@ def upgrade() -> None:
     # PostgreSQL's runtime readiness gate relies on this exact unique index.
     # IF NOT EXISTS also keeps the migration safe when a correct guard was
     # applied manually before this active Alembic revision reached production.
-    _exec(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_outcomes_signal_id "
-        "ON outcomes (signal_id)"
-    )
+    _exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_outcomes_signal_id ON outcomes (signal_id)")
 
 
 def downgrade() -> None:

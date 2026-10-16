@@ -5,12 +5,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 # --- Trend Strategies ---
 class EMATrendStrategy(BaseStrategy):
     name = "EMA Trend"
+
     def evaluate(self, market_data):
-        ind = normalize_indicator_schema(market_data.get('indicators') or {})
-        candles = market_data.get('candles') or []
+        ind = normalize_indicator_schema(market_data.get("indicators") or {})
+        candles = market_data.get("candles") or []
         if not candles:
             return None
         missing = missing_indicators(ind, ("ema_fast", "ema_slow", "ema_trend"))
@@ -18,179 +20,184 @@ class EMATrendStrategy(BaseStrategy):
             logger.debug("EMA Trend skipped; indicators unavailable: %s available=%s", missing, list(ind.keys())[:12])
             return None
         # LONG: EMA bullish stack
-        ema_fast = float(ind.get('ema_fast') or 0)
-        ema_slow = float(ind.get('ema_slow') or 0)
-        ema_trend = float(ind.get('ema_trend') or 0)
+        ema_fast = float(ind.get("ema_fast") or 0)
+        ema_slow = float(ind.get("ema_slow") or 0)
+        ema_trend = float(ind.get("ema_trend") or 0)
         if ema_fast > ema_slow and ema_slow > ema_trend:
-            entry = candles[-1]['close']
-            regime = ind.get('regime', 'neutral')
+            entry = candles[-1]["close"]
+            regime = ind.get("regime", "neutral")
             quality = 0.9  # High confidence for strong EMA alignment
-            
+
             # Use dynamic targets instead of fixed static values
             levels = calculate_dynamic_targets(
-                direction='LONG',
+                direction="LONG",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'LONG',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"EMA fast > EMA slow > EMA trend. Uptrend confirmed — LONG. R:R={levels['rr_ratio']:.2f}"
+                "direction": "LONG",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"EMA fast > EMA slow > EMA trend. Uptrend confirmed — LONG. R:R={levels['rr_ratio']:.2f}",
             }
         # SHORT: EMA bearish stack
         if ema_fast < ema_slow and ema_slow < ema_trend:
-            entry = candles[-1]['close']
-            regime = ind.get('regime', 'neutral')
+            entry = candles[-1]["close"]
+            regime = ind.get("regime", "neutral")
             quality = 0.9
-            
+
             # Use dynamic targets
             levels = calculate_dynamic_targets(
-                direction='SHORT',
+                direction="SHORT",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'SHORT',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"EMA fast < EMA slow < EMA trend. Downtrend confirmed — SHORT. R:R={levels['rr_ratio']:.2f}"
+                "direction": "SHORT",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"EMA fast < EMA slow < EMA trend. Downtrend confirmed — SHORT. R:R={levels['rr_ratio']:.2f}",
             }
         return None
+
 
 class SupertrendStrategy(BaseStrategy):
     name = "Supertrend"
+
     def evaluate(self, market_data):
-        ind = normalize_indicator_schema(market_data.get('indicators') or {})
-        candles = market_data.get('candles') or []
+        ind = normalize_indicator_schema(market_data.get("indicators") or {})
+        candles = market_data.get("candles") or []
         if not candles:
             return None
-        entry = candles[-1]['close']
-        regime = ind.get('regime', 'neutral')
-        
-        if ind.get('supertrend_signal') == 'BUY':
+        entry = candles[-1]["close"]
+        regime = ind.get("regime", "neutral")
+
+        if ind.get("supertrend_signal") == "BUY":
             quality = 0.85
-            
+
             # Use dynamic targets
             levels = calculate_dynamic_targets(
-                direction='LONG',
+                direction="LONG",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'LONG',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"Supertrend signals LONG. R:R={levels['rr_ratio']:.2f}"
+                "direction": "LONG",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"Supertrend signals LONG. R:R={levels['rr_ratio']:.2f}",
             }
-        if ind.get('supertrend_signal') == 'SELL':
+        if ind.get("supertrend_signal") == "SELL":
             quality = 0.85
-            
+
             # Use dynamic targets
             levels = calculate_dynamic_targets(
-                direction='SHORT',
+                direction="SHORT",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'SHORT',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"Supertrend signals SHORT. R:R={levels['rr_ratio']:.2f}"
+                "direction": "SHORT",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"Supertrend signals SHORT. R:R={levels['rr_ratio']:.2f}",
             }
         return None
 
+
 class ADXTrendStrategy(BaseStrategy):
     name = "ADX Trend"
+
     def evaluate(self, market_data):
-        ind = normalize_indicator_schema(market_data.get('indicators') or {})
-        candles = market_data.get('candles') or []
-        if not candles or ind.get('adx', 0) <= 25:
+        ind = normalize_indicator_schema(market_data.get("indicators") or {})
+        candles = market_data.get("candles") or []
+        if not candles or ind.get("adx", 0) <= 25:
             return None
-        entry = candles[-1]['close']
-        regime = ind.get('regime', 'neutral')
-        
+        entry = candles[-1]["close"]
+        regime = ind.get("regime", "neutral")
+
         # LONG: DI+ > DI- (buyers dominating)
-        if ind.get('di_plus', 0) > ind.get('di_minus', 0):
+        if ind.get("di_plus", 0) > ind.get("di_minus", 0):
             quality = 0.8
-            
+
             # Use dynamic targets
             levels = calculate_dynamic_targets(
-                direction='LONG',
+                direction="LONG",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'LONG',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"ADX {ind.get('adx', 0):.1f} strong, DI+ > DI-. Trend LONG. R:R={levels['rr_ratio']:.2f}"
+                "direction": "LONG",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"ADX {ind.get('adx', 0):.1f} strong, DI+ > DI-. Trend LONG. R:R={levels['rr_ratio']:.2f}",
             }
         # SHORT: DI- > DI+ (sellers dominating)
-        if ind.get('di_minus', 0) > ind.get('di_plus', 0):
+        if ind.get("di_minus", 0) > ind.get("di_plus", 0):
             quality = 0.8
-            
+
             # Use dynamic targets
             levels = calculate_dynamic_targets(
-                direction='SHORT',
+                direction="SHORT",
                 entry_price=entry,
                 candles=candles,
                 indicators=ind,
                 regime=regime,
-                signal_quality=quality
+                signal_quality=quality,
             )
-            
+
             return {
-                'direction': 'SHORT',
-                'entry': entry,
-                'stop_loss': levels['stop_loss'],
-                'take_profit': levels['take_profit'],
-                'targets': levels['tp_levels'],
-                'confidence': quality,
-                'rr_ratio': levels['rr_ratio'],
-                'reasoning': f"ADX {ind.get('adx', 0):.1f} strong, DI- > DI+. Trend SHORT. R:R={levels['rr_ratio']:.2f}"
+                "direction": "SHORT",
+                "entry": entry,
+                "stop_loss": levels["stop_loss"],
+                "take_profit": levels["take_profit"],
+                "targets": levels["tp_levels"],
+                "confidence": quality,
+                "rr_ratio": levels["rr_ratio"],
+                "reasoning": f"ADX {ind.get('adx', 0):.1f} strong, DI- > DI+. Trend SHORT. R:R={levels['rr_ratio']:.2f}",
             }
         return None
+
 
 def trend_strategies(asset, timeframe, market_data):
     strategies = [EMATrendStrategy(), SupertrendStrategy(), ADXTrendStrategy()]
@@ -198,12 +205,12 @@ def trend_strategies(asset, timeframe, market_data):
     for strat in strategies:
         sig = strat.evaluate(market_data)
         if sig:
-            sig['asset'] = asset
-            sig['symbol'] = asset
-            sig['timeframe'] = timeframe
-            sig['strategy_name'] = getattr(strat, 'name', strat.__class__.__name__)
-            sig['strategy_group'] = 'trend'
-            sig['strength'] = float(sig.get('confidence', 0) or 0)
-            sig['volatility'] = float(market_data.get('indicators', {}).get('bollinger', {}).get('width', 0) or 0)
+            sig["asset"] = asset
+            sig["symbol"] = asset
+            sig["timeframe"] = timeframe
+            sig["strategy_name"] = getattr(strat, "name", strat.__class__.__name__)
+            sig["strategy_group"] = "trend"
+            sig["strength"] = float(sig.get("confidence", 0) or 0)
+            sig["volatility"] = float(market_data.get("indicators", {}).get("bollinger", {}).get("width", 0) or 0)
             signals.append(sig)
     return signals

@@ -1,0 +1,31 @@
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 shellcheck=0.10.0-1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.lock requirements-security-tools.txt requirements-build-tools.txt ./
+RUN python -m pip install --requirement requirements-build-tools.txt \
+    && pip install --no-deps -r requirements.lock \
+    && pip check \
+    && python -m venv /opt/security-tools \
+    && /opt/security-tools/bin/python -m pip install --requirement requirements-build-tools.txt \
+    && /opt/security-tools/bin/python -m pip install -r requirements-security-tools.txt \
+    && python -m pip check
+
+ENV PATH="/opt/security-tools/bin:$PATH"
+
+COPY . .
+
+RUN /usr/local/bin/python scripts/install_opengrep.py --directory /opt/security-tools/bin \
+    && /usr/local/bin/python scripts/run_release_manifest.py --environment ci --group static \
+    && /usr/local/bin/python -m pip check
+
+CMD ["python","-c","import time; print('SIGNALRANK_STATIC_CLEANROOM_PASS'); time.sleep(600)"]

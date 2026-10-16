@@ -7,67 +7,55 @@
     <link rel="stylesheet" href="/static/userdash.css">
 </head>
 <body>
-    <div class="container">
+    <main class="container">
         <a href="/logout" class="logout">Logout</a>
-        <h2>Your Signal Dashboard</h2>
-        <div>Tier: <span class="tier">{{ tier }}</span></div>
-        {% if signals and signals|length > 0 %}
-        <table>
-            <tr>
-                <th>Signal ID</th>
-                <th>Asset</th>
-                <th>Timeframe</th>
-                <th>Direction</th>
-                <th>Entry</th>
-                <th>Stop Loss</th>
-                <th>Take Profit</th>
-                <th>Score</th>
-                {% if show_advanced %}
-                <th>Partial Exits</th>
-                <th>Outcome</th>
-                <th>Performance</th>
-                {% endif %}
-            </tr>
-            {% for s in signals %}
-            <tr>
-        <div>Tier: <span class="tier">{{ tier }}</span></div>
-        {% if signals and signals|length > 0 %}
-        <table>
-            <tr>
-                <th>Signal ID</th>
-                <th>Asset</th>
-                <th>Timeframe</th>
-                <th>Direction</th>
-                <th>Entry</th>
-                <th>Stop Loss</th>
-                <th>Take Profit</th>
-                <th>Score</th>
-                {% if show_advanced %}
-                <th>Partial Exits</th>
-                <th>Outcome</th>
-                <th>Performance</th>
-                {% endif %}
-            </tr>
-            {% for s in signals %}
-                <td>{{ s.signal_id }}</td>
-                <td>{{ s.asset }}</td>
-                <td>{{ s.timeframe }}</td>
-                <td>{{ s.direction }}</td>
-                <td>{{ s.entry }}</td>
-                <td>{{ s.stop_loss }}</td>
-                <td>{{ s.take_profit }}</td>
-                <td>{{ s.score }}</td>
-                {% if show_advanced %}
-                <td>{{ s.partial_exits if s.partial_exits else '-' }}</td>
-                <td>{{ s.outcome.status if s.outcome else '-' }}</td>
-                <td>{{ s.performance if s.performance else '-' }}</td>
-                {% endif %}
-            </tr>
-            {% endfor %}
-        </table>
+        <h1>Your Signal Dashboard</h1>
+        <p>Tier: <span class="tier">{{ tier }}</span></p>
+
+        {% if signals %}
+        <div class="table-scroll" role="region" aria-label="Delivered signals" tabindex="0">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Signal ID</th>
+                        <th scope="col">Asset</th>
+                        <th scope="col">Timeframe</th>
+                        <th scope="col">Direction</th>
+                        <th scope="col">Entry</th>
+                        <th scope="col">Stop Loss</th>
+                        <th scope="col">Take Profit</th>
+                        <th scope="col">Score</th>
+                        {% if show_advanced %}
+                        <th scope="col">Partial Exits</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Performance</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in signals %}
+                    <tr>
+                        <td>{{ s.signal_id }}</td>
+                        <td>{{ s.asset }}</td>
+                        <td>{{ s.timeframe }}</td>
+                        <td>{{ s.direction }}</td>
+                        <td>{{ s.entry }}</td>
+                        <td>{{ s.stop_loss }}</td>
+                        <td>{{ s.take_profit }}</td>
+                        <td>{{ s.score }}</td>
+                        {% if show_advanced %}
+                        <td>{{ s.partial_exits if s.partial_exits else '-' }}</td>
+                        <td>{{ s.outcome.status if s.outcome else '-' }}</td>
+                        <td>{{ s.performance if s.performance else '-' }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% else %}
-        <p>No signals delivered to you today.</p>
+        <p>No active delivered signals are available right now.</p>
         {% endif %}
-    </div>
+    </main>
 </body>
 </html>

@@ -3,6 +3,7 @@
 The database trigger is the final immutability boundary. This service adds
 ownership, idempotency and secret-scrubbing before rows reach PostgreSQL.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -104,10 +105,12 @@ def _provider_time(value: datetime | str | None) -> datetime | None:
 async def _owned_connection(session: Any, user_id: int, connection_id: str) -> BrokerConnection:
     row = (
         await session.execute(
-            select(BrokerConnection).where(
+            select(BrokerConnection)
+            .where(
                 BrokerConnection.user_id == int(user_id),
                 BrokerConnection.connection_id == str(connection_id),
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     if row is None:
@@ -162,11 +165,13 @@ async def _append_account_ledger_in_session(
     if correction_of_entry_id:
         original = (
             await session.execute(
-                select(TradingAccountLedgerEntry).where(
+                select(TradingAccountLedgerEntry)
+                .where(
                     TradingAccountLedgerEntry.entry_id == str(correction_of_entry_id),
                     TradingAccountLedgerEntry.user_id == int(user_id),
                     TradingAccountLedgerEntry.connection_id == str(connection_id),
-                ).limit(1)
+                )
+                .limit(1)
             )
         ).scalar_one_or_none()
         if original is None:
@@ -196,9 +201,7 @@ async def _append_account_ledger_in_session(
         "funding": _decimal_or_none(funding, name="funding"),
         "swap": _decimal_or_none(swap, name="swap"),
         "fees": _decimal_or_none(fees, name="fees"),
-        "correction_of_entry_id": (
-            str(correction_of_entry_id) if correction_of_entry_id else None
-        ),
+        "correction_of_entry_id": (str(correction_of_entry_id) if correction_of_entry_id else None),
         "provider_timestamp": _provider_time(provider_timestamp),
         "metadata": _safe_metadata(dict(metadata or {})),
         "created_at": now_utc_naive(),
@@ -207,9 +210,7 @@ async def _append_account_ledger_in_session(
     statement = (
         insert(TradingAccountLedgerEntry.__table__)
         .values(**values)
-        .on_conflict_do_nothing(
-            constraint="uq_trading_account_ledger_provider_event"
-        )
+        .on_conflict_do_nothing(constraint="uq_trading_account_ledger_provider_event")
         .returning(TradingAccountLedgerEntry.entry_id)
     )
     inserted = (await session.execute(statement)).scalar_one_or_none()
@@ -218,11 +219,13 @@ async def _append_account_ledger_in_session(
 
     existing = (
         await session.execute(
-            select(TradingAccountLedgerEntry.entry_id).where(
+            select(TradingAccountLedgerEntry.entry_id)
+            .where(
                 TradingAccountLedgerEntry.connection_id == str(connection_id),
                 TradingAccountLedgerEntry.provider == provider_value[:32],
                 TradingAccountLedgerEntry.source_event_id == source,
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     if existing is None:
@@ -281,16 +284,20 @@ async def list_account_ledger(
     async with get_session(label="trading_account_ledger.list", timeout_seconds=8.0) as session:
         await _owned_connection(session, int(user_id), str(connection_id))
         rows = (
-            await session.execute(
-                select(TradingAccountLedgerEntry)
-                .where(
-                    TradingAccountLedgerEntry.user_id == int(user_id),
-                    TradingAccountLedgerEntry.connection_id == str(connection_id),
+            (
+                await session.execute(
+                    select(TradingAccountLedgerEntry)
+                    .where(
+                        TradingAccountLedgerEntry.user_id == int(user_id),
+                        TradingAccountLedgerEntry.connection_id == str(connection_id),
+                    )
+                    .order_by(TradingAccountLedgerEntry.created_at.desc())
+                    .limit(count)
                 )
-                .order_by(TradingAccountLedgerEntry.created_at.desc())
-                .limit(count)
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         await session.rollback()
 
     result: list[dict[str, Any]] = []
@@ -312,20 +319,15 @@ async def list_account_ledger(
                 "equity": str(row.equity) if row.equity is not None else None,
                 "margin": str(row.margin) if row.margin is not None else None,
                 "free_margin": str(row.free_margin) if row.free_margin is not None else None,
-                "realized_pnl": (
-                    str(row.realized_pnl) if row.realized_pnl is not None else None
-                ),
-                "unrealized_pnl": (
-                    str(row.unrealized_pnl) if row.unrealized_pnl is not None else None
-                ),
+                "realized_pnl": (str(row.realized_pnl) if row.realized_pnl is not None else None),
+                "unrealized_pnl": (str(row.unrealized_pnl) if row.unrealized_pnl is not None else None),
                 "commission": str(row.commission) if row.commission is not None else None,
                 "funding": str(row.funding) if row.funding is not None else None,
                 "swap": str(row.swap) if row.swap is not None else None,
                 "fees": str(row.fees) if row.fees is not None else None,
                 "correction_of_entry_id": row.correction_of_entry_id,
                 "provider_timestamp": (
-                    row.provider_timestamp.isoformat()
-                    if row.provider_timestamp is not None else None
+                    row.provider_timestamp.isoformat() if row.provider_timestamp is not None else None
                 ),
                 "metadata": dict(row.metadata_json or {}),
                 "created_at": row.created_at.isoformat(),

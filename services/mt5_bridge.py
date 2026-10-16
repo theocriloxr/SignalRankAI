@@ -241,9 +241,7 @@ class MT5Bridge:
     @staticmethod
     def _round_volume_down(value: float, step: float) -> float:
         step_d = Decimal(str(step))
-        return float(
-            (Decimal(str(value)) / step_d).to_integral_value(rounding=ROUND_DOWN) * step_d
-        )
+        return float((Decimal(str(value)) / step_d).to_integral_value(rounding=ROUND_DOWN) * step_d)
 
     def _calculate_volume(self, signal: Dict[str, Any], *, symbol_info: Any, account_info: Any) -> float:
         """Return broker-compliant lot size, or zero when truth is incomplete."""
@@ -266,13 +264,9 @@ class MT5Bridge:
             equity = float(getattr(account_info, "equity"))
             entry = float(signal.get("entry") or 0)
             stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
-            tick_size = float(
-                getattr(symbol_info, "trade_tick_size", 0)
-                or getattr(symbol_info, "point", 0)
-            )
+            tick_size = float(getattr(symbol_info, "trade_tick_size", 0) or getattr(symbol_info, "point", 0))
             tick_value = float(
-                getattr(symbol_info, "trade_tick_value_loss", 0)
-                or getattr(symbol_info, "trade_tick_value", 0)
+                getattr(symbol_info, "trade_tick_value_loss", 0) or getattr(symbol_info, "trade_tick_value", 0)
             )
             max_risk = float(os.getenv("MAX_LIVE_RISK_PCT", "5") or 5)
             values = (risk_pct, equity, entry, stop, tick_size, tick_value, max_risk)
@@ -324,9 +318,7 @@ class MT5Bridge:
         if not self._validate_geometry(direction, signal_entry, stop_loss, take_profit):
             return False, "Invalid entry/stop/target geometry", None
 
-        dedup_key = hashlib.sha256(
-            f"{account_id}:{idempotency_key}".encode("utf-8")
-        ).hexdigest()
+        dedup_key = hashlib.sha256(f"{account_id}:{idempotency_key}".encode("utf-8")).hexdigest()
         if not await self._reserve_once(dedup_key):
             return False, "Duplicate execution request", None
 

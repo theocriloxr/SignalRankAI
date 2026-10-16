@@ -69,7 +69,7 @@ echo "2) Enhanced (crypto only with TradingView)"
 echo "3) Full (crypto + forex with TradingView)"
 echo "4) Custom (manual configuration)"
 echo ""
-read -p "Enter choice (1-4): " CONFIG_CHOICE
+read -r -p "Enter choice (1-4): " CONFIG_CHOICE
 
 case $CONFIG_CHOICE in
     1)

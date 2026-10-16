@@ -66,7 +66,9 @@ def upgrade() -> None:
             CONSTRAINT uq_signal_event_notification_recipient UNIQUE(signal_id, event_type, user_id)
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_signal_event_notifications_state ON signal_event_notifications(delivery_state)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_signal_event_notifications_state ON signal_event_notifications(delivery_state)"
+    )
 
 
 def downgrade() -> None:

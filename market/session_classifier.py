@@ -42,29 +42,29 @@ class MarketSession:
 
 # FX Session hours (UTC)
 FX_SESSIONS = {
-    "SYDNEY": (22, 0),    # 22:00 UTC
-    "TOKYO": (0, 0),       # 00:00 UTC  
-    "LONDON": (8, 0),      # 08:00 UTC
-    "NEW_YORK": (13, 0),   # 13:00 UTC
+    "SYDNEY": (22, 0),  # 22:00 UTC
+    "TOKYO": (0, 0),  # 00:00 UTC
+    "LONDON": (8, 0),  # 08:00 UTC
+    "NEW_YORK": (13, 0),  # 13:00 UTC
 }
 
 
 # Session scoring bonuses (adjustments to score threshold)
 SESSION_BONUSES = {
-    "LONDON_NY_OVERLAP": 5,      # Most profitable overlap
+    "LONDON_NY_OVERLAP": 5,  # Most profitable overlap
     "US_EQUITY_POWER_HOUR": 3,  # 09:45-11:30 & 14:00-15:45 EST
-    "AFTER_HOURS": -10,          # Lower quality
-    "WEEKEND": -15,             # Weekend - lower liquidity
-    "HIGH_IMPACT_NEWS": -20,     # News events - skip
-    "LUNCH_DROP": -5,           # Lower liquidity during lunch
+    "AFTER_HOURS": -10,  # Lower quality
+    "WEEKEND": -15,  # Weekend - lower liquidity
+    "HIGH_IMPACT_NEWS": -20,  # News events - skip
+    "LUNCH_DROP": -5,  # Lower liquidity during lunch
 }
 
 
 # Asset class multipliers
 ASSET_CLASS_MULTIPLIERS = {
     "crypto": 1.0,
-    "fx": 1.1,      # FX slightly more reliable
-    "stock": 1.2,    # Stocks need higher threshold
+    "fx": 1.1,  # FX slightly more reliable
+    "stock": 1.2,  # Stocks need higher threshold
     "commodity": 1.0,
     "index": 1.1,
 }
@@ -97,37 +97,34 @@ def get_current_session() -> Tuple[str, str]:
 
 def get_session_bonus(session_name: str, overlap: str = "") -> float:
     """Get scoring bonus/adjustment for current session.
-    
+
     Args:
         session_name: Current session name
         overlap: Overlap period if applicable
-        
+
     Returns:
         Score adjustment (positive = bonus, negative = penalty)
     """
     if overlap and SESSION_BONUSES.get(overlap):
         return float(SESSION_BONUSES.get(overlap))
-    
+
     if session_name and SESSION_BONUSES.get(session_name):
         return float(SESSION_BONUSES.get(session_name))
-    
+
     return 0.0
 
 
 def get_asset_class_threshold(base_threshold: float, asset_class: str) -> float:
     """Get adjusted threshold based on asset class.
-    
+
     Args:
         base_threshold: Base score threshold
         asset_class: Asset class (crypto, fx, stock, commodity, index)
-        
+
     Returns:
         Adjusted threshold for asset class
     """
-    multiplier = ASSET_CLASS_MULTIPLIERS.get(
-        asset_class.lower() if asset_class else "crypto", 
-        1.0
-    )
+    multiplier = ASSET_CLASS_MULTIPLIERS.get(asset_class.lower() if asset_class else "crypto", 1.0)
     return base_threshold * multiplier
 
 
@@ -175,18 +172,18 @@ def get_session_state(asset: str = "") -> Dict[str, Any]:
 
 def get_time_based_features() -> Dict[str, Any]:
     """Get time-based features for ML training.
-    
+
     Returns:
         Dict with:
         - session: Current session
         - overlap: Active overlap period
-        - day_of_week: 0=Monday to 6=Sunday  
+        - day_of_week: 0=Monday to 6=Sunday
         - hour_of_day: 0-23 UTC
         - is_high_impact_news_window: bool
     """
     now_utc = datetime.now(timezone.utc)
     session, overlap = get_current_session()
-    
+
     return {
         "session": session,
         "overlap": overlap,
@@ -210,35 +207,35 @@ class SessionState:
 # Entry point for quick checks
 def is_market_open_for_asset(asset: str) -> Tuple[bool, str]:
     """Quick check if market is open for an asset.
-    
+
     Args:
         asset: Asset symbol
-        
+
     Returns:
         (is_open, reason)
     """
     state = get_session_state(asset)
     if not state["is_open"]:
         return False, f"market_closed:{state['session']}"
-    
+
     if state["risk_level"] == "HIGH":
         return False, f"high_risk:{state['session']}"
-    
+
     return True, "ok"
 
 
 # Quick test
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    
+
     # Test session detection
     session, overlap = get_current_session()
     print(f"Current session: {session}, overlap: {overlap}")
-    
+
     # Test session state
     state = get_session_state()
     print(f"Session state: {state}")
-    
+
     # Test time features
     features = get_time_based_features()
     print(f"Time features: {features}")

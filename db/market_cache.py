@@ -1,8 +1,7 @@
 from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
-from datetime import datetime
-from typing import Iterable, Optional
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert

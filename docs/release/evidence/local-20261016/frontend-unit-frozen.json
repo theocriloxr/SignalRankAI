@@ -1,0 +1,28 @@
+{
+  "name": "frontend-unit-frozen",
+  "sha": "2e94cae344c18ac58810f43b86b9aa187465a5cb",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-15T12:27:32.831866+00:00",
+  "finished_at": "2026-10-15T12:27:37.332889+00:00",
+  "command": [
+    "node",
+    "--experimental-strip-types",
+    "--test",
+    "scripts/transport.test.mjs",
+    "scripts/presentation.test.mjs",
+    "scripts/server-boundaries.test.mjs",
+    "scripts/platform-proxy.test.mjs",
+    "scripts/retained-session.test.mjs",
+    "scripts/dependency-contract.test.mjs",
+    "scripts/cinematic-contract.test.mjs"
+  ],
+  "cwd": "frontend",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/frontend-unit-frozen.log",
+  "log_sha256": "9eb167017d871a5d5701d310bb7694d565753ab753efc933b10f3276155e97f9",
+  "result": "PASS",
+  "source_fingerprint_before": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "source_fingerprint_after": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

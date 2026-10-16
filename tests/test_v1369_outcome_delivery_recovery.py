@@ -87,8 +87,10 @@ def test_expired_projection_is_non_win_non_loss() -> None:
 
 def test_worker_repairs_outcomes_then_notification_outbox() -> None:
     source = (ROOT / "worker" / "worker.py").read_text("utf-8")
-    block = source[source.index("result = await ensure_outcome_projections"):source.index("await session.commit()", source.index("result = await ensure_outcome_projections"))]
-    assert block.index("ensure_outcome_projections") < block.index("repair_outcome_notification_outbox")
+    block = source[source.index("async def _outcome_reconciliation_loop"):]
+    assert block.index('"outcome_reconciliation.projections"') < block.index('"outcome_reconciliation.outbox"')
+    phase = block[block.index("async def _run_phase"):block.index("async def _run()")]
+    assert phase.index("operation(session)") < phase.index("await session.commit()")
     assert "outbox_repair.as_dict()" in source
 
 

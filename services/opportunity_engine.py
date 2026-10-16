@@ -126,7 +126,9 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
     )
 
 
-def rank_opportunities(signals: Iterable[dict[str, Any]], prefs: UserTradingPreferences | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+def rank_opportunities(
+    signals: Iterable[dict[str, Any]], prefs: UserTradingPreferences | None = None, limit: int | None = None
+) -> list[dict[str, Any]]:
     ranked: list[tuple[OpportunityScore, dict[str, Any]]] = []
     for signal in signals or []:
         score = score_opportunity(signal, prefs)

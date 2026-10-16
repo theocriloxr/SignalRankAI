@@ -11,7 +11,7 @@ import logging
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -85,9 +85,7 @@ async def authenticate_api_key(
                 owner = None
                 scope_denied = False
             elif required_scope:
-                owner = await get_api_token_owner(
-                    session, token, required_scope=required_scope
-                )
+                owner = await get_api_token_owner(session, token, required_scope=required_scope)
                 scope_denied = owner is None
             else:
                 owner = owner_any
@@ -96,7 +94,7 @@ async def authenticate_api_key(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("[api] token lookup unavailable: %s", type(exc).__name__)
+        logger.warning("[api] auth lookup unavailable error_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     if owner is None:
         if scope_denied:
@@ -159,7 +157,7 @@ async def rotate_api_token(
             )
             await session.commit()
     except Exception as exc:
-        logger.warning("[api] token rotation unavailable: %s", type(exc).__name__)
+        logger.warning("[api] auth rotation unavailable error_type=%s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     return {"token": raw, "expires_at": expires.isoformat(), "scope": payload.scope}
 

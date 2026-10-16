@@ -13,6 +13,7 @@ Examples:
   python -m scripts.wfo_run --input-dir ./data/parquet --assets BTCUSDT,ETHUSDT --timeframes 5m,1h --start 2021-01-01 --end 2021-06-01
   python -m scripts.wfo_run --input-dir ./raw_orderbooks --convert-orderbooks --normalized-output-dir ./normalized --assets BTCUSDT --timeframes 5m --start 2021-01-01 --end 2021-06-01
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +21,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -83,20 +84,41 @@ def normalize_orderbook_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     # Top-of-book common format
     top_bid_price = next((c for c in ("bidPrice", "bid_price", "best_bid", "bid") if c in out.columns), None)
-    top_bid_qty = next((c for c in ("bidQty", "bid_qty", "bidSize", "bid_size", "bid_volume") if c in out.columns), None)
+    top_bid_qty = next(
+        (c for c in ("bidQty", "bid_qty", "bidSize", "bid_size", "bid_volume") if c in out.columns), None
+    )
     top_ask_price = next((c for c in ("askPrice", "ask_price", "best_ask", "ask") if c in out.columns), None)
-    top_ask_qty = next((c for c in ("askQty", "ask_qty", "askSize", "ask_size", "ask_volume") if c in out.columns), None)
+    top_ask_qty = next(
+        (c for c in ("askQty", "ask_qty", "askSize", "ask_size", "ask_volume") if c in out.columns), None
+    )
     if top_bid_price and top_ask_price:
-        out["bids"] = out.apply(lambda r: [[float(r[top_bid_price]), float(r[top_bid_qty] if top_bid_qty else 0.0)]], axis=1)
-        out["asks"] = out.apply(lambda r: [[float(r[top_ask_price]), float(r[top_ask_qty] if top_ask_qty else 0.0)]], axis=1)
+        out["bids"] = out.apply(
+            lambda r: [[float(r[top_bid_price]), float(r[top_bid_qty] if top_bid_qty else 0.0)]], axis=1
+        )
+        out["asks"] = out.apply(
+            lambda r: [[float(r[top_ask_price]), float(r[top_ask_qty] if top_ask_qty else 0.0)]], axis=1
+        )
         return out[["timestamp", "bids", "asks"]]
 
     # Flattened multi-level format (bid_price_1, bid_size_1, ask_price_1, ask_size_1...)
-    bid_price_cols = sorted([c for c in out.columns if re.match(r"^bid[_]?price[_]?\d+$", c, re.I)], key=lambda c: int(re.sub(r"\D", "", c) or 0))
-    bid_size_cols = sorted([c for c in out.columns if re.match(r"^bid[_]?(?:size|qty|volume)[_]?[0-9]+$", c, re.I)], key=lambda c: int(re.sub(r"\D", "", c) or 0))
-    ask_price_cols = sorted([c for c in out.columns if re.match(r"^ask[_]?price[_]?\d+$", c, re.I)], key=lambda c: int(re.sub(r"\D", "", c) or 0))
-    ask_size_cols = sorted([c for c in out.columns if re.match(r"^ask[_]?(?:size|qty|volume)[_]?[0-9]+$", c, re.I)], key=lambda c: int(re.sub(r"\D", "", c) or 0))
+    bid_price_cols = sorted(
+        [c for c in out.columns if re.match(r"^bid[_]?price[_]?\d+$", c, re.I)],
+        key=lambda c: int(re.sub(r"\D", "", c) or 0),
+    )
+    bid_size_cols = sorted(
+        [c for c in out.columns if re.match(r"^bid[_]?(?:size|qty|volume)[_]?[0-9]+$", c, re.I)],
+        key=lambda c: int(re.sub(r"\D", "", c) or 0),
+    )
+    ask_price_cols = sorted(
+        [c for c in out.columns if re.match(r"^ask[_]?price[_]?\d+$", c, re.I)],
+        key=lambda c: int(re.sub(r"\D", "", c) or 0),
+    )
+    ask_size_cols = sorted(
+        [c for c in out.columns if re.match(r"^ask[_]?(?:size|qty|volume)[_]?[0-9]+$", c, re.I)],
+        key=lambda c: int(re.sub(r"\D", "", c) or 0),
+    )
     if bid_price_cols and ask_price_cols:
+
         def _row_levels(row, price_cols, size_cols):
             levels = []
             for idx, pcol in enumerate(price_cols):
@@ -172,24 +194,34 @@ def discover_inputs(input_dir: Path):
             continue
         stem = path.stem
         asset, tf = _infer_asset_timeframe(stem)
-        kind = "orderbook" if any(h in stem.lower() for h in ORDERBOOK_HINTS) else ("tick" if any(h in stem.lower() for h in TICK_HINTS) else "candle")
+        kind = (
+            "orderbook"
+            if any(h in stem.lower() for h in ORDERBOOK_HINTS)
+            else ("tick" if any(h in stem.lower() for h in TICK_HINTS) else "candle")
+        )
         yield asset, tf, kind, path
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--input-dir', required=True)
-    p.add_argument('--assets', required=True, help='comma separated assets to include')
-    p.add_argument('--timeframes', required=True, help='comma separated timeframes')
-    p.add_argument('--start', required=True)
-    p.add_argument('--end', required=True)
-    p.add_argument('--normalized-output-dir', required=False, help='optional parquet output dir for normalized orderbook snapshots')
-    p.add_argument('--convert-orderbooks', action='store_true', help='normalize detected orderbook inputs to parquet before backtesting')
+    p.add_argument("--input-dir", required=True)
+    p.add_argument("--assets", required=True, help="comma separated assets to include")
+    p.add_argument("--timeframes", required=True, help="comma separated timeframes")
+    p.add_argument("--start", required=True)
+    p.add_argument("--end", required=True)
+    p.add_argument(
+        "--normalized-output-dir", required=False, help="optional parquet output dir for normalized orderbook snapshots"
+    )
+    p.add_argument(
+        "--convert-orderbooks",
+        action="store_true",
+        help="normalize detected orderbook inputs to parquet before backtesting",
+    )
     args = p.parse_args()
 
     input_dir = Path(args.input_dir)
-    assets = [a.strip().upper() for a in args.assets.split(',') if a.strip()]
-    timeframes = [t.strip() for t in args.timeframes.split(',') if t.strip()]
+    assets = [a.strip().upper() for a in args.assets.split(",") if a.strip()]
+    timeframes = [t.strip() for t in args.timeframes.split(",") if t.strip()]
     start = datetime.fromisoformat(args.start)
     end = datetime.fromisoformat(args.end)
     normalized_output_dir = Path(args.normalized_output_dir) if args.normalized_output_dir else None
@@ -203,21 +235,21 @@ def main():
             continue
         df = load_dataset_file(path)
 
-        if kind == 'orderbook' or is_orderbook_frame(df, path):
+        if kind == "orderbook" or is_orderbook_frame(df, path):
             normalized = normalize_orderbook_frame(df)
-            runner.register_orderbook_dataframe(asset or path.stem.upper(), tf or '1m', normalized)
+            runner.register_orderbook_dataframe(asset or path.stem.upper(), tf or "1m", normalized)
             if args.convert_orderbooks and normalized_output_dir is not None:
                 out_name = f"{(asset or path.stem).upper()}_{tf or 'orderbook'}_orderbook.parquet"
                 normalized_output_dir.mkdir(parents=True, exist_ok=True)
                 normalized.to_parquet(normalized_output_dir / out_name, index=False)
-        elif kind == 'tick' or is_tick_frame(df, path):
-            runner.register_tick_dataframe(asset or path.stem.upper(), tf or '1m', df)
+        elif kind == "tick" or is_tick_frame(df, path):
+            runner.register_tick_dataframe(asset or path.stem.upper(), tf or "1m", df)
         else:
             # Best effort candle normalization: ensure timestamp sorting if present
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
-                df = df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
-            runner.register_dataframe(asset or path.stem.upper(), tf or '1m', df)
+            if "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+                df = df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+            runner.register_dataframe(asset or path.stem.upper(), tf or "1m", df)
 
     wfo = WalkForwardOptimizer(runner)
 
@@ -230,5 +262,5 @@ def main():
         print(r)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
