@@ -1,5 +1,30 @@
 # Release blockers and exact continuation
 
+## Current continuation findings, 16 October 2026
+
+Stage 1 remains FAILED. The 51d2f59e focused baseline passed 32 executed tests.
+Repairs subsequently passed 71 diagnostic tests in a modified worktree, including
+real SQL against a newly migrated owned localhost database. These diagnostics
+are not frozen-commit acceptance; see the current evidence section.
+
+Configuration overrides previously accepted duplicate aliases, Boolean schema
+versions and malformed symbols. Environment-label precedence could mask production.
+The DB query admitted metadata-only records. These defects are repaired locally;
+strict scan reads now require recent analysis-readiness, matching classification,
+provider candle/quote capabilities and non-delisted mappings. Fresh registry
+timestamps do not prove candle freshness, entitlement, spread or liquidity.
+
+Remaining local focused work: actual provider-bound qualification and refresh,
+bounded retention/hysteresis, owner overrides and reasons, other signal and
+learning paths, web/Telegram presentation, and independent new-order enforcement.
+Do not label these gaps external or start the redesign phase while Stage 1 is open.
+
+Fresh read-only control-plane evidence confirms only a production Railway
+environment, API at 9865a3d1 and public web at f026bd16, and a crashed historical
+soak observer. PR #201 remains draft with required independent last-push approval;
+manifest/release-certification jobs still cannot start because of GitHub billing.
+No protected check was bypassed. See evidence/continuation-20261016/.
+
 Current Stage 1 acceptance: **FAILED — not complete**. Local integration,
 foundation fixes and the complete 3,984-test suite now pass on c411ebbb. Remaining
 source-specific acceptance review is local work, not an external blocker.

@@ -1,5 +1,23 @@
 # Branch reconciliation
 
+## Fresh synchronization, 16 October 2026
+
+The initial checkout was clean at 336dd28f4f36342ea22cd01d33892d2a7a4e9148.
+The narrow fetch configuration was supplemented with an explicit heads refspec;
+all remote heads and tags were fetched. PR #201 was at
+51d2f59ed2c1553841fc24dda98689ffb26a0b7a, exactly 20 commits ahead with no local
+divergence. A fast-forward preserved every commit. All 18 worktrees remain.
+Main is still 98a5de18f92674c9e70ec61a802391bf984de8d6.
+
+The active GitHub ruleset requires one independent approval of the last push,
+resolved review threads, and manifest/release-certification success. It permits
+no bypass. All 16 Railway service sources were inspected without variable values:
+none follows the Stage 1 integration branch. Production services follow the old
+provider-readiness branch, the recovery branch, main, or pinned images; watch
+patterns and pins are retained in evidence/continuation-20261016/railway-readonly.json.
+CI runs on fix branches, but its production approval job is restricted to the
+provider-readiness branch. Publishing Stage 1 commits is not a production promotion.
+
 The pre-integration snapshot is [branch-audit.json](evidence/branch-audit.json):
 246 local/remote refs, 4,663 reachable commits, 216 preserved ancestors, one
 patch-equivalent/merge-only ref and 29 divergent refs. There are 197 distinct

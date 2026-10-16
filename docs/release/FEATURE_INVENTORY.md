@@ -1,5 +1,16 @@
 # Feature inventory
 
+The current owner request is retained in docs/specs/20261016/recovery-request.md.
+The focused scanner remains staging-only and default-disabled. Its config file
+and in-memory overrides now share strict validation. Every declared environment
+must be non-production; a permissive label cannot hide a production label.
+The opt-in DB read requires recent instrument/provider/readiness timestamps,
+analysis-ready states, candle/quote capabilities, active mappings and matching
+canonical class. Empty or unavailable eligible sets remain empty after selection.
+These checks do not certify live provider data, grant broker authority or finish
+cross-client/new-order enforcement. Historical data and position management are
+outside this scan-only filter and are not rewritten.
+
 The exact route, endpoint, command, callback, provider, broker, strategy callable
 and timeframe rows are generated in [requirements.json](requirements.json) and
 [REQUIREMENTS_TRACEABILITY.md](REQUIREMENTS_TRACEABILITY.md). This index does not

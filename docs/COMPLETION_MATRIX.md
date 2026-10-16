@@ -8,10 +8,10 @@ The canonical continuation is `fix/release-recovery-20261008`, PR #189; the rele
 
 | Status | Entries |
 | --- | ---: |
-| AUDIT_PENDING | 990 |
+| AUDIT_PENDING | 988 |
 | BLOCKED_EXTERNAL | 0 |
 | IMPLEMENTED_UNVERIFIED | 0 |
-| PARTIAL | 1 |
+| PARTIAL | 3 |
 | UNIMPLEMENTED | 0 |
 | VERIFIED_CI | 0 |
 | VERIFIED_LOCAL | 0 |
@@ -639,7 +639,7 @@ The canonical continuation is `fix/release-recovery-20261008`, PR #189; the rele
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-002](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Ghost-price / plausible-range checks by instrument using dynamic reference bands rather than brittle hard-coded values. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-003](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | OHLC consistency: low <= open/close <= high; nonzero/valid price; monotonic timestamps; expected interval continuity. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-004](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Cross-provider sanity for execution-sensitive quotes when practical; record disagreement and fail closed beyond tolerance. | AUDIT_PENDING |
-| [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-005](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Symbol alias registry with canonical instrument ID. Eliminate synthetic leakage such as malformed symbols that produce zero data. | AUDIT_PENDING |
+| [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-005](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Symbol alias registry with canonical instrument ID. Eliminate synthetic leakage such as malformed symbols that produce zero data. | PARTIAL |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-006](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Market calendar/session gate: stocks, indices, futures/commodities only trade when the selected instrument/venue is actually open or the strategy explicitly supports extended hours. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-007](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Provider health is capability-specific. “Provider healthy” for crypto does not prove it is healthy for indices/commodities. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-008](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Provider certification artifacts must include tested symbols, timeframes, timestamps, freshness distribution, missing-candle rate, error rate, latency, fallback use and exact release SHA. | AUDIT_PENDING |
@@ -693,7 +693,7 @@ The canonical continuation is `fix/release-recovery-20261008`, PR #189; the rele
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-1-005](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Order acknowledgement is not fill. Reconcile actual broker order/fill/position state after timeout/restart. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-1-006](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | If broker/API state is ambiguous, freeze further execution for that order/account and reconcile before new risk is added. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-001](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Exact release SHA certified and provenance endpoint matches deployed SHA/image/schema. | AUDIT_PENDING |
-| [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-002](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Provider feed certified for that exact instrument/asset class and currently fresh. | AUDIT_PENDING |
+| [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-002](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Provider feed certified for that exact instrument/asset class and currently fresh. | PARTIAL |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-003](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Broker demo certification current for the same adapter/account capability set. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-004](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Global and account-level kill switches functional and drill-tested. | AUDIT_PENDING |
 | [docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-005](../docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt) | Portfolio daily-loss, max-open-risk, per-symbol, per-class, correlation/concentration and news/session limits configured. | AUDIT_PENDING |

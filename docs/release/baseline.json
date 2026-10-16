@@ -3,7 +3,7 @@
   "primary_branch": "main",
   "integration_branch": "fix/stage1-canonical-reconciliation-20261014",
   "code_baseline": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
-  "baseline_state": "COMMITTED_LOCAL_CHECKS_PASSED_REVIEW_PENDING",
+  "baseline_state": "STAGE1_LOCAL_REPAIRS_ACCEPTANCE_PENDING",
   "main_at_inspection": "98a5de18f92674c9e70ec61a802391bf984de8d6",
   "recovery_base": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
   "blueprint": "8e46ca7d61df16a9b2820090162479fc8b390983",
@@ -12,5 +12,9 @@
   "production_authorized": false,
   "live_trading_authorized": false,
   "tested_code_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
-  "local_evidence_index": "docs/release/evidence/local-20261016/index.json"
+  "local_evidence_index": "docs/release/evidence/local-20261016/index.json",
+  "integration_base": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+  "current_stage": 1,
+  "stage_acceptance": "FAILED",
+  "current_request": "docs/specs/20261016/recovery-request.md"
 }

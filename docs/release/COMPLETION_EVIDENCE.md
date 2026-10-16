@@ -1,4 +1,32 @@
-## Stage 1 focused-universe implementation and CI retry — 16 October 2026
+## Current local continuation — 16 October 2026
+
+Freshly fetched clean 51d2f59ed2c1553841fc24dda98689ffb26a0b7a passed **32**
+focused-scope/paging tests (exit 0), with unchanged source fingerprints.
+The earlier terminal-access limitation is historical and no longer applies here.
+
+New configuration regressions reproduced **5 failures, 9 passes** before repair:
+duplicate aliases, Boolean schema versions and malformed override symbols.
+The first database regression run returned **1 failed, 64 passed** because a JSON
+fixture was incorrectly embedded in SQL text; binding JSON as a parameter fixed
+the test setup without changing its assertions. The repaired diagnostic returned
+**71 passed, zero failures/skips**, including actual PostgreSQL migrations and
+SQL checks plus test-wrapper child processes that mutate, delete or add source.
+These runs used modified source on top of 51d2f59e and are explicitly diagnostics,
+not acceptance of that Git commit. Frozen acceptance remains pending here.
+
+All test children use sanitized local settings, no inherited service credentials,
+disabled financial flags and owned localhost databases. Synthetic readiness rows
+test the SQL boundary; they are not provider or broker certification.
+The wrapper now records dirty state, command exit status and source identity,
+supports --require-clean, and fails when a successful command changes the source.
+
+Read-only Railway evidence confirms the API/public-web release mismatch, no
+staging environment and a crashed historical observer. GitHub billing still
+prevents required jobs from starting. No merge, deployment, production database
+query, external billing/Telegram operation, broker call or permission change ran.
+Retained observations and local receipts are under evidence/continuation-20261016/.
+
+## Historical focused-universe implementation and CI retry — 16 October 2026
 
 This continuation added a data-backed five-class candidate configuration at
 `configs/focused_universe.json`, a fail-closed classifier/selector at

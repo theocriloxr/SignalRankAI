@@ -71,6 +71,60 @@
       },
       "evidence": [],
       "external": null
+    },
+    "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-5-2-005": {
+      "text_sha256": "da74f2e2bade38ab9dcdd536871faf561a3af6f5e64ef2e933983e052429bee2",
+      "status": "PARTIAL",
+      "current_behavior": "Canonical symbol aliases and five-class shortlist normalization are implemented. Configuration overrides now reject duplicates and malformed symbols; focused SQL compares database and canonical classification.",
+      "canonical_paths": [
+        "core/asset_registry.py",
+        "core/focused_universe.py",
+        "data/database_universe.py"
+      ],
+      "conflicting_legacy_paths": [],
+      "missing_acceptance": [
+        "Provider/venue-specific identity, contracts and unsupported shortlist mappings still require acceptance; symbol spelling alone does not certify tradability."
+      ],
+      "tests": {
+        "positive": [
+          "tests/test_focused_universe_policy_20261016.py::test_aliases_and_non_shortlisted_symbols_never_bypass_selection"
+        ],
+        "negative": [
+          "tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed",
+          "tests/test_focused_universe_database_postgres.py::test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records"
+        ],
+        "concurrency": [],
+        "recovery": []
+      },
+      "evidence": [],
+      "external": null
+    },
+    "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt#SR-MASTER-8-2-002": {
+      "text_sha256": "32bc487f8117883cee0cf0cb5f41901d3153e3a846668fa829c991f989703c38",
+      "status": "PARTIAL",
+      "current_behavior": "The focused staging DB path rejects missing/metadata-only readiness, stale/future metadata times, absent quote/candle capabilities and mismatched asset classes. Registry readiness is not proof of an entitled, fresh exact-provider feed.",
+      "canonical_paths": [
+        "data/database_universe.py",
+        "core/focused_universe.py",
+        "scripts/certify_market_classes.py",
+        "data/provider_catalog.py"
+      ],
+      "conflicting_legacy_paths": [],
+      "missing_acceptance": [
+        "Provider-bound live observation, candle coverage, entitlements, quote freshness and account-specific new-order enforcement remain open. Dedicated staging provider credentials and certification are required."
+      ],
+      "tests": {
+        "positive": [
+          "tests/test_focused_universe_database_postgres.py::test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records"
+        ],
+        "negative": [
+          "tests/test_focused_universe_policy_20261016.py::test_unavailable_database_never_reuses_provider_fallback_symbols"
+        ],
+        "concurrency": [],
+        "recovery": []
+      },
+      "evidence": [],
+      "external": null
     }
   }
 }

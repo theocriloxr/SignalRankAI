@@ -1,0 +1,65 @@
+{
+  "scope": "Read-only remote observations and explicitly scoped local checks. Only recovered-focus-baseline-20261016 ran on clean 51d2f59e; the other pytest receipts are modified-worktree diagnostics, not frozen acceptance.",
+  "artifacts": [
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-20261016.json",
+      "sha256": "09153a36329af7cc43b6e485fba49a2388761a8c1d963a8740c09eb140cc4034",
+      "bytes": 1200
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-20261016.log",
+      "sha256": "7f48b1960586408de70703ac3e42f4a8416833a75e81e535c76e6b478a4df2e2",
+      "bytes": 16023
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json",
+      "sha256": "a7e916735e8ab8c17e28ac4e82824f21a5a617a8a4e9811b02c8291bc8e71bd5",
+      "bytes": 1541
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.log",
+      "sha256": "4523022909b1dfb8f4695890415a8c516667882e3b2ac0434bae8bb9498f67a8",
+      "bytes": 102
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-override-regression-before-fix-20261016.json",
+      "sha256": "c453b1c60d99eb7cd0677b7e5e410857bccc5e45f43dc0220b96e56dbb0df60b",
+      "bytes": 1109
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/focused-override-regression-before-fix-20261016.log",
+      "sha256": "0b67b659885f930f0df511f650335728ce993e00d1543cf30cfe835ac6f0ead4",
+      "bytes": 9406
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/github-ci-annotations.jsonl",
+      "sha256": "a5cd553a2ef40eb58e17d89472f513fffe4cd00bb4fefd3ed544c4c68a081334",
+      "bytes": 295
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/github-pr.json",
+      "sha256": "89a0de82cc17305b660c2db0e3f8447da5983e054d6ecbdc5873e1b99149f30a",
+      "bytes": 399
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/github-ruleset.json",
+      "sha256": "c2b455c0e52f47a10f6213116b2b32cedc141b117bb3c5188cf725effeaaf6f8",
+      "bytes": 1315
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/railway-readonly.json",
+      "sha256": "9b4170f621948c522a4405c6a8140e21017ccfd0cf751c54bfef398dc01b3d02",
+      "bytes": 18939
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/recovered-focus-baseline-20261016.json",
+      "sha256": "92cf2cdae0b3205723431ec91dc27eccf5940c9bfedadc50f294ae7a6b6ddac7",
+      "bytes": 1137
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261016/recovered-focus-baseline-20261016.log",
+      "sha256": "7299c9ec14e5c01661a312785139a9ef51d0aa64e6ca45b074ca32b952978e9c",
+      "bytes": 101
+    }
+  ]
+}

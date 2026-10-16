@@ -391,6 +391,20 @@
       "test_evidence": [],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
+    },
+    {
+      "id": "SR-FOCUS-20261015",
+      "kind": "CANONICAL",
+      "source": "docs/release/current_scope_20261016.json; docs/specs/20261016/recovery-request.md#phase-3",
+      "requirement": "10 preferred core candidates plus up to 5 qualified optional instruments per class; no implicit broker authority",
+      "current_implementation": "Existing staging-only opt-in scanner now shares strict configuration validation, rejects conflicting environment labels and filters recent analysis-ready database candidates before profile scheduling. Metadata-only discovery is excluded. This is not provider entitlement/freshness certification or enterprise-wide/new-order enforcement.",
+      "responsible_component": "core/focused_universe.py; data/database_universe.py; engine/core.py",
+      "verification_method": "Positive/negative configuration and activation tests, real PostgreSQL expiry/classification/capability rejection, full engine/client/account-specific new-order integration and authorized staging provider receipts.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "BASELINE",
+      "classification": "REQUIRED",
+      "failure_reason": "CROSS_SYSTEM_FOCUSED_UNIVERSE_ACCEPTANCE_INCOMPLETE"
     }
   ]
 }

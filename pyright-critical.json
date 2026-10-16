@@ -21,6 +21,8 @@
     "core/financial_activation.py",
     "core/release_guard.py",
     "core/asset_certification.py",
+    "core/focused_universe.py",
+    "data/database_universe.py",
     "core/paper_trading_service.py",
     "core/account_policy.py",
     "core/transactional_outbox.py",

@@ -39,12 +39,15 @@ def test_environment() -> dict[str, str]:
 
 
 def main() -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    configure_stdout = getattr(sys.stdout, "reconfigure", None)
+    if callable(configure_stdout):
+        configure_stdout(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--name", required=True)
     parser.add_argument("--cwd", default=".")
     parser.add_argument("--step-timeout-seconds", type=int)
+    parser.add_argument("--require-clean", action="store_true",
+                        help="Refuse to run acceptance checks from uncommitted source")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if not args.command or not args.name.replace("-", "").replace("_", "").isalnum():
@@ -56,15 +59,25 @@ def main() -> int:
     directory = ROOT / "artifacts/stage1-20261014"
     directory.mkdir(parents=True, exist_ok=True)
     log = directory / (args.name + ".log")
-    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    def git_state():
+        return {
+            "sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+            "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT).strip()),
+        }
+    state_before = git_state()
+    sha = state_before["sha"]
+    if args.require_clean and state_before["dirty"]:
+        parser.error("acceptance_requires_clean_commit")
     def source_fingerprint():
         paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=ROOT, text=True).splitlines()
         entries = []
         for name in sorted(set(paths)):
             path = ROOT / name
-            if not path.is_file() or name.startswith(("docs/", "artifacts/")):
+            if name.startswith("artifacts/") or (name.startswith("docs/") and
+                    not name.startswith(("docs/specs/", "docs/release/current_scope_"))):
                 continue
-            entries.append((name, hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()))
+            entries.append((name, hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+                            if path.is_file() else "DELETED"))
         return hashlib.sha256(json.dumps(entries).encode()).hexdigest()
     before = source_fingerprint()
     started = datetime.now(timezone.utc).isoformat()
@@ -76,18 +89,26 @@ def main() -> int:
     env["PYTEST_ADDOPTS"] = f"-o cache_dir=.pytest-tmp/stage1-cache-{args.name} --basetemp=.pytest-tmp/stage1-pytest-{args.name}"
     with log.open("wb") as output:
         result = subprocess.run(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
-    receipt = {"name": args.name, "sha": sha, "environment": "isolated_local_postgresql17",
+    after = source_fingerprint()
+    state_after = git_state()
+    source_unchanged = before == after and state_before == state_after
+    exit_code = result.returncode if result.returncode else (0 if source_unchanged else 1)
+    receipt = {"name": args.name, "sha": sha, "environment": "sanitized_local_test",
                "started_at": started, "finished_at": datetime.now(timezone.utc).isoformat(),
-               "command": command, "cwd": args.cwd, "exit_code": result.returncode,
+               "command": command, "cwd": args.cwd, "exit_code": exit_code,
+               "command_exit_code": result.returncode, "require_clean": args.require_clean,
+               "acceptance_eligible": args.require_clean and source_unchanged and exit_code == 0,
+               "worktree_before": state_before, "worktree_after": state_after,
                "step_timeout_seconds": args.step_timeout_seconds,
                "log": log.relative_to(ROOT).as_posix(), "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest(),
-               "result": "PASS" if result.returncode == 0 else "FAIL",
-               "source_fingerprint_before": before, "source_fingerprint_after": source_fingerprint(),
+               "result": "PASS" if exit_code == 0 else "FAIL",
+               "source_unchanged": source_unchanged,
+               "source_fingerprint_before": before, "source_fingerprint_after": after,
                "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
     (directory / (args.name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(receipt))
     print(log.read_text("utf-8", errors="replace")[-5000:])
-    return result.returncode
+    return exit_code
 
 
 if __name__ == "__main__":

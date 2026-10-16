@@ -1,0 +1,25 @@
+{
+  "name": "recovered-focus-baseline-20261016",
+  "sha": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-16T20:26:47.940463+00:00",
+  "finished_at": "2026-10-16T20:26:56.900578+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_current_scope_handoff_20261016.py",
+    "tests/test_focused_universe_policy_20261016.py",
+    "tests/test_stage1_universe_paging.py"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/recovered-focus-baseline-20261016.log",
+  "log_sha256": "7299c9ec14e5c01661a312785139a9ef51d0aa64e6ca45b074ca32b952978e9c",
+  "result": "PASS",
+  "source_fingerprint_before": "b124ef61298b46edfaf187d6370208c7c5187063e853859f724a6340612b2a38",
+  "source_fingerprint_after": "b124ef61298b46edfaf187d6370208c7c5187063e853859f724a6340612b2a38",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

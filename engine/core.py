@@ -2830,6 +2830,12 @@ def main_loop(DRY_RUN: bool = False):
                 type(_profile_demand_err).__name__,
             )
 
+        from core.focused_universe import focused_universe_enabled, select_focused_scan_assets
+
+        # Validate every environment label before discovery; one staging label
+        # must never mask a conflicting production label.
+        _focused_enabled = focused_universe_enabled(os.environ)
+
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
         # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
         _saved_assets = [
@@ -2894,6 +2900,7 @@ def main_loop(DRY_RUN: bool = False):
                             _universe_session,
                             asset_classes=_requested_universe_classes,
                             page_size=max(20, _env_int("ENGINE_DATABASE_UNIVERSE_LIMIT", 250)),
+                            require_analysis_ready=_focused_enabled,
                         )
 
                 _discovered_assets = [
@@ -2909,7 +2916,7 @@ def main_loop(DRY_RUN: bool = False):
                         or []
                     )
                 ]
-                # Retain the metadata-certified database subset before class
+                # Retain the database analysis-readiness subset before class
                 # completion may add provider-discovery candidates.
                 _focused_db_symbols = list(_discovered_assets)
                 from data.class_universe import build_class_complete_universe, default_discoverers
@@ -2956,35 +2963,19 @@ def main_loop(DRY_RUN: bool = False):
         # Explicit staging-only opt-in. Restrict all merged sources (including
         # managed/user-pinned assets) before profile ranking or scan scheduling.
         # This does NOT authorize live execution or change broker account policy.
-        if _env_bool("FOCUSED_UNIVERSE_ENABLED", False):
-            _focused_environment = str(
-                os.getenv("RAILWAY_ENVIRONMENT_NAME")
-                or os.getenv("RAILWAY_ENVIRONMENT")
-                or os.getenv("APP_ENV")
-                or os.getenv("ENVIRONMENT")
-                or ""
-            ).strip().lower()
-            if _focused_environment not in {"staging", "stage", "development", "dev", "test"}:
-                # Candidate lists are not certification for a production scan
-                # or for broker live execution. Refuse even explicit opt-in
-                # until a separately reviewed production release is certified.
-                raise RuntimeError("focused_universe_requires_staging_certification")
-            from core.focused_universe import select_focused_assets
-
+        if _focused_enabled:
             # The merged universe contains owner-pinned and user-saved symbols,
             # neither of which proves live market-data eligibility. For this
-            # experimental staging path, only accept instruments from the
-            # provider-backed database registry. Any fallback or missing DB
-            # certification degrades to an empty scan universe, not a bypass.
+            # experimental staging path, only accept analysis-ready registry
+            # candidates. This does not certify current provider market data.
             if _universe_source != "database_registry":
                 logger.warning(
                     "[engine] focused_universe blocked: provider-backed database registry unavailable source=%s",
                     _universe_source,
                 )
-                _focused_available = []
-            else:
-                _focused_available = _focused_db_symbols
-            _focused = select_focused_assets(_focused_available)
+            _focused = select_focused_scan_assets(
+                _focused_db_symbols, universe_source=_universe_source, environment=os.environ,
+            )
             assets = list(_focused.assets)
             logger.info(
                 "[engine] focused_universe enabled=1 selected=%s offered=%s excluded=%s by_class=%s",

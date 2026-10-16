@@ -1,5 +1,23 @@
 # SignalRankAI master execution contract
 
+## Active continuation, 16 October 2026
+
+The full current owner request is preserved verbatim in
+[recovery-request.md](../specs/20261016/recovery-request.md). Continue Stage 1
+before later phases. It conditionally authorizes non-destructive deployment
+after every mandatory release gate passes; those gates remain unsatisfied.
+Live trading permissions and production test/migration/restore operations remain
+prohibited during this recovery.
+
+The checkout has safely fast-forwarded from 336dd28f to the fetched PR #201 head,
+51d2f59ed2c1553841fc24dda98689ffb26a0b7a. Current repairs harden the existing
+staging-only focused scanner: shared strict configuration validation, rejection
+of conflicting environment labels, and recent analysis-readiness DB selection.
+Registry state and capability flags do not certify actual market data or
+account-specific execution. The entire focused-universe requirement remains open.
+Use scripts/stage1_local_checks.py --require-clean for frozen acceptance;
+the wrapper now fails if source or Git identity changes during a successful command.
+
 This is the current execution and handoff authority for the user's Stage 1
 recovery mission. It does not grant production deployment or live trading
 authority. Machine-readable revision identities are in [baseline.json](baseline.json).
