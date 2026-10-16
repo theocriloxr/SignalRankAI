@@ -1,5 +1,25 @@
 # Completion evidence
 
+## Stage 1 continuation — 16 October 2026 (current user focus)
+
+The 15 October user instruction narrowed the desired active universe to 10 preferred
+core and up to 5 qualified optional instruments in each of five asset classes.
+The candidate policy and explicit **NOT_IMPLEMENTED** status are preserved at
+[current_scope_20261016.json](current_scope_20261016.json). The additional
+`scripts/validate_current_scope.py` and
+`tests/test_current_scope_handoff_20261016.py` guard this source contract,
+including no implicit live authorization and continued management of existing
+positions. The master contract, blockers and feature inventory were updated.
+
+A connected-repository **static readback** of six committed files checked
+24 policy/document assertions: **24 passed, 0 failed**. This checks source
+integrity and link consistency only; it is **not** Python pytest execution,
+runtime discovery enforcement, browser or live-broker testing. The preexisting
+3,984-test report still refers only to c411ebbb, not these later changes.
+Hosted CI and exact-head regression execution remain outstanding because of
+the documented GitHub billing lock. No environment variables, trading
+permissions, orders, production data or deployments were changed.
+
 Latest integrated runtime candidate: `c411ebbb67d35fdad91d1281b667a7ee8272dd38`.
 On 16 October 2026 the full local run passed **3,984 tests, zero failures,
 errors, skips or unparsed batches**, across all 20 pytest batches and 12
