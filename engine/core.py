@@ -2967,7 +2967,20 @@ def main_loop(DRY_RUN: bool = False):
                 raise RuntimeError("focused_universe_requires_staging_certification")
             from core.focused_universe import select_focused_assets
 
-            _focused = select_focused_assets(assets)
+            # The merged universe contains owner-pinned and user-saved symbols,
+            # neither of which proves live market-data eligibility. For this
+            # experimental staging path, only accept instruments from the
+            # provider-backed database registry. Any fallback or missing DB
+            # certification degrades to an empty scan universe, not a bypass.
+            if _universe_source != "database_registry":
+                logger.warning(
+                    "[engine] focused_universe blocked: provider-backed database registry unavailable source=%s",
+                    _universe_source,
+                )
+                _focused_available = []
+            else:
+                _focused_available = _discovered_assets
+            _focused = select_focused_assets(_focused_available)
             assets = list(_focused.assets)
             logger.info(
                 "[engine] focused_universe enabled=1 selected=%s offered=%s excluded=%s by_class=%s",
