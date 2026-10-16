@@ -9,7 +9,7 @@ not declare Stage 1 complete or begin the next stage.
 | ID | Status | Owner/component | Evidence / next action |
 | --- | --- | --- | --- |
 | ST1-TEST | VERIFIED | Engineering / local verification | Clean unchanged c411ebbb: 3,984 passed, zero failed/errors/skipped; all 32 orchestration steps pass. Both local browser modes and Android/iOS exports pass. See COMPLETION_EVIDENCE.md and retained receipts for scope. This verifies the local suite, not product-wide acceptance. |
-| ST1-FOCUSED-UNIVERSE | NOT_IMPLEMENTED | Stage 1 source reconciliation / asset-registry owners | The current user has superseded old all-asset active scanning targets: 10 preferred core plus at most 5 qualified optional instruments in each of five classes. `current_scope_20261016.json` preserves the candidate list and fail-closed safety contract. `scripts/validate_current_scope.py` checks source-scope invariants only. Runtime discovery/scanning, web, Telegram, research, account-specific order routing, existing-position management and broker certification remain to be implemented/tested. This scope is NOT live-active; no trading permission or production config was changed. |
+| ST1-FOCUSED-UNIVERSE | FAILED | Stage 1 / focused-universe scanner | 10 core + up to 5 optional candidate contract is preserved. `configs/focused_universe.json`, `core/focused_universe.py` and `engine/core.py` now offer classification-checked, capped, no-fallback scan selection behind `FOCUSED_UNIVERSE_ENABLED=0` by default. Enabled behavior explicitly rejects non-staging environments. Tests were added but could not execute in hosted CI (zero job steps). Qualification scoring, independent broker/order-entry boundaries, other signal paths, web, Telegram, all market/provider certifications, local exact-head test execution and production rollout remain **unverified/not complete**. Existing positions and live permissions unchanged. |
 | ST1-SOURCES | FAILED | Architecture and component owners | The inventory retains current and historical clauses, but many have no source-specific implementation/acceptance disposition. Resolve each applicable clause with code and meaningful tests; preserve superseded/optional context explicitly. See the generated matrix, not old PASS reports. |
 | ST1-INTEGRATION | IMPLEMENTED | Repository maintainers | Blueprint ancestry, legal merge and recovered provider/ML fixes are committed, with browser attribution and fixture repairs. Complete the draft PR handoff; main still requires independent last-push approval and manifest/release-certification checks. |
 | EXT-CI | BLOCKED_EXTERNAL | GitHub billing/account owner | `evidence/github-latest-annotations.json`: jobs never started because the account is locked due to a billing issue. Restore GitHub Actions availability and rerun required checks on the proposed SHA. |
@@ -38,3 +38,19 @@ to their scope. Never weaken risk, calibration, ownership or evidence thresholds
 No production migration, configuration change, customer data write, billing
 operation, broker order or real-money permission change is authorized by this
 handoff. External blockers do not justify marking unrelated local work complete.
+
+
+## Latest continuation (16 October 2026)
+
+- Retry of GitHub Actions run `38932482649` generated attempt 2; jobs
+  failed before executing any steps. Later run `38943080448` at
+  `e908bfba959b3d35fdeccfae6af14221059b1fff` also reports failed
+  manifest/release-certification jobs with zero steps. No successful hosted
+  coverage or release approval can be inferred.
+- A read-only fetch of the deployed hostname resolved `/` to `/app`, which
+  displayed a session-restoration workstation. `/login` returned HTTP 404.
+  This is evidence of the routing gap, not authenticated/browser E2E certification.
+- Source-review work, exact-head Python/JS suites, externally provisioned
+  broker-demo and staging Telegram tests, full Next public-site cutover,
+  backup restoration and rolling/soak verification remain open. Do not merge
+  draft PR #201 or deploy trading changes based on local/static review alone.
