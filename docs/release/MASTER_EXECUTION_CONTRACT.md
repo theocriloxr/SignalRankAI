@@ -41,6 +41,28 @@ not separate feature counts. `FAILED: CLAUSE_ACCEPTANCE_NOT_ESTABLISHED` means
 unfinished review, not proof that the feature is absent. Interface declarations
 are IMPLEMENTED only at declaration scope; they do not certify user journeys.
 
+## Latest user scope: focus, not all-asset expansion
+
+The user's 15 October 2026 instruction narrows **new active scanning and new
+entries** to 10 preferred core candidates and at most five qualified optional
+candidates per asset class (crypto, forex, index, equity and commodity). The
+current Stage 1 scope record is
+[current_scope_20261016.json](current_scope_20261016.json), validated by
+`python -m scripts.validate_current_scope`. These candidate labels are not
+broker certifications, active-trading permission or a completed runtime
+implementation. The old broad universe remains available as historical
+research context, and existing positions require continued lifecycle
+management and reconciliation even if their instruments are excluded from
+new entries. No automatic asset activation, production permission change,
+live order or provider fallback is authorized by this scope record.
+
+The preceding scope change is an explicit unresolved source-specific acceptance
+item (ST1-FOCUSED-UNIVERSE) until every runtime path and account-specific
+execution boundary is proven. A previous request to scan all assets must not
+silently override the newer active-universe ceiling. Stage 1 must preserve this
+conflict decision in the next-stage handoff; do not certify product readiness
+from the document or validator alone.
+
 ## Source precedence and preservation
 
 The current user mission and its production-safety restrictions control this
