@@ -118,3 +118,35 @@ audit, provider entitlement certification, broker lifecycle, real-money executio
 external notification/payment journey or staging soak is claimed. Later evidence
 commits do not change the identity of the tested runtime candidate; they need
 their own inventory/governance checks.
+
+## Subsequent continuation — local execution constraints and DB-only shortlist
+
+The owner authorized an **equivalent local verification path** instead of unavailable
+GitHub Actions, but did not waive substantive safety, correctness, independent
+review, deployment identity or broker/demo acceptance. This environment could
+not fetch or clone the repository: `git ls-remote` returned
+`Could not resolve host: github.com`. The GitHub connector permits remote
+source reads and commits but does not expose the user's Codex working tree,
+uncommitted edits, or a terminal. Vercel sandbox creation was independently
+denied (403). **No exact-head full-project local pytest/build/DB/Telegram/broker
+suite could be executed in this continuation.** Prior 3,984 Python passes are
+not transferable to the current SHA.
+
+Source audit found a focused-universe eligibility bypass: the experimental
+staging selector was initially fed merged owner-managed, user-pinned and
+discovered symbols, which are not equivalent to database/provider
+qualifications. The branch now captures
+`_focused_db_symbols` **before** `build_class_complete_universe` may add
+unqualified provider-discovery fallbacks, then selects only from that stored
+database-certified candidate snapshot. If DB discovery fails or the
+universe source is not `database_registry`, it selects an empty active
+scan set. All changes remain staging opt-in and default-disabled; order
+routing is not certified. A regression source assertion was added. Actual
+pytest execution remains pending.
+
+Railway still has no separate staging environment in the connected project,
+and production API/public-web use different older commit identities.
+Do not merge or deploy until exact-head local verification, controlled
+migration checks, permissions, demo fills, web/Telegram tests and operational
+release gates genuinely pass.
+
