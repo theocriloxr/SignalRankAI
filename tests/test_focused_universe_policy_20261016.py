@@ -94,3 +94,20 @@ def test_production_environment_cannot_activate_uncertified_shortlist():
     assert 'RAILWAY_ENVIRONMENT_NAME' in code
     assert '"staging", "stage", "development", "dev", "test"' in code
     assert '"production"' not in code[code.index('if _env_bool("FOCUSED_UNIVERSE_ENABLED", False):'):code.index('from core.focused_universe import select_focused_assets')]
+
+
+
+def test_staging_whitelist_has_database_proof_and_excludes_provider_fallbacks():
+    # The engine must capture provider-backed DB certificates BEFORE the
+    # class-completion routine adds unqualified discovery candidates.
+    code = (ROOT / "engine/core.py").read_text(encoding="utf-8")
+    init = code.index("_focused_db_symbols: List[str] = []")
+    from_db = code.index("_focused_db_symbols = list(_discovered_assets)")
+    discover = code.index("_discovered_assets, _class_universe_health = build_class_complete_universe(")
+    use = code.index("_focused_available = _focused_db_symbols")
+    apply = code.index("_focused = select_focused_assets(_focused_available)")
+    assert init < from_db < discover < use < apply
+    assert '_universe_source != "database_registry"' in code
+    assert "_focused_available = []" in code
+    assert "select_focused_assets(assets)" not in code
+    assert "select_focused_assets(_discovered_assets)" not in code
