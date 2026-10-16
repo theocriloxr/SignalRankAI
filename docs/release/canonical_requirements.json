@@ -10,7 +10,10 @@
       "responsible_component": "scripts/stage1_branch_audit.py; docs/release/evidence",
       "verification_method": "Compare every divergent commit, retain dispositions, verify no intended changes lost; review PR into main.",
       "status": "IMPLEMENTED",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/branch-audit.json",
+        "docs/release/branch_dispositions.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -23,7 +26,9 @@
       "responsible_component": "docs/release; AGENTS.md",
       "verification_method": "Generator check, source counts/hashes, coverage of six supplied specifications and historical source versions.",
       "status": "IMPLEMENTED",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/local-20261016/full-20261016/complete_system_test_report.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -36,7 +41,9 @@
       "responsible_component": "scripts/completion_matrix.py",
       "verification_method": "Reject forged/missing/changed/empty/skipped evidence receipts; tests/test_completion_matrix.py.",
       "status": "IMPLEMENTED",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/local-20261016/precommit-foundation.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -49,7 +56,9 @@
       "responsible_component": "data/provider_catalog.py; data/database_universe.py; engine/core.py; engine/scan_scheduler.py",
       "verification_method": "Eligible/duplicate/ineligible/filter/tail beyond 2000 tests; exact-environment long-run fairness and throughput.",
       "status": "IMPLEMENTED",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/local-20261016/precommit-foundation.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -296,7 +305,10 @@
       "responsible_component": "web/auth.py; web/platform_api.py; frontend/src/lib; core/security.py",
       "verification_method": "Ownership/role/CSRF/redirect/SSRF/session-race tests and current dependency/secret scans.",
       "status": "IMPLEMENTED",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/local-20261016/frontend-unit-frozen.json",
+        "docs/release/evidence/local-20261016/mobile-unit-permitted-frozen.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -309,7 +321,9 @@
       "responsible_component": "web/platform_app/*policy*; web/platform_app/terms.html; web/platform_api.py",
       "verification_method": "Behavioral consent tests plus accountable legal/content/operator review for actual operating jurisdictions.",
       "status": "BLOCKED_EXTERNAL",
-      "test_evidence": [],
+      "test_evidence": [
+        "docs/release/evidence/local-20261016/next-browser-20261016/browser-results.json"
+      ],
       "associated_commit": "BASELINE",
       "classification": "REQUIRED"
     },
@@ -370,7 +384,7 @@
       "kind": "CANONICAL",
       "source": "User Stage 1 mission; preserved source links in MASTER_EXECUTION_CONTRACT.md",
       "requirement": "All supplied and historical requirements remain discoverable",
-      "current_implementation": "Full current source sections, prior 991-section/431-clause inventory mappings, PR/issue text and divergent documentation versions retained. Overlapping inventories are not additive feature counts.",
+      "current_implementation": "392 current source documents, 1,049 historical versions, 991 overlapping preserved specification sections/master clauses, 19 V7 mappings, PR/issue text and interfaces remain discoverable. Clause-specific implementation acceptance remains open; historical text is context, not automatic new authority.",
       "responsible_component": "docs/specs; docs/SignalRank_Master_Blueprint_2026.md; docs/release/requirements.json",
       "verification_method": "Review each unresolved clause; missing mappings stay FAILED, no completion inferred from old reports.",
       "status": "FAILED",

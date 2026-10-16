@@ -1,0 +1,8 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/architecture_smoke.py
+
+ATTEMPT 1/1
+
+[info] role_imports: 10 role modules imported lazily
+[info] dispatcher: dispatcher available for all/dev, analytics, bot, delivery, engine, frontdoor, outcome, scheduler, web
+[info] safety_defaults: unset flags default off: PAYMENTS_ENABLED, TELEGRAM_RICH_MESSAGES_ENABLED, VIP_WEBHOOK_DISPATCH_ENABLED, CHAT_MT5_CREDENTIALS_ENABLED
+[info] main_dispatcher_reference: main.py delegates the canonical engine path

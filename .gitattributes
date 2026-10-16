@@ -11,3 +11,6 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
+
+# Retained verification receipts/logs are hash-bound to their original bytes.
+docs/release/evidence/local-20261016/** -text whitespace=cr-at-eol

@@ -1,15 +1,18 @@
 # Release blockers and exact continuation
 
-Current Stage 1 acceptance: **FAILED — integration and clause-level acceptance
-are not yet fully closed**. This deliberately does not claim completion from
-reports or code presence. External release gates remain closed independently.
+Current Stage 1 acceptance: **FAILED — not complete**. Local integration,
+foundation fixes and the complete 3,984-test suite now pass on c411ebbb. Remaining
+source-specific acceptance review is local work, not an external blocker.
+Independent review and hosted checks remain external gates. This ledger does
+not declare Stage 1 complete or begin the next stage.
 
 | ID | Status | Owner/component | Evidence / next action |
 | --- | --- | --- | --- |
-| ST1-TEST | FAILED | Engineering / local verification | The first full diagnostic timed out in database-heavy batch 1 at the harness's 300-second bound; Railway simulation did not become healthy in its 25-second allowance. Diagnose, use a justified bounded local test allowance, run the frozen integrated revision, and retain failures/skips/counts. |
+| ST1-TEST | VERIFIED | Engineering / local verification | Clean unchanged c411ebbb: 3,984 passed, zero failed/errors/skipped; all 32 orchestration steps pass. Both local browser modes and Android/iOS exports pass. See COMPLETION_EVIDENCE.md and retained receipts for scope. This verifies the local suite, not product-wide acceptance. |
 | ST1-SOURCES | FAILED | Architecture and component owners | The inventory retains current and historical clauses, but many have no source-specific implementation/acceptance disposition. Resolve each applicable clause with code and meaningful tests; preserve superseded/optional context explicitly. See the generated matrix, not old PASS reports. |
-| ST1-INTEGRATION | FAILED | Repository maintainers | Complete review/tests, commit the resolved integration and handoff artifacts, push only the new branch and create a draft PR into main. Do not force-update main or activate deployment. |
+| ST1-INTEGRATION | IMPLEMENTED | Repository maintainers | Blueprint ancestry, legal merge and recovered provider/ML fixes are committed, with browser attribution and fixture repairs. Complete the draft PR handoff; main still requires independent last-push approval and manifest/release-certification checks. |
 | EXT-CI | BLOCKED_EXTERNAL | GitHub billing/account owner | `evidence/github-latest-annotations.json`: jobs never started because the account is locked due to a billing issue. Restore GitHub Actions availability and rerun required checks on the proposed SHA. |
+| EXT-MOBILE-SECURITY | BLOCKED_EXTERNAL | Expo/node-forge maintainers and release owner | Locked npm audit returns four high rows from GHSA-86w9-cpqp-85rv; the official advisory lists no patched version. Await a trusted patch or separately review a supported replacement, then reinstall, audit, export and test devices. Do not suppress it or downgrade Expo to the audit's incompatible suggestion. |
 | EXT-RUNTIME | BLOCKED_EXTERNAL | Deployment operator | GitHub deployment metadata and public GET are available; no authenticated current runtime/schema/configuration audit or promotion occurred. Capture exact deployment SHA/image/schema/configuration and staging evidence. |
 | GAP-PUBLIC-ROUTES | FAILED | Deployment/frontend integration | October 15 public GET: `/` serves service JSON, `/login` is 404, `/app` serves retained HTML. The new public/account site is not proven to be serving this domain. Complete isolated cutover acceptance and a separately reviewed deployment; do not infer public-site readiness from `/healthz`. |
 | EXT-PROVIDERS | BLOCKED_EXTERNAL | Data operations | Certify each enabled provider, market class, entitlement and timeframe in the actual environment, with source timestamps and outage evidence. Local mock certification is insufficient. |
@@ -21,10 +24,15 @@ reports or code presence. External release gates remain closed independently.
 | GAP-RESEARCH | FAILED | Quant/research | Finish retained research/master clauses, including independent causal/out-of-sample/forward acceptance; current immutable storage safeguards alone do not prove statistical validity. |
 | GAP-FULFILLMENT | FAILED | Billing/support/privacy | Demonstrate manual refund/privacy request completion and retention controls; ticket creation is only intake. |
 
-The next engineering action is to finish local integration evidence and review,
-then use the source matrix as the exact remaining work queue. Resolve failures
-without weakening risk, calibration, ownership or evidence thresholds. Document
-why any historical implementation is superseded; never silently drop its source.
+The next local action is ST1-SOURCES: reconcile source-specific dispositions,
+beginning with the 991 formal specification/master entries and 19 V7 mappings,
+then resolve historical conflicts against those authorities. Their IDs, text,
+hashes and known mappings are preserved in requirements.json. They are not 9,916
+independent product features: source sections, historical versions and PR context
+overlap. Associate each applicable clause with active code, explicit gaps and
+scoped evidence; retain superseded/optional rationale. Do not rerun the passed
+runtime suite merely to update documentation; check subsequent changes according
+to their scope. Never weaken risk, calibration, ownership or evidence thresholds.
 
 No production migration, configuration change, customer data write, billing
 operation, broker order or real-money permission change is authorized by this

@@ -1,0 +1,18 @@
+{
+  "git_sha": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "candidate_dirty": false,
+  "scope": "NEXT_PUBLIC_SITE_RETAINED_FASTAPI_WORKSPACE_REAL_LOCAL_BACKEND",
+  "checks": [
+    "both frontend health URLs prove candidate identity without financial certification",
+    "public homepage navigation performs full handoff to the existing workspace",
+    "existing workspace login and same-origin HttpOnly session work through the frontend proxy",
+    "an expired mutation fails once without refreshing or replaying the write",
+    "workspace deep links map to existing signal, paper, broker, owner and account views",
+    "installed workspace PWA, assets and service-worker scope remain available",
+    "API mutations persist with CSRF; missing proof fails; webhook rejects unsigned input; callback and health routes survive",
+    "public pages, live sanitized status, footer and both themes fit six viewport widths"
+  ],
+  "errors": [],
+  "native_devices_verified": false,
+  "status": "PASS"
+}

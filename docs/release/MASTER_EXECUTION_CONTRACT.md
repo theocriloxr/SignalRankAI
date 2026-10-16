@@ -15,6 +15,10 @@ existing functionality and operational safeguards. Do not change real-money
 permissions. Stage 1 is **not complete merely because this document exists**.
 
 Current acceptance is tracked in [RELEASE_BLOCKERS.md](RELEASE_BLOCKERS.md).
+The local runtime baseline is c411ebbb67d35fdad91d1281b667a7ee8272dd38:
+3,984 tests and both browser modes passed on clean unchanged source. This does
+not close source-specific acceptance or authorize the next stage. Read
+COMPLETION_EVIDENCE.md for retained receipts and their exact limits.
 Unreviewed source clauses remain explicit acceptance failures rather than being
 silently dropped. Source preservation, implementation, local verification and
 operational release acceptance are distinct claims.

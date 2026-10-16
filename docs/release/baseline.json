@@ -2,13 +2,15 @@
   "repository": "theocriloxr/SignalRankAI",
   "primary_branch": "main",
   "integration_branch": "fix/stage1-canonical-reconciliation-20261014",
-  "code_baseline": "61229e62d8d858f6cb7916836b2332beaf786bc9",
-  "baseline_state": "COMMITTED_INTEGRATION",
+  "code_baseline": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "baseline_state": "COMMITTED_LOCAL_CHECKS_PASSED_REVIEW_PENDING",
   "main_at_inspection": "98a5de18f92674c9e70ec61a802391bf984de8d6",
   "recovery_base": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
   "blueprint": "8e46ca7d61df16a9b2820090162479fc8b390983",
   "legal_source": "34f8071cb7a3ac9f8f394378ea23907f0e76f092",
   "schema_head": "0055_user_renewal_default",
   "production_authorized": false,
-  "live_trading_authorized": false
+  "live_trading_authorized": false,
+  "tested_code_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "local_evidence_index": "docs/release/evidence/local-20261016/index.json"
 }

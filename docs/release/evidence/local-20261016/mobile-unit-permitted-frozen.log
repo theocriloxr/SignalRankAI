@@ -1,0 +1,328 @@
+TAP version 13
+# Subtest: preserves telegram_already_linked for safe account reconciliation
+ok 1 - preserves telegram_already_linked for safe account reconciliation
+  ---
+  duration_ms: 158.76
+  type: 'test'
+  ...
+# Subtest: preserves telegram_verified_merge_pending for safe account reconciliation
+ok 2 - preserves telegram_verified_merge_pending for safe account reconciliation
+  ---
+  duration_ms: 56.3287
+  type: 'test'
+  ...
+# Subtest: transient service failures preserve status and a readable message
+ok 3 - transient service failures preserve status and a readable message
+  ---
+  duration_ms: 49.2395
+  type: 'test'
+  ...
+# Subtest: unstructured validation data never becomes an object string
+ok 4 - unstructured validation data never becomes an object string
+  ---
+  duration_ms: 45.479
+  type: 'test'
+  ...
+# Subtest: login preserves structured authentication errors
+ok 5 - login preserves structured authentication errors
+  ---
+  duration_ms: 29.1337
+  type: 'test'
+  ...
+# Subtest: register preserves structured authentication errors
+ok 6 - register preserves structured authentication errors
+  ---
+  duration_ms: 64.2196
+  type: 'test'
+  ...
+# Subtest: completeMfa preserves structured authentication errors
+ok 7 - completeMfa preserves structured authentication errors
+  ---
+  duration_ms: 38.6537
+  type: 'test'
+  ...
+# Subtest: activateTelegram preserves structured authentication errors
+ok 8 - activateTelegram preserves structured authentication errors
+  ---
+  duration_ms: 27.0653
+  type: 'test'
+  ...
+# Subtest: completeMagicLogin preserves structured authentication errors
+ok 9 - completeMagicLogin preserves structured authentication errors
+  ---
+  duration_ms: 37.2197
+  type: 'test'
+  ...
+# Subtest: xcode generates unique project references with its installed UUID dependency
+ok 10 - xcode generates unique project references with its installed UUID dependency
+  ---
+  duration_ms: 55.9187
+  type: 'test'
+  ...
+# Subtest: v3 rejects invalid buffer ranges without partial writes
+ok 11 - v3 rejects invalid buffer ranges without partial writes
+  ---
+  duration_ms: 60.0937
+  type: 'test'
+  ...
+# Subtest: v3 writes a valid UUID within the requested buffer range
+ok 12 - v3 writes a valid UUID within the requested buffer range
+  ---
+  duration_ms: 0.6407
+  type: 'test'
+  ...
+# Subtest: v5 rejects invalid buffer ranges without partial writes
+ok 13 - v5 rejects invalid buffer ranges without partial writes
+  ---
+  duration_ms: 2.8106
+  type: 'test'
+  ...
+# Subtest: v5 writes a valid UUID within the requested buffer range
+ok 14 - v5 writes a valid UUID within the requested buffer range
+  ---
+  duration_ms: 0.5427
+  type: 'test'
+  ...
+# Subtest: v6 rejects invalid buffer ranges without partial writes
+ok 15 - v6 rejects invalid buffer ranges without partial writes
+  ---
+  duration_ms: 1.5158
+  type: 'test'
+  ...
+# Subtest: v6 writes a valid UUID within the requested buffer range
+ok 16 - v6 writes a valid UUID within the requested buffer range
+  ---
+  duration_ms: 0.2817
+  type: 'test'
+  ...
+# Subtest: native account monetary labels never invent USD or turn missing balance into zero
+ok 17 - native account monetary labels never invent USD or turn missing balance into zero
+  ---
+  duration_ms: 4.6809
+  type: 'test'
+  ...
+# Subtest: native signal evidence distinguishes delivered receipts from brokerage execution
+ok 18 - native signal evidence distinguishes delivered receipts from brokerage execution
+  ---
+  duration_ms: 0.5532
+  type: 'test'
+  ...
+# Subtest: mobile account reads have retry, loading and actual error states
+ok 19 - mobile account reads have retry, loading and actual error states
+  ---
+  duration_ms: 0.3611
+  type: 'test'
+  ...
+# Subtest: native bottom navigation retains all fourteen screens without unscrollable oversized tabs
+ok 20 - native bottom navigation retains all fourteen screens without unscrollable oversized tabs
+  ---
+  duration_ms: 0.4574
+  type: 'test'
+  ...
+# Subtest: native uses approved emerald-slate identity for primary surfaces
+ok 21 - native uses approved emerald-slate identity for primary surfaces
+  ---
+  duration_ms: 0.7661
+  type: 'test'
+  ...
+# Subtest: native broker, notification and watchlist views are authenticated and never enable trading
+ok 22 - native broker, notification and watchlist views are authenticated and never enable trading
+  ---
+  duration_ms: 21.7207
+  type: 'test'
+  ...
+# Subtest: Expo automatic light and dark appearance is honored by native screens and tab navigation
+ok 23 - Expo automatic light and dark appearance is honored by native screens and tab navigation
+  ---
+  duration_ms: 2.6275
+  type: 'test'
+  ...
+# Subtest: mobile billing displays recorded currency and does not fabricate missing receipt amounts
+ok 24 - mobile billing displays recorded currency and does not fabricate missing receipt amounts
+  ---
+  duration_ms: 0.3662
+  type: 'test'
+  ...
+# Subtest: native custom alert creation and disabling use server-authorized monitoring contract only
+ok 25 - native custom alert creation and disabling use server-authorized monitoring contract only
+  ---
+  duration_ms: 1.455
+  type: 'test'
+  ...
+# Subtest: concurrent expired requests share one refresh and preserve rotating tokens
+ok 26 - concurrent expired requests share one refresh and preserve rotating tokens
+  ---
+  duration_ms: 166.8912
+  type: 'test'
+  ...
+# Subtest: logout invalidates an in-flight refresh and never restores tokens
+ok 27 - logout invalidates an in-flight refresh and never restores tokens
+  ---
+  duration_ms: 63.8799
+  type: 'test'
+  ...
+# Subtest: late account responses cannot become data for a newly signed-in account
+ok 28 - late account responses cannot become data for a newly signed-in account
+  ---
+  duration_ms: 43.2656
+  type: 'test'
+  ...
+# Subtest: a login response arriving after logout cannot reauthenticate
+ok 29 - a login response arriving after logout cannot reauthenticate
+  ---
+  duration_ms: 42.7527
+  type: 'test'
+  ...
+# Subtest: transient refresh failures retain the session for a later retry
+ok 30 - transient refresh failures retain the session for a later retry
+  ---
+  duration_ms: 29.0473
+  type: 'test'
+  ...
+# Subtest: invalid refresh tokens clear credentials and report the expired generation
+ok 31 - invalid refresh tokens clear credentials and report the expired generation
+  ---
+  duration_ms: 58.5719
+  type: 'test'
+  ...
+# Subtest: partial secure-store writes fail closed and cannot authorize a request
+ok 32 - partial secure-store writes fail closed and cannot authorize a request
+  ---
+  duration_ms: 33.2989
+  type: 'test'
+  ...
+# Subtest: sign-out proves its device family to the server and removes both local tokens
+ok 33 - sign-out proves its device family to the server and removes both local tokens
+  ---
+  duration_ms: 30.4747
+  type: 'test'
+  ...
+# Subtest: sign-out during rotation revokes using the old family proof without restoring tokens
+ok 34 - sign-out during rotation revokes using the old family proof without restoring tokens
+  ---
+  duration_ms: 36.743
+  type: 'test'
+  ...
+# Subtest: an offline server does not prevent local sign-out or claim server revocation
+ok 35 - an offline server does not prevent local sign-out or claim server revocation
+  ---
+  duration_ms: 29.4147
+  type: 'test'
+  ...
+# Subtest: a failed token removal is reported even if server revocation succeeds
+ok 36 - a failed token removal is reported even if server revocation succeeds
+  ---
+  duration_ms: 21.2603
+  type: 'test'
+  ...
+# Subtest: a new login while server sign-out is pending keeps its new credentials
+ok 37 - a new login while server sign-out is pending keeps its new credentials
+  ---
+  duration_ms: 21.4258
+  type: 'test'
+  ...
+# Subtest: a malformed successful logout response is not treated as confirmed revocation
+ok 38 - a malformed successful logout response is not treated as confirmed revocation
+  ---
+  duration_ms: 27.0981
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves included JavaScript
+ok 39 - installed Metro watcher preserves included JavaScript
+  ---
+  duration_ms: 1.9379
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves excluded extension
+ok 40 - installed Metro watcher preserves excluded extension
+  ---
+  duration_ms: 0.236
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves root pattern does not match nested file
+ok 41 - installed Metro watcher preserves root pattern does not match nested file
+  ---
+  duration_ms: 0.1838
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves brace alternatives
+ok 42 - installed Metro watcher preserves brace alternatives
+  ---
+  duration_ms: 1.7467
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves extended pattern
+ok 43 - installed Metro watcher preserves extended pattern
+  ---
+  duration_ms: 0.2896
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves hidden file excluded
+ok 44 - installed Metro watcher preserves hidden file excluded
+  ---
+  duration_ms: 0.7476
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves hidden file enabled
+ok 45 - installed Metro watcher preserves hidden file enabled
+  ---
+  duration_ms: 0.157
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves empty filter still excludes hidden
+ok 46 - installed Metro watcher preserves empty filter still excludes hidden
+  ---
+  duration_ms: 0.1398
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves empty filter includes visible
+ok 47 - installed Metro watcher preserves empty filter includes visible
+  ---
+  duration_ms: 0.4288
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves directories bypass extension
+ok 48 - installed Metro watcher preserves directories bypass extension
+  ---
+  duration_ms: 0.3483
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves hidden directory excluded
+ok 49 - installed Metro watcher preserves hidden directory excluded
+  ---
+  duration_ms: 0.1454
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves hidden directory enabled
+ok 50 - installed Metro watcher preserves hidden directory enabled
+  ---
+  duration_ms: 0.0846
+  type: 'test'
+  ...
+# Subtest: installed Metro watcher preserves negation matcher
+ok 51 - installed Metro watcher preserves negation matcher
+  ---
+  duration_ms: 0.3471
+  type: 'test'
+  ...
+# Subtest: watcher adapter supports path lists and rejects API drift and excessive inputs
+ok 52 - watcher adapter supports path lists and rejects API drift and excessive inputs
+  ---
+  duration_ms: 42.8207
+  type: 'test'
+  ...
+# Subtest: hostile watcher patterns are rejected before stack exhaustion or glob compilation
+ok 53 - hostile watcher patterns are rejected before stack exhaustion or glob compilation
+  ---
+  duration_ms: 310.6637
+  type: 'test'
+  ...
+1..53
+# tests 53
+# suites 0
+# pass 53
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5394.4962

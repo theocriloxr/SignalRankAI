@@ -1,0 +1,404 @@
+TAP version 13
+# Subtest: public site is a navigable product experience, not a fake trading terminal
+ok 1 - public site is a navigable product experience, not a fake trading terminal
+  ---
+  duration_ms: 2.8445
+  type: 'test'
+  ...
+# Subtest: four schematic decision gates remain accessible without fictitious signal metrics
+ok 2 - four schematic decision gates remain accessible without fictitious signal metrics
+  ---
+  duration_ms: 1.5329
+  type: 'test'
+  ...
+# Subtest: CRILOX credit is present and securely links to approved site in all shared shells
+ok 3 - CRILOX credit is present and securely links to approved site in all shared shells
+  ---
+  duration_ms: 1.1324
+  type: 'test'
+  ...
+# Subtest: core user journeys keep existing authorization and data fetch boundaries
+ok 4 - core user journeys keep existing authorization and data fetch boundaries
+  ---
+  duration_ms: 1.128
+  type: 'test'
+  ...
+# Subtest: new design handles mobile and reduced motion rather than hiding content
+ok 5 - new design handles mobile and reduced motion rather than hiding content
+  ---
+  duration_ms: 1.0909
+  type: 'test'
+  ...
+# Subtest: Next root discovery keeps directory, brace, array and Windows path behavior
+ok 6 - Next root discovery keeps directory, brace, array and Windows path behavior
+  ---
+  duration_ms: 222.8273
+  type: 'test'
+  ...
+# Subtest: the installed Next lint rule still detects navigation violations with glob roots
+ok 7 - the installed Next lint rule still detects navigation violations with glob roots
+  ---
+  duration_ms: 104.4424
+  type: 'test'
+  ...
+# Subtest: deeply nested root patterns cannot exhaust the lint process stack
+ok 8 - deeply nested root patterns cannot exhaust the lint process stack
+  ---
+  duration_ms: 104.6158
+  type: 'test'
+  ...
+# (node:67720) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/frontend/src/lib/platform-proxy.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\frontend\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: account proxy preserves method, body, authority and separate refresh cookies at one fixed origin
+ok 9 - account proxy preserves method, body, authority and separate refresh cookies at one fixed origin
+  ---
+  duration_ms: 33.2793
+  type: 'test'
+  ...
+# Subtest: upstream errors and redirects are returned once with private cache policy
+ok 10 - upstream errors and redirects are returned once with private cache policy
+  ---
+  duration_ms: 5.7123
+  type: 'test'
+  ...
+# Subtest: unconfigured destinations and normalized paths outside the account namespace never receive authority
+ok 11 - unconfigured destinations and normalized paths outside the account namespace never receive authority
+  ---
+  duration_ms: 2.4426
+  type: 'test'
+  ...
+# (node:31432) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/frontend/src/lib/presentation.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\frontend\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Telegram linking respects canonical linked and merge-review states
+ok 12 - Telegram linking respects canonical linked and merge-review states
+  ---
+  duration_ms: 2.7194
+  type: 'test'
+  ...
+# Subtest: UTC database timestamps retain their instant in every browser timezone
+ok 13 - UTC database timestamps retain their instant in every browser timezone
+  ---
+  duration_ms: 80.5052
+  type: 'test'
+  ...
+# Subtest: unavailable money and market values never turn into fabricated zeros
+ok 14 - unavailable money and market values never turn into fabricated zeros
+  ---
+  duration_ms: 13.2249
+  type: 'test'
+  ...
+# Subtest: probabilities are normalized fractions and invalid values stay unavailable
+ok 15 - probabilities are normalized fractions and invalid values stay unavailable
+  ---
+  duration_ms: 0.2842
+  type: 'test'
+  ...
+# Subtest: broker connection environment is never inferred from account labels
+ok 16 - broker connection environment is never inferred from account labels
+  ---
+  duration_ms: 0.3768
+  type: 'test'
+  ...
+# Subtest: lists and identity fields are narrowed without serializing private objects
+ok 17 - lists and identity fields are narrowed without serializing private objects
+  ---
+  duration_ms: 1.0084
+  type: 'test'
+  ...
+# Subtest: denied, expired and unavailable API responses are separate states
+ok 18 - denied, expired and unavailable API responses are separate states
+  ---
+  duration_ms: 0.3802
+  type: 'test'
+  ...
+# Subtest: workspace never calls an order or high-risk mutation from a read-only view
+ok 19 - workspace never calls an order or high-risk mutation from a read-only view
+  ---
+  duration_ms: 51.5073
+  type: 'test'
+  ...
+# Subtest: safe account form actions are limited to owned watchlists support and journal
+ok 20 - safe account form actions are limited to owned watchlists support and journal
+  ---
+  duration_ms: 0.8347
+  type: 'test'
+  ...
+# Subtest: one-time email links only consume tokens after explicit confirmation
+ok 21 - one-time email links only consume tokens after explicit confirmation
+  ---
+  duration_ms: 0.6631
+  type: 'test'
+  ...
+# Subtest: magic link request is non-enumerating and never persists proof
+ok 22 - magic link request is non-enumerating and never persists proof
+  ---
+  duration_ms: 0.5004
+  type: 'test'
+  ...
+# Subtest: operations navigation checks server-issued operator authority
+ok 23 - operations navigation checks server-issued operator authority
+  ---
+  duration_ms: 0.5291
+  type: 'test'
+  ...
+# Subtest: entitled signal details render receipt lifecycle and outcome proof, never claim broker fills
+ok 24 - entitled signal details render receipt lifecycle and outcome proof, never claim broker fills
+  ---
+  duration_ms: 0.5082
+  type: 'test'
+  ...
+# Subtest: browser account API uses same-origin CSRF and server-owned trusted rewrite
+ok 25 - browser account API uses same-origin CSRF and server-owned trusted rewrite
+  ---
+  duration_ms: 0.7997
+  type: 'test'
+  ...
+# Subtest: notification actions require canonical read receipts and preserve unselected channel settings
+ok 26 - notification actions require canonical read receipts and preserve unselected channel settings
+  ---
+  duration_ms: 0.471
+  type: 'test'
+  ...
+# Subtest: watchlist search uses backend-returned instrument identity, not freeform broker symbols
+ok 27 - watchlist search uses backend-returned instrument identity, not freeform broker symbols
+  ---
+  duration_ms: 0.2988
+  type: 'test'
+  ...
+# Subtest: signal filters paginate canonical delivered receipts without changing generation thresholds
+ok 28 - signal filters paginate canonical delivered receipts without changing generation thresholds
+  ---
+  duration_ms: 0.3508
+  type: 'test'
+  ...
+# Subtest: journal deletion needs explicit user confirmation and a verified account-owned response
+ok 29 - journal deletion needs explicit user confirmation and a verified account-owned response
+  ---
+  duration_ms: 0.2908
+  type: 'test'
+  ...
+# Subtest: personal signal preferences use authoritative tier limits and never alter execution controls
+ok 30 - personal signal preferences use authoritative tier limits and never alter execution controls
+  ---
+  duration_ms: 1.1023
+  type: 'test'
+  ...
+# Subtest: support conversations require an entitled ticket and server-confirmed reply
+ok 31 - support conversations require an entitled ticket and server-confirmed reply
+  ---
+  duration_ms: 0.5582
+  type: 'test'
+  ...
+# Subtest: market-alert rules and notification receipts are separate canonical services
+ok 32 - market-alert rules and notification receipts are separate canonical services
+  ---
+  duration_ms: 0.6756
+  type: 'test'
+  ...
+# Subtest: public redesign covers seven reference routes with canonical semantics and one shared design
+ok 33 - public redesign covers seven reference routes with canonical semantics and one shared design
+  ---
+  duration_ms: 0.7565
+  type: 'test'
+  ...
+# Subtest: home page includes truthful market/workflow boundaries without fake live status
+ok 34 - home page includes truthful market/workflow boundaries without fake live status
+  ---
+  duration_ms: 0.6036
+  type: 'test'
+  ...
+# Subtest: paper desk uses account-scoped simulation routes with explicit confirmations and bounded risk
+ok 35 - paper desk uses account-scoped simulation routes with explicit confirmations and bounded risk
+  ---
+  duration_ms: 0.6126
+  type: 'test'
+  ...
+# Subtest: portfolio chart never synthesizes missing broker balances or a fake equity curve
+ok 36 - portfolio chart never synthesizes missing broker balances or a fake equity curve
+  ---
+  duration_ms: 0.4992
+  type: 'test'
+  ...
+# Subtest: public and private mobile disclosures close on route change outside touch and Escape
+ok 37 - public and private mobile disclosures close on route change outside touch and Escape
+  ---
+  duration_ms: 0.5274
+  type: 'test'
+  ...
+# Subtest: broker account inspection remains separate by canonical connection and never enables execution
+ok 38 - broker account inspection remains separate by canonical connection and never enables execution
+  ---
+  duration_ms: 0.5417
+  type: 'test'
+  ...
+# Subtest: market directory searches all entitled asset classes without fabricating live market data
+ok 39 - market directory searches all entitled asset classes without fabricating live market data
+  ---
+  duration_ms: 0.5101
+  type: 'test'
+  ...
+# Subtest: settings security center keeps identity, devices, MFA and session revocation server-owned
+ok 40 - settings security center keeps identity, devices, MFA and session revocation server-owned
+  ---
+  duration_ms: 0.9571
+  type: 'test'
+  ...
+# Subtest: broker percentage risk fields are decimal fractions, never raw percent values
+ok 41 - broker percentage risk fields are decimal fractions, never raw percent values
+  ---
+  duration_ms: 0.4396
+  type: 'test'
+  ...
+# Subtest: demo broker setup uses provider-hosted credentials and never starts live execution
+ok 42 - demo broker setup uses provider-hosted credentials and never starts live execution
+  ---
+  duration_ms: 0.5941
+  type: 'test'
+  ...
+# Subtest: demo provider configuration link survives initial request until explicit refresh
+ok 43 - demo provider configuration link survives initial request until explicit refresh
+  ---
+  duration_ms: 0.291
+  type: 'test'
+  ...
+# Subtest: failed refresh cleanup completes its stream and preserves the original error response
+ok 44 - failed refresh cleanup completes its stream and preserves the original error response
+  ---
+  duration_ms: 90.4903
+  type: 'test'
+  ...
+# Subtest: other requests and successful refreshes retain their original unused body and are never replayed
+ok 45 - other requests and successful refreshes retain their original unused body and are never replayed
+  ---
+  duration_ms: 4.2337
+  type: 'test'
+  ...
+# (node:13984) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/frontend/src/lib/server-origin.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\frontend\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: proxy origin accepts only operator-owned HTTPS origins in production
+ok 46 - proxy origin accepts only operator-owned HTTPS origins in production
+  ---
+  duration_ms: 2.0657
+  type: 'test'
+  ...
+# Subtest: public cutover preserves backend namespaces and only the configured workspace
+ok 47 - public cutover preserves backend namespaces and only the configured workspace
+  ---
+  duration_ms: 0.3729
+  type: 'test'
+  ...
+# Subtest: public status is bounded, uncached and cannot publish upstream payloads
+ok 48 - public status is bounded, uncached and cannot publish upstream payloads
+  ---
+  duration_ms: 41.7952
+  type: 'test'
+  ...
+# (node:37828) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/frontend/src/lib/return-path.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\frontend\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: post-login destinations stay within the workspace and retain safe deep links
+ok 49 - post-login destinations stay within the workspace and retain safe deep links
+  ---
+  duration_ms: 1.2163
+  type: 'test'
+  ...
+# Subtest: account reads include the cookie session without a forged bearer or write proof
+ok 50 - account reads include the cookie session without a forged bearer or write proof
+  ---
+  duration_ms: 93.3189
+  type: 'test'
+  ...
+# Subtest: POST mutations preserve the body and use the exact CSRF cookie
+ok 51 - POST mutations preserve the body and use the exact CSRF cookie
+  ---
+  duration_ms: 26.817
+  type: 'test'
+  ...
+# Subtest: PUT mutations preserve the body and use the exact CSRF cookie
+ok 52 - PUT mutations preserve the body and use the exact CSRF cookie
+  ---
+  duration_ms: 16.9453
+  type: 'test'
+  ...
+# Subtest: PATCH mutations preserve the body and use the exact CSRF cookie
+ok 53 - PATCH mutations preserve the body and use the exact CSRF cookie
+  ---
+  duration_ms: 16.4517
+  type: 'test'
+  ...
+# Subtest: DELETE mutations preserve the body and use the exact CSRF cookie
+ok 54 - DELETE mutations preserve the body and use the exact CSRF cookie
+  ---
+  duration_ms: 18.0442
+  type: 'test'
+  ...
+# Subtest: missing or malformed proof is never replaced with a fabricated token
+ok 55 - missing or malformed proof is never replaced with a fabricated token
+  ---
+  duration_ms: 57.784
+  type: 'test'
+  ...
+# Subtest: server rendering never gains browser authority implicitly
+ok 56 - server rendering never gains browser authority implicitly
+  ---
+  duration_ms: 11.7735
+  type: 'test'
+  ...
+# Subtest: 401 on canonical account GET rotates cookies once with CSRF and retries only that read
+ok 57 - 401 on canonical account GET rotates cookies once with CSRF and retries only that read
+  ---
+  duration_ms: 10.0361
+  type: 'test'
+  ...
+# Subtest: untrusted destinations never receive cookies, CSRF proof or mutation bodies
+ok 58 - untrusted destinations never receive cookies, CSRF proof or mutation bodies
+  ---
+  duration_ms: 12.1563
+  type: 'test'
+  ...
+# Subtest: concurrent expired reads share one refresh request without local tokens
+ok 59 - concurrent expired reads share one refresh request without local tokens
+  ---
+  duration_ms: 12.6185
+  type: 'test'
+  ...
+# Subtest: never replay non-idempotent account writes or refresh auth bootstrap routes
+ok 60 - never replay non-idempotent account writes or refresh auth bootstrap routes
+  ---
+  duration_ms: 9.3307
+  type: 'test'
+  ...
+# Subtest: missing refresh proof leaves expired account read unauthenticated
+ok 61 - missing refresh proof leaves expired account read unauthenticated
+  ---
+  duration_ms: 8.2701
+  type: 'test'
+  ...
+# Subtest: discarded expired-read and refresh streams release their connections before replay
+ok 62 - discarded expired-read and refresh streams release their connections before replay
+  ---
+  duration_ms: 8.2368
+  type: 'test'
+  ...
+# Subtest: failed refresh releases its own stream and leaves the original error readable
+ok 63 - failed refresh releases its own stream and leaves the original error readable
+  ---
+  duration_ms: 7.8043
+  type: 'test'
+  ...
+1..63
+# tests 63
+# suites 0
+# pass 63
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4222.7281

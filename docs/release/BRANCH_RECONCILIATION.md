@@ -26,6 +26,15 @@ valid changes were found outside that branch: class-aware OHLC fallback budgets
 and independent ML validation-window floors. Their source commits and tests are
 ported explicitly. Unsafe/superseded candle preload behavior is not restored.
 
+Committed integration: `61229e62d8d858f6cb7916836b2332beaf786bc9` is the
+two-parent legal merge and foundational correction set. `2e94cae3` binds the
+first generated baseline, `49d75459` restores site attribution on all six policy
+pages, and `c411ebbb67d35fdad91d1281b667a7ee8272dd38` expands concrete route
+accounting and repairs integrated verification fixtures. The latter passed the
+full 3,984-test local suite and both real browser modes with unchanged source.
+An all-heads/tags fetch on 16 October reported no remote updates. Main remains
+unchanged; merging requires the repository's independent approval and checks.
+
 Detailed per-ref decisions follow. `SUPERSEDED` is an integration decision,
 not a VERIFIED requirement status. Original changes remain reachable and their
 requirements remain subject to source-specific acceptance. [branch_dispositions.json](branch_dispositions.json)

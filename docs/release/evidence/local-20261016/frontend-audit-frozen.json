@@ -1,0 +1,22 @@
+{
+  "name": "frontend-audit-frozen",
+  "sha": "2e94cae344c18ac58810f43b86b9aa187465a5cb",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-15T12:29:26.498850+00:00",
+  "finished_at": "2026-10-15T12:29:33.111620+00:00",
+  "command": [
+    "node",
+    "../.pytest-tmp/stage1-node-tools/node_modules/npm/bin/npm-cli.js",
+    "audit",
+    "--json"
+  ],
+  "cwd": "frontend",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/frontend-audit-frozen.log",
+  "log_sha256": "cf682d5bf5cd7d8b9cb43e2ad85d204e2133c904bbf67a41ea7c31f010555fc9",
+  "result": "PASS",
+  "source_fingerprint_before": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "source_fingerprint_after": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

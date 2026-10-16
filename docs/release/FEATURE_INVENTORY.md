@@ -17,7 +17,7 @@ equate source presence with functional or production acceptance.
 | Execution and risk | Central routing, confirmations, safety flags, loss/exposure controls and kill switches retained | Exact-account demo concurrency/retry/restart/partial-fill/emergency tests and separate live authorization |
 | Telegram | 192 command declarations, 28 callback patterns, tier/role mappings and owner diagnostics | Actual dedicated staging bot journeys, stale/cross-user callbacks and per-role permission denial |
 | Web/public | Next public/account routes, retained workstation, public policies and canonical API | Browser/keyboard/responsive and returning PWA proof in both workspace modes; the public root GET alone does not establish website health |
-| Native | 13 detected screen branches plus default screen/navigation; secure session family and current design preserved | Signed device installation, deep links, push, offline/expired-session and platform accessibility proof |
+| Native | 14 declared destinations, including the default account screen; secure session family and design preserved; Android/iOS bundles export | Signed device installation, deep links, push, offline/expired-session and accessibility proof; unresolved Expo/node-forge advisory |
 | Billing/onboarding | Consent gates, optional marketing, explicit recurring acknowledgement, opt-in default migration, verified-payment handling | Provider test-mode charge/renewal/webhook reconciliation; legal/content review; cancellation must be provider-confirmed |
 | Cancellation/refunds/privacy | Pending cancellation states and authenticated review-ticket controls | Tickets do not automatically refund, export or erase data; operator fulfillment and retention evidence required |
 | Notifications/reports | Delivery receipts, paper/shadow/real provenance, analytics and native preferences | SMTP/APNs/FCM/Telegram configuration, delivery proof and correct eligible-outcome/account-currency totals |
@@ -29,6 +29,13 @@ mounted OpenAPI operations. They overlap intentionally: declarations identify
 code that may not be mounted; OpenAPI identifies the schema exported by the
 canonical app. A schema omits static/health/WebSocket routes, which remain in the
 declaration/client inventory. None of these counts is a tested workflow count.
+
+Current accounting: 175 Python handlers, 163 OpenAPI operations, 54 web rows
+(including 31 concrete routes expanded from catch-all allowlists), 14 native
+destinations, 192 commands, 28 callbacks, 37 providers, 13 brokers, 48 strategy
+and component callables, eight strategy families and six engine timeframes.
+Clean local browser runs cover both workspace modes; their exact routes and
+scenario scope are retained in COMPLETION_EVIDENCE.md.
 
 ## Required versus optional
 

@@ -1,0 +1,15 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_phase4_pass6_security_api_payments.py' 'tests\test_phase4_pass7_runtime_roles.py' 'tests\test_pinned_staging_environment.py' 'tests\test_pipeline.py' 'tests\test_platform_app_design_contract.py' 'tests\test_portal_asset_generation.py' 'tests\test_posix_startup.py' 'tests\test_post_deploy_signal_hardening.py' 'tests\test_post_deploy_smoke_contract.py' 'tests\test_premium_ux_contract.py' 'tests\test_price_validator.py' 'tests\test_primary_risk_advice.py' 'tests\test_product_tier_resolution.py' 'tests\test_production_backup_receipt.py' 'tests\test_production_backup_restore_script.py' 'tests\test_production_backup_script.py' 'tests\test_production_endgame_20260725.py' 'tests\test_production_operations_package.py' 'tests\test_production_quality_guard.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 31%]
+........................................................................ [ 62%]
+........................................................................ [ 93%]
+..............                                                           [100%]
+============================== warnings summary ===============================
+.audit-venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+230 passed, 1 warning in 43.51s

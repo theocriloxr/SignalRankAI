@@ -1,42 +1,65 @@
 # Completion evidence
 
-This ledger distinguishes observed checks from release acceptance. Interim logs
-are under `artifacts/stage1-20261014`; retained final receipts belong in
-`docs/release/evidence`. Each local receipt records command, start/finish, commit,
-exit code, log SHA-256 and source fingerprints before/after. Checks during edits
-are diagnostic; a changed fingerprint cannot certify a frozen release revision.
+Latest integrated runtime candidate: `c411ebbb67d35fdad91d1281b667a7ee8272dd38`.
+On 16 October 2026 the full local run passed **3,984 tests, zero failures,
+errors, skips or unparsed batches**, across all 20 pytest batches and 12
+additional checks. The checkout was clean and source identity remained unchanged.
+This is local acceptance, not hosted CI or production certification.
 
-Observed interim checks:
+Retained receipts, logs and failed diagnostics are indexed with content hashes
+in [local-20261016/index.json](evidence/local-20261016/index.json). Receipts retain
+their original SHA, command, environment, times, result and artifact path; the
+index binds the retained copies. Do not add overlapping focused/full counts.
 
-| Check | Observed result | Limit |
+| Check | Actual result | Evidence and scope |
 | --- | --- | --- |
-| Consent, cancellation, evidence receipts and universe paging | 38 tests passed | Local behavioral tests; no external provider/broker certification |
-| Frontend transport/session/proxy | 55 passed, 0 failed, 0 skipped | Node tests; not a browser journey |
-| Mobile dependencies/session/presentation after locked reinstall | 53 passed, 0 failed, 0 skipped | Restored committed dependency versions; not a signed device build |
-| Frontend lint and TypeScript | Passed | Static acceptance only |
-| Mobile TypeScript | Passed | Static acceptance only |
-| Next production build | Child build exited 0 | Wrapper initially failed printing Unicode to Windows console after saving the successful build receipt; wrapper corrected |
-| Alembic 0055 upgrade | Passed against owned local PostgreSQL 17 | No remote schema/data changed |
-| Full integrated diagnostic | In progress / first batch timed out | Must not be reported as a full-suite pass; retain complete result and investigate |
-| GitHub hosted CI | BLOCKED_EXTERNAL before tests began | Billing lock annotation retained; no hosted test pass exists |
-| Public homepage GET | HTTP 200 observed at 2026-10-14T22:13:52Z | Only 53 response bytes; this alone does not establish a functioning public website |
+| Complete Python suite | 3,984 passed; 0 failed/errors/skipped | [Full report](evidence/local-20261016/full-20261016/complete_system_test_report.json); clean c411ebbb; owned local PostgreSQL 17, financial switches disabled |
+| Environment/schema/architecture/session/governance/secret checks, runtime snapshot, local Railway simulation, fanout and provider contracts | All 12 passed | Full-run logs; provider certification used mocks, never --live |
+| Next production build and real browser/API/database | 10 scenario groups passed | [Browser result](evidence/local-20261016/next-browser-20261016/browser-results.json); c411ebbb; registration/consent, cookies/CSRF, persistent watchlists, refresh/logout, tenant/operator denial, 9 widths and both themes |
+| Retained workspace mode | 8 scenario groups passed | [Legacy result](evidence/local-20261016/legacy-browser-20261016/browser-results.json); c411ebbb; login, deep links, PWA, callbacks, mutation no-replay and CSRF; 6 widths |
+| Browser cleanup | Both passed | Respective cleanup.json: owned servers stopped, test databases dropped and temporary private keys removed |
+| Android and iOS JS bundles | Both exported | [Export receipt](evidence/local-20261016/native-export-20261016.json); unchanged c411ebbb; no signed device installation claimed |
+| Frontend tests | 63 passed; 0 failed/skipped | frontend-unit-frozen receipt at 2e94cae3; frontend bytes unchanged through c411ebbb |
+| Mobile tests | 53 passed; 0 failed/skipped | mobile-unit-permitted-frozen receipt at 2e94cae3; mobile bytes unchanged through c411ebbb |
+| Frontend lint and both clients' TypeScript | Passed | Retained lint/typecheck receipts; same unchanged client sources |
+| Python runtime and market-data SDK audits | No known vulnerabilities reported | Retained pip-audit receipts, 15 October; unchanged lockfiles; not general security certification |
+| Frontend dependency audit | No known vulnerabilities reported | Retained npm audit receipt, 15 October; unchanged lockfile |
+| Mobile dependency audit | FAILED: 4 high rows; 0 critical | Expo/node-forge chain; [official advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) lists no patched version; no suppression or unsafe downgrade |
+| Foundation regression | 76 passed before integration; included in full suite | Consent/cancellation, migration preservation, universe paging, provider/ML behavior, evidence integrity and secret scanning |
+| Integration failure repairs | 49 passed; included in full suite | MFA consent fixture, source-only scheduler ownership inspection and concrete routes |
+| Hosted CI | BLOCKED_EXTERNAL | Retained GitHub billing-lock annotation: jobs never started; local checks do not replace hosted gates |
+| Public site observation | / returns 200 JSON; /login 404; /app 200 HTML | [15 October observation](evidence/public-site-observation.json); no public Next cutover or deployment performed |
 
-Earlier focused counts overlap and must not be added into a fictional total.
-Provider certification without `--live` is mocked/local scope. Historical
-completion ledgers and build artifacts belong to their original revisions and
-are not current acceptance. The final handoff must identify the committed code
-revision tested and the later documentation/evidence commit separately.
+## Failures investigated
 
-## Evidence integrity
+The earlier full-frozen diagnostic returned 3,981 passed and 3 failed; its source
+changed during the run, so it cannot certify a frozen revision. Failures were a
+pre-consent MFA fixture, a recursive source test counting separate ignored
+worktrees, and stale governance hashes. The corrected complete run passed every
+batch without retries. No acceptance threshold or safety assertion was disabled.
 
-`scripts/completion_matrix.py` now requires a repository-contained artifact with
-an exact hash, matching commit/environment/time/command/result/scope, matching
-source/subrequirement IDs, zero exit code, positive passing count, and zero
-failures/errors/skips before accepting a VERIFIED disposition. URLs, file names
-or self-written success labels alone do not pass. The release inventory never
-automatically promotes historical statuses to VERIFIED.
+Initial sandbox Node subprocess failures, a leftover test-server compiler lock,
+and a mistaken Expo web export request were environment/invocation failures.
+Supported checks subsequently passed as recorded above.
 
-Raw GitHub metadata is read-only evidence: fetched refs, 199 PRs, outstanding
-issues, all deployment pages, artifact metadata, ruleset and current failure
-annotations. Artifact metadata is not the contents of every historical artifact;
-expired or inaccessible payloads cannot support fresh verification.
+The first real browser run found missing site attribution on recovered legal
+pages. Commit 49d754599223f5000238a769d31f19210875d5f4 fixes all six pages; both
+clean c411ebbb browser modes pass. Database-heavy tests exceeded the old
+300-second harness bound; the final bounded allowance was 1,200 seconds, and
+batch 1 completed in 480 seconds. The normal 25-second Railway startup check
+passed without raising its own limit.
+
+## Evidence integrity and limits
+
+scripts/completion_matrix.py requires a repository-contained artifact with
+matching hash, commit/environment/time/command/result/scope and source clauses,
+zero exit code, positive passing count and zero failures/errors/skips before
+accepting VERIFIED dispositions. Historical PASS labels are never promoted.
+Unresolved source-clause acceptance remains explicit in the requirement matrix.
+
+GitHub deployment/artifact metadata records inspection scope, not the contents
+or validity of every historical artifact. No current authenticated production
+audit, provider entitlement certification, broker lifecycle, real-money execution,
+external notification/payment journey or staging soak is claimed. Later evidence
+commits do not change the identity of the tested runtime candidate; they need
+their own inventory/governance checks.
