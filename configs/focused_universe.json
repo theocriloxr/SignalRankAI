@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "mode": "staging_opt_in_only",
+  "max_active_per_class": 15,
+  "core_target_per_class": 10,
+  "asset_classes": {
+    "crypto": {
+      "core": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+        "BNBUSDT",
+        "DOGEUSDT",
+        "TRXUSDT",
+        "LINKUSDT",
+        "ADAUSDT",
+        "LTCUSDT"
+      ],
+      "optional": [
+        "AVAXUSDT",
+        "SUIUSDT",
+        "XLMUSDT",
+        "HYPEUSDT",
+        "BCHUSDT"
+      ]
+    },
+    "forex": {
+      "core": [
+        "EURUSD",
+        "USDJPY",
+        "GBPUSD",
+        "USDCHF",
+        "USDCAD",
+        "AUDUSD",
+        "NZDUSD",
+        "EURJPY",
+        "GBPJPY",
+        "EURGBP"
+      ],
+      "optional": [
+        "AUDJPY",
+        "CADJPY",
+        "GBPCHF",
+        "EURAUD",
+        "CHFJPY"
+      ]
+    },
+    "index": {
+      "core": [
+        "US500",
+        "NAS100",
+        "US30",
+        "GER40",
+        "UK100",
+        "JP225",
+        "FRA40",
+        "EU50",
+        "AUS200",
+        "HK50"
+      ],
+      "optional": [
+        "RUSSELL2000",
+        "CHINA50",
+        "ES35",
+        "SMI20",
+        "NETH25"
+      ]
+    },
+    "equity": {
+      "core": [
+        "NVDA",
+        "AAPL",
+        "MSFT",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "AMD",
+        "AVGO",
+        "JPM"
+      ],
+      "optional": [
+        "BRK.B",
+        "V",
+        "COST",
+        "NFLX",
+        "PLTR"
+      ]
+    },
+    "commodity": {
+      "core": [
+        "XAUUSD",
+        "XAGUSD",
+        "WTI",
+        "BRENT",
+        "NATGAS",
+        "XPTUSD",
+        "COPPER",
+        "CORN",
+        "WHEAT",
+        "SOYBEANS"
+      ],
+      "optional": [
+        "COFFEE",
+        "SUGAR",
+        "COCOA",
+        "XPDUSD",
+        "COTTON"
+      ]
+    }
+  }
+}
