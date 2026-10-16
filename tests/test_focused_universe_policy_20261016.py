@@ -86,3 +86,11 @@ def test_opt_in_is_off_by_default_and_filters_after_all_sources_merged():
     assert code.count(marker) == 1
     assert code.index("_dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)") < code.index(marker)
     assert code.index(marker) < code.index("_profile_universe_filter_applied = False")
+
+
+def test_production_environment_cannot_activate_uncertified_shortlist():
+    code = (ROOT / "engine/core.py").read_text(encoding="utf-8")
+    assert 'focused_universe_requires_staging_certification' in code
+    assert 'RAILWAY_ENVIRONMENT_NAME' in code
+    assert '"staging", "stage", "development", "dev", "test"' in code
+    assert '"production"' not in code[code.index('if _env_bool("FOCUSED_UNIVERSE_ENABLED", False):'):code.index('from core.focused_universe import select_focused_assets')]
