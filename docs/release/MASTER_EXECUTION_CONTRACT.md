@@ -1,5 +1,27 @@
 # SignalRankAI master execution contract
 
+## Active cross-chat continuation, 17 October 2026
+
+The supplied package README and complete master contract, plus the newly attached
+recovery/intelligence addendum, now control the intake scope. The previous
+recovery request remains preserved. Read requirements_conflicts.md for explicit
+precedence and privacy decisions. The raw package is deliberately ignored.
+
+scripts/crosschat_intake.py validates both original DOCX bodies against every
+exported clause and source hash, checks the complete heading sequence and seeds,
+and produces requirements_universe.jsonl, source_coverage.json and the readable
+CROSSCHAT_REQUIREMENTS_MATRIX.md. These retain source references, not private
+wording. All 14,226 source blocks match. This is complete mechanical ingestion,
+not complete semantic review or implementation. Four seed dispositions currently
+map focused-universe work and gaps; the remaining reviews stay open. Older
+registries and all child clauses remain intact and referenced.
+
+The new register uses the eight dispositions requested by the latest owner
+instruction, together with separate applicability/review state. Historical status
+vocabularies below still describe their original registers. Never promote their
+labels into current acceptance. The absent blueprint_modules.csv and unsupplied
+original chats are SOURCE_NOT_AVAILABLE. Continue Stage 1; NO-GO remains.
+
 ## Active continuation, 16 October 2026
 
 The full current owner request is preserved verbatim in

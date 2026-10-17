@@ -1,5 +1,18 @@
 # Branch reconciliation
 
+## Preserved local continuation, 17 October 2026
+
+A fresh explicit all-heads/tags fetch left origin's integration head at
+51d2f59ed2c1553841fc24dda98689ffb26a0b7a. The local recovery implementation
+commit a23e088feafb63f00e22fb34232e44d803311aa4 is one commit ahead with no
+remote-only commits. No reset, merge to main, push or deployment occurred.
+The newly supplied private package stays in its original local folder and is
+excluded from Git. All existing worktrees remain untouched.
+
+The source-intake checkpoint and subsequent exact-commit tests must be retained
+on this branch. Reinspect rules and deployment triggers before a remote write;
+prior read-only observations do not authorize bypass or production promotion.
+
 ## Fresh synchronization, 16 October 2026
 
 The initial checkout was clean at 336dd28f4f36342ea22cd01d33892d2a7a4e9148.

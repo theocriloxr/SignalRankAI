@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "release_decision": "NO-GO",
+  "ingestion_is_acceptance": false,
+  "source_index_sha256": "c25d86e0fa3d364cc301f49175764942cbe537334f3af9cfe167549283efa7aa",
+  "repository_inventory_sha256": "a202aee1030057e8b6612cf9c33fda24f28b764806cfb5c33b941c0370f66448",
+  "sources": [
+    {
+      "filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.docx",
+      "sha256_original": "42bb36d45b3b27d0a12708457546ca111c01a02b8c86c13c584609cdf29618d4",
+      "extracted_text_filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.txt",
+      "sha256_text": "13c394e9110ac0d3cc5363fee79ef15a8cbb25ec27bf14a7358b2a869797c04a",
+      "paragraph_and_table_row_count": 3227,
+      "section_heading_count": 856,
+      "original_body_matches_ledger": true,
+      "full_export_matches_ledger": true,
+      "heading_sequence_valid": true,
+      "semantic_review_complete": false
+    },
+    {
+      "filename": "SignalRankAI_V8_Authoritative_Cross_Chat_Master_Prompt_2026-08-23.docx",
+      "sha256_original": "e98ee1776f53240c899a17d80dcee454e276854d8741b272cfecdc89a4e7789c",
+      "extracted_text_filename": "SignalRankAI_V8_Authoritative_Cross_Chat_Master_Prompt_2026-08-23.txt",
+      "sha256_text": "4567939ac99882d3ea67ba08eafedae3307218f29922ecc48f204303fdbda303",
+      "paragraph_and_table_row_count": 10999,
+      "section_heading_count": 730,
+      "original_body_matches_ledger": true,
+      "full_export_matches_ledger": true,
+      "heading_sequence_valid": true,
+      "semantic_review_complete": false
+    }
+  ],
+  "bundle_counts": {
+    "clauses": 14226,
+    "headings": 1586,
+    "seeds": 242
+  },
+  "unavailable": [
+    {
+      "source": "indexes/blueprint_modules.csv",
+      "status": "SOURCE_NOT_AVAILABLE",
+      "reason": "Named by the master contract but absent from the supplied package; heading index is available."
+    },
+    {
+      "source": "Unsupplied ChatGPT conversation transcripts and private references",
+      "status": "SOURCE_NOT_AVAILABLE",
+      "reason": "Bundled documents are accessible; they do not establish access to every original discussion."
+    }
+  ],
+  "register_rows": 26887,
+  "status_counts": {
+    "IMPLEMENTED_NEEDS_IMPROVEMENT": 4,
+    "INCOMPLETE": 26883
+  },
+  "reviewed_rows": 4,
+  "unclassified_applicable": 26883,
+  "unclassified_count_scope": "Conservative upper bound: includes all unresolved applicability reviews, including headings/context.",
+  "applicable_reviewed": 4,
+  "irrelevant_boilerplate_reviewed": 0,
+  "implemented_and_verified": 0,
+  "repository_retained_child_clauses": 67665,
+  "limitations": [
+    "Repository rows retain their complete child clauses through the existing register; these are not yet individually dispositioned.",
+    "Private original wording remains retrievable by source anchor/hash in the supplied bundle and ignored local intake.",
+    "An exact repeated text hash does not prove semantic duplication or supersession."
+  ]
+}

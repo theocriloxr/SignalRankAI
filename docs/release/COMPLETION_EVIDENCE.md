@@ -1,5 +1,29 @@
 ## Current local continuation — 16 October 2026
 
+## New source intake and diagnostic evidence, 17 October 2026
+
+The two original document bodies were reconstructed in order and compared with
+all 14,226 supplied ledger texts, their SHA-256 hashes, and the complete text
+exports. The ordered 1,586 headings and 242 seeds also validate. Source files
+remain private; crosschat_source_index.json contains their hashes and anchors.
+No semantic completion is inferred. requirements_universe.jsonl links the new
+corpus and prior source/interface inventory without replacing prior IDs.
+
+Retained diagnostics are in evidence/continuation-20261017/index.json:
+- crosschat-intake-diagnostic-20261017: exit 1, 70 passed / one local DB setup
+  error; the owned test server was stopped.
+- crosschat-intake-diagnostic-r2-20261017: exit 0, 71 passed / no skips, same
+  dirty but unchanged source after restarting only the test cluster.
+- frozen-local-manifest-a23e088f: clean unchanged a23e088f, exit 1. Ruff and
+  critical Pyright passed; six SDK test imports failed because that group needs
+  its separately locked SDK interpreter. No dependency or gate was weakened.
+
+The October 16 diagnostic .log files are now explicitly tracked and exempted
+from newline conversion, matching their original index hashes. A regression
+check rejects missing, untracked or hash-mismatched retained artifacts. These
+repairs improve evidence portability; they do not change any test outcome.
+Exact-current-commit full/backend/client/browser execution remains the next step.
+
 Freshly fetched clean 51d2f59ed2c1553841fc24dda98689ffb26a0b7a passed **32**
 focused-scope/paging tests (exit 0), with unchanged source fingerprints.
 The earlier terminal-access limitation is historical and no longer applies here.

@@ -587,6 +587,15 @@
         "ci",
         "local"
       ]
+    },
+    {
+      "id": "stage1-crosschat-intake",
+      "group": "source",
+      "description": "Sanitized cross-chat source register integrity and disposition checks; inventory is not acceptance",
+      "command": "python -m scripts.crosschat_intake --check",
+      "severity": "critical",
+      "required": true,
+      "environments": ["ci", "local"]
     }
   ]
 }

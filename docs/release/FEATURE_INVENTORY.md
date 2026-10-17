@@ -1,5 +1,20 @@
 # Feature inventory
 
+## Cross-chat coverage extension, 17 October 2026
+
+The new source register accounts for 14,226 private document clauses, 1,586
+source headings, 242 known requirement seeds, current bundled instructions and
+the complete newly attached recovery/intelligence addendum. Its canonical
+source anchors and hashes link to the local originals; private text is excluded
+from public artifacts. All existing repository sources/interfaces remain linked.
+The original DOCX/text/CSV consistency checks do not prove any product feature.
+
+Four reviewed seeds cover focused selection caps, qualified-provider admission,
+canonical alias identity and absence of fallback when focused scanning is active.
+They remain IMPLEMENTED_NEEDS_IMPROVEMENT with explicit gaps and diagnostic-only
+evidence. No all-market, broker, financial, redesigned-route or provider readiness
+has been claimed. See CROSSCHAT_REQUIREMENTS_MATRIX.md and source_coverage.json.
+
 The current owner request is retained in docs/specs/20261016/recovery-request.md.
 The focused scanner remains staging-only and default-disabled. Its config file
 and in-memory overrides now share strict validation. Every declared environment

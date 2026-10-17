@@ -1,0 +1,38 @@
+{
+  "release_decision": "NO-GO",
+  "stage": 1,
+  "blockers": [
+    {
+      "id": "ST1-SOURCES",
+      "kind": "LOCAL_WORK",
+      "action": "Reconcile remaining source-specific code/test/runtime acceptance; retain all child clauses and source IDs."
+    },
+    {
+      "id": "ST1-FOCUSED-UNIVERSE",
+      "kind": "LOCAL_WORK",
+      "action": "Complete actual provider-bound eligibility, hysteresis, owner controls, all new-entry paths and user-visible reasons."
+    },
+    {
+      "id": "SOURCE-NOT-AVAILABLE",
+      "kind": "SOURCE_NOT_AVAILABLE",
+      "action": "Missing blueprint_modules.csv and unsupplied original discussion exports; continue available-source work."
+    },
+    {
+      "id": "EXT-CI",
+      "kind": "BLOCKED_EXTERNAL",
+      "owner": "GitHub account owner and independent reviewer",
+      "action": "Restore billing-locked Actions and obtain required exact-head review/checks; do not bypass."
+    },
+    {
+      "id": "EXT-STAGING",
+      "kind": "BLOCKED_EXTERNAL",
+      "owner": "Environment/account operator",
+      "action": "Supply isolated staging resources and scoped provider, demo broker, Telegram and test-payment credentials; complete actual certification."
+    },
+    {
+      "id": "RELEASE-ACCEPTANCE",
+      "kind": "OPEN_ACCEPTANCE",
+      "action": "Full local checks, client/browser/native proof, security, financial checks, restore/rollback, real soak and two independent audits remain required."
+    }
+  ]
+}

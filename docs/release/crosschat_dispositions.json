@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "entries": {
+    "SR-XCHAT-SEED-0012": {
+      "source_sha256": "d40f6ea0e8c70071fe8ca7439dc9681e65ea3c57a82902b001e843363faa0101",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source review; not independent acceptance",
+      "owner": "Data and engine",
+      "impact": "Financial safety / new scan eligibility",
+      "dependencies": [
+        "ST1-FOCUSED-UNIVERSE"
+      ],
+      "acceptance": "Limit new scan selection to ten preferred core and up to five qualified optional instruments in each of five classes.",
+      "code": [
+        "core/focused_universe.py",
+        "data/database_universe.py",
+        "engine/core.py"
+      ],
+      "tests": [
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Provider-bound qualification and all independent entry paths remain open.",
+        "Existing-position management outside the active universe requires acceptance."
+      ],
+      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+    },
+    "SR-XCHAT-SEED-0013": {
+      "source_sha256": "cc8f6434b97028dac930841c07a0a836dd7090df49b92d3ba92929a30498ae18",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source review; not independent acceptance",
+      "owner": "Data and engine",
+      "impact": "Financial safety / new scan eligibility",
+      "dependencies": [
+        "ST1-FOCUSED-UNIVERSE"
+      ],
+      "acceptance": "Admit only provider-discovered, correctly classified and recently qualified instruments.",
+      "code": [
+        "core/focused_universe.py",
+        "data/database_universe.py",
+        "engine/core.py"
+      ],
+      "tests": [
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "The strict DB query checks registry timestamps and flags, not observed fresh candles, spread, liquidity or entitlements."
+      ],
+      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+    },
+    "SR-XCHAT-SEED-0018": {
+      "source_sha256": "65c2bea8c6f229ab15ccef84308589b2d4ab427e9c35146e0e47f3c1d394ee4f",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source review; not independent acceptance",
+      "owner": "Data and engine",
+      "impact": "Financial safety / new scan eligibility",
+      "dependencies": [
+        "ST1-FOCUSED-UNIVERSE"
+      ],
+      "acceptance": "Map canonical and provider aliases without duplicate instruments or cross-class admission.",
+      "code": [
+        "core/focused_universe.py",
+        "data/database_universe.py",
+        "engine/core.py"
+      ],
+      "tests": [
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Broker-specific contract identity and all downstream consumers remain unverified."
+      ],
+      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+    },
+    "SR-XCHAT-SEED-0024": {
+      "source_sha256": "e3766653237154efaeca393b8c23391420fa071efab6aed51d560c171228371e",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source review; not independent acceptance",
+      "owner": "Data and engine",
+      "impact": "Financial safety / new scan eligibility",
+      "dependencies": [
+        "ST1-FOCUSED-UNIVERSE"
+      ],
+      "acceptance": "When focused scanning is enabled, absent DB-qualified assets must not be replaced by static discovery fallbacks.",
+      "code": [
+        "core/focused_universe.py",
+        "data/database_universe.py",
+        "engine/core.py"
+      ],
+      "tests": [
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Only the current engine snapshot and selection path have diagnostic coverage; other entry paths remain open."
+      ],
+      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "scope": "Historical exact a23e088f manifest failure and modified-worktree diagnostic runs. Not release acceptance.",
+  "artifacts": [
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.json",
+      "sha256": "396b12202f1bb59b80656cba1d727f9e25c56ae541ccf750f9f6a34b31632925",
+      "bytes": 1509
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.log",
+      "sha256": "b26fa0c11adad5948cedbf0478aa020ff4daeb7398618896ed2f044042c9db85",
+      "bytes": 8199
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-r2-20261017.json",
+      "sha256": "826621983f326d1b4a0196c12cc0eb7f96f899126869eeb8facbfb4cd74fe968",
+      "bytes": 1515
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-r2-20261017.log",
+      "sha256": "666e0b97a517d33e2184b0889d5ec8dbd8974a4886aa34af912275f8e5850f95",
+      "bytes": 102
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.json",
+      "sha256": "3db23c37303424cc754be1588d43369813044afd930ed1595e37129857d39465",
+      "bytes": 1336
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.log",
+      "sha256": "728548e97c2e1fba5edcaca15b27ebd32dead961ce68e880b66e4d463e29d715",
+      "bytes": 5459
+    }
+  ]
+}

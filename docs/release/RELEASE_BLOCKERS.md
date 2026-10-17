@@ -1,5 +1,26 @@
 # Release blockers and exact continuation
 
+## Cross-chat intake checkpoint, 17 October 2026
+
+ST1-SOURCES is still FAILED. Both full DOCX bodies and text exports match all
+14,226 ledger rows; all 1,586 heading entries and 242 seeds were ingested.
+Individual acceptance review remains incomplete, including repository child
+clauses retained through the existing register. See source_coverage.json for
+exact reconciled counts, not a claim that all rows are product features.
+
+The first new diagnostic run recorded 70 passed / one database setup error
+because the owned localhost test cluster was stopped. After restarting only
+that cluster, the same checks recorded 71 passed with zero skips. Both are
+modified-worktree diagnostics, not frozen-release acceptance. The clean a23e088f
+local manifest failed its SDK gate because it was invoked with the runtime
+interpreter; use the existing separate SDK venv for that group. Preserve the
+failure and run the full exact-commit suite after freezing this source.
+
+Missing blueprint_modules.csv and unsupplied chats are inaccessible-source
+items. The many unfinished code/acceptance reviews remain local work, not external
+blockers. Production, provider, broker-demo, isolated staging/soak, financial,
+independent review and required hosted-check gates remain unclosed.
+
 ## Current continuation findings, 16 October 2026
 
 Stage 1 remains FAILED. The 51d2f59e focused baseline passed 32 executed tests.

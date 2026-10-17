@@ -13,7 +13,7 @@
     "primary_branch": "main",
     "integration_branch": "fix/stage1-canonical-reconciliation-20261014",
     "code_baseline": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
-    "baseline_state": "STAGE1_LOCAL_REPAIRS_ACCEPTANCE_PENDING",
+    "baseline_state": "STAGE1_CROSSCHAT_INTAKE_AND_ACCEPTANCE_PENDING",
     "main_at_inspection": "98a5de18f92674c9e70ec61a802391bf984de8d6",
     "recovery_base": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
     "blueprint": "8e46ca7d61df16a9b2820090162479fc8b390983",
@@ -26,7 +26,11 @@
     "integration_base": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
     "current_stage": 1,
     "stage_acceptance": "FAILED",
-    "current_request": "docs/specs/20261016/recovery-request.md"
+    "current_request": "docs/specs/20261016/recovery-request.md",
+    "current_code_checkpoint": "a23e088feafb63f00e22fb34232e44d803311aa4",
+    "current_source_index": "docs/release/crosschat_source_index.json",
+    "current_requirements_universe": "docs/release/requirements_universe.jsonl",
+    "current_intake_evidence": "docs/release/evidence/continuation-20261017/index.json"
   },
   "inventory_is_verification": false,
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",

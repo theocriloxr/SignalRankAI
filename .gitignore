@@ -42,6 +42,9 @@ Thumbs.db
 .audit-browser-venv/
 node_modules/
 
+# User-owned historical handoffs remain private, including their full exports.
+/SignalRankAI_Complete_CrossChat_Codex_Handoff_*/
+
 # Native JavaScript export outputs are built and certified from the release.
 mobile/dist-android/
 mobile/dist-ios/
