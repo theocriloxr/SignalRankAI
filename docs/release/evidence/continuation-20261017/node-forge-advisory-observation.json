@@ -1,0 +1,8 @@
+{
+  "observed_date": "2026-10-17",
+  "source": "https://github.com/advisories/GHSA-86w9-cpqp-85rv",
+  "advisory": "GHSA-86w9-cpqp-85rv",
+  "affected": "<=1.4.0",
+  "patched_versions": "None",
+  "scope": "Official advisory read-back, not exploitability certification. Four mobile audit rows share this dependency chain."
+}

@@ -1,5 +1,14 @@
 # Release blockers and exact continuation
 
+Verification follow-up: 5f7ae60c passed the five local manifest gates, 63 frontend
+and 53 mobile tests, but its full run was interrupted after an Android export
+rewrote tracked legacy build artifacts. Those generated files were restored;
+future exports target ignored artifacts. Missing Chromium is being installed.
+A synthetic probe also exposed missing receipt metadata validation in the new
+intake validator; environment, command, timestamp and scope are now mandatory,
+with four negative regressions. No requirement was promoted to VERIFIED.
+The next frozen commit must supply fresh full-suite acceptance.
+
 ## Cross-chat intake checkpoint, 17 October 2026
 
 ST1-SOURCES is still FAILED. Both full DOCX bodies and text exports match all

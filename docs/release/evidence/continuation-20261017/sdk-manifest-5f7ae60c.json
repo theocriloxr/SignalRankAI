@@ -1,0 +1,36 @@
+{
+  "name": "sdk-manifest-5f7ae60c",
+  "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-17T12:44:50.707605+00:00",
+  "finished_at": "2026-10-17T12:45:07.639070+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.pytest-tmp\\data-sdk-venv\\Scripts\\python.exe",
+    "scripts/run_release_manifest.py",
+    "--environment",
+    "local",
+    "--gate",
+    "market-data-sdk-consumer-tests"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/sdk-manifest-5f7ae60c.log",
+  "log_sha256": "47677a667f85f547199c804103e6fc4be2d0e7fba7749e80ce7a7ab4b743c04e",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "409e17794662e3ec74afb16ce1ae00c486cba563a2e8326868bfff7faf3be675",
+  "source_fingerprint_after": "409e17794662e3ec74afb16ce1ae00c486cba563a2e8326868bfff7faf3be675",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

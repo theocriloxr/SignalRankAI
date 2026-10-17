@@ -125,6 +125,24 @@ def test_sanitized_snapshot_and_review_cannot_silently_drop_rows(bundle):
         intake.build(snapshot, {"requirements": [], "interfaces": []}, {})
 
 
+@pytest.mark.parametrize("omitted", ["environment", "timestamp", "command", "scope"])
+def test_matching_but_incomplete_receipt_is_not_verification(bundle, omitted):
+    snapshot, _ = intake.ingest(bundle, [])
+    row = snapshot["records"][0]
+    receipt = {"sha": "b" * 40, "environment": "owned_local_test", "timestamp": "2026-10-17T00:00:00Z",
+               "command": "synthetic test", "scope": "VERIFIED_LOCAL", "result": "PASS",
+               "requirement_sha256": row["source_sha256"], "subrequirements": [row["id"]],
+               "exit_code": 0, "failed": 0, "errors": 0, "skipped": 0, "passed": 1}
+    receipt.pop(omitted)
+    artifact = bundle / "receipt.json"
+    artifact.write_text(json.dumps(receipt), encoding="utf-8")
+    proof = {**receipt, "artifact": "receipt.json", "artifact_sha256": intake.sha(artifact.read_bytes())}
+    review = {"source_sha256": row["source_sha256"], "status": "IMPLEMENTED_AND_VERIFIED",
+              "reviewer": "synthetic test", "acceptance": "synthetic", "proofs": [proof]}
+    with pytest.raises(ValueError, match="verification_metadata_incomplete"):
+        intake.validate_review(review, row, bundle)
+
+
 def test_committed_crosschat_outputs_are_current_and_private_bundle_is_not_tracked():
     import subprocess
 

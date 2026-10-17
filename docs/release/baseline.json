@@ -20,5 +20,7 @@
   "current_code_checkpoint": "a23e088feafb63f00e22fb34232e44d803311aa4",
   "current_source_index": "docs/release/crosschat_source_index.json",
   "current_requirements_universe": "docs/release/requirements_universe.jsonl",
-  "current_intake_evidence": "docs/release/evidence/continuation-20261017/index.json"
+  "current_intake_evidence": "docs/release/evidence/continuation-20261017/index.json",
+  "verification_attempt_commit": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "verification_attempt_status": "INCOMPLETE_INTERRUPTED"
 }

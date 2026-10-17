@@ -187,6 +187,10 @@ def validate_review(review: dict, row: dict, root: Path) -> None:
         if review.get("gaps") or not review.get("proofs"):
             raise ValueError("verification_incomplete")
         for proof in review["proofs"]:
+            if not all(proof.get(key) for key in ("sha", "environment", "timestamp", "command", "artifact", "artifact_sha256", "result", "scope")):
+                raise ValueError("verification_metadata_incomplete")
+            if proof["scope"] not in {"VERIFIED_LOCAL", "VERIFIED_CI", "VERIFIED_STAGING"}:
+                raise ValueError("verification_scope_invalid")
             if proof.get("result") != "PASS" or not re.fullmatch(r"[0-9a-f]{40}", proof.get("sha", "")) or proof.get("subrequirements") != [row["id"]]:
                 raise ValueError("verification_scope_incomplete")
             validate_evidence_artifact(proof, {"text_sha256": row["source_sha256"]}, root)

@@ -1,0 +1,38 @@
+{
+  "name": "browser-next-5f7ae60c",
+  "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-17T12:45:51.129020+00:00",
+  "finished_at": "2026-10-17T12:47:24.836423+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "scripts/run_frontend_browser_drill.py",
+    "--output-dir",
+    "artifacts/browser-next-5f7ae60c",
+    "--browser-python",
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-browser-venv\\Scripts\\python.exe",
+    "--workspace-mode",
+    "next"
+  ],
+  "cwd": ".",
+  "exit_code": 1,
+  "command_exit_code": 1,
+  "require_clean": true,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/browser-next-5f7ae60c.log",
+  "log_sha256": "5754a80f87c2cfbce088b8af82ac3d2108d263f9e325fbb285a5fbb315aeab0f",
+  "result": "FAIL",
+  "source_unchanged": true,
+  "source_fingerprint_before": "409e17794662e3ec74afb16ce1ae00c486cba563a2e8326868bfff7faf3be675",
+  "source_fingerprint_after": "409e17794662e3ec74afb16ce1ae00c486cba563a2e8326868bfff7faf3be675",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}
