@@ -16,3 +16,6 @@ Dockerfile.* text eol=lf
 docs/release/evidence/local-20261016/** -text whitespace=cr-at-eol
 docs/release/evidence/continuation-20261016/** -text whitespace=cr-at-eol
 docs/release/evidence/continuation-20261017/** -text whitespace=cr-at-eol
+# Original diagnostic tracebacks contain significant whitespace; retain bytes.
+docs/release/evidence/continuation-20261016/*.log -whitespace
+docs/release/evidence/continuation-20261017/*.log -whitespace
