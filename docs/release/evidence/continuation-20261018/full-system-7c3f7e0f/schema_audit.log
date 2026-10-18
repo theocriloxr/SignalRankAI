@@ -1,0 +1,5 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/schema_audit.py
+
+ATTEMPT 1/1
+
+{"broker_credential_envelope_contract": {"down_revision": true, "format_check": true, "key_index": true, "legacy_backfill": true, "model_missing": [], "ok": true, "rendered_missing": [], "source_missing": []}, "errors": [], "heads": ["0055_user_renewal_default"], "live_financial_contract": {"missing": [], "ok": true}, "ml_rejected_runtime_contract": {"missing_columns": [], "ok": true}, "ok": true, "outcome_projection_contract": {"model_unique_constraint": true, "ok": true, "unique_guard_sql": true}, "revisions": 55, "signal_runtime_contract": {"active_guard_sql": true, "missing_columns": [], "ok": true}, "trading_account_ledger_contract": {"idempotency_constraint": true, "immutable_trigger": true, "missing_columns": [], "ok": true}}

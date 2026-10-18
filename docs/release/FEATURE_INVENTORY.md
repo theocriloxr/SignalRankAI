@@ -1,5 +1,26 @@
 # Feature inventory
 
+## Verification continuation, 18 October 2026
+
+Clean unchanged 7c3f7e0f completed the full local system run: 4,075 passed,
+one failed, zero skipped. The sole failure is the generated V7 governance
+inventory, which was produced before the final retained evidence and register
+updates. The failure is retained in evidence/continuation-20261018/index.json;
+no runtime behavior is waived by identifying the generator-order error.
+
+On that same commit, all five local manifest gates, 63 frontend tests, 53 mobile
+tests, frontend lint, mobile typecheck, Android/iOS JS exports and the real Next
+browser drill passed. The browser drill used synthetic accounts and an owned
+migrated PostgreSQL database; server/database/key cleanup succeeded. These are
+local checks, not native-device, provider, broker, financial or staging approval.
+Stage 1 and the overall release remain NO-GO.
+
+Generation order for the correction: retain/stage evidence logs first, update
+baseline/docs, build_release_inventory, crosschat_intake, then build_v7_governance.
+Check all three without writing before freezing. Do not add evidence after the
+final governance generation without regenerating it. Run the full suite and
+remaining browser/security checks from that exact unchanged correction commit.
+
 Verification follow-up: 5f7ae60c passed the five local manifest gates, 63 frontend
 and 53 mobile tests, but its full run was interrupted after an Android export
 rewrote tracked legacy build artifacts. Those generated files were restored;

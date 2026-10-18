@@ -30,9 +30,18 @@
     "current_code_checkpoint": "a23e088feafb63f00e22fb34232e44d803311aa4",
     "current_source_index": "docs/release/crosschat_source_index.json",
     "current_requirements_universe": "docs/release/requirements_universe.jsonl",
-    "current_intake_evidence": "docs/release/evidence/continuation-20261017/index.json",
+    "current_intake_evidence": "docs/release/evidence/continuation-20261018/index.json",
     "verification_attempt_commit": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
-    "verification_attempt_status": "INCOMPLETE_INTERRUPTED"
+    "verification_attempt_status": "INCOMPLETE_INTERRUPTED",
+    "latest_tested_code_commit": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+    "latest_full_suite": {
+      "passed": 4075,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "result": "FAIL",
+      "cause": "Generated legacy_disposition inventory stale after final evidence retention"
+    }
   },
   "inventory_is_verification": false,
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
