@@ -1,5 +1,12 @@
 # Feature inventory
 
+## Local correction verification, 18 October 2026
+
+The exact tested code is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. The wrapper now preserves a failed or partial attempt instead of allowing a same-name retry to overwrite it, and it records an unavailable executable as a failed receipt. The legacy account and billing pages escape seven ampersands, allowing complete strict static parsing without visible-content changes.
+
+The full owned-local suite passes with 4,080 tests; strict static scanning and the retained legacy-browser journey pass. The browser result is limited to the listed legacy workspace flows and confirms cleanup. It does not complete financial, execution, provider, native, Telegram or operational requirements.
+
+
 ## Verified local scope and evidence correction, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.

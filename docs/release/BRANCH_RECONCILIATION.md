@@ -1,5 +1,12 @@
 # Branch reconciliation
 
+## Local correction checkpoint, 18 October 2026
+
+The exact tested code is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc; its local evidence is [retained here](evidence/continuation-20261018/correction-393f3d88/index.json). The correction is committed locally and has not been pushed. It is still based on the same reconciled remote integration head, so the previously read GitHub ruleset, draft PR state, service trigger inventory and no-deploy decision remain controlling.
+
+The 28 divergent ref heads still match their prior reviewed dispositions. The fresh comparison is retained as evidence and establishes head continuity, not new semantic acceptance of the 118 historical patch commits.
+
+
 ## Ref and deployment refresh, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.

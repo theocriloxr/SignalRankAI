@@ -1,0 +1,36 @@
+{
+  "name": "full-system-393f3d88",
+  "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:53:57.821647+00:00",
+  "finished_at": "2026-10-18T09:05:08.953909+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "scripts/run_complete_system_test.py",
+    "--full",
+    "--output-dir",
+    "artifacts/full-system-393f3d88"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "launch_error": null,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+    "dirty": false
+  },
+  "step_timeout_seconds": 1200,
+  "log": "artifacts/stage1-20261014/full-system-393f3d88.log",
+  "log_sha256": "d953e2d4c2ac91f2b8a6841dd5005c061742086751778e69eb9bb0258af6301b",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "ebf2a3fc0a18617d9918e045ec28089c873ceee0ec73d2c96eac59531a2befac",
+  "source_fingerprint_after": "ebf2a3fc0a18617d9918e045ec28089c873ceee0ec73d2c96eac59531a2befac",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

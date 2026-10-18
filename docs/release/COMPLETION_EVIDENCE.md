@@ -1,5 +1,19 @@
 ## Current local continuation — 16 October 2026
 
+## Correction source: complete local suite, 18 October 2026
+
+The exact tested source is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. Evidence: [correction index](evidence/continuation-20261018/correction-393f3d88/index.json).
+
+| Check | Result and scope |
+| --- | --- |
+| Complete system | PASS: 4,080 passed, zero failed/errors/skips; 32 owned-local checks |
+| Strict static scan | PASS: OpenGrep probe and 575-file scan, zero findings/errors |
+| Legacy browser | PASS: production build with synthetic accounts and owned PostgreSQL; servers/database/key cleanup confirmed |
+| Evidence wrapper tests | PASS: ten fixture tests cover clean identity, changed source, duplicate names, partial evidence and missing executables |
+
+This evidence replaces only the local pending state for the wrapper/HTML correction. It does not replace the retained 2ee0a918 results for Next browser coverage, frontend/mobile tests, or audits whose source scope was unchanged. It proves no external integration or release acceptance.
+
+
 ## Exact frozen run and retained failures, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.

@@ -1,5 +1,14 @@
 # Release blockers and exact continuation
 
+## Correction verification closed at local scope, 18 October 2026
+
+The exact tested source is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. Evidence: [correction index](evidence/continuation-20261018/correction-393f3d88/index.json). The receipt-overwrite defect and strict HTML parse failures are locally resolved: 4,080 clean full-suite passes, a complete zero-finding/zero-error OpenGrep scan, and a passing legacy browser drill with owned-resource cleanup.
+
+Release remains **NO-GO**. The mobile dependency audit still reports four high-severity rows in the Expo/node-forge chain. Stage 1 source reconciliation remains incomplete: 13 reviewed dispositions and 26,874 unresolved applicability/acceptance rows. Focused-universe provider qualification and cross-path enforcement are unfinished local work.
+
+Hosted CI remains unavailable/failed at the prior remote head; independent review, isolated staging, broker-demo/provider/payment/Telegram evidence, native device coverage, restore/rollback and soak gates remain unsatisfied. No deployment or financial permission change is authorized.
+
+
 ## Updated local acceptance, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
