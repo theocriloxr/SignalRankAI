@@ -59,6 +59,9 @@ def main() -> int:
     directory = ROOT / "artifacts/stage1-20261014"
     directory.mkdir(parents=True, exist_ok=True)
     log = directory / (args.name + ".log")
+    report = directory / (args.name + ".json")
+    if log.exists() or report.exists():
+        parser.error("check_name_already_used; choose a new attempt name to preserve existing evidence")
     def git_state():
         return {
             "sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
@@ -87,16 +90,29 @@ def main() -> int:
             parser.error("step timeout must be between 30 and 3600 seconds")
         env["COMPLETE_SYSTEM_STEP_TIMEOUT_SECONDS"] = str(args.step_timeout_seconds)
     env["PYTEST_ADDOPTS"] = f"-o cache_dir=.pytest-tmp/stage1-cache-{args.name} --basetemp=.pytest-tmp/stage1-pytest-{args.name}"
-    with log.open("wb") as output:
-        result = subprocess.run(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
+    # Exclusive creation also stops concurrent attempts with the same name.
+    try:
+        output = log.open("xb")
+    except FileExistsError:
+        parser.error("check_name_already_used; choose a new attempt name to preserve existing evidence")
+    launch_error = None
+    with output:
+        try:
+            result = subprocess.run(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
+            command_exit_code = result.returncode
+        except OSError as exc:
+            launch_error = type(exc).__name__
+            command_exit_code = 127
+            output.write(f"CHECK_LAUNCH_FAILED {launch_error}\n".encode())
     after = source_fingerprint()
     state_after = git_state()
     source_unchanged = before == after and state_before == state_after
-    exit_code = result.returncode if result.returncode else (0 if source_unchanged else 1)
+    exit_code = command_exit_code if command_exit_code else (0 if source_unchanged else 1)
     receipt = {"name": args.name, "sha": sha, "environment": "sanitized_local_test",
                "started_at": started, "finished_at": datetime.now(timezone.utc).isoformat(),
                "command": command, "cwd": args.cwd, "exit_code": exit_code,
-               "command_exit_code": result.returncode, "require_clean": args.require_clean,
+               "command_exit_code": command_exit_code, "launch_error": launch_error,
+               "require_clean": args.require_clean,
                "acceptance_eligible": args.require_clean and source_unchanged and exit_code == 0,
                "worktree_before": state_before, "worktree_after": state_after,
                "step_timeout_seconds": args.step_timeout_seconds,
@@ -105,7 +121,8 @@ def main() -> int:
                "source_unchanged": source_unchanged,
                "source_fingerprint_before": before, "source_fingerprint_after": after,
                "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
-    (directory / (args.name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    with report.open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt))
     print(log.read_text("utf-8", errors="replace")[-5000:])
     return exit_code

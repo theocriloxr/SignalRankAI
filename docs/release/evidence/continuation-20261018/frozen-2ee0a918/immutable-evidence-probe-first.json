@@ -1,0 +1,33 @@
+{
+  "name": "immutable-evidence-probe-2ee",
+  "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:45:40.159498+00:00",
+  "finished_at": "2026-10-18T08:45:40.718642+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-c",
+    "print('SYNTHETIC_FAILURE'); raise SystemExit(7)"
+  ],
+  "cwd": ".",
+  "exit_code": 7,
+  "command_exit_code": 7,
+  "require_clean": true,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/immutable-evidence-probe-2ee.log",
+  "log_sha256": "41b26641880b00583ed9e4d38e90dd8e8fc09683dc22bb3b5c0526632299ef5e",
+  "result": "FAIL",
+  "source_unchanged": true,
+  "source_fingerprint_before": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "source_fingerprint_after": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

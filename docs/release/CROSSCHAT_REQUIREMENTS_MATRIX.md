@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 26887. Reviewed dispositions: 4. Unresolved applicability/acceptance: 26883.
+Rows: 26887. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26874.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -14234,17 +14234,17 @@ Rows: 26887. Reviewed dispositions: 4. Unresolved applicability/acceptance: 2688
 | SR-XCHAT-D2-B10997 | sources/SignalRankAI_V8_Authoritative_Cross_Chat_Master_Prompt_2026-08-23.docx block:10997 | INCOMPLETE |
 | SR-XCHAT-D2-B10998 | sources/SignalRankAI_V8_Authoritative_Cross_Chat_Master_Prompt_2026-08-23.docx block:10998 | INCOMPLETE |
 | SR-XCHAT-D2-B10999 | sources/SignalRankAI_V8_Authoritative_Cross_Chat_Master_Prompt_2026-08-23.docx block:10999 | INCOMPLETE |
-| SR-XCHAT-SEED-0001 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0001 | INCOMPLETE |
-| SR-XCHAT-SEED-0002 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0002 | INCOMPLETE |
-| SR-XCHAT-SEED-0003 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0003 | INCOMPLETE |
-| SR-XCHAT-SEED-0004 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0004 | INCOMPLETE |
-| SR-XCHAT-SEED-0005 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0005 | INCOMPLETE |
-| SR-XCHAT-SEED-0006 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0006 | INCOMPLETE |
-| SR-XCHAT-SEED-0007 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0007 | INCOMPLETE |
-| SR-XCHAT-SEED-0008 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0008 | INCOMPLETE |
+| SR-XCHAT-SEED-0001 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0001 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0002 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0002 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0003 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0003 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0004 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0004 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0005 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0005 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0006 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0006 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0007 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0007 | IMPLEMENTED_NEEDS_IMPROVEMENT |
+| SR-XCHAT-SEED-0008 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0008 | IMPLEMENTED_NEEDS_IMPROVEMENT |
 | SR-XCHAT-SEED-0009 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0009 | INCOMPLETE |
 | SR-XCHAT-SEED-0010 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0010 | INCOMPLETE |
-| SR-XCHAT-SEED-0011 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0011 | INCOMPLETE |
+| SR-XCHAT-SEED-0011 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0011 | IMPLEMENTED_NEEDS_IMPROVEMENT |
 | SR-XCHAT-SEED-0012 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0012 | IMPLEMENTED_NEEDS_IMPROVEMENT |
 | SR-XCHAT-SEED-0013 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0013 | IMPLEMENTED_NEEDS_IMPROVEMENT |
 | SR-XCHAT-SEED-0014 | indexes/known_requirements_seed.csv SR-XCHAT-SEED-0014 | INCOMPLETE |

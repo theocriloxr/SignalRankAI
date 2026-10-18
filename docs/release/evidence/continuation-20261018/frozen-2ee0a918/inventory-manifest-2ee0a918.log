@@ -1,0 +1,6 @@
+::group::stage1-source-inventory - Repository source/interface accounting (requires Git checkout; no automatic verification claims)
+{"documents": 393, "requirements_and_source_sections": 10014, "source_clauses": 60021, "interfaces": {"ENDPOINT": 175, "API": 163, "WEB": 54, "MOBILE": 14, "COMMAND": 192, "CALLBACK": 28, "PROVIDER": 37, "BROKER": 13, "STRATEGY_CALLABLE": 48, "STRATEGY": 8, "TIMEFRAME": 6}}
+::endgroup::
+::group::stage1-crosschat-intake - Sanitized cross-chat source register integrity and disposition checks; inventory is not acceptance
+{"bundle_counts":{"clauses":14226,"headings":1586,"seeds":242},"release_decision":"NO-GO","reviewed":4,"rows":26887,"unclassified_applicable":26883}
+::endgroup::

@@ -1,0 +1,37 @@
+{
+  "name": "receipt-immutability-before-fix-20261018",
+  "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:49:22.468698+00:00",
+  "finished_at": "2026-10-18T08:49:27.040125+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "tests/test_stage1_local_check_identity.py",
+    "-k",
+    "retry_cannot or partial_previous or missing_executable",
+    "-q"
+  ],
+  "cwd": ".",
+  "exit_code": 1,
+  "command_exit_code": 1,
+  "require_clean": false,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": true
+  },
+  "worktree_after": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": true
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/receipt-immutability-before-fix-20261018.log",
+  "log_sha256": "469203354b19c6c3756e991cb176b4f99cfc821043b619880daee4c8ee0f2fba",
+  "result": "FAIL",
+  "source_unchanged": true,
+  "source_fingerprint_before": "b55dcfa15465778ee256804e422d242cb13c945a1340de5b336e4b1c1ff72a1b",
+  "source_fingerprint_after": "b55dcfa15465778ee256804e422d242cb13c945a1340de5b336e4b1c1ff72a1b",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

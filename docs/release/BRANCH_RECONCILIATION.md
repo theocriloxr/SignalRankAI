@@ -1,5 +1,15 @@
 # Branch reconciliation
 
+## Ref and deployment refresh, 18 October 2026
+
+The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
+
+The latest read-only audit records 247 refs: 218 ancestor-preserved, one patch-equivalent/merge-only, and 28 divergent refs containing 118 distinct unmatched patch commits. Compare the fresh snapshot with branch_dispositions.json before integration; historical dispositions are retained. All 18 existing worktrees remain preserved.
+
+GitHub ruleset 24410166 is active with no bypass actors, independent last-push approval, thread resolution and strict manifest/release-certification. Draft PR #201 still points to remote 51d2f59e. Current local commits have not been pushed at this checkpoint.
+
+All 16 Railway service source configurations were re-read without variable values. None follows fix/stage1-canonical-reconciliation-20261014; no changes are staged. Public web remains configured to f026bd16 and API to 9865a3d1. CI production source approval is restricted to the provider-discovery branch. Other automation triggers were reviewed; a Stage 1 branch push runs checks, not those production jobs. Do not merge or deploy while release acceptance is open.
+
 ## Verification continuation, 18 October 2026
 
 Clean unchanged 7c3f7e0f completed the full local system run: 4,075 passed,

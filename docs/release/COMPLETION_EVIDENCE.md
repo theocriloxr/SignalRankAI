@@ -1,5 +1,21 @@
 ## Current local continuation — 16 October 2026
 
+## Exact frozen run and retained failures, 18 October 2026
+
+The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
+
+| Check at 2ee0a918 | Result and limits |
+| --- | --- |
+| Complete system | PASS: 4,076 passed, no failures/errors/skips; all 32 steps |
+| Next and legacy browser | PASS: real local API, migrated owned PostgreSQL, synthetic accounts; cleanup confirmed |
+| Ruff / critical Pyright / source registers / isolated SDK | PASS after corrected tool invocation; critical Pyright zero errors/warnings; six SDK tests |
+| Dependency audits | Runtime, SDK and frontend PASS; mobile FAIL, four high dependency rows in the Expo/node-forge advisory chain |
+| Bandit | PASS at configured severity/confidence threshold; not zero findings across all thresholds |
+| Legacy type budget | PASS budget with 1,102 errors and six warnings; not zero-error type checking |
+| OpenGrep | FAIL: zero reported findings, 575 files scanned, two HTML partial-parse errors; incomplete scans cannot pass |
+
+The initial missing Ruff path and restricted subprocess import-discovery failures are retained. The same manifest passes once the runtime is discoverable. The synthetic receipt-overwrite probe is explicitly excluded from product acceptance; four failing regression cases are preserved alongside the ten-test modified-source correction pass. The subsequent HTML/wrapper edits require a new frozen receipt. Earlier frontend/mobile unit/export evidence remains attached to 7c3f7e0f, not relabelled as 2ee0a918. Native devices, real providers/brokers, staging, payments and soak remain unverified.
+
 ## Verification continuation, 18 October 2026
 
 Clean unchanged 7c3f7e0f completed the full local system run: 4,075 passed,

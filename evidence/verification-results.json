@@ -453,5 +453,22 @@
       "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
     }
   ],
-  "scope": "Exact-revision local results, retained failures and unfinished acceptance. No deployment/provider/broker certification."
+  "scope": "Exact-revision local results, retained failures and unfinished acceptance. No deployment/provider/broker certification.",
+  "latest_tested_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "latest_full_suite": {
+    "passed": 4076,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "result": "PASS",
+    "scope": "Owned local tests only"
+  },
+  "latest_evidence_index": "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json",
+  "followup_source_changes": {
+    "status": "PENDING_FROZEN_VERIFICATION",
+    "changes": [
+      "immutable local attempts and launch-failure receipts",
+      "HTML entity escaping for complete static parsing"
+    ]
+  }
 }

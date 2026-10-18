@@ -1,0 +1,8 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_free_provider_microstructure.py' 'tests\test_full_market_score_learning.py' 'tests\test_full_platform_hardening_20260924.py' 'tests\test_generation_expectancy_admission.py' 'tests\test_governance_checkout_portability.py' 'tests\test_governance_docs.py' 'tests\test_governance_reproducibility.py' 'tests\test_governance_runtime_exclusions.py' 'tests\test_help_menu_cache.py' 'tests\test_immutable_runtime_dependencies.py' 'tests\test_imp_strategy.py' 'tests\test_indices_asset_support.py' 'tests\test_legacy_sizer_boundaries.py' 'tests\test_legal_compliance_20261003.py' 'tests\test_live_candle_freshness.py' 'tests\test_live_drift_monitoring.py' 'tests\test_live_production_evidence.py' 'tests\test_load_certification.py' 'tests\test_macro_flow.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 35%]
+........................................................................ [ 70%]
+............................................................             [100%]
+204 passed in 22.60s

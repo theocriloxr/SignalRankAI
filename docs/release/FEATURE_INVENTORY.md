@@ -1,5 +1,13 @@
 # Feature inventory
 
+## Verified local scope and evidence correction, 18 October 2026
+
+The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
+
+The local system suite and both browser workspace modes pass on the frozen source. Retained browser results enumerate 17 public and 16 authenticated Next routes plus concrete account/CSRF/isolation flows; route rendering is not acceptance of every financial action.
+
+The follow-up code changes preserve local attempt evidence and escape seven displayed ampersands across the legacy account and billing pages so strict HTML analysis can finish. Ten wrapper regressions pass on modified source. There is no change to billing consent, account authorization or money flags. Source-truth seed reviews increased from four to thirteen without any new VERIFIED claim.
+
 ## Verification continuation, 18 October 2026
 
 Clean unchanged 7c3f7e0f completed the full local system run: 4,075 passed,

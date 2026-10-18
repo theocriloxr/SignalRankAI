@@ -1,0 +1,19 @@
+::group::static-ruff - Ruff release-critical Python correctness
+All checks passed!
+::endgroup::
+::group::static-pyright-critical - Zero-error Pyright analysis for release-critical safety boundaries
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py:22:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migrations\versions\0050_profile_health_index.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migrations\versions\0050_profile_health_index.py:6:21 - error: "op" is unknown import symbol (reportAttributeAccessIssue)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py:1071:20 - warning: Import "requests" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py:431:16 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py:64:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py:181:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+1 error, 5 warnings, 0 informations
+::endgroup::
+release gate failed: static-pyright-critical exit=1

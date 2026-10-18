@@ -1,5 +1,15 @@
 # Release blockers and exact continuation
 
+## Updated local acceptance, 18 October 2026
+
+The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
+
+The stale generated-governance failure is resolved: full local system and both browser modes pass. The strict scan revealed two HTML parse failures; escaped text is awaiting a frozen rescan. The evidence wrapper correction also awaits frozen regression acceptance. Mobile dependency audit remains red.
+
+Source reconciliation and focused-universe cross-path/provider qualification remain executable local work, not external blockers. Nine additional source-truth seeds were reviewed with explicit gaps (13 total); remaining applicability and acceptance are unresolved. The fresh branch snapshot has 247 refs and 118 unique unmatched commits requiring comparison with prior dispositions, not automatic merging.
+
+GitHub requires independent last-push approval plus manifest/release-certification; hosted Actions remain failed at the previously observed head. Railway still has only a production environment. Dedicated staging, actual demo/provider/payment/Telegram evidence, native devices, restore/rollback and soak acceptance remain open. No deployment or financial permission change is authorized by local PASS.
+
 ## Verification continuation, 18 October 2026
 
 Clean unchanged 7c3f7e0f completed the full local system run: 4,075 passed,

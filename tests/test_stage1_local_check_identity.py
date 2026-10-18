@@ -68,3 +68,38 @@ def test_failed_command_remains_failed_with_unchanged_source(checkout, monkeypat
     assert value["source_unchanged"] is True
     assert value["command_exit_code"] == value["exit_code"] == 7
     assert value["result"] == "FAIL"
+
+
+def test_retry_cannot_replace_a_failed_receipt_or_run_another_child(checkout, monkeypatch):
+    assert invoke(monkeypatch, "print('first attempt'); raise SystemExit(7)") == 7
+    directory = checkout / "artifacts/stage1-20261014"
+    original = {name: (directory / name).read_bytes() for name in ("identity.json", "identity.log")}
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, "from pathlib import Path; Path('artifacts/replayed').touch()")
+    assert error.value.code == 2
+    assert not (checkout / "artifacts/replayed").exists()
+    assert all((directory / name).read_bytes() == raw for name, raw in original.items())
+
+
+@pytest.mark.parametrize("existing", ["identity.log", "identity.json"])
+def test_partial_previous_attempt_is_preserved(checkout, monkeypatch, existing):
+    directory = checkout / "artifacts/stage1-20261014"
+    directory.mkdir(parents=True)
+    target = directory / existing
+    target.write_bytes(b"incomplete previous evidence\n")
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, "from pathlib import Path; Path('artifacts/replayed').touch()")
+    assert error.value.code == 2
+    assert target.read_bytes() == b"incomplete previous evidence\n"
+    assert not (checkout / "artifacts/replayed").exists()
+
+
+def test_missing_executable_produces_a_failed_receipt(checkout, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["stage1_local_checks.py", "--name", "identity",
+        "--require-clean", "--", str(checkout / "missing-tool")])
+    assert runner.main() == 127
+    value = receipt(checkout)
+    assert value["launch_error"] == "FileNotFoundError"
+    assert value["command_exit_code"] == 127
+    assert value["result"] == "FAIL" and value["acceptance_eligible"] is False
+    assert value["source_unchanged"] is True

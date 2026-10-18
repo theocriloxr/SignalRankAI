@@ -21,15 +21,16 @@
         "tests/test_focused_universe_database_postgres.py"
       ],
       "evidence_candidates": [
-        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json",
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/full-system-2ee0a918/complete_system_test_report.json"
       ],
       "runtime_proof": [],
       "gaps": [
         "Provider-bound qualification and all independent entry paths remain open.",
         "Existing-position management outside the active universe requires acceptance."
       ],
-      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
-      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Frozen full local suite passed 4076 tests including focused-universe tests and owned PostgreSQL fixtures; no provider/broker or complete cross-path acceptance."
     },
     "SR-XCHAT-SEED-0013": {
       "source_sha256": "cc8f6434b97028dac930841c07a0a836dd7090df49b92d3ba92929a30498ae18",
@@ -51,14 +52,15 @@
         "tests/test_focused_universe_database_postgres.py"
       ],
       "evidence_candidates": [
-        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json",
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/full-system-2ee0a918/complete_system_test_report.json"
       ],
       "runtime_proof": [],
       "gaps": [
         "The strict DB query checks registry timestamps and flags, not observed fresh candles, spread, liquidity or entitlements."
       ],
-      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
-      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Frozen full local suite passed 4076 tests including focused-universe tests and owned PostgreSQL fixtures; no provider/broker or complete cross-path acceptance."
     },
     "SR-XCHAT-SEED-0018": {
       "source_sha256": "65c2bea8c6f229ab15ccef84308589b2d4ab427e9c35146e0e47f3c1d394ee4f",
@@ -80,14 +82,15 @@
         "tests/test_focused_universe_database_postgres.py"
       ],
       "evidence_candidates": [
-        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json",
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/full-system-2ee0a918/complete_system_test_report.json"
       ],
       "runtime_proof": [],
       "gaps": [
         "Broker-specific contract identity and all downstream consumers remain unverified."
       ],
-      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
-      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Frozen full local suite passed 4076 tests including focused-universe tests and owned PostgreSQL fixtures; no provider/broker or complete cross-path acceptance."
     },
     "SR-XCHAT-SEED-0024": {
       "source_sha256": "e3766653237154efaeca393b8c23391420fa071efab6aed51d560c171228371e",
@@ -109,14 +112,264 @@
         "tests/test_focused_universe_database_postgres.py"
       ],
       "evidence_candidates": [
-        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json"
+        "docs/release/evidence/continuation-20261016/focused-boundary-diagnostic-r2-20261016.json",
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/full-system-2ee0a918/complete_system_test_report.json"
       ],
       "runtime_proof": [],
       "gaps": [
         "Only the current engine snapshot and selection path have diagnostic coverage; other entry paths remain open."
       ],
-      "reviewed_code_commit": "a23e088feafb63f00e22fb34232e44d803311aa4",
-      "evidence_limit": "71-test modified-worktree diagnostic; not exact-commit or provider/broker certification."
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Frozen full local suite passed 4076 tests including focused-universe tests and owned PostgreSQL fixtures; no provider/broker or complete cross-path acceptance."
+    },
+    "SR-XCHAT-SEED-0001": {
+      "source_sha256": "dc0cd4813717bf0344a1956896666ba694a760ee2d074a2d88b165b17b7a4a98",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Recover accessible historical instructions and expose unavailable sources.",
+      "code": [
+        "scripts/crosschat_intake.py",
+        "scripts/stage1_historical_index.py"
+      ],
+      "tests": [
+        "tests/test_crosschat_intake.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Original discussion exports and blueprint_modules.csv remain unavailable. Accessible sources still require individual semantic review."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0002": {
+      "source_sha256": "9a64d1b068001f0f2c968826bb6fa4edc7b3228a1743568015b701007a060608",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Preserve original historical specification identities and ordered clauses while protecting private wording.",
+      "code": [
+        "scripts/crosschat_intake.py",
+        "scripts/stage1_historical_index.py",
+        "scripts/build_release_inventory.py"
+      ],
+      "tests": [
+        "tests/test_crosschat_intake.py",
+        "tests/test_completion_matrix.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Private DOCX/text/ledger ingestion is byte/hash checked; retained repository history has not been fully semantically reconciled."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0003": {
+      "source_sha256": "1ed06f75b7117ea196c315ef4c51c271aa4c3824abe04020c49bbc110eeb33ac",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Reconcile fetched branch history against the integration baseline without overwriting divergent work.",
+      "code": [
+        "scripts/stage1_branch_audit.py",
+        "docs/release/branch_dispositions.json"
+      ],
+      "tests": [],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/branch-audit-2ee0a918.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Fresh snapshot contains 247 refs, 28 divergent refs and 118 distinct unmatched patch commits. Prior dispositions require comparison with the fresh baseline; this is not 118 proven missing fixes."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0004": {
+      "source_sha256": "0350e3d629646a0f24c559931d32b67823e62c1e9b55d20bd09120460f644625",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Record controlling current instructions for each conflict while retaining superseded originals.",
+      "code": [
+        "docs/release/requirements_conflicts.md",
+        "docs/release/current_scope_20261016.json",
+        "scripts/validate_current_scope.py"
+      ],
+      "tests": [
+        "tests/test_crosschat_intake.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Ten explicit conflict decisions exist; every historical clause and affected runtime path still needs review."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0005": {
+      "source_sha256": "c7faa491bc64fa0badf918b8a7619d273dee8140ae682bf95c386e48398b8838",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Require source-bound executable evidence before promoting any requirement to verified.",
+      "code": [
+        "scripts/crosschat_intake.py",
+        "scripts/completion_matrix.py",
+        "scripts/stage1_local_checks.py"
+      ],
+      "tests": [
+        "tests/test_crosschat_intake.py",
+        "tests/test_completion_matrix.py",
+        "tests/test_stage1_local_check_identity.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Receipt validation cannot establish semantic test coverage by itself. Independent acceptance review and remaining clause-specific proofs are open."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0006": {
+      "source_sha256": "762eae78c6f230f3e1ebea889e8e57ef06b80a5cf3a062e19a6dd569dbe772f9",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Preserve each verification attempt and bind results to exact source, commands, environment and artifact hashes.",
+      "code": [
+        "scripts/stage1_local_checks.py",
+        "scripts/completion_matrix.py"
+      ],
+      "tests": [
+        "tests/test_stage1_local_check_identity.py",
+        "tests/test_completion_matrix.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "A repeated name overwrote a synthetic failed receipt at 2ee0a918. Exclusive output creation and launch-failure receipts now pass modified-source regressions; frozen correction verification is pending.",
+        "Local filesystem records are not a remote immutable audit store."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0007": {
+      "source_sha256": "61292668c90d139550e503ba1c31ddec9dab62943ba4aff544c0260d32b9aeff",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Identify supplied blueprint versions by original document and clause hashes; account for unavailable variants.",
+      "code": [
+        "scripts/crosschat_intake.py",
+        "docs/release/crosschat_source_index.json"
+      ],
+      "tests": [
+        "tests/test_crosschat_intake.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Both supplied DOCX bodies and exports are checked. Historical page-count references do not establish access to separate 54/154-page variants or the missing module index; rendered-page equivalence is not claimed."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0008": {
+      "source_sha256": "07ae3b683743088be783dce17e5e9ff38540fb7b3c835c666e537323165e09c6",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Retain the older 560 source sections and 431 directive clauses with their child requirements and evidence restrictions.",
+      "code": [
+        "scripts/completion_matrix.py",
+        "certification/completion_matrix.json",
+        "scripts/build_release_inventory.py"
+      ],
+      "tests": [
+        "tests/test_completion_matrix.py"
+      ],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/index.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "All 991 entries remain accounted for; 988 have unresolved acceptance and three are partial. Current clause-specific implementation and quantitative acceptance remain open."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
+    },
+    "SR-XCHAT-SEED-0011": {
+      "source_sha256": "d39e2a38402a51b12e47419f03f8202234e7e7befef3c65ef76b60d2815b573e",
+      "status": "IMPLEMENTED_NEEDS_IMPROVEMENT",
+      "reviewer": "Codex source/code review; independent acceptance remains open",
+      "owner": "Stage 1 source and release reconciliation",
+      "impact": "Requirement preservation and acceptance integrity",
+      "dependencies": [
+        "ST1-SOURCES"
+      ],
+      "acceptance": "Distinguish documented and local behavior from the actual deployed revision and configuration.",
+      "code": [
+        "docs/release/baseline.json",
+        "docs/release/BRANCH_RECONCILIATION.md",
+        "scripts/release_evidence_identity.py"
+      ],
+      "tests": [],
+      "evidence_candidates": [
+        "docs/release/evidence/continuation-20261018/frozen-2ee0a918/railway-triggers-20261018.json"
+      ],
+      "runtime_proof": [],
+      "gaps": [
+        "Read-only Railway configuration still points public web and API to different older commits. No current deployment, staging, provider or broker acceptance is inferred."
+      ],
+      "reviewed_code_commit": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+      "evidence_limit": "Only explicitly named scopes are reviewed; a retained log or code path is not whole-requirement verification."
     }
   }
 }

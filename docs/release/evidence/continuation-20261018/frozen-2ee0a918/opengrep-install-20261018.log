@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\install_opengrep.py", line 69, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\install_opengrep.py", line 64, in main
+    print(f"Installed verified OpenGrep {VERSION}: {install(args.directory)}")
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\install_opengrep.py", line 37, in install
+    name, _ = asset()
+              ^^^^^^^
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\install_opengrep.py", line 24, in asset
+    raise RuntimeError(f"No approved OpenGrep binary for platform {key}")
+RuntimeError: No approved OpenGrep binary for platform ('Windows', '')

@@ -1,0 +1,29 @@
+SEMGREP_GATE_FAIL raw_exit=3 reason=semgrep_scan_errors:{"code": 3, "level": "warn", "message": "Syntax error at line web\\platform_app\\index.html:142:\n `& trading risk` was unexpected", "path": "web\\platform_app\\index.html", "spans": [{"end": {"col": 151, "line": 142, "offset": 14}, "file": "web\\platform_app\\index.html", "start": {"col": 137, "line": 142, "offset": 0}}, {"end": {"col": 156, "line": 144, "offset": 19}, "file": "web\\platform_app\\index.html", "start": {"col": 137, "line": 144, "offset": 0}}, {"end": {"col": 151, "line": 162, "offset": 14}, "file": "web\\platform_app\\index.html", "start": {"col": 137, "line": 162, "offset": 0}}, {"end": {"col": 156, "line": 164, "offset": 19}, "file": "web\\platform_app\\index.html", "start": {"col": 137, "line": 164, "offset": 0}}, {"end": {"col": 57, "line": 766, "offset": 13}, "file": "web\\platform_app\\index.html", "start": {"col": 44, "line": 766, "offset": 0}}], "type": ["PartialParsing", [{"end": {"col": 151, "line": 142, "offset": 14}, "path": "web\\platform_app\\index.html", "start": {"col": 137, "line": 142, "offset": 0}}, {"end": {"col": 156, "line": 144, "offset": 19}, "path": "web\\platform_app\\index.html", "start": {"col": 137, "line": 144, "offset": 0}}, {"end": {
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 637 files tracked by git with 1086 Code rules:
+                                                                                                                        
+  Language      Rules   Files          Origin      Rules                                                                
+ ─────────────────────────────        ───────────────────                                                               
+  <multilang>      66     575          Community    1086                                                                
+  python          243     470                                                                                           
+  ts              164      64                                                                                           
+  json              4      10                                                                                           
+  html              1       9                                                                                           
+  js              154       7                                                                                           
+                                                                                                                        
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+Some files were skipped or only partially analyzed.
+  Scan was limited to files tracked by git.
+  Partially scanned: 2 files only partially analyzed due to parsing or internal Opengrep errors
+  Scan skipped: 3 files matching --exclude patterns, 2 files larger than 1.0 MB, 2 directories matching .semgrepignore patterns
+  For a full list of skipped files, run opengrep with the --verbose flag.
+
+Ran 476 rules on 575 files: 0 findings.

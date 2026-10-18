@@ -1,0 +1,5 @@
+::group::static-ruff - Ruff release-critical Python correctness
+'ruff' is not recognized as an internal or external command,
+operable program or batch file.
+::endgroup::
+release gate failed: static-ruff exit=1

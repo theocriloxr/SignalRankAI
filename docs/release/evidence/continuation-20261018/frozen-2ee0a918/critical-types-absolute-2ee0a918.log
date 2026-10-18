@@ -1,0 +1,449 @@
+Loading configuration file at c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\pyright-critical.json
+Setting pythonPath for service "<default>": "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe"
+Auto-excluding **/node_modules
+Auto-excluding **/__pycache__
+Auto-excluding **/.*
+Auto-excluding **/__editable__.*
+Execution environment: file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/.audit-venv/Scripts/python.exe
+  Extra paths:
+    (none)
+  Python version: 3.11
+  Python platform: Windows
+  Search paths:
+    c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-tools-venv\Lib\site-packages\pyright\dist\dist\typeshed-fallback\stdlib
+    c:\Users\sammm\Desktop\a folder of everything\SignalRankAI
+    c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\typings
+    c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-tools-venv\Lib\site-packages\pyright\dist\dist\typeshed-fallback\stubs\...
+Found 85 source files
+Heap stats: total_memory_size=15579MB, total_free_size=3354MB, total_heap_size=102MB, used_heap_size=73MB, cross_worker_used_heap_size=73MB, total_physical_size=102MB, total_available_size=4070MB, heap_size_limit=4144MB
+Could not import 'packaging.requirements' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\verify_runtime_dependencies.py'
+Could not import 'packaging.utils' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\verify_runtime_dependencies.py'
+Could not import 'packaging.version' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\verify_runtime_dependencies.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\health_baselines.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\learning.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy.pool' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy.engine.url' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy.orm' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Could not import 'sqlalchemy.pool' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\session.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3293MB, total_heap_size=147MB, used_heap_size=118MB, cross_worker_used_heap_size=118MB, total_physical_size=147MB, total_available_size=4024MB, heap_size_limit=4144MB
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\database_universe.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\database_universe.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_trading_service.py'
+Could not import 'sqlalchemy.exc' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_trading_service.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_trading_service.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\models.py'
+Could not import 'sqlalchemy.dialects.postgresql' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\models.py'
+Could not import 'sqlalchemy.orm' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\models.py'
+Could not import 'sqlalchemy.orm.attributes' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\models.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\price_fetcher.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\price_fetcher.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\price_fetcher.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\price_fetcher.py'
+Could not import 'sqlalchemy.engine.url' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\config.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\access.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\access.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\execution_evidence.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\user_intelligence.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\signal_reference.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\signal_reference.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\signal_reference.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3225MB, total_heap_size=209MB, used_heap_size=184MB, cross_worker_used_heap_size=184MB, total_physical_size=209MB, total_available_size=3956MB, heap_size_limit=4144MB
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\transactional_outbox.py'
+Could not import 'redis' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\event_bus.py'
+Could not import 'redis' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py'
+Could not resolve source for 'psycopg2' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lock.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lock.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\threshold_optimizer.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\threshold_optimizer.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\threshold_optimizer.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3222MB, total_heap_size=225MB, used_heap_size=195MB, cross_worker_used_heap_size=195MB, total_physical_size=225MB, total_available_size=3944MB, heap_size_limit=4144MB
+Could not import 'google.genai' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\gemini_ml.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\gemini_ml.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\gemini_ml.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\gemini_ml.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\news.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'xgboost' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sklearn.isotonic' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sklearn.linear_model' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sklearn.metrics' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\train_model.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\candidate_forward.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\candidate_forward.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\candidate_forward.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml.py'
+Could not import 'xgboost' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\model_registry.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py'
+Could not resolve source for 'psycopg2' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_dedup_strict.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\pg_features.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\pg_features.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\pg_features.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\pg_features.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\pg_features.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\repository.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\repository.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\repository.py'
+Could not import 'sqlalchemy.exc' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\repository.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\trade_profiles.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\repository.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\repository.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\asset_position_manager.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\asset_position_manager.py'
+Could not import 'timezonefinder' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\timezones.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\platform\webhooks.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\platform\webhooks.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\user_signal_monitoring.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\user_signal_monitoring.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\performance_ledger.py'
+Could not import 'sqlalchemy.exc' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\performance_ledger.py'
+Could not import 'sqlalchemy.dialects.postgresql' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\performance_ledger.py'
+Could not import 'sqlalchemy.orm' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\performance_ledger.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3144MB, total_heap_size=294MB, used_heap_size=260MB, cross_worker_used_heap_size=260MB, total_physical_size=294MB, total_available_size=3878MB, heap_size_limit=4144MB
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\delivery_authorization.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\delivery_authorization.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_signal_router.py'
+Could not import 'prometheus_client' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\resource_governor.py'
+Could not import 'cryptography.fernet' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\security.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\broker_connections.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\account_policies.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\execution_quota.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\trading_account_ledger.py'
+Could not import 'sqlalchemy.dialects.postgresql' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\trading_account_ledger.py'
+Could not import 'aiohttp' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\mt5_client.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\paper_ledger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\bybit_signal_router.py'
+Could not import 'sqlalchemy.exc' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\bybit_signal_router.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\bybit_client.py'
+Could not import 'cryptography.fernet' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\broker_credentials.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\broker_credentials.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3101MB, total_heap_size=356MB, used_heap_size=316MB, cross_worker_used_heap_size=316MB, total_physical_size=356MB, total_available_size=3821MB, heap_size_limit=4144MB
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\outcome_reconciliation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\realtime_outcome_tracker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\staging_remediation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\staging_remediation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\staging_remediation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\staging_remediation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\staging_remediation.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\platform\signal_delivery.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\get_live_price.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\fetcher.py'
+Could not import 'yfinance' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\fetcher.py'
+Could not import 'tradingview_ta' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\fetcher.py'
+Could not import 'tradingview_ta' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\fetcher.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\outcome_snapshots.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\stale_signal_validator.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\stale_signal_validator.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\stale_signal_validator.py'
+Could not import 'yfinance' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\stale_signal_validator.py'
+Could not import 'yfinance' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\stale_signal_validator.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml_logger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml_logger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml_logger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml_logger.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\ml_logger.py'
+Could not import 'apscheduler.schedulers.background' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy.dialects.postgresql' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy.engine.url' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.helpers' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.error' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.helpers' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'apscheduler.schedulers.background' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram.ext' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'apscheduler.jobstores.sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'apscheduler.executors.pool' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\signalrank_telegram\bot.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'telegram' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_lifecycle.py'
+Heap stats: total_memory_size=15579MB, total_free_size=3005MB, total_heap_size=445MB, used_heap_size=416MB, cross_worker_used_heap_size=416MB, total_physical_size=445MB, total_available_size=3720MB, heap_size_limit=4144MB
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\candle_store.py'
+Could not import 'sqlalchemy.dialects.postgresql' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\candle_store.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\risk_manager.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\risk.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\risk.py'
+Could not import 'yfinance' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not resolve source for 'requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not import 'tradingview_ta' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_data.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\research_ledger.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\research_ledger.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\metrics.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\metrics.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\dataset_snapshot.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\dataset_snapshot.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\market_input.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\market_input.py'
+Could not import 'sqlalchemy.ext.asyncio' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\adaptive\market_input.py'
+Heap stats: total_memory_size=15579MB, total_free_size=2944MB, total_heap_size=499MB, used_heap_size=459MB, cross_worker_used_heap_size=459MB, total_physical_size=499MB, total_available_size=3676MB, heap_size_limit=4144MB
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\backtest_execution.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\wfo.py'
+Could not import 'xgboost' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\wfo.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\wfo.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\backtest.py'
+Could not import 'numpy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\backtest.py'
+Could not import 'pandas' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\backtest.py'
+Could not import 'optuna' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\optuna_tuner.py'
+Could not import 'dotenv' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migration_environment.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migrations\versions\0050_profile_health_index.py'
+Could not import 'httpx' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\services\openai_ai.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\live_drift.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\shadow_outcome_worker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\shadow_outcome_worker.py'
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\storage_maintenance.py'
+Could not import 'alembic.config' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'alembic.script' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not resolve source for 'psycopg2' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py'
+Could not import 'alembic.command' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'alembic.config' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'alembic.config' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'alembic.script' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not resolve source for 'psycopg2' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py'
+Could not import 'alembic.config' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\verify_release_chain.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'alembic.script' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\verify_release_chain.py'
+  Looking in stubPath 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI/typings'
+  Looking in root directory of execution environment 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve stub package using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Attempting to resolve using root path 'file:///c%3A/Users/sammm/Desktop/a%20folder%20of%20everything/SignalRankAI'
+  Looking for typeshed stdlib path
+  Looking for typeshed stdlib path
+  Typeshed path not found
+  No python interpreter search path
+  Looking for typeshed third-party path
+  Looking for typeshed stubs path
+  Typeshed path not found
+Could not import 'sqlalchemy' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\demo_account_preflight.py'
+Could not resolve source for 'pytz' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\data\market_hours.py'
+Heap stats: total_memory_size=15579MB, total_free_size=2874MB, total_heap_size=570MB, used_heap_size=533MB, cross_worker_used_heap_size=533MB, total_physical_size=570MB, total_available_size=3601MB, heap_size_limit=4144MB
+Could not import 'alpaca.common.enums' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'alpaca.data.enums' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'alpaca.data.historical' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'alpaca.data.models' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'alpaca.data.requests' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'alpaca.data.timeframe' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'marketdata' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'ccxt' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'ibapi.client' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'ibapi.contract' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'ibapi.wrapper' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+Could not import 'websocket' in file 'c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py'
+pyright 1.1.414
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\core\redis_state.py:22:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migrations\versions\0050_profile_health_index.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\db\migrations\versions\0050_profile_health_index.py:6:21 - error: "op" is unknown import symbol (reportAttributeAccessIssue)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\signal_deduplicator.py:1071:20 - warning: Import "requests" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\ml\artifact_store.py:431:16 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\assert_database_schema.py:64:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py
+  c:\Users\sammm\Desktop\a folder of everything\SignalRankAI\scripts\controlled_migrate.py:181:12 - warning: Import "psycopg2" could not be resolved from source (reportMissingModuleSource)
+1 error, 5 warnings, 0 informations
+Completed in 10.052sec

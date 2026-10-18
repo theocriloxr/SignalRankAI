@@ -1,0 +1,9 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/runtime_config_snapshot.py --profile configs/env/railway-hobby-owner-beta.env.example --output 'artifacts\full-system-2ee0a918\runtime_config_snapshot.json'
+
+ATTEMPT 1/1
+
+WARNING required_secret_missing: TELEGRAM_BOT_TOKEN is blank in railway-hobby-owner-beta.env.example; set it securely at deployment
+WARNING required_secret_missing: WEBHOOK_DOMAIN is blank in railway-hobby-owner-beta.env.example; set it securely at deployment
+WARNING required_secret_missing: OWNER_IDS is blank in railway-hobby-owner-beta.env.example; set it securely at deployment
+WARNING required_secret_missing: ENCRYPTION_KEY is blank in railway-hobby-owner-beta.env.example; set it securely at deployment
+valid=True output=C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\artifacts\full-system-2ee0a918\runtime_config_snapshot.json
