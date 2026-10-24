@@ -6,6 +6,7 @@ const read = name => readFileSync(new URL(`../src/components/${name}`, import.me
 const developer = read("DeveloperAccess.tsx");
 const plan = read("PlanAndReferrals.tsx");
 const workspace = read("WorkspaceLive.tsx");
+const privacy = read("PrivacyCenter.tsx");
 
 test("one-time credentials live only in component memory", () => {
   for (const source of [developer, plan]) {
@@ -38,6 +39,14 @@ test("plan and referral panel is display-only and never promises cash", () => {
 });
 
 test("both panels are reachable from account settings", () => {
-  assert.match(workspace, /<PlanAndReferrals\/><DeveloperAccess\/>/);
+  assert.match(workspace, /<PlanAndReferrals\/><DeveloperAccess\/><PrivacyCenter onChanged=\{refresh\}\/>/);
   assert.doesNotMatch(workspace, /client\.(POST|PUT|PATCH|DELETE)/);
+});
+
+test("privacy panel exports in memory and only requests a reviewed deletion", () => {
+  assert.doesNotMatch(privacy, /localStorage|sessionStorage|indexedDB|document\.cookie/);
+  assert.match(privacy, /URL\.revokeObjectURL/);
+  assert.match(privacy, /disabled=\{busy\|\|phrase\.trim\(\)!==PHRASE\}/);
+  assert.doesNotMatch(privacy, /client\.DELETE/);
+  assert.match(privacy, /opens a support review rather than deleting immediately/);
 });

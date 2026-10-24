@@ -23,6 +23,7 @@ import { DemoBrokerConnection } from "./DemoBrokerConnection";
 import { BillingCenter } from "./BillingCenter";
 import { DeveloperAccess } from "./DeveloperAccess";
 import { PlanAndReferrals } from "./PlanAndReferrals";
+import { PrivacyCenter } from "./PrivacyCenter";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import { Icon, type IconName } from "./ui/Icon";
 import { Badge, Card, DirectionBadge, Empty, KV, KVList, Notice, Skeleton, Stat, TableWrap, type Tone } from "./ui/primitives";
@@ -61,7 +62,7 @@ const descriptions: Record<Section, string> = {
   brokers: "Each connected account, its verified environment, policy and ledger.",
   billing: "Plans, checkout, renewal and receipts from the billing service.",
   support: "Your support conversations with the SignalRankAI team.",
-  settings: "Signal preferences, identity, security, plan, referrals and developer access.",
+  settings: "Signal preferences, identity, security, plan, developer access and privacy.",
   operations: "Owner-only, read-only release posture and execution controls.",
 };
 
@@ -346,7 +347,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
       section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:
       section==="journal"?<div className="ws-stack"><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:
-      section==="settings"?<div className="ws-stack"><TradingPreferences data={state.data} onSaved={refresh}/><AccountSecurity onChanged={refresh}/><PlanAndReferrals/><DeveloperAccess/></div>:
+      section==="settings"?<div className="ws-stack"><TradingPreferences data={state.data} onSaved={refresh}/><AccountSecurity onChanged={refresh}/><PlanAndReferrals/><DeveloperAccess/><PrivacyCenter onChanged={refresh}/></div>:
       section==="support"?<div className="ws-stack"><SupportCenter data={state.data} onChanged={refresh}/><AccountCreation kind="support" onCreated={refresh}/></div>:
       null
     )}

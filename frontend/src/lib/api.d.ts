@@ -1147,6 +1147,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/account/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Account Data
+         * @description Return a machine-readable copy of the caller's own account data.
+         *
+         *     Each section reuses the same owner-scoped read used by its screen, so the
+         *     export can never include another user's records. Plan-gated sections the
+         *     caller cannot read are reported as unavailable rather than silently empty.
+         */
+        get: operations["export_account_data_api_v1_platform_account_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/account/deletion-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Account Deletion
+         * @description Open an audited deletion review; nothing is deleted by this call.
+         */
+        post: operations["request_account_deletion_api_v1_platform_account_deletion_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/auth/mfa/complete": {
         parameters: {
             query?: never;
@@ -2729,6 +2773,13 @@ export interface components {
              * @default 1h
              */
             timeframe: string;
+        };
+        /** AccountDeletionRequest */
+        AccountDeletionRequest: {
+            /** Confirm Phrase */
+            confirm_phrase: string;
+            /** Reason */
+            reason?: string | null;
         };
         /** AccountFreezeRequest */
         AccountFreezeRequest: {
@@ -6048,6 +6099,63 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_account_data_api_v1_platform_account_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    request_account_deletion_api_v1_platform_account_deletion_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

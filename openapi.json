@@ -3249,6 +3249,84 @@
         ]
       }
     },
+    "/api/v1/platform/account/export": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Export Account Data",
+        "description": "Return a machine-readable copy of the caller's own account data.\n\nEach section reuses the same owner-scoped read used by its screen, so the\nexport can never include another user's records. Plan-gated sections the\ncaller cannot read are reported as unavailable rather than silently empty.",
+        "operationId": "export_account_data_api_v1_platform_account_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Export Account Data Api V1 Platform Account Export Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/account/deletion-request": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Request Account Deletion",
+        "description": "Open an audited deletion review; nothing is deleted by this call.",
+        "operationId": "request_account_deletion_api_v1_platform_account_deletion_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Request Account Deletion Api V1 Platform Account Deletion Request Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/platform/auth/mfa/complete": {
       "post": {
         "tags": [
@@ -6992,6 +7070,33 @@
           "asset"
         ],
         "title": "AIAnalyzeRequest"
+      },
+      "AccountDeletionRequest": {
+        "properties": {
+          "confirm_phrase": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Confirm Phrase"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirm_phrase"
+        ],
+        "title": "AccountDeletionRequest"
       },
       "AccountFreezeRequest": {
         "properties": {

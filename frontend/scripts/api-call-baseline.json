@@ -24,6 +24,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/platform/account/export"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/platform/alerts"
   },
   {
@@ -153,6 +157,10 @@
   {
    "method": "PATCH",
    "path": "/api/v1/platform/profile"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/account/deletion-request"
   },
   {
    "method": "POST",

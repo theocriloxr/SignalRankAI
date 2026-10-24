@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import secrets
+import time
 from decimal import Decimal
 from datetime import datetime, timedelta
 from typing import Any
@@ -898,10 +899,9 @@ async def current_user(
     user["session_id"] = claims.get("sid")
     try:
         issued_at = int(claims.get("iat"))
-        user["auth_age_seconds"] = max(
-            0.0,
-            datetime.utcnow().timestamp() - float(issued_at),
-        )
+        # Both sides are POSIX epoch seconds; a naive utcnow().timestamp() would
+        # be shifted by the host's UTC offset.
+        user["auth_age_seconds"] = max(0.0, time.time() - float(issued_at))
     except (TypeError, ValueError, OverflowError):
         # Missing/invalid signed issuance time is intentionally fail-closed by
         # _require_recent_auth for security-sensitive actions.
@@ -4104,6 +4104,160 @@ async def support_tickets(user: dict[str, Any] = Depends(current_user)) -> dict[
         )
         await session.rollback()
     return {"tickets": [dict(row) for row in rows]}
+
+
+ACCOUNT_DELETION_PHRASE = "DELETE MY ACCOUNT"
+ACCOUNT_DELETION_CATEGORY = "privacy_deletion"
+# Records kept after a deletion request because reconciliation, tax or security
+# obligations require them; the review explains each one to the account owner.
+ACCOUNT_RETAINED_RECORDS = (
+    "payment receipts and subscription history",
+    "security and audit events",
+    "signal delivery records needed for outcome reconciliation",
+)
+
+
+class AccountDeletionRequest(BaseModel):
+    confirm_phrase: str = Field(min_length=1, max_length=64)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+@router.get("/account/export")
+async def export_account_data(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Return a machine-readable copy of the caller's own account data.
+
+    Each section reuses the same owner-scoped read used by its screen, so the
+    export can never include another user's records. Plan-gated sections the
+    caller cannot read are reported as unavailable rather than silently empty.
+    """
+    uid = int(user["id"])
+    sections: dict[str, Any] = {}
+    unavailable: dict[str, str] = {}
+
+    async def take(name: str, reader: Any) -> None:
+        try:
+            sections[name] = await reader
+        except HTTPException as exc:
+            unavailable[name] = "not_included_in_plan" if exc.status_code == 403 else f"http_{exc.status_code}"
+
+    await take("account", me(user=user))
+    await take("entitlements", entitlements(user=user))
+    await take("trading_profile", trading_profile(user=user))
+    await take("notification_preferences", get_notification_preferences(user=user))
+    await take("devices", devices(user=user))
+    await take("watchlists", list_watchlists(user=user))
+    await take("journal", journal_entries(limit=200, offset=0, user=user))
+    await take("alerts", list_alerts(user=user))
+    await take("notifications", notification_center(unread_only=False, limit=200, user=user))
+    await take("support_tickets", support_tickets(user=user))
+    await take("billing", billing(user=user))
+    await take("api_keys", list_api_keys(user=user))
+    await take("webhooks", list_webhooks(user=user))
+
+    async with get_session() as session:
+        messages = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT m.ticket_id,m.author_role,m.message,m.created_at FROM support_messages m "
+                        "JOIN support_tickets t ON t.ticket_id=m.ticket_id "
+                        "WHERE t.user_id=:uid ORDER BY m.created_at LIMIT 2000"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        deliveries = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT signal_id,tier_at_send,delivery_state,sent_ok,delivered_at,delivery_confirmed_at "
+                        "FROM signal_deliveries WHERE user_id=:uid ORDER BY delivered_at DESC LIMIT 5000"
+                    ),
+                    {"uid": uid},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        await session.rollback()
+    sections["support_messages"] = [dict(row) for row in messages]
+    sections["signal_deliveries"] = [dict(row) for row in deliveries]
+
+    return {
+        "export_version": 1,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "user_id": uid,
+        "sections": sections,
+        "unavailable": unavailable,
+        "excluded": [
+            "password hashes, session tokens and MFA secrets",
+            "full API keys and webhook signing secrets (shown once at creation)",
+            "encrypted broker credentials",
+        ],
+    }
+
+
+@router.post("/account/deletion-request", status_code=202)
+async def request_account_deletion(
+    payload: AccountDeletionRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Open an audited deletion review; nothing is deleted by this call."""
+    _require_recent_auth(user)
+    if payload.confirm_phrase.strip() != ACCOUNT_DELETION_PHRASE:
+        raise HTTPException(status_code=422, detail=f'Type "{ACCOUNT_DELETION_PHRASE}" to confirm')
+    uid = int(user["id"])
+    retained = list(ACCOUNT_RETAINED_RECORDS)
+    async with get_session() as session:
+        existing = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT ticket_id,status,created_at FROM support_tickets "
+                        "WHERE user_id=:uid AND category=:category AND status<>'closed' "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"uid": uid, "category": ACCOUNT_DELETION_CATEGORY},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if existing:
+            await session.rollback()
+            return {
+                "ticket_id": existing["ticket_id"],
+                "status": existing["status"],
+                "already_requested": True,
+                "retained_records": retained,
+            }
+        ticket_id, message_id = str(uuid4()), str(uuid4())
+        reason = (payload.reason or "").strip()
+        await session.execute(
+            text(
+                "INSERT INTO support_tickets(ticket_id,user_id,subject,category,priority) "
+                "VALUES(:ticket_id,:uid,'Account deletion request',:category,'priority')"
+            ),
+            {"ticket_id": ticket_id, "uid": uid, "category": ACCOUNT_DELETION_CATEGORY},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO support_messages(message_id,ticket_id,author_user_id,author_role,message) "
+                "VALUES(:message_id,:ticket_id,:uid,'user',:message)"
+            ),
+            {
+                "message_id": message_id,
+                "ticket_id": ticket_id,
+                "uid": uid,
+                "message": "The account owner confirmed a deletion request."
+                + (f"\n\nReason given: {reason}" if reason else ""),
+            },
+        )
+        await session.commit()
+    return {"ticket_id": ticket_id, "status": "open", "already_requested": False, "retained_records": retained}
 
 
 @router.post("/support/tickets", status_code=201)
