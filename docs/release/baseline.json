@@ -51,7 +51,15 @@
       "readyz": "503 degraded: engine_runtime heartbeat absent",
       "login_route": "404"
     },
-    "python_suite_on_branch": "NOT_RUN (dependency install blocked by network)",
+    "python_suite_on_branch": {
+      "commit": "e9b2b368b2cb96827030186f83ff6365a7f59df0",
+      "passed": 4098,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 1,
+      "result": "PASS",
+      "scope": "Local macOS, PostgreSQL 16.2 owned test database; not CI, staging or production"
+    },
     "frontend_checks": "tsc, eslint, next build and node tests pass locally",
     "audit": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
   }

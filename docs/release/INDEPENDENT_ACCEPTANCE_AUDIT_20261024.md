@@ -40,7 +40,7 @@ A zero-omission claim is therefore **not** made.
 | Web API usage before vs after the frontend rebuild | **Verified.** All 61 backend calls made by the pre-rebuild app (`393f3d88`) are still made; 6 added (billing products/checkout/confirm/cancel-auto-renew/refund-request, signal feedback). Locked by `frontend/scripts/api-baseline.test.mjs` + `api-call-baseline.json`. |
 | Page and route handlers | **Verified.** The same 11 route files exist before and after. |
 | Strategies and engine | **Verified for this branch:** `git diff 393f3d88 -- strategies engine` is empty — no strategy removed or altered. |
-| Backend behavior after branch changes | **Partially verified.** Focused-universe admission is a no-op unless the staging-only flag is set; full Python suite re-run is pending the dependency install (network). |
+| Backend behavior after branch changes | **Verified locally.** Full suite at `e9b2b368`: 4,098 passed, 0 failed, 1 skipped (§8). |
 
 ## 3. Live production observations (read-only, 2026-10-24)
 
@@ -92,8 +92,8 @@ A zero-omission claim is therefore **not** made.
 | Safeguard | Status |
 | --- | --- |
 | 1 Historical completeness audit | Partially verified — sources and gaps above; semantic review of all 287 consolidated IDs continues. |
-| 2 Regression-proof migration | Partially verified — frontend and strategies proven; backend full-suite re-run pending. |
-| 3 Multi-user isolation | Implemented, run pending — `tests/test_multi_user_isolation_postgres_20261024.py` (concurrent identities, IDOR on four resource types, per-recipient deliveries/feedback/notifications, sessions, profiles, payments, cooldowns). A local PostgreSQL 16.2 cluster is running; Python dependencies are still downloading. |
+| 2 Regression-proof migration | Verified locally — frontend API/route baseline, untouched strategies, and full suite 4,098 passed / 0 failed vs 4,076 baseline. |
+| 3 Multi-user isolation | **Verified locally** — `tests/test_multi_user_isolation_postgres_20261024.py`, 5/5 passed against real PostgreSQL through the real platform routes (concurrent identities; IDOR on watchlists, journal, tickets, alerts; per-recipient deliveries, feedback, notifications; device sessions; profile persistence; payment references; per-user cooldowns). Staging/production multi-user evidence still required. |
 | 4 Completion ≠ authorization | Verified — nothing in this branch enables live trading, payouts or live payments; production reports them disabled. |
 | 5 Independent final acceptance | In progress — this document. |
 
@@ -109,5 +109,19 @@ Of 287 consolidated requirement IDs, this pass individually assessed the 28 hist
 | Owner (decision) | Decide FACT-18 cooldown/fingerprint semantics and FACT-24 XAUTUSDT session policy. |
 | Owner (billing) | Restore GitHub Actions (account billing lock) so CI can run. |
 | Owner (credentials) | Paystack test keys, Gemini key, broker demo accounts for staging certification. |
-| Agent | Finish dependency install; run the full Python suite, the isolation suite and the new tests on this branch; record results. |
+| Agent | Done: full suite and isolation suite recorded in §8. Install `pyarrow` and re-run the one skipped Parquet test. |
 | Agent | Continue per-ID assessment of the remaining consolidated requirements. |
+
+## 8. Verification evidence recorded after the audit (24 Oct 2026)
+
+| Check | Commit | Environment | Result |
+| --- | --- | --- | --- |
+| Full Python suite `pytest -q tests` with `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1` | `e9b2b368` (clean tree) | macOS arm64, Python 3.12.14 venv, local PostgreSQL 16.2 (`127.0.0.1:55434`, migrated from empty to `0055`) | **4,098 passed, 0 failed, 1 skipped** (Parquet test: `pyarrow` not yet installed). Frozen 2ee0a918 baseline: 4,076 passed — no regression. |
+| Multi-user isolation suite (5 tests, real routes, real sessions, real DB) | `e9b2b368` | same | **5/5 passed** |
+| Fresh-database migration | `e9b2b368` | same | `alembic upgrade head` from empty → `0055_user_renewal_default` succeeded |
+| Frontend: tsc, eslint, `next build`, 101 node tests | `e9b2b368` | Node 22.19, npm 11.17 | all pass |
+| Governance generators `--check` (inventory, cross-chat, V7) | `e9b2b368` | — | all pass |
+
+**Three pre-existing test defects fixed** (none in branch code): provider-key environment leakage in `test_connectors_providers.py` (order-dependent routing failure); CRLF-captured evidence hashes compared against LF checkouts; GNU-only coreutils assumed by the restore-drill harness.
+
+**Limits of this evidence.** Local only (GitHub Actions remains billing-locked). The local PostgreSQL build lacks the `pgcrypto` extension; a local-only shim implements `digest()` with built-in SHA functions for migration `0034`. `xgboost` 3.2.0 (macOS wheel) stands in for the Linux-only `xgboost-cpu` pin, loading the `libomp` bundled with scikit-learn. A few pins resolved differently on macOS (e.g. `websockets` came transitively). Not native devices, providers, brokers, payments, staging or production.
