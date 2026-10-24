@@ -38,7 +38,12 @@ def test_web_api_key_creation_requires_recent_server_derived_auth() -> None:
     helper = source[source.index("def _require_recent_auth("):source.index("async def _create_login_response")]
 
     assert '"iat"' in current
-    assert "datetime.utcnow().timestamp()" in current
+    # Age is server-derived from the signed iat using POSIX epoch time. The naive
+    # datetime.utcnow().timestamp() form was shifted by the host UTC offset
+    # (see tests/test_privacy_requests_20261024.py timezone regression).
+    assert "time.time() - float(issued_at)" in current
+    age_line = next(line for line in current.splitlines() if 'user["auth_age_seconds"] = max(' in line)
+    assert "utcnow" not in age_line
     assert 'user["auth_age_seconds"]' in current
     assert "SENSITIVE_ACTION_RECENT_AUTH_SECONDS" in helper
     assert "status_code=403" in helper
