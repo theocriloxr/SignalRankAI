@@ -3059,6 +3059,10 @@ async def _provider_coverage_readiness_check(*, production: bool) -> dict[str, o
     }
 
 
+class _EngineHeartbeatMissing(Exception):
+    """The engine has published no recent cycle heartbeat (key absent or unstamped)."""
+
+
 @app.get("/ready")
 @app.get("/readyz")
 async def _readyz_endpoint(response: Response) -> dict[str, object]:
@@ -3216,9 +3220,18 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
     if engine_runtime_required:
         try:
             raw_cycle = state.get_sync("engine:last_cycle")
+            if isinstance(raw_cycle, (bytes, bytearray)):
+                raw_cycle = raw_cycle.decode("utf-8", errors="replace")
             cycle = raw_cycle if isinstance(raw_cycle, dict) else json.loads(str(raw_cycle or "{}"))
+            if not isinstance(cycle, dict):
+                cycle = {}
             stamp_raw = cycle.get("completed_at") or cycle.get("started_at")
-            stamp = datetime.fromisoformat(str(stamp_raw or "").replace("Z", "+00:00"))
+            if not stamp_raw:
+                # The engine publishes this key (TTL >= 60s) at every cycle stage.
+                # Its absence means no engine cycle has run recently: report that
+                # directly instead of failing the probe with a parse error.
+                raise _EngineHeartbeatMissing("engine_heartbeat_missing" if not cycle else "engine_heartbeat_unstamped")
+            stamp = datetime.fromisoformat(str(stamp_raw).replace("Z", "+00:00"))
             if stamp.tzinfo is None:
                 stamp = stamp.replace(tzinfo=timezone.utc)
             age_seconds = max(0.0, (datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)).total_seconds())
@@ -3240,6 +3253,14 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
                 "cycle": cycle.get("cycle"),
                 "git_sha": cycle_sha or None,
                 "release_match": sha_ok,
+            }
+        except _EngineHeartbeatMissing as missing:
+            checks["engine_runtime"] = {
+                "ok": False,
+                "detail": str(missing),
+                "heartbeat_age_seconds": None,
+                "action": "No engine cycle heartbeat: confirm the engine service is deployed, running and "
+                "connected to the state Redis; inspect its logs before restarting.",
             }
         except Exception as exc:
             checks["engine_runtime"] = {
