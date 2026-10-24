@@ -887,6 +887,15 @@ class MT5SignalRouter:
             valid, reason = self._validate_signal(signal or {})
             if not valid:
                 return ExecutionResult(success=False, message=reason, error=reason)
+            from core.focused_universe import focused_admission
+
+            admitted, admission_reason = focused_admission((signal or {}).get("asset") or (signal or {}).get("symbol"))
+            if not admitted:
+                return ExecutionResult(
+                    success=False,
+                    message="Instrument is outside the active focused universe; no new entry was placed",
+                    error=admission_reason,
+                )
 
             execution_mode = str(execution_mode or ExecutionMode.NONE).strip().lower()
             if execution_mode == "copy":

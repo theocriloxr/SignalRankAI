@@ -7,7 +7,9 @@ until a separately verified release enables FOCUSED_UNIVERSE_ENABLED.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import json
+import os
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -86,6 +88,50 @@ def focused_universe_enabled(environment: Mapping[str, str]) -> bool:
     if not declared or any(label not in _NONPRODUCTION for label in declared):
         raise RuntimeError("focused_universe_requires_staging_certification")
     return True
+
+
+@lru_cache(maxsize=1)
+def focused_shortlist() -> frozenset[str]:
+    """Canonical shortlist members that classify into their declared class.
+
+    Derived from the validated configuration only; no provider, broker or
+    account availability is implied by membership.
+    """
+    policy = load_focused_config()
+    groups = policy["asset_classes"]
+    symbols: list[str] = []
+    for group in groups.values():  # type: ignore[union-attr]
+        symbols.extend(group["core"] + group["optional"])
+    return frozenset(select_focused_assets(symbols, config=policy).assets)
+
+
+def focused_admission(
+    asset: object, environment: Mapping[str, str] | None = None,
+) -> tuple[bool, str]:
+    """Single new-entry admission check for every path that creates exposure.
+
+    Applies only while the opt-in focused universe is enabled in an isolated,
+    non-production environment. A flag set in production fails closed: new
+    entries are refused rather than silently falling back to the full universe.
+    Existing signals, positions and history are never affected by this check.
+    """
+    env = os.environ if environment is None else environment
+    try:
+        enabled = focused_universe_enabled(env)
+    except (RuntimeError, ValueError) as exc:
+        return False, str(exc)
+    if not enabled:
+        return True, "focused_universe_disabled"
+    if not isinstance(asset, str) or not asset.strip():
+        return False, "focused_universe_missing_asset"
+    try:
+        canonical = canonicalize_asset(asset)
+        shortlist = focused_shortlist()
+    except (OSError, ValueError, KeyError) as exc:
+        return False, "focused_universe_config_unavailable:" + type(exc).__name__
+    if canonical in shortlist:
+        return True, "focused_shortlist_member"
+    return False, "focused_universe_excluded"
 
 
 def select_focused_scan_assets(

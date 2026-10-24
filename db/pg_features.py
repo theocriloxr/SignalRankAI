@@ -626,6 +626,13 @@ async def get_or_create_signal_impl(
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()[:32]
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()[:8]
     direction: str = str(signal.get("direction") or "").lower().strip()[:8]
+    # New-entry admission for the opt-in focused universe (no-op unless enabled
+    # in an isolated environment). Excluded assets are suppressed, not stored.
+    from core.focused_universe import focused_admission
+
+    admitted, admission_reason = focused_admission(asset)
+    if not admitted:
+        raise SignalDedupBlocked(admission_reason)
     try:
         from services.trade_profiles import infer_trade_profile
 

@@ -107,6 +107,15 @@ async def _route_signal_to_bybit_for_identity(
             return BybitRouteResult(False, reason, error=reason)
     if not _asset_supported(signal):
         return BybitRouteResult(False, "Bybit execution supports USDT crypto signals only", error="unsupported_asset")
+    from core.focused_universe import focused_admission
+
+    admitted, admission_reason = focused_admission(signal.get("asset") or signal.get("symbol"))
+    if not admitted:
+        return BybitRouteResult(
+            False,
+            "Instrument is outside the active focused universe; no new entry was placed",
+            error=admission_reason,
+        )
 
     signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
     symbol = str(signal.get("asset") or signal.get("symbol") or "").strip().upper()

@@ -64,6 +64,9 @@ PERMANENT_REASONS: frozenset[ProviderFailureReason] = frozenset(
         ProviderFailureReason.MISSING_CREDENTIALS,
         ProviderFailureReason.HTTP_403,
         ProviderFailureReason.HTTP_404,
+        # A jurisdiction/datacenter block does not clear on retry; it needs a
+        # different, entitled provider or deployment region.
+        ProviderFailureReason.REGION_RESTRICTED,
     }
 )
 
@@ -88,6 +91,8 @@ HTTP_STATUS_REASONS: Mapping[int, ProviderFailureReason] = {
     404: ProviderFailureReason.HTTP_404,
     409: ProviderFailureReason.PERMISSION_FAILURE,
     429: ProviderFailureReason.HTTP_429,
+    # "Unavailable For Legal Reasons": e.g. Binance refusing restricted regions.
+    451: ProviderFailureReason.REGION_RESTRICTED,
     500: ProviderFailureReason.PROVIDER_UNAVAILABLE,
     502: ProviderFailureReason.PROVIDER_OUTAGE,
     503: ProviderFailureReason.PROVIDER_MAINTENANCE,
@@ -137,9 +142,14 @@ def classify_failure(
     status_code: int | None = None,
     context: Mapping[str, Any] | None = None,
 ) -> ProviderFailure:
-    """Build a typed failure, inferring the reason from an HTTP status when present."""
+    """Build a typed failure, inferring the reason from an HTTP status when present.
+
+    An explicit, more specific reason supplied by the caller (for example a
+    REGION_RESTRICTED diagnosis from a 403 body) is never overwritten by the
+    generic status mapping.
+    """
     effective_reason = reason
-    if status_code is not None:
+    if status_code is not None and reason is ProviderFailureReason.UNKNOWN:
         effective_reason = classify_http_status(status_code)
     return ProviderFailure(
         provider=provider,

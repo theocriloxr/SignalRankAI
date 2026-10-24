@@ -378,6 +378,10 @@ async def flush_decision_log_retry_queue(limit: int = 100) -> int:
 
 async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
     """Persist a new signal to database."""
+    from core.focused_universe import focused_admission
+
+    if not focused_admission(signal_data.get("asset"))[0]:
+        return None
     try:
         async with get_session() as session:
             asset = str(signal_data.get("asset") or "").strip().upper()
