@@ -7259,11 +7259,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 263,
+      "line_count": 264,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d3b805f79e813a9a1bbacbc7f9c401b57844a4d10ab8ae8770540ba11253bdeb",
-      "size_bytes": 20240
+      "sha256": "b044d8d56d58f9c4842b635be83b748b2ce0f8d11c72dbd170e19f271fe0e6e9",
+      "size_bytes": 20504
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7283,11 +7283,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 156,
+      "line_count": 159,
       "path": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "c3f7700d7e0bf086ab2f31066c464bc0b48237b3be9b3e5847574b736b934ab2",
-      "size_bytes": 17044
+      "sha256": "6473ccfd22452ccc590992eb9aa1d38766591909cd0b57fda9fc7012feaa5345",
+      "size_bytes": 17559
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
