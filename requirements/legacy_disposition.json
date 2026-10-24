@@ -1,5 +1,5 @@
 {
-  "file_count": 2576,
+  "file_count": 2577,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7296,6 +7296,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "c29d64fd140b0c184d5bf9121806a9c5a09ffb137d2783e2e3165e75c973491f",
       "size_bytes": 19326
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 46,
+      "path": "docs/release/PRODUCTION_PROMOTION_PLAN_20261024.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "ac431c6c3d8000a0481358569cf20d843d93fb2c249770f050c5b3d066e4413e",
+      "size_bytes": 4656
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -17179,11 +17187,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 47,
+      "line_count": 52,
       "path": "tests/test_api_key_security_contract.py",
       "reason": "automated test evidence",
-      "sha256": "18bbca0cbbe6ba8f482f95c4fe6769487952c74c33af4217d69a922be0b17992",
-      "size_bytes": 2024
+      "sha256": "396cad94858e0507eb69f001b471e697f998a59df1027aeada01ed59c79b5b9d",
+      "size_bytes": 2396
     },
     {
       "disposition": "TEST_ONLY",
@@ -20622,7 +20630,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 854,
+    "DOCUMENTATION_ONLY": 855,
     "PRESERVE_BEHAVIOUR": 1326,
     "TEST_ONLY": 395
   }
