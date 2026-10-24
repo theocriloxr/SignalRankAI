@@ -1,5 +1,5 @@
 {
-  "file_count": 2567,
+  "file_count": 2569,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7283,6 +7283,14 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 113,
+      "path": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "283b3b7d78234433000f4dcdc0f2637e6875b6346532f5fceb89e9123ffe88d0",
+      "size_bytes": 11835
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
       "line_count": 272,
       "path": "docs/release/MASTER_EXECUTION_CONTRACT.md",
       "reason": "documentation/specification/evidence",
@@ -9232,6 +9240,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "4e9399d7d1e38ab8d87331e41219414d74a924c34fd38ec0fb2743016aef4aa1",
       "size_bytes": 1567
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 31,
+      "path": "docs/release/evidence/continuation-20261024/source_intake.json",
+      "reason": "documentation/specification/evidence",
+      "sha256": "335f8fc0966f442f1f427ddaf8e7be8a8f9dae4ffeb3565137ebf99a06106534",
+      "size_bytes": 2074
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -17395,11 +17411,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 90,
+      "line_count": 91,
       "path": "tests/test_connectors_providers.py",
       "reason": "automated test evidence",
-      "sha256": "fca7e841f590ae2ce2f2283e2df151091d38cfc8437083f5d686c726d723df77",
-      "size_bytes": 3303
+      "sha256": "a7b8f7d4d2e81123c2a716ba9e0f4fa992594b10ca2a5300b11ef515ba1f2ce6",
+      "size_bytes": 3433
     },
     {
       "disposition": "TEST_ONLY",
@@ -17459,11 +17475,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 172,
+      "line_count": 176,
       "path": "tests/test_crosschat_intake.py",
       "reason": "automated test evidence",
-      "sha256": "88a991ee362590e1d63e3b47f7f967c56b3398532697581038a4c9b499e30876",
-      "size_bytes": 9628
+      "sha256": "17df665314a1c92e93f89ea5e2876d62fda7b923778790c8fc124fa690836d0b",
+      "size_bytes": 9996
     },
     {
       "disposition": "TEST_ONLY",
@@ -18715,11 +18731,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 103,
+      "line_count": 112,
       "path": "tests/test_production_backup_restore_script.py",
       "reason": "automated test evidence",
-      "sha256": "4b749c202f9622421cee9a9682b3d475084af0368e9c7001c09eb04c57294984",
-      "size_bytes": 5711
+      "sha256": "170329ff4d68a5557b0a1637f5b7bcc981af3260eafc13209dbdf7285427f8fc",
+      "size_bytes": 6399
     },
     {
       "disposition": "TEST_ONLY",
@@ -20550,7 +20566,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 851,
+    "DOCUMENTATION_ONLY": 853,
     "PRESERVE_BEHAVIOUR": 1322,
     "TEST_ONLY": 393
   }

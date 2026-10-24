@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -51,6 +52,14 @@ printf '%s %s\\n' "${{0##*/}}" "$*" >>'{audit}'
 *) exit 2;; esac
 ''',
     }
+    if shutil.which("timeout", path="/usr/bin:/bin") is None:
+        # Linux restore-drill images ship GNU coreutils timeout in /usr/bin.
+        # Hosts without it (e.g. macOS) get a pass-through so the restore
+        # phases themselves are still exercised; Linux keeps the real binary.
+        stubs["timeout"] = 'while [ "$#" -gt 0 ]; do case "$1" in -*) shift;; *) break;; esac; done; shift; exec "$@"\n'
+    if shutil.which("sha256sum", path="/usr/bin:/bin") is None and shutil.which("shasum", path="/usr/bin:/bin"):
+        # A real SHA-256 (BSD shasum), not a stub: the integrity check still runs.
+        stubs["sha256sum"] = 'exec /usr/bin/shasum -a 256 "$@"\n'
     for name, body in stubs.items():
         path = binary / name
         path.write_text(common + body, encoding="utf-8", newline="\n")

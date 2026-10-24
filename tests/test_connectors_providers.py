@@ -26,8 +26,9 @@ class TestProviderAdapters(unittest.TestCase):
 
         async def run_test():
             import os
-            os.environ["POLYGON_API_KEY"] = "fake"
-            with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
+            # Scoped: a process-wide key leaks into later provider-routing tests.
+            with patch.dict(os.environ, {"POLYGON_API_KEY": "fake"}), \
+                    patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
                 async def wrapper(fn, **k):
                     return await fn()
                 with patch("utils.httpx_client.retry_async", new=wrapper):
@@ -44,8 +45,8 @@ class TestProviderAdapters(unittest.TestCase):
 
         async def run_test():
             import os
-            os.environ["TWELVEDATA_API_KEY"] = "fake"
-            with patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
+            with patch.dict(os.environ, {"TWELVEDATA_API_KEY": "fake"}), \
+                    patch("utils.httpx_client.get_client", return_value=_DummyClient(sample)):
                 async def wrapper(fn, **k):
                     return await fn()
                 with patch("utils.httpx_client.retry_async", new=wrapper):

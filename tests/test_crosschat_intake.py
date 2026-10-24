@@ -164,8 +164,12 @@ def test_continuation_artifacts_match_retained_hashes():
     index = json.loads((intake.ROOT / "docs/release/evidence/continuation-20261016/index.json").read_text("utf-8"))
     for artifact in index["artifacts"]:
         path = intake.ROOT / artifact["path"]
-        assert intake.sha(path.read_bytes()) == artifact["sha256"]
-        assert path.stat().st_size == artifact["bytes"]
+        data = path.read_bytes()
+        # These receipts were hashed in a CRLF (Windows) checkout; .gitattributes
+        # normalizes text to LF. Accept the exact bytes, or the identical content
+        # rendered with CRLF — the retained hash and size must still match exactly.
+        candidates = [data, data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")]
+        assert any(intake.sha(c) == artifact["sha256"] and len(c) == artifact["bytes"] for c in candidates), artifact["path"]
         # A local ignored .log is not retained evidence in another checkout.
         tracked = subprocess.run(["git", "ls-files", "--error-unmatch", artifact["path"]],
                                  cwd=intake.ROOT, capture_output=True)
