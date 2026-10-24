@@ -24,18 +24,21 @@ Cooldowns, duplicate detection and XAUTUSDT handling are unchanged and locked by
 
 Every database-backed service runs `scripts/assert_database_schema.py` at boot and **refuses to start unless the database is exactly at the code's Alembic head**. Pushing code at `0055` while the database is at `0053` would make the new deployments fail at boot: a service with a Railway healthcheck keeps its old deployment, but roles without one (engine, worker) crash-loop and stop working. Migrations must therefore be applied by the guarded migration role in the same release window.
 
+Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway service: a process exits with code 79 unless `EXPECTED_RELEASE_BRANCH` matches `RAILWAY_GIT_BRANCH` and `EXPECTED_RELEASE_COMMIT` matches `RAILWAY_GIT_COMMIT_SHA`. Each service's `EXPECTED_RELEASE_COMMIT` must be set to the new full SHA before the push, or the new deployments will refuse to start.
+
 ## Steps (owner-authorized window)
 
 1. **Backup.** Take a Railway PostgreSQL backup and confirm a restore of it into a scratch database. Record `PRODUCTION_DB_BACKUP_ID`, `PRODUCTION_DB_BACKUP_CREATED_AT` (ISO-8601, under 24 h old) and `PRODUCTION_DB_BACKUP_VERIFIED=1` on the migration-role service. `scripts/controlled_migrate.py` refuses to migrate without them.
 2. **Engine diagnosis first.** Production readiness is 503 because the engine heartbeat is absent (engine not cycling). Read the engine service logs before the release so the cause is known; a deploy may not fix it.
-3. **Push** the feature branch head to `fix/provider-discovery-readiness-20260923` as a fast-forward (no force).
-4. **Migrate** with the migration-owner role (`SERVICE_ROLE=migration`), which holds the advisory lock and writes migration evidence. Do not set `RUN_DB_MIGRATIONS_AT_BOOT` on several services at once.
-5. **Verify** read-only: `/version` shows the new SHA and `0055`; `/readyz` passes or names only the engine heartbeat; Engine Pulse records a cycle; a test account can sign in, open Settings, export data; Telegram `/start` replies.
-6. **Point the public web service** at the promoted branch if the rebuilt frontend should go live; verify `/login`, `/app`, theme switching and checkout availability.
+3. **Approve the source.** Set `EXPECTED_RELEASE_COMMIT` to the full SHA being promoted on all four services (and the migration role). Leave `EXPECTED_RELEASE_BRANCH` as `fix/provider-discovery-readiness-20260923`. Never disable `RELEASE_SOURCE_GATE_ENABLED`.
+4. **Push** the feature branch head to `fix/provider-discovery-readiness-20260923` as a fast-forward (no force).
+5. **Migrate** with the migration-owner role (`SERVICE_ROLE=migration`), which holds the advisory lock and writes migration evidence. Do not set `RUN_DB_MIGRATIONS_AT_BOOT` on several services at once.
+6. **Verify** read-only: `/version` shows the new SHA and `0055`; `/readyz` passes or names only the engine heartbeat; Engine Pulse records a cycle; a test account can sign in, open Settings, export data; Telegram `/start` replies.
+7. **Point the public web service** at the promoted branch if the rebuilt frontend should go live; verify `/login`, `/app`, theme switching and checkout availability.
 
 ## Rollback
 
-- **Code:** redeploy the previous Railway deployment (`9865a3d1`). This only works while the database is still at `0053`; after step 4 the old code's schema gate will refuse `0055`.
+- **Code:** redeploy the previous Railway deployment (`9865a3d1`). This only works while the database is still at `0053`; after step 5 the old code's schema gate will refuse `0055`.
 - **Schema:** `alembic downgrade 0053_research_market_inputs` reverses both migrations (drops the index, restores the `TRUE` default). Accounts created during the window keep `auto_renew=FALSE`; that is the consent-safe value and is not reverted.
 - **Data:** restore the step-1 backup only if data loss is proven, with explicit authorization.
 
