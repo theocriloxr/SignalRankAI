@@ -1,0 +1,3003 @@
+{
+ "schema_version": 1,
+ "assessed_at": "2026-10-24",
+ "spec_sha256_source": "message.txt b78374d0ccb60066410559372d896f058b594f0f509dc0041e0267bd113bdc1b",
+ "scope_note": "Statuses reflect local evidence on feat/frontend-rebuild-and-stage1-hardening. 'verified' means verified locally only; nothing here is verified in production.",
+ "total": 288,
+ "status_counts": {
+  "AWAITING_APPROVAL": 7,
+  "BLOCKED_CREDENTIALS_OR_ACCESS": 9,
+  "BLOCKED_EXTERNAL_DEPENDENCY": 4,
+  "BLOCKED_HUMAN_DECISION": 4,
+  "DEFECTIVE": 1,
+  "IMPLEMENTED_AND_VERIFIED": 8,
+  "IMPLEMENTED_NOT_VERIFIED": 124,
+  "MISSING": 2,
+  "PARTIALLY_IMPLEMENTED": 124,
+  "PROPOSED_NOT_APPROVED": 2,
+  "UNRESOLVED_HISTORICAL_AMBIGUITY": 3
+ },
+ "acceptance_counts": {
+  "awaiting approval": 7,
+  "blocked": 20,
+  "not implemented": 5,
+  "partially verified": 248,
+  "verified": 8
+ },
+ "requirements": [
+  {
+   "id": "CX-GOV-01",
+   "label": "Consolidated spec is the working spec",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Spec kept outside the public repo (contains private prompts); repo docs link it by hash. Next: owner decides on a private location for it."
+  },
+  {
+   "id": "CX-GOV-02",
+   "label": "Later decisions supersede only what they change",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": "Owner decisions of 2026-10-24 recorded per decision, earlier rules kept."
+  },
+  {
+   "id": "CX-GOV-03",
+   "label": "Repo governance files stay binding",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "AGENTS.md",
+    "docs/release/MASTER_EXECUTION_CONTRACT.md",
+    "docs/release/RELEASE_BLOCKERS.md"
+   ],
+   "note": "Followed this session; reviewer confirmation outstanding."
+  },
+  {
+   "id": "CX-GOV-04",
+   "label": "Stable CX IDs",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/evidence/continuation-20261024/cx_assessment.json"
+   ],
+   "note": "IDs copied verbatim from the spec; this ledger never renumbers."
+  },
+  {
+   "id": "CX-MIS-01",
+   "label": "Bring project to most complete verifiable state",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Ongoing; limited by Railway/CI/credential access."
+  },
+  {
+   "id": "CX-MIS-02",
+   "label": "Integrated multi-asset platform, not a bot",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py",
+    "frontend/src/components/WorkspaceLive.tsx",
+    "engine/loop.py"
+   ],
+   "note": "Web, Telegram, engine, paper, brokers share one backend; live execution and several advanced features remain gated."
+  },
+  {
+   "id": "CX-MIS-03",
+   "label": "Signal traceable end to end",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_signal_visibility_and_proof_quality.py",
+    "frontend/src/components/SignalEvidence.tsx"
+   ],
+   "note": "Delivery proof and lifecycle events exposed; live-execution leg not exercised (disabled)."
+  },
+  {
+   "id": "CX-MIS-04",
+   "label": "Work on the real repo, no rebuild from scratch",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/BRANCH_RECONCILIATION.md"
+   ],
+   "note": "Frontend rebuild preserved every API call (api-call-baseline)."
+  },
+  {
+   "id": "CX-OPS-01",
+   "label": "Audit-implement-test loop",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/COMPLETION_EVIDENCE.md"
+   ],
+   "note": "Evidence recorded per commit."
+  },
+  {
+   "id": "CX-OPS-02",
+   "label": "Vertical slices",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/focused_universe.py",
+    "tests/test_focused_universe_admission_20261024.py"
+   ],
+   "note": "Done for focus admission, billing UI, developer access; not for every capability."
+  },
+  {
+   "id": "CX-OPS-03",
+   "label": "Root-cause fixes with regression tests",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_engine_heartbeat_probe_20261024.py",
+    "tests/test_provider_region_restriction_20261024.py"
+   ],
+   "note": "Each fix this session has a regression test."
+  },
+  {
+   "id": "CX-OPS-04",
+   "label": "Self-review per change",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Self-review only; independent review outstanding."
+  },
+  {
+   "id": "CX-OPS-05",
+   "label": "Work autonomously; ask only for unrecoverable decisions",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": "Only owner decisions (cooldowns, dedup, XAUTUSDT, production promotion) were asked."
+  },
+  {
+   "id": "CX-OPS-06",
+   "label": "Tool failures: diagnose, alternative, continue",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Network/install failures worked around (local wheels, pgserver); blocked steps isolated."
+  },
+  {
+   "id": "CX-OPS-10",
+   "label": "Prohibited shortcuts",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "AGENTS.md"
+   ],
+   "note": "No force-push, resets, threshold weakening or skipped tests this session."
+  },
+  {
+   "id": "CX-OPS-11",
+   "label": "No false completion",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Statuses here separate local tests from deployment."
+  },
+  {
+   "id": "CX-OPS-12",
+   "label": "No unnecessary rewrites; document replacements",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/scripts/api-call-baseline.json",
+    "frontend/scripts/api-baseline.test.mjs"
+   ],
+   "note": "Frontend replacement documented and guarded by baseline test."
+  },
+  {
+   "id": "CX-OPS-13",
+   "label": "Separate required work from speculative scope",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": "Copy trading/marketplace kept as proposals."
+  },
+  {
+   "id": "CX-OPS-20",
+   "label": "Honest status vocabulary",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/evidence/continuation-20261024/cx_assessment.json"
+   ],
+   "note": "Vocabulary of spec §2.3 used throughout."
+  },
+  {
+   "id": "CX-AUTH-01",
+   "label": "Production promotion needs PROMOTE_TO_PRODUCTION",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "AGENTS.md",
+    "docs/release/RELEASE_BLOCKERS.md"
+   ],
+   "note": "Phrase not given; no push to Railway-watched branches."
+  },
+  {
+   "id": "CX-AUTH-02",
+   "label": "Live money paths disabled pending authorization",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "core/financial_activation.py",
+    "tests/test_v131_live_financial_activation.py"
+   ],
+   "note": "Live /config confirms financial activation false; stays disabled."
+  },
+  {
+   "id": "CX-AUTH-03",
+   "label": "Destructive prod ops need backup + authorization",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "scripts/production_backup.sh",
+    "tests/test_production_backup_restore_script.py"
+   ],
+   "note": "No production DB operation performed."
+  },
+  {
+   "id": "CX-AUTH-04",
+   "label": "Secrets never in code/logs",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_secret_scan_documents.py",
+    "tests/test_startup_selfcheck_secret_redaction.py"
+   ],
+   "note": "Secret-scan tests pass locally; one-time API/webhook secrets kept in memory only."
+  },
+  {
+   "id": "CX-HIST-01",
+   "label": "Search every accessible source",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md",
+    "docs/release/source_coverage.json"
+   ],
+   "note": "Repo, branches, PR metadata and message.txt searched; ChatGPT history, Railway logs, private workspace docs inaccessible (information gaps)."
+  },
+  {
+   "id": "CX-HIST-02",
+   "label": "Written search plan incl. failure phrases",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Search plan and phrase sweep recorded in the audit; more historical branches could be mined."
+  },
+  {
+   "id": "CX-HIST-03",
+   "label": "Never claim inaccessible sources were searched",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Gaps listed explicitly."
+  },
+  {
+   "id": "CX-HIST-10",
+   "label": "Durable requirements ledger",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements.json",
+    "docs/release/evidence/continuation-20261024/cx_assessment.json"
+   ],
+   "note": "Generated ledger (10,014 rows) plus this CX ledger; per-row acceptance evidence still sparse."
+  },
+  {
+   "id": "CX-HIST-11",
+   "label": "Separate requested outcome from recommendation",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-HIST-12",
+   "label": "Never reinterpret requirements silently",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-HIST-13",
+   "label": "Bidirectional traceability matrix",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/REQUIREMENTS_TRACEABILITY.md"
+   ],
+   "note": "Requirement→code links exist for interfaces; requirement↔test↔deployment links incomplete."
+  },
+  {
+   "id": "CX-HIST-14",
+   "label": "Ledger survives sessions",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/baseline.json"
+   ],
+   "note": "Committed JSON ledgers and generators with --check."
+  },
+  {
+   "id": "CX-HIST-20",
+   "label": "Only verified counts as complete",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/evidence/continuation-20261024/cx_assessment.json"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-HIST-30",
+   "label": "Intention / implementation / reality axes",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Applied in FACT table; not for every feature."
+  },
+  {
+   "id": "CX-HIST-40",
+   "label": "Inspect abandoned branches and PRs",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/BRANCH_RECONCILIATION.md",
+    "docs/release/branch_dispositions.json"
+   ],
+   "note": "Branch dispositions recorded; closed-PR content not fully mined."
+  },
+  {
+   "id": "CX-HIST-50",
+   "label": "Conflict register",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-HIST-60",
+   "label": "Source inventory and search log",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/source_coverage.json",
+    "docs/release/evidence/continuation-20261024/source_intake.json"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-HIST-61",
+   "label": "Historical recovery report with computed counts",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Counts for this ledger computed below; full historical recovery counts depend on inaccessible sources."
+  },
+  {
+   "id": "CX-HIST-62",
+   "label": "Stopping rule; no zero-omission claim",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "No zero-omission claim made."
+  },
+  {
+   "id": "CX-HIST-63",
+   "label": "Gap report then independent acceptance report",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Acceptance audit written by the implementing agent; a truly independent reviewer is still required."
+  },
+  {
+   "id": "CX-FACT-00",
+   "label": "Record repro/evidence/fix per fact",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "FACT table in audit §5."
+  },
+  {
+   "id": "CX-FACT-01",
+   "label": "Domain, identity, Crilox attribution",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/SiteCredit.tsx"
+   ],
+   "note": "Attribution in UI; live domain resolves only via public DNS; TLS/routing for new frontend unverified (not deployed)."
+  },
+  {
+   "id": "CX-FACT-02",
+   "label": "Blueprint branch and PR #201 authority",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/BRANCH_RECONCILIATION.md"
+   ],
+   "note": "Feature branch is based on the PR #201 head."
+  },
+  {
+   "id": "CX-FACT-03",
+   "label": "Single migration sequence and env revisions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "db/migrations/versions",
+    "tests/test_migration_revision_ids.py"
+   ],
+   "note": "Head 0055; production at 0053 (from /version); staging revision unknown."
+  },
+  {
+   "id": "CX-FACT-04",
+   "label": "Real Railway services and triggers",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Services and watch patterns inventoried read-only; singleton enforcement in prod unverified."
+  },
+  {
+   "id": "CX-FACT-05",
+   "label": "Service responsibilities / pools",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Needs Railway metrics/logs."
+  },
+  {
+   "id": "CX-FACT-06",
+   "label": "100 candidates, 0 stored",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py",
+    "frontend/src/components/WorkspaceLive.tsx"
+   ],
+   "note": "Rejection distribution exposed via /quality; current live root cause is the engine not cycling (heartbeat absent)."
+  },
+  {
+   "id": "CX-FACT-07",
+   "label": "Undefined helper broke outcome persistence",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_v1369_outcome_delivery_recovery.py"
+   ],
+   "note": "Regression tests present and passing locally."
+  },
+  {
+   "id": "CX-FACT-08",
+   "label": "Terminal-message coverage",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_outcome_delivery_contract.py"
+   ],
+   "note": "Not recomputed against production data."
+  },
+  {
+   "id": "CX-FACT-09",
+   "label": "Dedup / exactly-once delivery",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_signal_dedup_authority.py",
+    "tests/test_signal_delivery_ack.py",
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": "Idempotent persistence + per-user delivery records tested locally; exactly-once is not claimed (at-least-once + idempotency)."
+  },
+  {
+   "id": "CX-FACT-10",
+   "label": "Webhook p99 latency",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_webhook_latency_semantics.py"
+   ],
+   "note": "Needs production measurement."
+  },
+  {
+   "id": "CX-FACT-11",
+   "label": "Provider gaps / Binance region block",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "data/connectors/binance_adapter.py",
+    "tests/test_provider_region_restriction_20261024.py"
+   ],
+   "note": "HTTP 451 now classified REGION_RESTRICTED (permanent, warned once); live provider re-test needs keys."
+  },
+  {
+   "id": "CX-FACT-12",
+   "label": "Domain detach broke Telegram webhook",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_telegram_webhook_registration_contract.py"
+   ],
+   "note": "Deployed webhook not verifiable without bot token/Railway."
+  },
+  {
+   "id": "CX-FACT-13",
+   "label": "Scheduler overload, stale APP_VERSION",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_runtime_heartbeat_identity.py"
+   ],
+   "note": "Live /version shows schema_head/build_timestamp 'unknown' — stale identity persists in prod."
+  },
+  {
+   "id": "CX-FACT-14",
+   "label": "Paystack recovery / checkout truthfulness",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_paystack_recovery_configuration.py",
+    "frontend/src/components/BillingCenter.tsx",
+    "frontend/scripts/billing.test.mjs"
+   ],
+   "note": "UI only shows checkout when the server returns an authorization URL; live Paystack untestable without test keys."
+  },
+  {
+   "id": "CX-FACT-15",
+   "label": "Pulse 84% cutoff vs 88.05 score",
+   "status": "UNRESOLVED_HISTORICAL_AMBIGUITY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Units not recoverable from accessible sources."
+  },
+  {
+   "id": "CX-FACT-16",
+   "label": "Challenger AUC 0.670 vs 0.732",
+   "status": "UNRESOLVED_HISTORICAL_AMBIGUITY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_ml_champion_challenger_governance.py"
+   ],
+   "note": "Record not found; lesson enforced by tests."
+  },
+  {
+   "id": "CX-FACT-17",
+   "label": "OpenAI + Gemini, no retired model",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/openai_ai.py",
+    "services/gemini_ml.py",
+    "tests/test_openai_ai_provider.py"
+   ],
+   "note": "Model IDs configurable; live access unverified (no keys)."
+  },
+  {
+   "id": "CX-FACT-18",
+   "label": "Historical cooldowns",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_owner_decisions_20261024.py",
+    "docs/release/requirements_conflicts.md"
+   ],
+   "note": "Owner decided to keep current behaviour; locked by tests."
+  },
+  {
+   "id": "CX-FACT-19",
+   "label": "Redis four workers / queue 500",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Mapped to WEBHOOK_UPDATE_WORKERS=4; current queue defaults 1000/2000."
+  },
+  {
+   "id": "CX-FACT-20",
+   "label": "Historical test counts not summed",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/COMPLETION_EVIDENCE.md"
+   ],
+   "note": "Current full run: 4,098 passed locally at e9b2b368."
+  },
+  {
+   "id": "CX-FACT-21",
+   "label": "No 100k load test",
+   "status": "BLOCKED_EXTERNAL_DEPENDENCY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/SCALE_DELIVERY_FANOUT_100K_READINESS_2026-07-10.md"
+   ],
+   "note": "Needs staging environment."
+  },
+  {
+   "id": "CX-FACT-22",
+   "label": "v1.3.6.8 was stabilization only",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/FEATURE_INVENTORY.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-FACT-23",
+   "label": "Version-specific fixes keep regression tests",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_v129_lifecycle_profile_observability_hotfix.py",
+    "tests/test_v1369_outcome_delivery_recovery.py"
+   ],
+   "note": "Most listed fixes have version-named tests; a per-fix map is not complete."
+  },
+  {
+   "id": "CX-FACT-24",
+   "label": "XAUTUSDT session policy",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": "Owner kept continuous crypto treatment; locked by tests."
+  },
+  {
+   "id": "CX-FACT-25",
+   "label": "Engine Pulse cadence",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/admin_pulse.py"
+   ],
+   "note": "86,400 s confirmed live; intent not documented by owner."
+  },
+  {
+   "id": "CX-FACT-26",
+   "label": "Crypto signals-only default; per-user eligible execution",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_canonical_broker_destination_admission.py",
+    "tests/test_broker_execution_p0.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-FACT-27",
+   "label": "Safe verification plan; beta allowlist",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/financial_activation.py"
+   ],
+   "note": "Live paths disabled; allowlist exists but is forced off in production config (owner decision needed to re-enable)."
+  },
+  {
+   "id": "CX-FACT-28",
+   "label": "Design rebuild",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/styles/tokens.css",
+    "frontend/scripts/api-baseline.test.mjs"
+   ],
+   "note": "Rebuilt on feature branch; not deployed."
+  },
+  {
+   "id": "CX-STATE-01",
+   "label": "True state of repo/branches/deployments",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md",
+    "docs/release/BRANCH_RECONCILIATION.md"
+   ],
+   "note": "~425 unreleased commits between prod SHA and feature branch; staging isolation unverified."
+  },
+  {
+   "id": "CX-STATE-02",
+   "label": "Preserve work; recovery point",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/BRANCH_RECONCILIATION.md"
+   ],
+   "note": "Work on a separate unwatched branch."
+  },
+  {
+   "id": "CX-STATE-03",
+   "label": "Merge intelligently",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/BRANCH_RECONCILIATION.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-STATE-04",
+   "label": "Review rulesets/triggers before remote writes",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Rulesets and watch patterns checked before each push."
+  },
+  {
+   "id": "CX-STATE-10",
+   "label": "Architecture map",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/V7_ARCHITECTURE_AND_CRITICAL_FLOWS.md",
+    "REPO_MAP.md"
+   ],
+   "note": "Exists; not re-verified against every route this session."
+  },
+  {
+   "id": "CX-STATE-11",
+   "label": "Critical flows traced end to end",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/V7_ARCHITECTURE_AND_CRITICAL_FLOWS.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-STATE-12",
+   "label": "Per-workflow confirmation checklist",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Production-run column blocked by access."
+  },
+  {
+   "id": "CX-STATE-20",
+   "label": "Self-scan for defect classes",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "ruff.toml",
+    "pyright-critical.json"
+   ],
+   "note": "Static checks run; three pre-existing defects fixed this session."
+  },
+  {
+   "id": "CX-STATE-21",
+   "label": "Tools + prioritized defect register",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/LIVING_BUG_REGISTER.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROD-01",
+   "label": "Capability matrix across all dimensions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_class_universe_and_strategy_capabilities.py",
+    "tests/test_tiered_execution_canonical_routing.py"
+   ],
+   "note": "Partial matrices (tier×feature, class×strategy); full cross-product not built."
+  },
+  {
+   "id": "CX-PROD-02",
+   "label": "Supported only with evidence",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/tier_policy.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROD-03",
+   "label": "Consistency across channels",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_final_cross_channel_parity_20260925.py",
+    "tests/test_cross_channel_profile_parity.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-USER-01",
+   "label": "Full account feature set",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/AccountSecurity.tsx",
+    "frontend/src/components/DeveloperAccess.tsx",
+    "frontend/src/components/PrivacyCenter.tsx"
+   ],
+   "note": "Export and deletion-request added this session; consent records and suspension UI not exposed."
+  },
+  {
+   "id": "CX-USER-02",
+   "label": "One identity across channels",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_unified_platform_identity.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-USER-03",
+   "label": "Profile fields persist end to end",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": "Verified locally on real PostgreSQL: save→reload, no cross-user effect. Restart/dependent-service legs not tested."
+  },
+  {
+   "id": "CX-USER-04",
+   "label": "Never report a failed save",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/TradingPreferences.tsx",
+    "tests/test_v129_lifecycle_profile_observability_hotfix.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-USER-05",
+   "label": "No sensitive data exposure",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_api_key_security_contract.py",
+    "tests/test_broker_credential_envelope.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-USER-06",
+   "label": "Full customer journey incl. lapses",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/subscription_manager.py"
+   ],
+   "note": "Expiry/renewal handled; dormant/reactivation journeys untested."
+  },
+  {
+   "id": "CX-ROLE-01",
+   "label": "Real role model",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/tier_constants.py"
+   ],
+   "note": "Tiers free/premium/vip/professional/institutional + OWNER authority."
+  },
+  {
+   "id": "CX-ROLE-02",
+   "label": "Server-side least privilege; escalation tests",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py",
+    "tests/test_broker_account_bola_idor.py"
+   ],
+   "note": "Horizontal escalation verified locally on PostgreSQL; vertical escalation tests exist for operator routes."
+  },
+  {
+   "id": "CX-ENT-01",
+   "label": "Real tier names/prices",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/tier_policy.py"
+   ],
+   "note": "From code/config; no invented plans."
+  },
+  {
+   "id": "CX-ENT-02",
+   "label": "Central entitlement service",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/tier_policy.py",
+    "web/platform_api.py"
+   ],
+   "note": "evaluate_feature_access + /entitlements; now visible in web settings."
+  },
+  {
+   "id": "CX-ENT-03",
+   "label": "Multi-condition capabilities",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/delivery_authorization.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ENT-04",
+   "label": "Server-side entitlement in workers",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_command_tier_contract.py",
+    "tests/test_delivery_limit_guard.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PAY-01",
+   "label": "Paystack end to end",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_paystack_webhook.py",
+    "tests/test_unified_canonical_billing_v151.py"
+   ],
+   "note": "Webhook/idempotency tested locally; live checkout needs test keys."
+  },
+  {
+   "id": "CX-PAY-02",
+   "label": "Never trust client payment status",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/lib/billing.ts",
+    "tests/test_payments.py"
+   ],
+   "note": "Web confirms only via server verify."
+  },
+  {
+   "id": "CX-PAY-03",
+   "label": "Separate test/live credentials",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/PROVIDER_ENVIRONMENT_CONTRACT.md"
+   ],
+   "note": "Environment variables not inspectable."
+  },
+  {
+   "id": "CX-PAY-04",
+   "label": "Truthful checkout availability",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/BillingCenter.tsx",
+    "frontend/scripts/billing.test.mjs"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PAY-05",
+   "label": "Auditable payment→entitlement chain",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_payment_receipt_migration_idempotency.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ASSET-01",
+   "label": "Five classes end to end",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_market_class_certification.py",
+    "tests/test_indices_asset_support.py"
+   ],
+   "note": "Code paths exist per class; live data per class not verified."
+  },
+  {
+   "id": "CX-ASSET-10",
+   "label": "Focused universe 10+5 per class",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/focused_universe.py",
+    "configs/focused_universe.json",
+    "tests/test_focused_universe_policy_20261016.py"
+   ],
+   "note": "Opt-in, staging only."
+  },
+  {
+   "id": "CX-ASSET-11",
+   "label": "No quota filling; expose counts",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_focused_universe_admission_20261024.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ASSET-12",
+   "label": "One membership source enforced everywhere",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_focused_universe_admission_20261024.py"
+   ],
+   "note": "Signal store, persistence, MT5/Bybit routers, paper trading enforced; Telegram presentation and ML training filters not yet."
+  },
+  {
+   "id": "CX-ASSET-13",
+   "label": "Exclusion stops new activity only",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/paper_trading_service.py"
+   ],
+   "note": "Admission applies to new entries only."
+  },
+  {
+   "id": "CX-ASSET-14",
+   "label": "Governed universe changes",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "configs/focused_universe.json"
+   ],
+   "note": "Config-file change via PR; no runtime audit trail."
+  },
+  {
+   "id": "CX-INST-01",
+   "label": "Canonical instrument registry",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/asset_registry.py",
+    "tests/test_provider_and_asset_registry_hardening.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-INST-02",
+   "label": "Listings, halts, rolls, corporate actions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/instrument_catalogue_refresh.py"
+   ],
+   "note": "Futures rolls/corporate actions not handled generally."
+  },
+  {
+   "id": "CX-DATA-01",
+   "label": "Normalized market-data interface",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "data/connectors/base.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-02",
+   "label": "Per-provider data contracts",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/PROVIDER_ENVIRONMENT_CONTRACT.md",
+    "docs/FREE_PROVIDER_CAPABILITY_MATRIX.md"
+   ],
+   "note": "Licensing columns incomplete."
+  },
+  {
+   "id": "CX-DATA-03",
+   "label": "Automated data-quality checks",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_market_data_quality_firewall.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-04",
+   "label": "Provider resilience",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "data/provider_failures.py",
+    "core/circuit_breaker.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-05",
+   "label": "Safe failover",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_market_data_routing.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-06",
+   "label": "Provenance and dataset versions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_dataset_snapshot.py",
+    "tests/test_market_input_snapshot.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-07",
+   "label": "Persist market data for reproducibility",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_adaptive_candle_store.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DATA-08",
+   "label": "Respect regional restrictions",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_provider_region_restriction_20261024.py"
+   ],
+   "note": "451 treated as permanent; no evasion."
+  },
+  {
+   "id": "CX-DATA-09",
+   "label": "Provider inventory visible to admins",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/provider_registry.py"
+   ],
+   "note": "Admin view of licensing not built."
+  },
+  {
+   "id": "CX-CAL-01",
+   "label": "Instrument session metadata",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/off_market.py",
+    "tests/test_market_state.py"
+   ],
+   "note": "DST/holiday coverage partial."
+  },
+  {
+   "id": "CX-CAL-02",
+   "label": "Closed instruments don't emit executable signals",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_market_state.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-CAL-03",
+   "label": "Economic events handling",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/economic_calendar.py"
+   ],
+   "note": "Licensed calendar feed unverified."
+  },
+  {
+   "id": "CX-SIG-01",
+   "label": "Full pipeline",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/loop.py",
+    "tests/test_pipeline.py"
+   ],
+   "note": "Execution leg disabled by policy."
+  },
+  {
+   "id": "CX-SIG-02",
+   "label": "Recover timeframes/strategies/thresholds",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_strategies.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-03",
+   "label": "Candle completion, MTF, stale data",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_live_candle_freshness.py",
+    "tests/test_delivery_freshness.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-10",
+   "label": "Candidate evidence recorded",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_candidate_evidence_storage.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-11",
+   "label": "Candidate≠signal≠order≠fill distinctions",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_missed_entry_nontrade_semantics.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-20",
+   "label": "Structured rejection codes",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_engine_final_safety_gates.py"
+   ],
+   "note": "focused_universe_* and region_restricted codes added."
+  },
+  {
+   "id": "CX-SIG-21",
+   "label": "Rejection dashboards",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/WorkspaceLive.tsx"
+   ],
+   "note": "Quality view shows 24 h buckets; per-strategy/timeframe breakdown limited."
+  },
+  {
+   "id": "CX-SIG-22",
+   "label": "Never weaken gates",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-30",
+   "label": "Scoring integrity",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_score_calibration.py",
+    "tests/test_ranking_weights.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-40",
+   "label": "Recover cooldown rules",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": "Current keys/units documented and locked per owner."
+  },
+  {
+   "id": "CX-SIG-41",
+   "label": "Durable deterministic dedup",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_signal_dedup_authority.py",
+    "tests/test_signal_lock_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-42",
+   "label": "Preserve fingerprint behaviour",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_signal_fingerprint.py",
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": "Engine pre-filter vs DB band difference recorded; kept per owner."
+  },
+  {
+   "id": "CX-SIG-43",
+   "label": "Dedup test cases",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_signal_deduplicator.py"
+   ],
+   "note": "Cross-worker restart cases not run against real Redis."
+  },
+  {
+   "id": "CX-SIG-44",
+   "label": "Per-user delivery cooldowns",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": "Verified locally."
+  },
+  {
+   "id": "CX-SIG-50",
+   "label": "Lifecycle state machine",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/signal_lifecycle.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-51",
+   "label": "Stable signal data contract",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/lib/api.d.ts"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-52",
+   "label": "Terminal outcomes commit before fan-out",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_v1369_outcome_delivery_recovery.py",
+    "core/transactional_outbox.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SIG-53",
+   "label": "IDs resolve without crossing users",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py",
+    "tests/test_outcome_ownership_contract.py"
+   ],
+   "note": "Verified locally for UUID; short-ID path covered by unit tests."
+  },
+  {
+   "id": "CX-AI-01",
+   "label": "OpenAI + Gemini working",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "services/openai_ai.py",
+    "services/gemini_ml.py"
+   ],
+   "note": "Needs API keys to verify."
+  },
+  {
+   "id": "CX-AI-02",
+   "label": "Documented orchestration layer",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/ai_review_router.py",
+    "tests/test_ai_review_router_consensus.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-AI-03",
+   "label": "No deterministic/risk work delegated to LLM",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ai_governance_hardening.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-AI-04",
+   "label": "Strict structured outputs",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_strict_schema.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-AI-05",
+   "label": "LLM safety / prompt injection",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_research_browser_safety.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-AI-06",
+   "label": "Reliability and cost tracking",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/openai_ai.py"
+   ],
+   "note": "Token usage counted for OpenAI only; no per-user budgets or spend alerts."
+  },
+  {
+   "id": "CX-AI-07",
+   "label": "Fallback model validated before use",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ai_review_router_consensus.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-AI-08",
+   "label": "Component ablations / disagreement policy",
+   "status": "MISSING",
+   "acceptance_class": "not implemented",
+   "evidence": [],
+   "note": "No ablation study; needs production outcome data."
+  },
+  {
+   "id": "CX-ML-01",
+   "label": "ML lifecycle",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_learning_runtime_v135.py",
+    "tests/test_ml_registry.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-02",
+   "label": "Leakage-resistant splits",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_adaptive_dataset_and_wfo.py",
+    "tests/test_wfo_train.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-03",
+   "label": "Certification criteria",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_serving_threshold_governance.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-04",
+   "label": "Never lower thresholds",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_serving_threshold_governance.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-05",
+   "label": "Champion/challenger",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_champion_challenger_governance.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-06",
+   "label": "Shadow learning",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_shadow_learning_labels.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-07",
+   "label": "Idempotent learning jobs",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_stale_learning_multiservice.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-08",
+   "label": "Learn only from real outcomes",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_outcome_provenance_hardening.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-09",
+   "label": "Per-class ML coverage",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_asset_certification_evidence.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-20",
+   "label": "Versioned model registry",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_registry.py",
+    "docs/LIVING_AI_ML_REGISTER.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-21",
+   "label": "No silent model/prompt change",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/prompt_registry.py",
+    "tests/test_ml_versioned_serving_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ML-22",
+   "label": "Durable artifacts in one store",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_ml_durable_artifact_sync.py",
+    "tests/test_ml_promotion_snapshot_postgres.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-RES-01",
+   "label": "Experiment records",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_research_ledger_postgres.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-RES-02",
+   "label": "Regime-aware evaluation",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/regime.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BT-01",
+   "label": "Realistic backtester",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/backtest_execution.py",
+    "tests/test_backtest_wfo.py"
+   ],
+   "note": "Funding/borrow, market impact and corporate actions not modelled."
+  },
+  {
+   "id": "CX-BT-02",
+   "label": "Backtest metrics",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_qa_intelligence_calculations_20260929.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BT-03",
+   "label": "Published figures state method",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_public_win_rate_claim.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-STRAT-01",
+   "label": "Inspect/preserve strategies",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_strategies.py",
+    "tests/test_strategy_health_baselines.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-STRAT-02",
+   "label": "Strategy registry with versions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_class_universe_and_strategy_capabilities.py"
+   ],
+   "note": "Approval history/rollback fields incomplete."
+  },
+  {
+   "id": "CX-STRAT-03",
+   "label": "Separate research→retirement",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/SHADOW_INTELLIGENCE_GOVERNANCE.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-STRAT-04",
+   "label": "Strategy compatibility matrix",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_class_universe_and_strategy_capabilities.py"
+   ],
+   "note": "Class×timeframe only."
+  },
+  {
+   "id": "CX-STRAT-05",
+   "label": "Bot families scope",
+   "status": "UNRESOLVED_HISTORICAL_AMBIGUITY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/release/FEATURE_INVENTORY.md"
+   ],
+   "note": "Historical scope unclear."
+  },
+  {
+   "id": "CX-STRAT-06",
+   "label": "Strategy laboratory",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py"
+   ],
+   "note": "Research views exist; parameter editing/backtest launching from UI not built."
+  },
+  {
+   "id": "CX-STRAT-07",
+   "label": "Marketplace",
+   "status": "PROPOSED_NOT_APPROVED",
+   "acceptance_class": "not implemented",
+   "evidence": [],
+   "note": "Not historically confirmed; proposal only."
+  },
+  {
+   "id": "CX-STRAT-08",
+   "label": "Advanced research tools classification",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/FEATURE_INVENTORY.md"
+   ],
+   "note": "Watchlists, alerts, journal, API keys, webhooks now on web; exports/replay roadmap."
+  },
+  {
+   "id": "CX-EXE-01",
+   "label": "Explicit execution modes",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/execution_state_machine.py",
+    "services/trading_mode_manager.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-02",
+   "label": "Mode always visible; no silent escalation",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_execution_safety.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-03",
+   "label": "Per-account strategy/instrument opt-in",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/account_policies.py"
+   ],
+   "note": "Policy model supports it; web editor intentionally not built (owner decision)."
+  },
+  {
+   "id": "CX-EXE-04",
+   "label": "Live automated trading disabled",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "core/financial_activation.py",
+    "tests/test_v131_live_financial_activation.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-05",
+   "label": "Staged environments distinct",
+   "status": "BLOCKED_EXTERNAL_DEPENDENCY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_pinned_staging_environment.py"
+   ],
+   "note": "No staging environment exists."
+  },
+  {
+   "id": "CX-EXE-10",
+   "label": "Pre-order checks",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_broker_execution_p0.py",
+    "core/risk_authority.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-20",
+   "label": "Order state machine",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_execution_state_machine.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-21",
+   "label": "Idempotent intents before side effects",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/execution_claims.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-22",
+   "label": "Reconcile before retry",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/bybit_reconciler.py",
+    "services/mt5_reconciler.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-23",
+   "label": "Fills recorded individually",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_orderbook_fills.py",
+    "tests/test_trading_account_ledger.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-24",
+   "label": "Reconciliation with broker state",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_mt5_reconciliation_ledger.py"
+   ],
+   "note": "Only against fakes; no demo broker run."
+  },
+  {
+   "id": "CX-EXE-25",
+   "label": "Position management",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/exit_manager.py",
+    "tests/test_trade_manager_breakeven_persistence.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-EXE-30",
+   "label": "Account-based sizing",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_dynamic_sizing_fail_closed.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-RISK-01",
+   "label": "Independent risk controls",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/risk_authority.py",
+    "tests/test_v20_risk_authority.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-RISK-02",
+   "label": "Configurable bounded limits",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py"
+   ],
+   "note": "TradingAccountPolicyUpdateRequest bounds."
+  },
+  {
+   "id": "CX-RISK-03",
+   "label": "Atomic portfolio checks",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/correlation_guard.py"
+   ],
+   "note": "Concurrency atomicity not proven by a test."
+  },
+  {
+   "id": "CX-RISK-04",
+   "label": "Multi-level kill switches",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/risk_authority.py"
+   ],
+   "note": "Global/account freeze exist; strategy/instrument/class-level switches partial."
+  },
+  {
+   "id": "CX-RISK-05",
+   "label": "Market-abnormality safeguards",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/market_circuit_breaker.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-RISK-06",
+   "label": "Execution realism",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_realistic_paper_execution.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PORT-01",
+   "label": "Portfolio construction",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/portfolio_intelligence.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-COPY-01",
+   "label": "Copy trading",
+   "status": "PROPOSED_NOT_APPROVED",
+   "acceptance_class": "not implemented",
+   "evidence": [
+    "tests/test_copy_trade_safety_foundation.py"
+   ],
+   "note": "Safety foundation only; activation not approved."
+  },
+  {
+   "id": "CX-COPY-02",
+   "label": "DCA/copy obey execution rules",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_smart_dca_hardening.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROP-01",
+   "label": "Prop state machine",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/account_policies.py",
+    "tests/test_multi_account_prop_policy.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROP-02",
+   "label": "Verified prop rule profiles",
+   "status": "BLOCKED_HUMAN_DECISION",
+   "acceptance_class": "blocked",
+   "evidence": [],
+   "note": "Needs authoritative firm rules chosen by owner."
+  },
+  {
+   "id": "CX-PROP-03",
+   "label": "Pre-order prop risk",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_multi_account_prop_policy.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROP-04",
+   "label": "Prop dashboard",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/BrokerAccounts.tsx"
+   ],
+   "note": "Policy and ledger shown; target progress/trading-day widgets missing."
+  },
+  {
+   "id": "CX-PROP-05",
+   "label": "Authoritative phase transitions",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py"
+   ],
+   "note": "Admin prop-certification endpoint."
+  },
+  {
+   "id": "CX-PROP-06",
+   "label": "Per-account isolation",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_broker_account_bola_idor.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-PROP-07",
+   "label": "Progression never authorizes live",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_demo_account_preflight.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BRK-01",
+   "label": "Broker inventory",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/FEATURE_INVENTORY.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BRK-02",
+   "label": "Normalized adapter capabilities",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/broker_connections.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BRK-03",
+   "label": "Credential security",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_broker_credential_envelope.py",
+    "tests/test_broker_permission_validation.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-BRK-04",
+   "label": "Conformance suite on sandbox/demo",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "services/demo_certification.py"
+   ],
+   "note": "Needs demo broker credentials."
+  },
+  {
+   "id": "CX-BRK-05",
+   "label": "Explicit multi-account routing",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/broker_account_selection.py",
+    "tests/test_mt5_multiaccount_telegram_ux_20260927.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-CHAN-01",
+   "label": "Channel parity matrix",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_web_command_parity_redesign_20260928.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-CHAN-02",
+   "label": "Mobile app scope",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "mobile/package.json",
+    "docs/MOBILE_BUILD.md"
+   ],
+   "note": "Expo app exists; not rebuilt or store-released; untouched this session."
+  },
+  {
+   "id": "CX-TG-01",
+   "label": "Telegram inventory tested",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_command_contracts.py",
+    "tests/test_callback_contract.py"
+   ],
+   "note": "Unit-level only; deployed bot unverified."
+  },
+  {
+   "id": "CX-TG-02",
+   "label": "Callback authorization and duplicates",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_callback_handler.py",
+    "tests/test_telegram_broker_linking_security.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TG-03",
+   "label": "Fast webhook; async heavy work",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_redis_webhook_queue.py"
+   ],
+   "note": "Latency not measured in prod."
+  },
+  {
+   "id": "CX-WEB-01",
+   "label": "All pages with real data states",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/WorkspaceLive.tsx"
+   ],
+   "note": "All routes render loading/empty/error states against mock API; not run against a real backend deployment."
+  },
+  {
+   "id": "CX-WEB-02",
+   "label": "Design system, themes, a11y, responsive",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/styles/tokens.css",
+    "frontend/scripts/cinematic-contract.test.mjs"
+   ],
+   "note": "Checked at 375/1024/1440 px; no automated axe audit run."
+  },
+  {
+   "id": "CX-WEB-03",
+   "label": "No fabricated data in UI",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/lib/presentation.ts",
+    "frontend/scripts/presentation.test.mjs"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-UX-01",
+   "label": "Plain-language status",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/ui/primitives.tsx"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-UX-02",
+   "label": "No guaranteed-profit messaging",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_public_win_rate_claim.py",
+    "tests/test_legal_compliance_20261003.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-NOTIF-01",
+   "label": "Durable notification delivery",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/dead_letter_queue.py",
+    "tests/test_v131_notification_delivery_integrity.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-NOTIF-02",
+   "label": "Notification failure never corrupts records",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_v1369_outcome_delivery_recovery.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-NOTIF-03",
+   "label": "Terminal-message coverage recomputed",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [],
+   "note": "Needs production data."
+  },
+  {
+   "id": "CX-MU-01",
+   "label": "Entities user-scoped",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": "Verified locally across watchlists, journal, tickets, alerts, notifications, devices, profile, payments, cooldowns."
+  },
+  {
+   "id": "CX-MU-02",
+   "label": "Per-recipient delivery records",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": "Verified locally."
+  },
+  {
+   "id": "CX-MU-03",
+   "label": "Fair delivery",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_delivery_fanout_planner.py",
+    "tests/test_class_fair_scheduler_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-MU-04",
+   "label": "All identifier forms without leakage",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_outcome_ownership_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-MU-05",
+   "label": "Shared vs private data separation",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DB-01",
+   "label": "One authoritative migration sequence",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_migration_revision_ids.py",
+    "tests/test_migration_0036_clean_install.py"
+   ],
+   "note": "Fresh DB migrates to 0055 locally."
+  },
+  {
+   "id": "CX-DB-02",
+   "label": "Migration safety properties",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_stage1_renewal_migration_postgres.py"
+   ],
+   "note": "Upgrade from 0053 with production-like data not rehearsed."
+  },
+  {
+   "id": "CX-DB-03",
+   "label": "No marking migrations applied",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "AGENTS.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DB-04",
+   "label": "Constraints, outbox, idempotency",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/transactional_outbox.py",
+    "tests/test_payment_receipt_migration_idempotency.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DB-05",
+   "label": "Append-only consequential records",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/financial_ledger.py",
+    "tests/test_v20_financial_ledger.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-DB-06",
+   "label": "Preserve core data",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "AGENTS.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-Q-01",
+   "label": "Worker/scheduler inventory",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_scheduler_registration_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-Q-02",
+   "label": "Queue failure-mode tests",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_railway_redis_queue.py",
+    "tests/test_runtime_p0_cache_worker_scheduler.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-Q-03",
+   "label": "Reliable singletons",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/job_leases.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-Q-04",
+   "label": "Redis not sole source of truth",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_railway_no_redis.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-Q-05",
+   "label": "Service roles",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_phase4_pass7_runtime_roles.py"
+   ],
+   "note": "Engine currently not cycling in prod (heartbeat absent)."
+  },
+  {
+   "id": "CX-SEC-01",
+   "label": "Threat model",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/SECURITY_AND_IDENTITY.md"
+   ],
+   "note": "Not a full STRIDE register."
+  },
+  {
+   "id": "CX-SEC-02",
+   "label": "Security controls",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/proxy.ts",
+    "tests/test_web_rate_limit_middleware.py",
+    "tests/test_auth_fail_closed_boundaries.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SEC-03",
+   "label": "Secrets handling",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_secret_scan_documents.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SEC-04",
+   "label": "Tenant isolation proven",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py",
+    "tests/test_broker_account_bola_idor.py"
+   ],
+   "note": "API+DB verified locally; worker/cache/notification layers partially."
+  },
+  {
+   "id": "CX-SEC-05",
+   "label": "Audit sensitive actions",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/financial_ledger.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SEC-06",
+   "label": "Supply chain",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_npm_audit_gate.mjs",
+    "tests/test_semgrep_gate.py",
+    "requirements.lock"
+   ],
+   "note": "CI blocked by billing so gates do not run on push."
+  },
+  {
+   "id": "CX-SEC-07",
+   "label": "Independent security review / pentest",
+   "status": "BLOCKED_HUMAN_DECISION",
+   "acceptance_class": "blocked",
+   "evidence": [],
+   "note": "Needs an external reviewer."
+  },
+  {
+   "id": "CX-PRIV-01",
+   "label": "Retention, export and deletion workflows",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/src/components/PrivacyCenter.tsx",
+    "tests/test_privacy_requests_20261024.py"
+   ],
+   "note": "Self-service export and audited deletion request added; retention schedule needs owner/legal decision."
+  },
+  {
+   "id": "CX-PRIV-02",
+   "label": "Privacy-preserving observability",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/telemetry.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-COMP-01",
+   "label": "Compliance review",
+   "status": "BLOCKED_HUMAN_DECISION",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_legal_compliance_20261003.py"
+   ],
+   "note": "Needs qualified legal review."
+  },
+  {
+   "id": "CX-OBS-01",
+   "label": "Meaningful health/readiness",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "railway_main.py",
+    "tests/test_engine_heartbeat_probe_20261024.py"
+   ],
+   "note": "Readiness now names the missing heartbeat and the action."
+  },
+  {
+   "id": "CX-OBS-02",
+   "label": "Engine Pulse dashboard",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "engine/admin_pulse.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-OBS-03",
+   "label": "Runtime identity",
+   "status": "DEFECTIVE",
+   "acceptance_class": "not implemented",
+   "evidence": [
+    "tests/test_runtime_heartbeat_identity.py"
+   ],
+   "note": "Production /version reports unknown schema_head/build_timestamp."
+  },
+  {
+   "id": "CX-OBS-04",
+   "label": "Actionable metrics and alerts",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "observability/prometheus",
+    "core/telemetry.py"
+   ],
+   "note": "Alert routing unverified."
+  },
+  {
+   "id": "CX-OBS-05",
+   "label": "SLIs/SLOs",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/slo_registry.py",
+    "tests/test_v20_slo_registry.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-ADMIN-01",
+   "label": "Admin/support tools",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "web/platform_api.py"
+   ],
+   "note": "Operator overview and diagnostics; several listed tools CLI-only."
+  },
+  {
+   "id": "CX-ADMIN-02",
+   "label": "Least privilege for admins",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_research_operator_access.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-FLAG-01",
+   "label": "Governed feature flags",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/feature_flags.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-FLAG-02",
+   "label": "Beta allowlist enforced",
+   "status": "BLOCKED_HUMAN_DECISION",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "core/financial_activation.py"
+   ],
+   "note": "Allowlist forced off in production; owner decides whether pilot gating returns."
+  },
+  {
+   "id": "CX-RUN-01",
+   "label": "Tested runbooks",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/runbooks",
+    "docs/DEPLOYMENT_DIAGNOSTICS_RUNBOOK.md"
+   ],
+   "note": "Runbooks written; not drilled."
+  },
+  {
+   "id": "CX-RUN-02",
+   "label": "Graceful degradation",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_engine_critical_fallbacks_fail_closed.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-INF-01",
+   "label": "Discover topology first",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-INF-02",
+   "label": "Environment separation",
+   "status": "BLOCKED_EXTERNAL_DEPENDENCY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_pinned_staging_environment.py"
+   ],
+   "note": "No staging environment on Railway."
+  },
+  {
+   "id": "CX-INF-03",
+   "label": "Validated configuration schema",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "core/settings.py",
+    "tests/test_env_alias_conflicts.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-INF-04",
+   "label": "Release process",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "scripts/build_release_inventory.py"
+   ],
+   "note": "No staging/canary; CI blocked."
+  },
+  {
+   "id": "CX-INF-05",
+   "label": "Release diff vs ledger",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-COST-01",
+   "label": "Cost tracking",
+   "status": "MISSING",
+   "acceptance_class": "not implemented",
+   "evidence": [],
+   "note": "Only OpenAI token counters exist; no attribution/budgets."
+  },
+  {
+   "id": "CX-CAP-01",
+   "label": "Capacity measurements",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/CAPACITY_MODEL.md"
+   ],
+   "note": "Model only; no measured workload."
+  },
+  {
+   "id": "CX-TEST-01",
+   "label": "Re-run suites; no weakening",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "docs/release/COMPLETION_EVIDENCE.md"
+   ],
+   "note": "Full suite 4,098 passed locally (e9b2b368); three pre-existing defects fixed, none skipped."
+  },
+  {
+   "id": "CX-TEST-02",
+   "label": "All test layers",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "pytest.ini",
+    "frontend/package.json"
+   ],
+   "note": "Load, DR and e2e browser layers not run."
+  },
+  {
+   "id": "CX-TEST-03",
+   "label": "Critical journeys",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-04",
+   "label": "Matrix testing",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_command_tier_contract.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-05",
+   "label": "Failure-combination tests",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_engine_critical_fallbacks_fail_closed.py"
+   ],
+   "note": "Most compound faults untested."
+  },
+  {
+   "id": "CX-TEST-06",
+   "label": "Concurrency tests",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py",
+    "tests/test_signal_lease_ownership.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-07",
+   "label": "Invariant tests",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_execution_state_machine.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-08",
+   "label": "Reconciliation jobs",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/outcome_reconciliation.py",
+    "tests/test_performance_reconciliation_dlq.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-09",
+   "label": "Load and soak",
+   "status": "BLOCKED_EXTERNAL_DEPENDENCY",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_load_certification.py"
+   ],
+   "note": "Needs staging."
+  },
+  {
+   "id": "CX-TEST-10",
+   "label": "Evidence per run",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/COMPLETION_EVIDENCE.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-TEST-11",
+   "label": "Historical regression suite",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "tests/test_owner_decisions_20261024.py"
+   ],
+   "note": "Per-fact mapping partial."
+  },
+  {
+   "id": "CX-DR-01",
+   "label": "RPO/RTO",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/runbooks"
+   ],
+   "note": "Targets not owner-approved."
+  },
+  {
+   "id": "CX-DR-02",
+   "label": "Restore drills",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "tests/test_staging_backup_restore_drill.py",
+    "scripts/production_backup.sh"
+   ],
+   "note": "Script tested locally; no real restore drill."
+  },
+  {
+   "id": "CX-DOC-01",
+   "label": "Session start/end records",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/COMPLETION_EVIDENCE.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-SG-01",
+   "label": "Provable historical completeness audit",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Gaps listed; inaccessible sources prevent completeness."
+  },
+  {
+   "id": "CX-SG-02",
+   "label": "Regression-proof migration strategy",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "frontend/scripts/api-baseline.test.mjs",
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Baseline + comparison for frontend; strategy-output baselines not captured (needs market data)."
+  },
+  {
+   "id": "CX-SG-03",
+   "label": "Real multi-user isolation tests",
+   "status": "IMPLEMENTED_AND_VERIFIED",
+   "acceptance_class": "verified",
+   "evidence": [
+    "tests/test_multi_user_isolation_postgres_20261024.py"
+   ],
+   "note": "5/5 pass on local PostgreSQL."
+  },
+  {
+   "id": "CX-SG-04",
+   "label": "Completion is not authorization",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "core/financial_activation.py"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-GATE-E",
+   "label": "Trading safety gate",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "core/financial_activation.py"
+   ],
+   "note": "Live capability disabled; demo certification blocked by credentials."
+  },
+  {
+   "id": "CX-SG-05",
+   "label": "Independent final acceptance",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Self-performed; independent reviewer outstanding."
+  },
+  {
+   "id": "CX-GATE-A",
+   "label": "History gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-GATE-B",
+   "label": "Code/architecture gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": ""
+  },
+  {
+   "id": "CX-GATE-C",
+   "label": "Data gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Backups not restored."
+  },
+  {
+   "id": "CX-GATE-D",
+   "label": "Security gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Independent review outstanding."
+  },
+  {
+   "id": "CX-GATE-F",
+   "label": "AI/ML gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Provider access unverified."
+  },
+  {
+   "id": "CX-GATE-G",
+   "label": "Product gate",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "New frontend not deployed."
+  },
+  {
+   "id": "CX-GATE-H",
+   "label": "Operations gate",
+   "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
+   "acceptance_class": "blocked",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "CI blocked by GitHub billing; Railway logs inaccessible."
+  },
+  {
+   "id": "CX-GATE-I",
+   "label": "Authorization gate",
+   "status": "AWAITING_APPROVAL",
+   "acceptance_class": "awaiting approval",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Awaiting PROMOTE_TO_PRODUCTION."
+  },
+  {
+   "id": "CX-DONE-01",
+   "label": "Definition of finished",
+   "status": "PARTIALLY_IMPLEMENTED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+   ],
+   "note": "Readiness level: development-ready (local evidence)."
+  }
+ ]
+}

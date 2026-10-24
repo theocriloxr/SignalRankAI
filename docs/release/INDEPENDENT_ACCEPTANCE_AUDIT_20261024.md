@@ -110,7 +110,7 @@ Of 287 consolidated requirement IDs, this pass individually assessed the 28 hist
 | Owner (billing) | Restore GitHub Actions (account billing lock) so CI can run. |
 | Owner (credentials) | Paystack test keys, Gemini key, broker demo accounts for staging certification. |
 | Agent | Done: full suite and isolation suite recorded in §8. Install `pyarrow` and re-run the one skipped Parquet test. |
-| Agent | Continue per-ID assessment of the remaining consolidated requirements. |
+| Agent | Done: per-ID assessment in §9. |
 
 ## 8. Verification evidence recorded after the audit (24 Oct 2026)
 
@@ -125,3 +125,32 @@ Of 287 consolidated requirement IDs, this pass individually assessed the 28 hist
 **Three pre-existing test defects fixed** (none in branch code): provider-key environment leakage in `test_connectors_providers.py` (order-dependent routing failure); CRLF-captured evidence hashes compared against LF checkouts; GNU-only coreutils assumed by the restore-drill harness.
 
 **Limits of this evidence.** Local only (GitHub Actions remains billing-locked). The local PostgreSQL build lacks the `pgcrypto` extension; a local-only shim implements `digest()` with built-in SHA functions for migration `0034`. `xgboost` 3.2.0 (macOS wheel) stands in for the Linux-only `xgboost-cpu` pin, loading the `libomp` bundled with scikit-learn. A few pins resolved differently on macOS (e.g. `websockets` came transitively). Not native devices, providers, brokers, payments, staging or production.
+
+## 9. Per-requirement assessment (24 Oct 2026)
+
+Every consolidated requirement ID (287, plus the FACT-00 recording rule) now has a status, evidence paths and a next action in [`evidence/continuation-20261024/cx_assessment.json`](evidence/continuation-20261024/cx_assessment.json). The generator refuses to write the file if an ID is missing or duplicated, or if any cited evidence path does not exist in the tree. Labels are paraphrased; the private specification text is not committed.
+
+| Acceptance class | Count |
+| --- | ---: |
+| Verified (locally only) | 8 |
+| Partially verified | 248 |
+| Blocked (access, external dependency, owner decision or unresolved history) | 20 |
+| Awaiting approval | 7 |
+| Not implemented / defective | 5 |
+
+"Verified" here means verified on local PostgreSQL with real routes; none of the 288 is verified in production. Two thirds of the "partially verified" entries have code and passing local tests but no deployment evidence; the rest have known gaps named in their notes.
+
+**Gaps closed during the assessment**
+
+- CX-PRIV-01 / CX-USER-01 — there was no self-service data export or deletion workflow. Added `GET /api/v1/platform/account/export` (owner-scoped sections reused from each screen's read; plan-gated sections reported as unavailable; credentials excluded) and `POST /api/v1/platform/account/deletion-request` (recent sign-in plus typed phrase; opens one `privacy_deletion` support review; deletes nothing; lists records retained for reconciliation). Web panel: Settings → Your data. Tests: `tests/test_privacy_requests_20261024.py` (real PostgreSQL).
+- New defect found and fixed: the recent-sign-in age for sensitive actions (API keys, webhooks, deletion) was computed with naive `datetime.utcnow().timestamp()`, which is shifted by the host UTC offset. On UTC hosts (Railway) this was harmless; on a UTC−5 host every sensitive action was refused, and on UTC+ hosts the 15-minute window was extended by the offset. Now uses `time.time()`. The New York regression case fails on the old code and passes on the fix.
+- Developer access (API keys, webhooks), plan entitlements and referrals now have web screens (commit `af617d5f`).
+
+**Remaining not implemented / defective**
+
+| ID | Gap | Next action |
+| --- | --- | --- |
+| CX-AI-08 | No component ablation or OpenAI/Gemini disagreement study | Needs outcome data from a running engine |
+| CX-COST-01 | No cost attribution or budgets (OpenAI token counters only) | Design usage ledger; owner to set budgets |
+| CX-OBS-03 | Production `/version` reports unknown `schema_head` and `build_timestamp` | Set build metadata in the Railway build; verify after the next authorized deploy |
+| CX-STRAT-07, CX-COPY-01 | Marketplace and copy-trading activation | Proposals only; need owner approval |
