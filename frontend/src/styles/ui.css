@@ -258,3 +258,9 @@
 .ws-pref-row > span small { color: var(--text-3); font-size: var(--text-xs); }
 .ws-pref-row .ui-select { width: auto; min-width: 170px; }
 .ui-form > .ui-btn:not(.ui-btn--block), .ui-card > .ui-btn:not(.ui-btn--block), .ui-confirm > .ui-btn { justify-self: start; }
+
+/* Long identifiers (URLs, codes) wrap instead of overflowing narrow cards. */
+.ui-break { overflow-wrap: anywhere; }
+.ui-meter { height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.ui-meter > span { display: block; height: 100%; background: var(--brand); }
+.ui-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }

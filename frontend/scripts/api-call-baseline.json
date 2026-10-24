@@ -8,6 +8,10 @@
   },
   {
    "method": "DELETE",
+   "path": "/api/v1/platform/api-keys/{key_id}"
+  },
+  {
+   "method": "DELETE",
    "path": "/api/v1/platform/devices/{session_id}"
   },
   {
@@ -15,8 +19,16 @@
    "path": "/api/v1/platform/journal/{journal_entry_id}"
   },
   {
+   "method": "DELETE",
+   "path": "/api/v1/platform/webhooks/{webhook_endpoint_id}"
+  },
+  {
    "method": "GET",
    "path": "/api/v1/platform/alerts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/api-keys"
   },
   {
    "method": "GET",
@@ -49,6 +61,10 @@
   {
    "method": "GET",
    "path": "/api/v1/platform/devices"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/entitlements"
   },
   {
    "method": "GET",
@@ -96,6 +112,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/platform/referrals"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/platform/security/mfa"
   },
   {
@@ -127,6 +147,10 @@
    "path": "/api/v1/platform/watchlists"
   },
   {
+   "method": "GET",
+   "path": "/api/v1/platform/webhooks"
+  },
+  {
    "method": "PATCH",
    "path": "/api/v1/platform/profile"
   },
@@ -137,6 +161,10 @@
   {
    "method": "POST",
    "path": "/api/v1/platform/alerts"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/api-keys"
   },
   {
    "method": "POST",
@@ -257,6 +285,10 @@
   {
    "method": "POST",
    "path": "/api/v1/platform/watchlists/{watchlist_id}/items"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/webhooks"
   },
   {
    "method": "PUT",
