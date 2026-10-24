@@ -121,6 +121,9 @@ Of 287 consolidated requirement IDs, this pass individually assessed the 28 hist
 | Fresh-database migration | `e9b2b368` | same | `alembic upgrade head` from empty → `0055_user_renewal_default` succeeded |
 | Frontend: tsc, eslint, `next build`, 101 node tests | `e9b2b368` | Node 22.19, npm 11.17 | all pass |
 | Governance generators `--check` (inventory, cross-chat, V7) | `e9b2b368` | — | all pass |
+| Full Python suite (same setup, `pyarrow` installed) | `a53ac6be` | same | **4,108 passed, 1 failed, 0 skipped.** The failure was the V7 freshness check, caused by editing the promotion plan during the run; after committing and regenerating, governance tests pass at `d259adc2` (37/37). |
+| Privacy + isolation suites on real PostgreSQL | `dea4e7da` | same | 11/11; the New York timezone case fails on the pre-fix code |
+| Frontend: tsc, eslint, `next build`, 107 node tests | `dea4e7da` | Node 22.19 | all pass |
 
 **Three pre-existing test defects fixed** (none in branch code): provider-key environment leakage in `test_connectors_providers.py` (order-dependent routing failure); CRLF-captured evidence hashes compared against LF checkouts; GNU-only coreutils assumed by the restore-drill harness.
 

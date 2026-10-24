@@ -10,6 +10,7 @@ Branch `feat/frontend-rebuild-and-stage1-hardening` (from `393f3d88`; commits `7
 - New owner source `message.txt` (SHA-256 `b78374d0…`) consolidated privately into 287 requirement IDs; hashes and anchors only in `evidence/continuation-20261024/source_intake.json`.
 - Full Python suite at clean commit `e9b2b368` on a local PostgreSQL 16.2 database migrated from empty to `0055`: **4,098 passed, 0 failed, 1 skipped** (pyarrow not installed); multi-user isolation suite 5/5. Three pre-existing test portability/isolation defects fixed. Local only; GitHub Actions remains billing-locked. Limits in the audit §8.
 - Web screens for API keys, webhooks, plan entitlements and referrals; self-service data export and audited account-deletion request (nothing deleted automatically). Fixed a host-timezone bug in the recent-sign-in check for sensitive actions. Every consolidated requirement ID assessed with evidence paths in `evidence/continuation-20261024/cx_assessment.json` (audit §9): 8 verified locally, 248 partially verified, 20 blocked, 7 awaiting approval, 5 not implemented.
+- Full Python suite at `a53ac6be`: 4,108 passed, 1 failed (V7 freshness, caused by a concurrent doc edit; passes after regeneration). Production promotion plan prepared, not executed: [PRODUCTION_PROMOTION_PLAN_20261024.md](PRODUCTION_PROMOTION_PLAN_20261024.md).
 
 Full details, classifications and information gaps: [INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md](INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md).
 
