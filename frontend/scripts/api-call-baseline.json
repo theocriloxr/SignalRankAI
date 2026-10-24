@@ -1,0 +1,274 @@
+{
+ "note": "Every backend capability the web frontend uses. Removing one requires an explicit, documented decision (regression-proof migration safeguard).",
+ "baseline_commit": "393f3d88 (pre-redesign) plus additions in feat/frontend-rebuild-and-stage1-hardening",
+ "calls": [
+  {
+   "method": "DELETE",
+   "path": "/api/v1/platform/alerts/{alert_id}"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/platform/devices/{session_id}"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/platform/journal/{journal_entry_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/alerts"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/billing"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/billing/products"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/broker/connections"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/ledger"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/policy"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/broker/metatrader/servers"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/dashboard"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/devices"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/instruments/search"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/journal"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/me"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/notifications"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/notifications/preferences"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/operator/overview"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/paper"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/paper/detail"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/performance"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/portfolio"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/quality"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/security/mfa"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/signals"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/signals/{signal_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/strategy-leaderboard"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/support/tickets"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/support/tickets/{ticket_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/trading-profile"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/watchlists"
+  },
+  {
+   "method": "PATCH",
+   "path": "/api/v1/platform/profile"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/account/telegram-link"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/alerts"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/email-verification/complete"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/email-verification/request"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/login"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/logout"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/logout-all"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/magic-link/complete"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/magic-link/request"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/mfa/complete"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/password-reset/complete"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/password-reset/request"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/auth/register"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/billing/cancel-auto-renew"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/billing/checkout"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/billing/confirm"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/billing/refund-request"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/safety-freeze"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/verify"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/broker/metatrader/secure-link"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/journal"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/notifications/{notification_id}/read"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/paper/close-all"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/paper/reset"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/paper/retry"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/security/mfa/enable"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/security/mfa/setup"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/signals/{signal_id}/feedback"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/support/tickets"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/support/tickets/{ticket_id}/messages"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/watchlists"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/watchlists/{watchlist_id}/items"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/platform/notifications/preferences"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/platform/paper/settings"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/platform/trading-profile"
+  }
+ ]
+}
