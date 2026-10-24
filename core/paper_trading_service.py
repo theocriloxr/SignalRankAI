@@ -1608,6 +1608,8 @@ class PaperTradingService:
             return await self._open_candidate_locked(candidate, market_price)
 
     async def _open_candidate_locked(self, candidate: dict[str, Any], market_price: float | None) -> str:
+        from core.focused_universe import focused_admission
+
         notify: dict[str, Any] | None = None
         result_status = "failed"
         async with get_session(
@@ -1694,6 +1696,22 @@ class PaperTradingService:
                 )
                 await session.commit()
                 notify = {"decision": "SKIPPED", "reason": "auto_trade_disabled"}
+                result_status = "skipped"
+            elif not (admission := focused_admission(candidate.get("asset")))[0]:
+                # Same new-entry boundary as live/demo execution when the opt-in
+                # focused universe is enabled (no-op otherwise).
+                await self._record_attempt(
+                    session,
+                    account=account,
+                    user=user,
+                    candidate=candidate,
+                    decision="SKIPPED",
+                    reason=admission[1],
+                    retryable=False,
+                    finalized=True,
+                )
+                await session.commit()
+                notify = {"decision": "SKIPPED", "reason": admission[1]}
                 result_status = "skipped"
             else:
                 existing = (

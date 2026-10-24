@@ -55,6 +55,7 @@ def test_every_new_entry_chokepoint_calls_the_shared_admission_check():
         "db/repository.py": 'if not focused_admission(signal_data.get("asset"))[0]:',
         "services/mt5_signal_router.py": "admitted, admission_reason = focused_admission(",
         "services/bybit_signal_router.py": "admitted, admission_reason = focused_admission(",
+        "core/paper_trading_service.py": 'elif not (admission := focused_admission(candidate.get("asset")))[0]:',
     }
     for path, marker in chokepoints.items():
         source = (ROOT / path).read_text(encoding="utf-8")

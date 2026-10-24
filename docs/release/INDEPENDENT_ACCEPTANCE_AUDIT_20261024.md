@@ -73,15 +73,15 @@ A zero-omission claim is therefore **not** made.
 | FACT-13 stale APP_VERSION | Partially verified | Release SHA matches; build timestamp/digest/schema head report `unknown`. |
 | FACT-14 Paystack | Blocked (credentials) | Server-priced checkout, provider verification and truthful availability UI implemented; sandbox round trip untested. |
 | FACT-15 ML 84% / 88.05 | Partially verified | Superseded by a calibrated artifact validated on 4,368 rows (Brier 0.166, ECE 0.058). |
-| FACT-16 AUC 0.670 vs 0.732 | Not yet assessed | Locate the experiment record. |
+| FACT-16 AUC 0.670 vs 0.732 | Partially verified | No record of this experiment exists in the repository or its 1,049 indexed historical documents (information gap: chat-only). Its lesson — no challenger promotion without out-of-sample superiority — is enforced and tested (`tests/test_ml_champion_challenger_governance.py` passes). |
 | FACT-17 OpenAI + Gemini | Partially verified / blocked | Live OpenAI configured and available. Gemini default `gemini-3.8-flash` — availability unverified without credentials. |
-| FACT-18 cooldowns / fingerprint | **Unresolved ambiguity** | 4 h same-asset cooldown implemented per user. Timeframe values 600/5400/21600 s now act as *max signal age* (1h = 1800 s, not 1200 s); generation-lock TTLs differ (15m 1 h, 1h 2 h, 4h 4 h, 1d 6 h). Entry fingerprint uses a 0.1 % relative bucket, not 3 decimals. Owner decision needed; no behavior changed. |
-| FACT-19 Redis 4 workers / 500 | Not yet assessed | |
+| FACT-18 cooldowns / fingerprint | **Owner decision: keep current** (24 Oct) | Current freshness limits (600/1800/5400/21600 s), generation leases and 4 h per-user same-asset cooldown kept. Effective duplicate suppression: 0.3 % log thesis band + 0.3 % semantic tolerance at persistence. Finding kept by decision: the engine Redis pre-filter bucket is exact-match for prices ≥ 1. Locked by `tests/test_owner_decisions_20261024.py`; recorded in `requirements_conflicts.md`. |
+| FACT-19 Redis 4 workers / 500 | Verified (meaning) | "4 workers" = `WEBHOOK_UPDATE_WORKERS` (Telegram webhook dispatch pool; default 4, max 16). In-process queue default is now 1,000 (historically 500) with a Redis-backed queue depth of 2,000. Production values are environment settings not visible here. |
 | FACT-20 historical test counts | Not applicable | Historical only; current suites must be re-run. |
 | FACT-21 load / DR | Not implemented (for this release) | No staging environment exists. |
 | FACT-22 missing ecosystem | Not yet assessed | Release-to-requirement map pending. |
 | FACT-23 version-specific fixes | Partially verified | Regression tests exist for many; full re-run pending. |
-| FACT-24 XAUTUSDT sessions | **Unresolved ambiguity** | Registry: `tokenised_commodity`, calendar `crypto_24_7` (the token trades continuously). Owner to confirm the policy. |
+| FACT-24 XAUTUSDT sessions | **Owner decision: keep current** (24 Oct) | `tokenised_commodity` on the `crypto_24_7` calendar; locked by `tests/test_owner_decisions_20261024.py`. |
 | FACT-25 Engine Pulse cadence | Verified | Live `interval_seconds: 86400`. |
 | FACT-26 crypto signals-only, delivered-only execution | Partially verified | Live execution not requested; execution routes require delivery receipts; new focused-universe admission at MT5/Bybit chokepoints. |
 | FACT-27 live features disabled | Verified (production) | Live `financial_activation`: requested false, live execution false, payouts false. Beta audience allowlist exists and is forced off in public production (audience `global`). |
@@ -106,7 +106,7 @@ Of 287 consolidated requirement IDs, this pass individually assessed the 28 hist
 | Owner | Action |
 | --- | --- |
 | Owner (access) | Grant read-only Railway log access, or check the engine service (`striking-optimism` or the role-configured engine) is deployed and running; read its logs before restarting. |
-| Owner (decision) | Decide FACT-18 cooldown/fingerprint semantics and FACT-24 XAUTUSDT session policy. |
+| Owner (decision) | Done 24 Oct: keep current behavior for FACT-18 and FACT-24. Optional: approve aligning the engine Redis pre-filter with the thesis band. |
 | Owner (billing) | Restore GitHub Actions (account billing lock) so CI can run. |
 | Owner (credentials) | Paystack test keys, Gemini key, broker demo accounts for staging certification. |
 | Agent | Done: full suite and isolation suite recorded in §8. Install `pyarrow` and re-run the one skipped Parquet test. |
