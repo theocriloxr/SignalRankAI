@@ -1285,7 +1285,7 @@
         "services/platform/identity.py:164",
         "services/platform/identity.py:417",
         "services/platform/identity.py:539",
-        "web/platform_api.py:820"
+        "web/platform_api.py:821"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -1365,7 +1365,7 @@
         "signalrank_telegram/commands.py:1040",
         "signalrank_telegram/commands.py:5296",
         "web/app.py:152",
-        "web/platform_api.py:786",
+        "web/platform_api.py:787",
         "web/userdash/app.py:19"
       ],
       "required_by_code": true,
@@ -1378,8 +1378,8 @@
       "name": "APP_COOKIE_DOMAIN",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:810",
-        "web/platform_api.py:839"
+        "web/platform_api.py:811",
+        "web/platform_api.py:840"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1391,7 +1391,7 @@
       "name": "APP_COOKIE_SECURE",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:805"
+        "web/platform_api.py:806"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1529,7 +1529,7 @@
       "read_locations": [
         "services/platform/identity.py:416",
         "services/platform/identity.py:515",
-        "web/platform_api.py:818"
+        "web/platform_api.py:819"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -2489,7 +2489,7 @@
       "read_locations": [
         "services/broker_verification.py:78",
         "services/bybit_signal_router.py:318",
-        "web/platform_api.py:4943"
+        "web/platform_api.py:5097"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5634,7 +5634,7 @@
       "name": "EXECUTION_TERMS_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:6047"
+        "web/platform_api.py:6201"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7358,10 +7358,10 @@
         "railway_main.py:585",
         "railway_main.py:622",
         "services/broker_connections.py:194",
-        "web/platform_api.py:4992",
-        "web/platform_api.py:5028",
-        "web/platform_api.py:5097",
-        "web/platform_api.py:6007",
+        "web/platform_api.py:5146",
+        "web/platform_api.py:5182",
+        "web/platform_api.py:5251",
+        "web/platform_api.py:6161",
         "worker/worker.py:325"
       ],
       "required_by_code": true,
@@ -7472,10 +7472,10 @@
         "services/broker_connections.py:194",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2738",
-        "web/platform_api.py:4992",
-        "web/platform_api.py:5028",
-        "web/platform_api.py:5097",
-        "web/platform_api.py:6007",
+        "web/platform_api.py:5146",
+        "web/platform_api.py:5182",
+        "web/platform_api.py:5251",
+        "web/platform_api.py:6161",
         "worker/worker.py:325"
       ],
       "required_by_code": true,
@@ -10307,8 +10307,8 @@
       "name": "PAPER_CASH_TOLERANCE",
       "production_example_default": "0.00000001",
       "read_locations": [
-        "core/paper_trading_service.py:2004",
-        "core/paper_trading_service.py:2157"
+        "core/paper_trading_service.py:2022",
+        "core/paper_trading_service.py:2175"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10563,7 +10563,7 @@
       "name": "PAPER_REQUIRE_USER_PROFILE",
       "production_example_default": null,
       "read_locations": [
-        "core/paper_trading_service.py:1764"
+        "core/paper_trading_service.py:1782"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10750,7 +10750,7 @@
       "read_locations": [
         "payments/checkout.py:98",
         "payments/paystack.py:10",
-        "web/platform_api.py:6440"
+        "web/platform_api.py:6594"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10919,7 +10919,7 @@
         "services/subscription_cancellation.py:25",
         "web/app.py:957",
         "web/app.py:992",
-        "web/platform_api.py:6436"
+        "web/platform_api.py:6590"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -12115,8 +12115,8 @@
         "railway_main.py:589",
         "signalrank_telegram/broker_linking.py:20",
         "signalrank_telegram/commands.py:5295",
-        "web/platform_api.py:786",
-        "web/platform_api.py:794",
+        "web/platform_api.py:787",
+        "web/platform_api.py:795",
         "web/userdash/app.py:18"
       ],
       "required_by_code": true,
@@ -14132,7 +14132,7 @@
       "production_example_default": "10",
       "read_locations": [
         "signalrank_telegram/commands.py:6698",
-        "web/platform_api.py:4562"
+        "web/platform_api.py:4716"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14147,7 +14147,7 @@
       "production_example_default": "2000",
       "read_locations": [
         "signalrank_telegram/commands.py:6732",
-        "web/platform_api.py:4601"
+        "web/platform_api.py:4755"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14340,7 +14340,7 @@
         "signalrank_telegram/broker_linking.py:22",
         "signalrank_telegram/commands.py:5297",
         "web/app.py:153",
-        "web/platform_api.py:794",
+        "web/platform_api.py:795",
         "web/userdash/app.py:20"
       ],
       "required_by_code": true,
