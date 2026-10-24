@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
+import { AuthAside, BrandLink } from "./AuthFrame";
+import { Icon } from "./ui/Icon";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
 import { safeReturnPath } from "../lib/return-path";
@@ -78,41 +80,48 @@ export function AccountEntry() {
     setMode(next);setStage("credentials");setToken("");setMessage("");
   }
 
-  return <main className="sr-auth"><div className="sr-auth-layout">
-    <section className="sr-auth-copy">
-      <Link href="/" className="sr-auth-wordmark">SignalRank<span>AI</span></Link>
-      <p className="sr-overline">Your private trading workspace</p>
-      <h1>See the evidence. <em>Make your next move.</em></h1>
-      <p>Bring your signal history, research, paper portfolio and broker connections together in one place.</p>
-      <div className="sr-auth-cert"><span>01 / Secure sign-in</span><span>02 / Two-step verification</span><span>03 / Personal workspace</span></div>
-    </section>
-    <section className="sr-auth-card" aria-labelledby="sr-auth-title">
-      <p className="sr-overline">{stage==="mfa"?"Additional verification":"Account access"}</p>
-      <h2 id="sr-auth-title">{stage==="mfa"?"Verify your identity":mode==="register"?"Create your SignalRank account":"Welcome back"}</h2>
-      <p>{stage === "mfa" ? "Use your authenticator app to finish signing in." : mode === "register" ? "Start your research and paper trading workspace." : "Sign in to continue where you left off."}</p>
-      <form onSubmit={submit}>
-        {stage==="mfa"?<label>Authenticator code<input name="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={8} required /></label>:
-        <>
-          {mode==="register"&&<label>Display name<input name="name" autoComplete="name" maxLength={100}/></label>}
-          <label>Email address<input name="email" type="email" autoComplete="email" required maxLength={255}/></label>
-          <label>Password<input name="password" type="password" autoComplete={mode==="register"?"new-password":"current-password"} minLength={mode==="register"?10:undefined} required/></label>
-          {mode==="register"&&<label>Confirm password<input name="confirm_password" type="password" autoComplete="new-password" required/></label>}
-          {mode==="register"&&<fieldset className="sr-account-consent">
-            <legend>Account agreements</legend>
-            <label><input name="platform_terms_accepted" type="checkbox" required/>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a>.</label>
-            <label><input name="privacy_acknowledged" type="checkbox" required/>I have read the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.</label>
-            <label><input name="age_eligibility_confirmed" type="checkbox" required/>I confirm I am at least 18 and eligible to use the service.</label>
-            <label><input name="marketing_consent" type="checkbox"/>Send me optional product news and marketing emails.</label>
-          </fieldset>}
-        </>}
-        {message&&<p className="sr-form-message" role="status">{message}</p>}
-        <button className="button" type="submit" disabled={busy}>{busy?"Verifying…":stage==="mfa"?"Verify code":mode==="register"?"Create account":"Sign in"}</button>
-      </form>
-      {stage==="mfa"?<button className="sr-auth-switch" type="button" onClick={()=>reset("login")}>Use another account</button>:
-      <button className="sr-auth-switch" type="button" onClick={()=>reset(mode==="login"?"register":"login")}>{mode==="login"?"New to SignalRank? Create an account":"Already have an account? Sign in"}</button>}
-      {stage==="credentials"&&<Link href="/recover" className="sr-auth-switch">Forgot your password?</Link>}
-      {stage==="credentials"&&<Link href="/magic-login" className="sr-auth-switch">Sign in with an email link</Link>}
-      <p className="sr-auth-disclaimer">Trading carries risk. Market data, execution eligibility and financial records must be verified independently.</p>
-    </section>
-  </div><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
+  const title = stage==="mfa" ? "Verify your identity" : mode==="register" ? "Create your account" : "Welcome back";
+  return <main className="auth">
+    <AuthAside/>
+    <div className="auth-main">
+      <section className="auth-card" aria-labelledby="auth-title">
+        <span className="auth-mobile-brand"><BrandLink/></span>
+        {stage==="credentials"&&<div className="ui-segmented auth-tabs" role="group" aria-label="Account access mode">
+          <button type="button" aria-pressed={mode==="login"} onClick={()=>reset("login")}>Sign in</button>
+          <button type="button" aria-pressed={mode==="register"} onClick={()=>reset("register")}>Create account</button>
+        </div>}
+        <div>
+          <p className="ui-eyebrow">{stage==="mfa"?"Additional verification":"Account access"}</p>
+          <h2 id="auth-title">{title}</h2>
+        </div>
+        <p>{stage === "mfa" ? "Use your authenticator app to finish signing in." : mode === "register" ? "Start your research and paper trading workspace." : "Sign in to continue where you left off."}</p>
+        <form onSubmit={submit} className="ui-form">
+          {stage==="mfa"?<label className="ui-field">Authenticator code<input className="ui-input mono" name="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} maxLength={8} required autoFocus /></label>:
+          <>
+            {mode==="register"&&<label className="ui-field">Display name<input className="ui-input" name="name" autoComplete="name" maxLength={100}/></label>}
+            <label className="ui-field">Email address<input className="ui-input" name="email" type="email" autoComplete="email" required maxLength={255}/></label>
+            <label className="ui-field">Password<input className="ui-input" name="password" type="password" autoComplete={mode==="register"?"new-password":"current-password"} minLength={mode==="register"?10:undefined} required/>
+              {mode==="register"&&<small>At least 10 characters.</small>}</label>
+            {mode==="register"&&<label className="ui-field">Confirm password<input className="ui-input" name="confirm_password" type="password" autoComplete="new-password" required/></label>}
+            {mode==="register"&&<fieldset className="ui-fieldset">
+              <legend>Account agreements</legend>
+              <label className="ui-consent"><input name="platform_terms_accepted" type="checkbox" required/><span>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a>.</span></label>
+              <label className="ui-consent"><input name="privacy_acknowledged" type="checkbox" required/><span>I have read the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.</span></label>
+              <label className="ui-consent"><input name="age_eligibility_confirmed" type="checkbox" required/><span>I confirm I am at least 18 and eligible to use the service.</span></label>
+              <label className="ui-consent"><input name="marketing_consent" type="checkbox"/><span>Send me optional product news and marketing emails.</span></label>
+            </fieldset>}
+          </>}
+          {message&&<p className={stage==="mfa"&&message.startsWith("Enter the code")?"ui-feedback":"ui-feedback ui-feedback--error"} role="status">{message}</p>}
+          <button className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" type="submit" disabled={busy}>{busy?"Verifying…":stage==="mfa"?"Verify code":mode==="register"?"Create account":"Sign in"}</button>
+        </form>
+        <div className="auth-links">
+          {stage==="mfa"&&<button type="button" onClick={()=>reset("login")}><Icon name="arrowLeft" size={14}/> Use another account</button>}
+          {stage==="credentials"&&<Link href="/recover">Forgot your password?</Link>}
+          {stage==="credentials"&&<Link href="/magic-login">Sign in with an email link instead</Link>}
+        </div>
+        <p className="auth-disclaimer">Trading carries risk. Market data, execution eligibility and financial records must be verified independently.</p>
+      </section>
+      <div className="auth-foot"><SiteCredit compact /></div>
+    </div>
+  </main>;
 }

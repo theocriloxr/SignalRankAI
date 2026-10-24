@@ -2,6 +2,8 @@ import Link from "next/link";
 import { PublicNav } from "./PublicNav";
 import { SiteCredit } from "./SiteCredit";
 import { WorkspaceLink } from "./WorkspaceLink";
+import { Icon } from "./ui/Icon";
+import { Notice } from "./ui/primitives";
 
 export type EditorialDetail = {
   index: string;
@@ -21,44 +23,33 @@ export type EditorialPage = {
   next: { label: string; href: string };
 };
 
+/** Shared layout for every public reference page (pricing, methodology, risk, …). */
 export function PublicEditorial({ page, children }: { page: EditorialPage; children?: React.ReactNode }) {
-  return <main className="sr-public-page">
-    <div className="sr-public-frame">
-      <PublicNav />
-      <header className="sr-editorial-hero">
-        <div className="sr-editorial-hero-head">
-          <p className="sr-overline">SignalRankAI / {page.eyebrow}</p>
-          <p className="sr-editorial-document">PRODUCT REFERENCE &nbsp;/&nbsp; {page.slug.toUpperCase()}</p>
-        </div>
+  return <main className="mk-page">
+    <PublicNav current={`/${page.slug}`} />
+    <div className="mk-container">
+      <header className="mk-editorial-hero">
+        <p className="ui-eyebrow ui-eyebrow--brand">{page.eyebrow}</p>
         <h1>{page.title}</h1>
-        <div className="sr-editorial-hero-bottom">
-          <p>{page.introduction}</p>
-          <span className="sr-editorial-emphasis">{page.emphasis}</span>
-        </div>
-        <div className="sr-editorial-track" aria-hidden="true"><span/><span/><span/><span/><span/><span/></div>
+        <p className="mk-lede">{page.introduction}</p>
+        <span className="ui-badge ui-badge--brand ui-badge--plain">{page.emphasis}</span>
       </header>
       {children}
-      <section className="sr-editorial-content" aria-labelledby="sr-editorial-heading">
-        <div className="sr-editorial-heading">
-          <p className="sr-overline">The underlying system</p>
-          <h2 id="sr-editorial-heading">Designed to be examined.</h2>
-          <p>Explore the product&apos;s documented capabilities and safety boundaries. Features and readiness remain governed by deployed configuration and account entitlements.</p>
-        </div>
-        <div className="sr-editorial-sections">{page.details.map(detail=><article className="sr-editorial-section" key={detail.index}>
-          <div className="sr-editorial-index"><span>{detail.index}</span><span>{detail.eyebrow}</span></div>
-          <div className="sr-editorial-body">
-            <h3>{detail.title}</h3><p>{detail.description}</p>
-            <ul>{detail.points.map(point=><li key={point}>{point}</li>)}</ul>
+      <section className="mk-editorial-content" aria-label={`${page.eyebrow} details`}>
+        {page.details.map(detail=><article className="mk-editorial-section" key={detail.index}>
+          <div className="mk-editorial-index"><span>{detail.index}</span><span className="ui-eyebrow">{detail.eyebrow}</span></div>
+          <div className="mk-editorial-body">
+            <h2>{detail.title}</h2><p>{detail.description}</p>
+            <ul>{detail.points.map(point=><li key={point}><Icon name="check"/><span>{point}</span></li>)}</ul>
           </div>
-        </article>)}</div>
+        </article>)}
       </section>
-      <section className="sr-editorial-bottom" aria-labelledby="sr-reference-note">
-        <div><p className="sr-overline">Disclosure / {page.slug}</p><h2 id="sr-reference-note">Verification is part of the product.</h2></div>
-        <p>{page.note}</p>
-      </section>
-      <div className="sr-editorial-next">
-        <Link href={page.next.href}>Continue reading: {page.next.label} <span aria-hidden="true">↗</span></Link>
-        <WorkspaceLink className="button" href="/login">Open secure account</WorkspaceLink>
+      <div className="mk-editorial-note">
+        <Notice tone="warning"><strong>Disclosure.</strong> {page.note}</Notice>
+      </div>
+      <div className="mk-editorial-next">
+        <Link className="ui-link" href={page.next.href}>Continue reading: {page.next.label} <Icon name="arrowRight"/></Link>
+        <WorkspaceLink className="ui-btn ui-btn--primary" href="/login">Open secure account</WorkspaceLink>
       </div>
       <SiteCredit navigation />
     </div>

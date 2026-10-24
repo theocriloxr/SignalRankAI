@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { Icon } from "./ui/Icon";
 
-/** Native semantic disclosure with reliable touch, routing and keyboard closure.
- * Navigation remains server-renderable and works without hover/canvas. */
+/** Native semantic disclosure used for the mobile menus.
+ * Closes on route change, outside touch, link activation, Escape and desktop resize. */
 export function ResponsiveDisclosure({
-  children, className, id, label,
+  children, className, id, label, desktopFrom = 1024,
 }:{
-  children:ReactNode; className:string; id?:string; label:string;
+  children:ReactNode; className:string; id?:string; label:string; desktopFrom?:number;
 }){
   const pathname=usePathname();
   const menu=useRef<HTMLDetailsElement>(null);
@@ -25,9 +26,8 @@ export function ResponsiveDisclosure({
       if(el?.open && event.target instanceof Node && !el.contains(event.target))el.open=false;
     }
     function viewport(){
-      // Both desktop navigation versions have dedicated alternatives.
-      // Never preserve an invisible open disclosure after breakpoint changes.
-      if(window.innerWidth>1120 && menu.current)menu.current.open=false;
+      // The desktop layout has its own navigation; never keep an invisible open drawer.
+      if(window.innerWidth>=desktopFrom && menu.current)menu.current.open=false;
     }
     document.addEventListener("pointerdown",outside,true);
     window.addEventListener("resize",viewport);
@@ -35,7 +35,7 @@ export function ResponsiveDisclosure({
       document.removeEventListener("pointerdown",outside,true);
       window.removeEventListener("resize",viewport);
     };
-  },[]);
+  },[desktopFrom]);
 
   function onKeyDown(event:KeyboardEvent<HTMLDetailsElement>){
     if(event.key!=="Escape"||!menu.current?.open)return;
@@ -48,7 +48,7 @@ export function ResponsiveDisclosure({
     if(el instanceof Element && el.closest("a[href]") && menu.current) menu.current.open=false;
   }
   return <details className={className} id={id} ref={menu} onKeyDown={onKeyDown} onClickCapture={onClick}>
-    <summary ref={summary}>{label}</summary>
-    <div className="sr-responsive-disclosure-content">{children}</div>
+    <summary ref={summary} aria-label={label}><Icon name="menu"/><span>Menu</span></summary>
+    <div className="disclosure-panel">{children}</div>
   </details>;
 }

@@ -108,10 +108,14 @@ def test_authenticated_privacy_rights_requests_are_available_cross_channel() -> 
 
 def test_active_frontends_do_not_load_google_fonts() -> None:
     next_layout = source("frontend/src/app/layout.tsx")
-    next_css = source("frontend/src/app/globals.css")
+    next_css = "".join(
+        source(f"frontend/src/styles/{name}.css")
+        for name in ("tokens", "base", "ui", "marketing", "workspace")
+    )
     assert "next/font/google" not in next_layout
-    assert "fonts.googleapis.com" not in next_layout
-    assert "fonts.gstatic.com" not in next_layout
+    for remote in ("fonts.googleapis.com", "fonts.gstatic.com"):
+        assert remote not in next_layout
+        assert remote not in next_css
     assert "ui-sans-serif" in next_css
 
 

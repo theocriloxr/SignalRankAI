@@ -67,55 +67,55 @@ export function AlertRules({data,onChanged}:{data:Row;onChanged:()=>void}){
     finally{setDeactivating("");}
   }
 
-  return <section className="sr-view-stack">
-    <p className="sr-risk-note">Custom alerts are account-owned monitoring rules, not broker orders or guaranteed delivery receipts. Market-provider data availability and connected notification channels still determine delivery.</p>
-    <div className="sr-record-grid">
+  return <section className="ws-stack">
+    <p className="ui-notice ui-notice--neutral">Custom alerts are account-owned monitoring rules, not broker orders or guaranteed delivery receipts. Market-provider data availability and connected notification channels still determine delivery.</p>
+    <div className="ws-cards">
       {items.map((item,i)=>{
         const id=display(item.alert_id,"");
         const rule=record(item.condition);
         const destinations=Array.isArray(item.channels)?item.channels.filter((v):v is string=>typeof v==="string"):[];
-        return <article className="sr-data-panel" key={id||i}>
-          <p className="sr-overline">{item.active===true?"ACTIVE RULE":"DISABLED RULE"}</p>
+        return <article className="ui-card" key={id||i}>
+          <p className="ui-eyebrow">{item.active===true?"ACTIVE RULE":"DISABLED RULE"}</p>
           <h2>{display(item.asset,display(item.instrument_id,"Instrument"))} · {display(item.alert_type).replaceAll("_"," ")}</h2>
-          <dl>
-            <div className="sr-data-pair"><dt>Threshold</dt><dd>{item.alert_type==="price_above"||item.alert_type==="price_below"?display(rule.value):"Event based"}</dd></div>
-            <div className="sr-data-pair"><dt>Channels</dt><dd>{destinations.length?destinations.join(", "):"Unreported"}</dd></div>
-            <div className="sr-data-pair"><dt>Last trigger</dt><dd>{timeLabel(item.last_triggered_at)}</dd></div>
-            <div className="sr-data-pair"><dt>Created</dt><dd>{timeLabel(item.created_at)}</dd></div>
+          <dl className="ui-kv">
+            <div className="ui-kv-row"><dt>Threshold</dt><dd>{item.alert_type==="price_above"||item.alert_type==="price_below"?display(rule.value):"Event based"}</dd></div>
+            <div className="ui-kv-row"><dt>Channels</dt><dd>{destinations.length?destinations.join(", "):"Unreported"}</dd></div>
+            <div className="ui-kv-row"><dt>Last trigger</dt><dd>{timeLabel(item.last_triggered_at)}</dd></div>
+            <div className="ui-kv-row"><dt>Created</dt><dd>{timeLabel(item.created_at)}</dd></div>
           </dl>
           {item.active===true && id && (confirmId===id?
-            <div className="sr-confirm-action" role="group" aria-label="Confirm disabling alert">
+            <div className="ui-confirm" role="group" aria-label="Confirm disabling alert">
               <p>Disable this monitoring rule? It will no longer be active.</p>
-              <button className="sr-secondary-action" type="button" disabled={Boolean(deactivating)} onClick={()=>setConfirmId("")}>Keep rule</button>
-              <button className="sr-secondary-action" type="button" disabled={Boolean(deactivating)} onClick={()=>disable(id)}>{deactivating?"Disabling…":"Confirm disable"}</button>
+              <button className="ui-btn" type="button" disabled={Boolean(deactivating)} onClick={()=>setConfirmId("")}>Keep rule</button>
+              <button className="ui-btn" type="button" disabled={Boolean(deactivating)} onClick={()=>disable(id)}>{deactivating?"Disabling…":"Confirm disable"}</button>
             </div>:
-            <button className="sr-secondary-action" type="button" onClick={()=>setConfirmId(id)}>Disable rule</button>)}
+            <button className="ui-btn" type="button" onClick={()=>setConfirmId(id)}>Disable rule</button>)}
         </article>;
       })}
     </div>
-    {!items.length&&<div className="sr-empty"><strong>No custom alert rules returned.</strong><p>Your subscription might not include custom alerts. Creating a rule below requires server approval.</p></div>}
-    <section className="sr-data-panel sr-create-panel">
+    {!items.length&&<div className="ui-empty"><strong>No custom alert rules returned.</strong><p>Your subscription might not include custom alerts. Creating a rule below requires server approval.</p></div>}
+    <section className="ui-card">
       <h2>Create a market alert</h2>
       <p>Rule types and threshold formats follow the existing SignalRank alert API. This form never authorizes a trade.</p>
-      <form className="sr-create-form" onSubmit={create}>
-        <div className="sr-form-grid">
-          <label>Instrument / market symbol
-            <input type="text" maxLength={32} minLength={2} required autoComplete="off" value={asset} onChange={e=>setAsset(e.target.value.toUpperCase())} placeholder="BTCUSDT, XAUUSD…"/>
+      <form className="ui-form" onSubmit={create}>
+        <div className="ui-form-grid">
+          <label className="ui-field">Instrument / market symbol
+            <input className="ui-input" type="text" maxLength={32} minLength={2} required autoComplete="off" value={asset} onChange={e=>setAsset(e.target.value.toUpperCase())} placeholder="BTCUSDT, XAUUSD…"/>
           </label>
-          <label>Alert trigger
-            <select value={kind} onChange={e=>setKind(e.target.value as Kind)}>
+          <label className="ui-field">Alert trigger
+            <select className="ui-select" value={kind} onChange={e=>setKind(e.target.value as Kind)}>
               {alertKinds.map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </select>
           </label>
-          {needsPrice(kind)&&<label>Price threshold
-            <input type="number" min="0.00000001" step="any" inputMode="decimal" required value={threshold} onChange={e=>setThreshold(e.target.value)}/>
+          {needsPrice(kind)&&<label className="ui-field">Price threshold
+            <input className="ui-input" type="number" min="0.00000001" step="any" inputMode="decimal" required value={threshold} onChange={e=>setThreshold(e.target.value)}/>
           </label>}
         </div>
-        <fieldset className="sr-pref-classes"><legend>Delivery channels</legend><p>Select at least one. Delivery depends on each connected account channel.</p><div>
-          {channels.map(c=><label key={c}><input type="checkbox" checked={selectedChannels.includes(c)} onChange={e=>setSelectedChannels(current=>e.target.checked?[...current,c]:current.filter(item=>item!==c))}/>{c}</label>)}
+        <fieldset className="ui-fieldset"><legend>Delivery channels</legend><p>Select at least one. Delivery depends on each connected account channel.</p><div className="ui-check-row">
+          {channels.map(c=><label className="ui-check" key={c}><input type="checkbox" checked={selectedChannels.includes(c)} onChange={e=>setSelectedChannels(current=>e.target.checked?[...current,c]:current.filter(item=>item!==c))}/>{c}</label>)}
         </div></fieldset>
-        <button type="submit" className="button" disabled={busy}>{busy?"Creating…":"Create alert rule"}</button>
-        {notice&&<p className={error?"sr-submit-feedback sr-submit-feedback--error":"sr-submit-feedback"} role={error?"alert":"status"}>{notice}</p>}
+        <button type="submit" className="ui-btn ui-btn--primary" disabled={busy}>{busy?"Creating…":"Create alert rule"}</button>
+        {notice&&<p className={error?"ui-feedback ui-feedback--error":"ui-feedback"} role={error?"alert":"status"}>{notice}</p>}
       </form>
     </section>
   </section>;

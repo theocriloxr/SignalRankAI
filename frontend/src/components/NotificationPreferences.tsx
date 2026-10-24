@@ -54,24 +54,24 @@ export function NotificationPreferences(){
     }catch{setMessage("The update could not be verified. Retry after checking your connection.");}
     finally{setSaving(false);}
   }
-  return <section className="sr-data-panel" aria-labelledby="sr-notification-preferences">
+  return <section className="ui-card" aria-labelledby="sr-notification-preferences">
     <h2 id="sr-notification-preferences">Notification channels</h2>
     <p>Change only the channels you select. Other settings, including quiet hours, are left unchanged.</p>
     {loading&&<p role="status">Checking account notification settings…</p>}
-    {error&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{error}</p>}
-    {current&&<form className="sr-create-form" onSubmit={submit}>
-      <div className="sr-preference-grid">
-      {channels.map(c=><label key={c.key} className="sr-preference-row">
+    {error&&<p role="alert" className="ui-feedback ui-feedback--error">{error}</p>}
+    {current&&<form className="ui-form" onSubmit={submit}>
+      <div className="ws-pref-grid">
+      {channels.map(c=><label key={c.key} className="ws-pref-row">
         <span><strong>{c.label}</strong><small>Current: {current[c.key]===true?"Enabled":current[c.key]===false?"Disabled":"Not reported"}</small></span>
-        <select aria-label={`Change ${c.label}`} value={choices[c.key]} onChange={e=>setChoices(v=>({...v,[c.key]:e.target.value as Choice}))}>
+        <select className="ui-select" aria-label={`Change ${c.label}`} value={choices[c.key]} onChange={e=>setChoices(v=>({...v,[c.key]:e.target.value as Choice}))}>
           <option value="keep">Keep existing</option>
           <option value="on">Enable</option>
           <option value="off">Disable</option>
         </select>
       </label>)}
       </div>
-      <button type="submit" className="button" disabled={saving}>{saving?"Saving…":"Save selected channels"}</button>
-      {message&&<p className="sr-submit-feedback" role="status">{message}</p>}
+      <button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Saving…":"Save selected channels"}</button>
+      {message&&<p className="ui-feedback" role="status">{message}</p>}
     </form>}
   </section>;
 }

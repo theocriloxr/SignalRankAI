@@ -40,40 +40,40 @@ function WatchlistPanel({item,onChanged}:{item:Row;onChanged:()=>void}){
     finally{setAdding("");}
   }
 
-  return <article className="sr-data-panel sr-watchlist-panel">
-    <header><p className="sr-overline">{item.is_default===true?"Default watchlist":"Account watchlist"}</p>
+  return <article className="ui-card">
+    <header><p className="ui-eyebrow">{item.is_default===true?"Default watchlist":"Account watchlist"}</p>
       <h2>{display(item.name,"Untitled watchlist")}</h2></header>
     <p>Created {timeLabel(item.created_at)} · {existing.size} watched instruments</p>
-    {existing.size>0?<ul className="sr-watchlist-symbols">{Array.from(existing).map(symbol=><li key={symbol}>{symbol}</li>)}</ul>
+    {existing.size>0?<ul className="ui-chip-row">{Array.from(existing).map(symbol=><li key={symbol}>{symbol}</li>)}</ul>
       :<p>No instruments added yet.</p>}
-    <form onSubmit={search} className="sr-create-form" role="search">
-      <label>Search the canonical instrument directory
-        <input name="instrument_search" value={query} onChange={e=>setQuery(e.target.value)} maxLength={80} minLength={2} required placeholder="BTCUSD, EURUSD, XAUUSD…" autoComplete="off"/>
+    <form onSubmit={search} className="ui-form" role="search">
+      <label className="ui-field">Search the canonical instrument directory
+        <input className="ui-input" name="instrument_search" value={query} onChange={e=>setQuery(e.target.value)} maxLength={80} minLength={2} required placeholder="BTCUSD, EURUSD, XAUUSD…" autoComplete="off"/>
       </label>
-      <button className="sr-secondary-action" disabled={searching||!id} type="submit">{searching?"Searching…":"Find instruments"}</button>
+      <button className="ui-btn" disabled={searching||!id} type="submit">{searching?"Searching…":"Find instruments"}</button>
     </form>
-    {results!==null&&<section className="sr-watchlist-results" aria-label="Instrument search results">
+    {results!==null&&<section className="ws-subsection" aria-label="Instrument search results">
       <p>{results.length? "Matching active instruments — choose one to watch:":"No matching active instruments were returned."}</p>
       {results.map((instrument,i)=>{
         const instrumentId=display(instrument.instrument_id,"");
         const watched=existing.has(instrumentId);
-        return <div className="sr-watchlist-result" key={instrumentId||String(i)}>
+        return <div className="ws-result-row" key={instrumentId||String(i)}>
           <div><strong>{display(instrument.display_symbol,display(instrument.canonical_symbol,"Instrument"))}</strong>
             <small>{display(instrument.asset_class)} · {display(instrument.instrument_type)} · {instrument.tradable===true?"Market data marked tradable":"Trading eligibility not confirmed"}</small></div>
-          <button className="sr-secondary-action" type="button" disabled={!instrumentId||watched||Boolean(adding)} onClick={()=>add(instrumentId)}>{watched?"Already watched":adding===instrumentId?"Adding…":"Add to watchlist"}</button>
+          <button className="ui-btn" type="button" disabled={!instrumentId||watched||Boolean(adding)} onClick={()=>add(instrumentId)}>{watched?"Already watched":adding===instrumentId?"Adding…":"Add to watchlist"}</button>
         </div>;
       })}
     </section>}
-    {message&&<p className="sr-submit-feedback" role="status">{message}</p>}
-    <p className="sr-overline">A watchlist does not authorize or initiate a broker order.</p>
+    {message&&<p className="ui-feedback" role="status">{message}</p>}
+    <p className="ui-eyebrow">A watchlist does not authorize or initiate a broker order.</p>
   </article>;
 }
 
 export function WatchlistsView({data,onChanged}:{data:Row;onChanged:()=>void}){
   const items=rows(data.watchlists);
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">Watchlists belong to your account. Instruments are matched against the canonical active directory. Watching an instrument does not enable execution or bypass plan limits.</p>
-    {items.length ? <div className="sr-record-grid">{items.map((x,i)=><WatchlistPanel key={display(x.watchlist_id,String(i))} item={x} onChanged={onChanged}/>)}</div>:
-    <div className="sr-empty"><strong>No watchlists were returned.</strong><p>Create one below to follow recognized instruments. This does not activate any trading feature.</p></div>}
+  return <div className="ws-stack">
+    <p className="ui-notice ui-notice--neutral">Watchlists belong to your account. Instruments are matched against the canonical active directory. Watching an instrument does not enable execution or bypass plan limits.</p>
+    {items.length ? <div className="ws-cards">{items.map((x,i)=><WatchlistPanel key={display(x.watchlist_id,String(i))} item={x} onChanged={onChanged}/>)}</div>:
+    <div className="ui-empty"><strong>No watchlists were returned.</strong><p>Create one below to follow recognized instruments. This does not activate any trading feature.</p></div>}
   </div>;
 }

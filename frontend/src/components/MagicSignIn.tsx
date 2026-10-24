@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
+import { BrandLink } from "./AuthFrame";
+import { Icon } from "./ui/Icon";
 import { useState, type FormEvent } from "react";
 import client from "../lib/client";
 
@@ -24,15 +26,17 @@ export function MagicSignIn() {
     }catch{setMessage("Account service unavailable. No link request was confirmed.");}
     finally{setBusy(false);}
   }
-  return <main className="sr-auth"><section className="sr-auth-card sr-recovery-card">
-    <Link href="/" className="sr-auth-wordmark">SignalRank<span>AI</span></Link>
-    <p className="sr-overline">Account identity / Secure email link</p>
-    <h1>Sign in by email.</h1>
-    <p>Request a one-time sign-in link. No broker permission is changed, and existing MFA remains required.</p>
-    {!done&&<form onSubmit={submit}><label>Account email address
-      <input type="email" name="email" autoComplete="email" required maxLength={320}/>
-    </label><button type="submit" className="button" disabled={busy}>{busy?"Requesting…":"Send sign-in link"}</button></form>}
-    {message&&<p className="sr-form-message" role="status">{message}</p>}
-    <Link className="sr-secondary-action" href="/login">Use password sign-in</Link>
-  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
+  return <main className="auth-solo">
+    <BrandLink/>
+    <section className="auth-card" aria-labelledby="magic-title">
+      <div><p className="ui-eyebrow">Secure email link</p><h2 id="magic-title">Sign in by email</h2></div>
+      <p>Request a one-time sign-in link. No broker permission is changed, and existing MFA remains required.</p>
+      {!done&&<form className="ui-form" onSubmit={submit}><label className="ui-field">Account email address
+        <input className="ui-input" type="email" name="email" autoComplete="email" required maxLength={320}/>
+      </label><button type="submit" className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" disabled={busy}><Icon name="mail"/>{busy?"Requesting…":"Send sign-in link"}</button></form>}
+      {message&&<p className={done?"ui-feedback":"ui-feedback ui-feedback--error"} role="status">{message}</p>}
+      <div className="auth-links"><Link href="/login"><Icon name="arrowLeft" size={14}/> Use password sign-in</Link></div>
+    </section>
+    <div className="auth-foot"><SiteCredit compact /></div>
+  </main>;
 }

@@ -8,7 +8,7 @@ type Review={policy:Row|null;reconciliation:Row|null;entries:Row[]|null;error:st
 const initial:Review={policy:null,reconciliation:null,entries:null,error:"",ledgerError:"",loading:false};
 
 function Fact({name,value}:{name:string;value:string}) {
-  return <div className="sr-data-pair"><dt>{name}</dt><dd>{value}</dd></div>;
+  return <div className="ui-kv-row"><dt>{name}</dt><dd>{value}</dd></div>;
 }
 
 /** Each broker is resolved by its account-scoped connection_id. No consolidated
@@ -95,33 +95,33 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
   const perm=record(active?.permissions);
   const policy=review.policy;
   const recon=review.reconciliation;
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">Every account is evaluated independently. A connected broker is NOT approval for live, prop or automated execution. Missing provider margin, currency, permission and ledger data remain unavailable.</p>
-    {!connections.length&&<div className="sr-empty"><strong>No entitled broker connections returned.</strong>
+  return <div className="ws-stack">
+    <p className="ui-notice ui-notice--neutral">Every account is evaluated independently. A connected broker is NOT approval for live, prop or automated execution. Missing provider margin, currency, permission and ledger data remain unavailable.</p>
+    {!connections.length&&<div className="ui-empty"><strong>No entitled broker connections returned.</strong>
       <p>Connect a demo account in the certified provider workflow before attempting any live integration. No account balance has been assumed.</p></div>}
-    {connections.length>0&&<div className="sr-broker-layout">
-      <nav className="sr-broker-account-list" aria-label="Your connected broker accounts">
+    {connections.length>0&&<div className="ws-split">
+      <nav className="ws-select-list" aria-label="Your connected broker accounts">
         {connections.map((item,i)=>{
           const id=display(item.connection_id,"");
           const chosen=id===selected;
           return <button type="button" key={id||i} disabled={!id} aria-pressed={chosen}
-            className={chosen?"sr-broker-account active":"sr-broker-account"} onClick={()=>choose(id)}>
-            <span className="sr-overline">{display(item.platform)} / {brokerMode(item)}</span>
+            className="ws-select-item" onClick={()=>choose(id)}>
+            <span className="ui-eyebrow">{display(item.platform)} / {brokerMode(item)}</span>
             <strong>{display(item.account_label,display(item.broker_name,"Broker connection"))}</strong>
             <span>{display(item.account_ref_masked,"Account reference masked")}</span>
             <small>{item.is_default===true?"Default connection · ":""}{display(item.status,"State unavailable")} · {timeLabel(item.verified_at)}</small>
           </button>;
         })}
       </nav>
-      <div className="sr-view-stack sr-broker-details">
-        {!active&&<section className="sr-data-panel"><h2>Inspect a broker account</h2>
+      <div className="ws-stack">
+        {!active&&<section className="ui-card"><h2>Inspect a broker account</h2>
           <p>Select a connection to inspect its independent policy, reconciliation and ledger. No account is selected automatically for orders.</p></section>}
         {active&&<>
-          <section className="sr-data-panel">
-            <div className="sr-section-head"><div><p className="sr-overline">Account-scoped broker evidence</p>
+          <section className="ui-card">
+            <div className="ui-card-head"><div><p className="ui-eyebrow">Account-scoped broker evidence</p>
               <h2>{display(active.account_label,display(active.broker_name,"Connected account"))}</h2></div>
-              <span className="sr-state">{brokerMode(active)}</span></div>
-            <dl><Fact name="Classification" value={display(active.account_classification,"Unverified")}/>
+              <span className="ui-badge">{brokerMode(active)}</span></div>
+            <dl className="ui-kv"><Fact name="Classification" value={display(active.account_classification,"Unverified")}/>
               <Fact name="Connector" value={display(active.connector,display(active.platform))}/>
               <Fact name="Connection status" value={display(active.status)}/>
               <Fact name="Masked account" value={display(active.account_ref_masked)}/>
@@ -130,15 +130,15 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
               <Fact name="Provider verification" value={timeLabel(active.verified_at)}/>
               <Fact name="Health last checked" value={timeLabel(active.last_health_at)}/>
               <Fact name="Provider error" value={display(active.last_error_code,"None reported")}/></dl>
-            <div className="sr-paper-action-row"><button className="sr-secondary-action" type="button" disabled={verifying} onClick={verify}>{verifying?"Verifying provider…":"Run read-only verification"}</button>
-              <button className="sr-secondary-action" type="button" onClick={()=>setVersion(v=>v+1)}>Refresh policy and ledger</button></div>
-            {notice&&<p className={error?"sr-submit-feedback sr-submit-feedback--error":"sr-submit-feedback"} role={error?"alert":"status"}>{notice}</p>}
+            <div className="ui-actions"><button className="ui-btn" type="button" disabled={verifying} onClick={verify}>{verifying?"Verifying provider…":"Run read-only verification"}</button>
+              <button className="ui-btn" type="button" onClick={()=>setVersion(v=>v+1)}>Refresh policy and ledger</button></div>
+            {notice&&<p className={error?"ui-feedback ui-feedback--error":"ui-feedback"} role={error?"alert":"status"}>{notice}</p>}
           </section>
-          {review.loading&&<div className="sr-loading" role="status">Retrieving account policy and broker-confirmed ledger…</div>}
+          {review.loading&&<div className="ui-loading" role="status">Retrieving account policy and broker-confirmed ledger…</div>}
           {!review.loading&&<>
-            <section className="sr-data-panel"><h2>Independent account risk policy</h2>
-              {review.error&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{review.error}</p>}
-              {policy&&<dl>
+            <section className="ui-card"><h2>Independent account risk policy</h2>
+              {review.error&&<p role="alert" className="ui-feedback ui-feedback--error">{review.error}</p>}
+              {policy&&<dl className="ui-kv">
                 <Fact name="Account mode" value={display(policy.account_mode)}/>
                 <Fact name="Execution permission" value={display(policy.execution_permission,"Not authorized")}/>
                 <Fact name="Policy status" value={display(policy.status,"Unavailable")}/>
@@ -148,12 +148,12 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
                 <Fact name="Frozen" value={policy.frozen===true?"Yes — no new execution":policy.frozen===false?"No freeze reported":"Unavailable"}/>
               </dl>}
               {!policy&&!review.error&&<p>Policy data was not provided. Execution approval cannot be assumed.</p>}
-              {Object.keys(recon||{}).length>0&&<p className="sr-risk-note">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
+              {Object.keys(recon||{}).length>0&&<p className="ui-notice ui-notice--neutral">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
             </section>
-            <section className="sr-data-panel"><h2>Broker ledger evidence</h2>
+            <section className="ui-card"><h2>Broker ledger evidence</h2>
               <p>Only the backend&apos;s provider-attributed ledger rows are shown. Missing deposits, fees, funding or swap values are never inferred.</p>
-              {review.ledgerError&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{review.ledgerError}</p>}
-              {review.entries!==null&&review.entries.length>0&&<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable account-specific broker ledger"><table>
+              {review.ledgerError&&<p role="alert" className="ui-feedback ui-feedback--error">{review.ledgerError}</p>}
+              {review.entries!==null&&review.entries.length>0&&<div className="ui-table-wrap" tabIndex={0} aria-label="Scrollable account-specific broker ledger"><table className="ui-table">
                 <thead><tr><th>Timestamp</th><th>Entry type</th><th>Amount</th><th>Provider status</th></tr></thead>
                 <tbody>{review.entries.map((row,i)=><tr key={display(row.entry_id,String(i))}>
                   <td>{timeLabel(row.created_at ?? row.occurred_at)}</td>
@@ -161,18 +161,18 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
                   <td>{moneyLabel(row.amount,row.currency)}</td>
                   <td>{display(row.status,display(row.provenance,"Unverified"))}</td>
                 </tr>)}</tbody></table></div>}
-              {review.entries!==null&&review.entries.length===0&&<p className="sr-muted">No broker-confirmed ledger records were returned. This does not imply a zero balance.</p>}
+              {review.entries!==null&&review.entries.length===0&&<p className="ui-muted">No broker-confirmed ledger records were returned. This does not imply a zero balance.</p>}
             </section>
-            <section className="sr-data-panel sr-broker-freeze"><p className="sr-overline">Safety-only / No execution activation</p>
+            <section className="ui-card ui-card--danger"><p className="ui-eyebrow">Safety-only / No execution activation</p>
               <h2>Freeze this broker account</h2>
               <p>Use this to suspend new broker execution for this connection. Freezing does not close any existing broker position.</p>
-              {!confirmFreeze?<button type="button" className="sr-secondary-action" onClick={()=>setConfirmFreeze(true)}>Begin safety freeze</button>:
-                <form onSubmit={freeze} className="sr-create-form">
-                  <label>Reason for freezing<input minLength={8} maxLength={256} required value={freezeReason} onChange={e=>setFreezeReason(e.target.value)} placeholder="Describe the risk concern (no credentials)"/></label>
-                  <label>Type FREEZE ACCOUNT to confirm<input autoComplete="off" required value={freezePhrase} onChange={e=>setFreezePhrase(e.target.value)}/></label>
-                  <div className="sr-paper-action-row">
-                    <button className="button" type="submit" disabled={saving}>{saving?"Freezing…":"Confirm account freeze"}</button>
-                    <button className="sr-secondary-action" type="button" disabled={saving} onClick={()=>{setConfirmFreeze(false);setFreezePhrase("");setFreezeReason("");}}>Cancel</button>
+              {!confirmFreeze?<button type="button" className="ui-btn" onClick={()=>setConfirmFreeze(true)}>Begin safety freeze</button>:
+                <form onSubmit={freeze} className="ui-form">
+                  <label className="ui-field">Reason for freezing<input className="ui-input" minLength={8} maxLength={256} required value={freezeReason} onChange={e=>setFreezeReason(e.target.value)} placeholder="Describe the risk concern (no credentials)"/></label>
+                  <label className="ui-field">Type FREEZE ACCOUNT to confirm<input className="ui-input" autoComplete="off" required value={freezePhrase} onChange={e=>setFreezePhrase(e.target.value)}/></label>
+                  <div className="ui-actions">
+                    <button className="ui-btn ui-btn--primary" type="submit" disabled={saving}>{saving?"Freezing…":"Confirm account freeze"}</button>
+                    <button className="ui-btn" type="button" disabled={saving} onClick={()=>{setConfirmFreeze(false);setFreezePhrase("");setFreezeReason("");}}>Cancel</button>
                   </div>
                 </form>}
             </section>

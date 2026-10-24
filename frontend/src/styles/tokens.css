@@ -1,0 +1,142 @@
+/* SignalRankAI design tokens.
+   One semantic palette drives every public, account and workspace surface.
+   Theme resolution: explicit [data-theme] wins, otherwise the OS preference. */
+
+:root {
+  color-scheme: dark;
+
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Inter Display", "SF Pro Display", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: clamp(1.75rem, 1.4rem + 1.4vw, 2.25rem);
+  --text-4xl: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem);
+  --text-hero: clamp(2.5rem, 1.3rem + 4.2vw, 4.75rem);
+
+  /* Spacing, radius, motion */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px; --space-24: 96px;
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-xl: 20px; --radius-pill: 999px;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --duration: 160ms;
+  --content-max: 1200px;
+  --workspace-max: 1360px;
+  --sidebar-width: 248px;
+  --topbar-height: 60px;
+
+  /* Dark palette (default) */
+  --bg: #07090c;
+  --bg-raised: #0b0e13;
+  --surface: #0f141a;
+  --surface-2: #141a22;
+  --surface-3: #1a222c;
+  --surface-hover: #18202a;
+  --border: #1e2731;
+  --border-strong: #2a3542;
+  --text: #e9eef3;
+  --text-2: #a5b0bd;
+  --text-3: #6d7a89;
+  --brand: #3ddc97;
+  --brand-strong: #19c27e;
+  --brand-ink: #03140d;
+  --brand-soft: rgba(61, 220, 151, .11);
+  --brand-line: rgba(61, 220, 151, .32);
+  --positive: #3ddc97;
+  --positive-soft: rgba(61, 220, 151, .12);
+  --negative: #ff7a7a;
+  --negative-soft: rgba(255, 122, 122, .12);
+  --warning: #f5c04d;
+  --warning-soft: rgba(245, 192, 77, .12);
+  --info: #6aa8ff;
+  --info-soft: rgba(106, 168, 255, .12);
+  --focus: #7cf0bf;
+  --overlay: rgba(3, 5, 8, .72);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, .55);
+  --shadow-lg: 0 30px 80px -20px rgba(0, 0, 0, .7);
+  --glow: radial-gradient(60% 60% at 50% 0%, rgba(61, 220, 151, .14), transparent 70%);
+  --grid-line: rgba(255, 255, 255, .035);
+}
+
+/* Light palette: explicit choice or OS preference without an explicit dark choice. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7f9;
+  --bg-raised: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --surface-3: #e9edf2;
+  --surface-hover: #f0f3f6;
+  --border: #e2e7ed;
+  --border-strong: #cdd5df;
+  --text: #0c131b;
+  --text-2: #475467;
+  --text-3: #778598;
+  --brand: #047857;
+  --brand-strong: #065f46;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(4, 120, 87, .08);
+  --brand-line: rgba(4, 120, 87, .28);
+  --positive: #047857;
+  --positive-soft: rgba(4, 120, 87, .09);
+  --negative: #c2261b;
+  --negative-soft: rgba(194, 38, 27, .08);
+  --warning: #a15c07;
+  --warning-soft: rgba(181, 71, 8, .09);
+  --info: #1d5fd3;
+  --info-soft: rgba(29, 95, 211, .08);
+  --focus: #047857;
+  --overlay: rgba(12, 19, 27, .42);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+  --shadow-md: 0 8px 24px -10px rgba(16, 24, 40, .16);
+  --shadow-lg: 0 30px 70px -24px rgba(16, 24, 40, .24);
+  --glow: radial-gradient(60% 60% at 50% 0%, rgba(4, 120, 87, .09), transparent 70%);
+  --grid-line: rgba(12, 19, 27, .045);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f5f7f9;
+    --bg-raised: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f3f5f8;
+    --surface-3: #e9edf2;
+    --surface-hover: #f0f3f6;
+    --border: #e2e7ed;
+    --border-strong: #cdd5df;
+    --text: #0c131b;
+    --text-2: #475467;
+    --text-3: #778598;
+    --brand: #047857;
+    --brand-strong: #065f46;
+    --brand-ink: #ffffff;
+    --brand-soft: rgba(4, 120, 87, .08);
+    --brand-line: rgba(4, 120, 87, .28);
+    --positive: #047857;
+    --positive-soft: rgba(4, 120, 87, .09);
+    --negative: #c2261b;
+    --negative-soft: rgba(194, 38, 27, .08);
+    --warning: #a15c07;
+    --warning-soft: rgba(181, 71, 8, .09);
+    --info: #1d5fd3;
+    --info-soft: rgba(29, 95, 211, .08);
+    --focus: #047857;
+    --overlay: rgba(12, 19, 27, .42);
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, .06);
+    --shadow-md: 0 8px 24px -10px rgba(16, 24, 40, .16);
+    --shadow-lg: 0 30px 70px -24px rgba(16, 24, 40, .24);
+    --glow: radial-gradient(60% 60% at 50% 0%, rgba(4, 120, 87, .09), transparent 70%);
+    --grid-line: rgba(12, 19, 27, .045);
+  }
+}
+
+:root[data-theme="dark"] { color-scheme: dark; }

@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
+import { BrandLink } from "./AuthFrame";
+import { Icon } from "./ui/Icon";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
 
@@ -69,21 +71,26 @@ export function AccountEmailLink({ kind, token }: {
     finally{setBusy(false);}
   }
 
-  return <main className="sr-auth"><section className="sr-auth-card sr-recovery-card">
-    <Link href="/" className="sr-auth-wordmark">SignalRank<span>AI</span></Link>
-    <p className="sr-overline">Secure one-time link / {isVerification?"Email verification":"Magic sign-in"}</p>
-    <h1>{isVerification?"Verify your email":"Confirm your sign-in"}</h1>
-    <p>{isVerification
-      ?"Confirm that you intended to verify your email address. This never enables broker trading."
-      :"Continue only if you requested this sign-in. MFA and account policies remain mandatory."}</p>
-    {stage==="confirm"&&<button className="button" type="button" onClick={consume} disabled={busy}>
-      {busy?"Checking…":isVerification?"Verify email":"Continue securely"}
-    </button>}
-    {stage==="mfa"&&<form onSubmit={verifyMfa}><label>Authenticator code
-      <input name="code" required minLength={6} maxLength={32} autoComplete="one-time-code" inputMode="numeric"/>
-    </label><button className="button" disabled={busy} type="submit">{busy?"Verifying…":"Verify and sign in"}</button></form>}
-    {message&&<p className="sr-form-message" role="status">{message}</p>}
-    {stage==="done"&&<Link className="sr-secondary-action" href="/login">Go to sign in</Link>}
-    <Link className="sr-secondary-action" href="/login">Use normal sign in instead</Link>
-  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
+  return <main className="auth-solo">
+    <BrandLink/>
+    <section className="auth-card" aria-labelledby="email-link-title">
+      <div><p className="ui-eyebrow">Secure one-time link / {isVerification?"Email verification":"Email sign-in"}</p>
+        <h2 id="email-link-title">{isVerification?"Verify your email":"Confirm your sign-in"}</h2></div>
+      <p>{isVerification
+        ?"Confirm that you intended to verify your email address. This never enables broker trading."
+        :"Continue only if you requested this sign-in. MFA and account policies remain mandatory."}</p>
+      {stage==="confirm"&&<button className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" type="button" onClick={consume} disabled={busy}>
+        <Icon name="check"/>{busy?"Checking…":isVerification?"Verify email":"Continue securely"}
+      </button>}
+      {stage==="mfa"&&<form className="ui-form" onSubmit={verifyMfa}><label className="ui-field">Authenticator code
+        <input className="ui-input mono" name="code" required minLength={6} maxLength={32} autoComplete="one-time-code" inputMode="numeric"/>
+      </label><button className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" disabled={busy} type="submit">{busy?"Verifying…":"Verify and sign in"}</button></form>}
+      {message&&<p className={stage==="done"?"ui-feedback":"ui-feedback ui-feedback--error"} role="status">{message}</p>}
+      <div className="auth-links">
+        {stage==="done"&&<Link href="/login">Go to sign in</Link>}
+        <Link href="/login">Use normal sign in instead</Link>
+      </div>
+    </section>
+    <div className="auth-foot"><SiteCredit compact /></div>
+  </main>;
 }

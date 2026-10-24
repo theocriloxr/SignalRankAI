@@ -52,14 +52,22 @@ test("core user journeys keep existing authorization and data fetch boundaries",
   assert.doesNotMatch(live,/localStorage|sessionStorage|client\.(POST|PATCH|DELETE|PUT)\(/);
 });
 
-test("new design handles mobile and reduced motion rather than hiding content",()=>{
-  const css=read("src/app/cinematic.css");
+test("design system handles mobile, themes, reduced motion and forced colors rather than hiding content",()=>{
+  const styles=["tokens","base","ui","marketing","workspace"].map(name=>read(`src/styles/${name}.css`)).join("\n");
   const layout=read("src/app/layout.tsx");
-  for(const breakpoint of ["980px","680px","390px"]){
-    assert.ok(css.includes(breakpoint),"responsive breakpoint missing: "+breakpoint);
+  for(const name of ["tokens","base","ui","marketing","workspace"]){
+    assert.ok(layout.includes(`import "../styles/${name}.css"`),"layout must load "+name+".css");
   }
-  assert.ok(css.includes("prefers-reduced-motion"));
-  assert.ok(css.includes(".sr-cinema-gates button.is-active"));
-  assert.ok(css.includes(".sr-app-shell .sr-nav-group a[aria-current=page]"));
-  assert.ok(layout.includes('import "./cinematic.css"'));
+  for(const breakpoint of ["1023px","980px","680px","390px"]){
+    assert.ok(styles.includes(breakpoint),"responsive breakpoint missing: "+breakpoint);
+  }
+  assert.ok(styles.includes("prefers-reduced-motion"));
+  assert.ok(styles.includes("forced-colors: active"));
+  // Theme: explicit choice wins, otherwise OS preference, applied before paint by the layout script.
+  assert.ok(styles.includes(':root[data-theme="light"]'));
+  assert.ok(styles.includes(':root:not([data-theme="dark"])'));
+  assert.ok(layout.includes("signalrank.theme"));
+  assert.ok(styles.includes(".mk-lifecycle-nav button.is-active"));
+  assert.ok(styles.includes('.ws-nav-group a[aria-current="page"]'));
+  assert.ok(styles.includes(":focus-visible"));
 });

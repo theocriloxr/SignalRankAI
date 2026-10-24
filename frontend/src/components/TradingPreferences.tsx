@@ -81,44 +81,44 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
     } finally {setSaving(false);}
   }
 
-  return <section className="sr-data-panel sr-preferences-panel" aria-labelledby="sr-pref-title">
-    <p className="sr-overline">Account-specific decision preferences</p>
+  return <section className="ui-card" aria-labelledby="sr-pref-title">
+    <p className="ui-eyebrow">Account-specific decision preferences</p>
     <h2 id="sr-pref-title">Signal and screening settings</h2>
     <p>Plan limits come from your authenticated account. Changes affect personal signal preferences, not broker execution permission, prop rules or platform-wide ML risk gates.</p>
-    <div className="sr-grid-two">
-      <div className="sr-metric"><span>Minimum certified plan score</span><strong>{numberLabel(floor)}</strong><small>Lowest selectable score for your current tier</small></div>
-      <div className="sr-metric"><span>Maximum daily signals</span><strong>{numberLabel(ceiling,0)}</strong><small>Maximum entitled personal limit</small></div>
+    <div className="ws-grid-2">
+      <div className="ui-stat"><span>Minimum certified plan score</span><strong>{numberLabel(floor)}</strong><small>Lowest selectable score for your current tier</small></div>
+      <div className="ui-stat"><span>Maximum daily signals</span><strong>{numberLabel(ceiling,0)}</strong><small>Maximum entitled personal limit</small></div>
     </div>
-    {!supported&&<p className="sr-submit-feedback sr-submit-feedback--error" role="alert">Server entitlement options are incomplete. Changes are disabled until they can be verified.</p>}
-    <form className="sr-create-form" onSubmit={save}>
-      <div className="sr-form-grid">
-        <label>Trading style
-          <select value={profile} onChange={event=>setProfile(event.target.value)} disabled={!supported||saving}>
+    {!supported&&<p className="ui-feedback ui-feedback--error" role="alert">Server entitlement options are incomplete. Changes are disabled until they can be verified.</p>}
+    <form className="ui-form" onSubmit={save}>
+      <div className="ui-form-grid">
+        <label className="ui-field">Trading style
+          <select className="ui-select" value={profile} onChange={event=>setProfile(event.target.value)} disabled={!supported||saving}>
             {allowedProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ")}</option>)}
           </select>
         </label>
-        <label>Risk style
-          <select value={risk} onChange={event=>setRisk(event.target.value)} disabled={!supported||saving}>
+        <label className="ui-field">Risk style
+          <select className="ui-select" value={risk} onChange={event=>setRisk(event.target.value)} disabled={!supported||saving}>
             {allowedRiskProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ")}</option>)}
           </select>
         </label>
-        <label>Minimum signal score
-          <input type="number" inputMode="decimal" min={floor??0} max={100} step="0.1" value={score}
+        <label className="ui-field">Minimum signal score
+          <input className="ui-input" type="number" inputMode="decimal" min={floor??0} max={100} step="0.1" value={score}
             onChange={e=>setScore(e.target.value)} disabled={!supported||saving} required />
         </label>
-        <label>Maximum signals per day
-          <input type="number" inputMode="numeric" min={1} max={ceiling??500} step={1} value={daily}
+        <label className="ui-field">Maximum signals per day
+          <input className="ui-input" type="number" inputMode="numeric" min={1} max={ceiling??500} step={1} value={daily}
             onChange={e=>setDaily(e.target.value)} disabled={!supported||saving} required />
         </label>
       </div>
-      <fieldset className="sr-pref-classes" disabled={!supported||saving}>
+      <fieldset className="ui-fieldset" disabled={!supported||saving}>
         <legend>Entitled market classes</legend>
         <p>Select at least one. The service will verify entitlement again on save.</p>
-        <div>{allowedClasses.map(c=><label key={c}><input type="checkbox" checked={classes.includes(c)}
+        <div className="ui-check-row">{allowedClasses.map(c=><label className="ui-check" key={c}><input type="checkbox" checked={classes.includes(c)}
           onChange={e=>setClasses(current=>e.target.checked?[...current,c]:current.filter(x=>x!==c))}/><span>{c}</span></label>)}</div>
       </fieldset>
-      <button type="submit" className="button" disabled={!supported||saving}>{saving?"Saving preferences…":"Save signal preferences"}</button>
-      {result&&<p className={isError?"sr-submit-feedback sr-submit-feedback--error":"sr-submit-feedback"} role={isError?"alert":"status"}>{result}</p>}
+      <button type="submit" className="ui-btn ui-btn--primary" disabled={!supported||saving}>{saving?"Saving preferences…":"Save signal preferences"}</button>
+      {result&&<p className={isError?"ui-feedback ui-feedback--error":"ui-feedback"} role={isError?"alert":"status"}>{result}</p>}
     </form>
   </section>;
 }

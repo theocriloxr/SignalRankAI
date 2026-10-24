@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
+import { BrandLink } from "./AuthFrame";
+import { Icon } from "./ui/Icon";
 import client from "../lib/client";
 
 /** Canonical password-recovery flow. No email-existence disclosure or browser token persistence. */
@@ -38,18 +40,24 @@ export function PasswordRecovery({ initialToken = "" }: { initialToken?: string 
     finally{setBusy(false)}
   }
 
-  return <main className="sr-auth"><section className="sr-auth-card sr-recovery-card">
-    <Link href="/" className="sr-auth-wordmark">SignalRank<span>AI</span></Link>
-    <p className="sr-overline">Account recovery / No trading permissions changed</p>
-    <h1>{stage==="request"?"Recover account access":"Choose a new password"}</h1>
-    <p>Recovery changes sign-in credentials only. Broker connections, risk controls and trading permissions remain governed by their existing verification policies.</p>
-    {!finished&&<form onSubmit={submit}>
-      {stage==="request"?<label>Email address<input type="email" name="email" required autoComplete="email" maxLength={255}/></label>:
-      <><label>New password<input name="password" type="password" required minLength={10} maxLength={256} autoComplete="new-password"/></label><label>Confirm password<input name="confirmation" type="password" required autoComplete="new-password"/></label></>}
-      <button className="button" type="submit" disabled={busy}>{busy?"Processing…":stage==="request"?"Send recovery instructions":"Update password"}</button>
-    </form>}
-    {message&&<p className="sr-form-message" role="status">{message}</p>}
-    {finished?<Link className="sr-secondary-action" href="/login">Return to sign in</Link>:
-      stage==="complete"?<button type="button" className="sr-auth-switch" onClick={()=>{setStage("request");setMessage("")}}>Request another recovery link</button>:<Link href="/login" className="sr-auth-switch">Back to sign in</Link>}
-  </section><div className="sr-auth-foot"><SiteCredit compact /></div></main>;
+  return <main className="auth-solo">
+    <BrandLink/>
+    <section className="auth-card" aria-labelledby="recovery-title">
+      <div><p className="ui-eyebrow">Account recovery</p>
+        <h2 id="recovery-title">{stage==="request"?"Recover account access":"Choose a new password"}</h2></div>
+      <p>Recovery changes sign-in credentials only. Broker connections, risk controls and trading permissions keep their existing verification policies.</p>
+      {!finished&&<form className="ui-form" onSubmit={submit}>
+        {stage==="request"?<label className="ui-field">Email address<input className="ui-input" type="email" name="email" required autoComplete="email" maxLength={255}/></label>:
+        <><label className="ui-field">New password<input className="ui-input" name="password" type="password" required minLength={10} maxLength={256} autoComplete="new-password"/><small>At least 10 characters.</small></label>
+          <label className="ui-field">Confirm password<input className="ui-input" name="confirmation" type="password" required autoComplete="new-password"/></label></>}
+        <button className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" type="submit" disabled={busy}>{busy?"Processing…":stage==="request"?"Send recovery instructions":"Update password"}</button>
+      </form>}
+      {message&&<p className={finished?"ui-feedback":"ui-feedback ui-feedback--error"} role="status">{message}</p>}
+      <div className="auth-links">
+        {finished?<Link href="/login">Return to sign in</Link>:
+          stage==="complete"?<button type="button" onClick={()=>{setStage("request");setMessage("")}}>Request another recovery link</button>:<Link href="/login"><Icon name="arrowLeft" size={14}/> Back to sign in</Link>}
+      </div>
+    </section>
+    <div className="auth-foot"><SiteCredit compact /></div>
+  </main>;
 }

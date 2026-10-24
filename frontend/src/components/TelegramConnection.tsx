@@ -50,22 +50,22 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
     finally { setBusy(false); }
   }
 
-  return <section className="sr-data-panel" aria-labelledby="sr-telegram-title">
+  return <section className="ui-card" aria-labelledby="sr-telegram-title">
     <h2 id="sr-telegram-title">Telegram connection</h2>
     {state === "linked" ? <p role="status">Telegram is connected to this account. You do not need to link it again.</p>
       : state === "review" ? <p role="status">Telegram ownership is verified. Your account history is awaiting reconciliation; reconnecting is unnecessary.</p>
       : state === "unknown" ? <p>Connection status is unavailable. Refresh your account before making changes.</p>
       : <><p>{state === "pending" ? "A linking request is waiting for completion in Telegram." : "Connect Telegram to keep your account and eligible signal deliveries together."}</p>
-        {!proof && <button className="sr-secondary-action" type="button" disabled={busy} onClick={requestLink}>
+        {!proof && <button className="ui-btn" type="button" disabled={busy} onClick={requestLink}>
           {busy ? "Preparing code…" : state === "pending" ? "Replace linking code" : "Link Telegram"}</button>}
       </>}
-    {proof && ["unlinked", "pending"].includes(state) && <div className="sr-create-form">
+    {proof && ["unlinked", "pending"].includes(state) && <div className="ui-form">
       <p>In the SignalRankAI bot, send <code>/link {proof.code}</code>. Keep this one-time code private.</p>
       <p>Expires {timeLabel(new Date(proof.expires).toISOString())}</p>
-      {proof.href && <a className="sr-secondary-action" href={proof.href} target="_blank" rel="noopener noreferrer">Open SignalRankAI in Telegram</a>}
+      {proof.href && <a className="ui-btn" href={proof.href} target="_blank" rel="noopener noreferrer">Open SignalRankAI in Telegram</a>}
       <p>After completing the link, refresh the connection below.</p>
     </div>}
-    <button className="sr-secondary-action" type="button" disabled={busy} onClick={onRefresh}>Refresh Telegram connection</button>
+    <button className="ui-btn" type="button" disabled={busy} onClick={onRefresh}>Refresh Telegram connection</button>
     {message && <p role="status">{message}</p>}
   </section>;
 }

@@ -24,31 +24,31 @@ function Entry({entry,onChanged}:{entry:Row;onChanged:()=>void}){
     }catch{setError("The deletion result could not be verified. Check your connection.");setConfirming(false);}
     finally{setBusy(false);}
   }
-  return <article className="sr-data-panel sr-journal-entry">
-    <div className="sr-journal-top"><div><p className="sr-overline">{timeLabel(entry.occurred_at)} / Personal trading journal</p>
-      <h2>{display(entry.title,"Untitled reflection")}</h2></div><span className="sr-state">{display(entry.emotion,"Self-recorded")}</span></div>
-    <p className="sr-journal-notes">{display(entry.notes,"No notes entered.")}</p>
-    <dl><div className="sr-data-pair"><dt>Result (R)</dt><dd>{numberLabel(entry.result_r,3)}</dd></div>
-      <div className="sr-data-pair"><dt>Plan adherence</dt><dd>{finite(entry.plan_adherence)===null?"Unavailable":`${numberLabel(entry.plan_adherence,0)}%`}</dd></div>
-      <div className="sr-data-pair"><dt>Reflection category</dt><dd>{display(entry.mistake_category)}</dd></div></dl>
-    {tags.length>0&&<div className="sr-watchlist-symbols">{tags.map((tag,i)=><span key={i}>{tag}</span>)}</div>}
+  return <article className="ui-card">
+    <div className="ui-card-head"><div><p className="ui-eyebrow">{timeLabel(entry.occurred_at)} / Personal trading journal</p>
+      <h2>{display(entry.title,"Untitled reflection")}</h2></div><span className="ui-badge">{display(entry.emotion,"Self-recorded")}</span></div>
+    <p>{display(entry.notes,"No notes entered.")}</p>
+    <dl className="ui-kv"><div className="ui-kv-row"><dt>Result (R)</dt><dd>{numberLabel(entry.result_r,3)}</dd></div>
+      <div className="ui-kv-row"><dt>Plan adherence</dt><dd>{finite(entry.plan_adherence)===null?"Unavailable":`${numberLabel(entry.plan_adherence,0)}%`}</dd></div>
+      <div className="ui-kv-row"><dt>Reflection category</dt><dd>{display(entry.mistake_category)}</dd></div></dl>
+    {tags.length>0&&<div className="ui-chip-row">{tags.map((tag,i)=><span key={i}>{tag}</span>)}</div>}
     <footer>{signal&&<Link href={`/app/signals/${encodeURIComponent(signal)}`}>View linked signal evidence →</Link>}
-      {!confirming?<button type="button" className="sr-secondary-action" disabled={!id} onClick={()=>setConfirming(true)}>Delete journal entry</button>:
-       <div className="sr-journal-delete-confirm" role="group" aria-label="Confirm permanent journal deletion">
+      {!confirming?<button type="button" className="ui-btn" disabled={!id} onClick={()=>setConfirming(true)}>Delete journal entry</button>:
+       <div className="ui-confirm" role="group" aria-label="Confirm permanent journal deletion">
         <span>Delete this journal entry permanently?</span>
-        <button type="button" disabled={busy} className="sr-secondary-action" onClick={()=>setConfirming(false)}>Keep entry</button>
-        <button type="button" disabled={busy} className="sr-secondary-action" onClick={remove}>{busy?"Deleting…":"Confirm deletion"}</button>
+        <button type="button" disabled={busy} className="ui-btn" onClick={()=>setConfirming(false)}>Keep entry</button>
+        <button type="button" disabled={busy} className="ui-btn" onClick={remove}>{busy?"Deleting…":"Confirm deletion"}</button>
        </div>}
     </footer>
-    {error&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{error}</p>}
+    {error&&<p role="alert" className="ui-feedback ui-feedback--error">{error}</p>}
   </article>;
 }
 
 export function JournalView({data,onChanged}:{data:Row;onChanged:()=>void}){
   const entries=rows(data.entries);
-  return <section className="sr-view-stack">
-    <p className="sr-risk-note">Your last {entries.length} personal reflections returned by the account service. Journal notes are self-reported and are not independent evidence of profit, broker fills or certified execution.</p>
-    {entries.length?<div className="sr-record-grid">{entries.map((entry,i)=><Entry key={display(entry.journal_entry_id,String(i))} entry={entry} onChanged={onChanged}/>)}</div>:
-     <div className="sr-empty"><strong>No journal entries were returned.</strong><p>Add a reflection below. This does not trigger signal generation or submit an order.</p></div>}
+  return <section className="ws-stack">
+    <p className="ui-notice ui-notice--neutral">Your last {entries.length} personal reflections returned by the account service. Journal notes are self-reported and are not independent evidence of profit, broker fills or certified execution.</p>
+    {entries.length?<div className="ws-cards">{entries.map((entry,i)=><Entry key={display(entry.journal_entry_id,String(i))} entry={entry} onChanged={onChanged}/>)}</div>:
+     <div className="ui-empty"><strong>No journal entries were returned.</strong><p>Add a reflection below. This does not trigger signal generation or submit an order.</p></div>}
   </section>;
 }

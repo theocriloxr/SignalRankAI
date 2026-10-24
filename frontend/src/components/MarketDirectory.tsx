@@ -45,42 +45,42 @@ export function MarketDirectory(){
     setVersion(v=>v+1);
   }
 
-  return <section className="sr-data-panel sr-market-directory" aria-labelledby="sr-market-directory-title">
-    <div className="sr-section-head"><div>
-      <p className="sr-overline">Canonical market universe / Provider-backed inventory</p>
+  return <section className="ui-card" aria-labelledby="sr-market-directory-title">
+    <div className="ui-card-head"><div>
+      <p className="ui-eyebrow">Canonical market universe / Provider-backed inventory</p>
       <h2 id="sr-market-directory-title">Discover instruments</h2>
-    </div><span className="sr-state">SOURCE DISCOVERY · NOT LIVE PRICING</span></div>
-    <p className="sr-risk-note">Only active instrument identities returned by your canonical platform appear here. Provider counts describe stored mappings, not a currently healthy price feed or authorization to trade.</p>
-    <form className="sr-market-search" role="search" onSubmit={submit}>
-      <label>Instrument, symbol or underlying<input value={query} onChange={e=>setQuery(e.target.value)} maxLength={80} autoComplete="off" placeholder="e.g. EURUSD, BTCUSDT, XAUUSD"/></label>
-      <label>Market class<select value={assetClass} onChange={e=>setAssetClass(e.target.value)}>
+    </div><span className="ui-badge">SOURCE DISCOVERY · NOT LIVE PRICING</span></div>
+    <p className="ui-notice ui-notice--neutral">Only active instrument identities returned by your canonical platform appear here. Provider counts describe stored mappings, not a currently healthy price feed or authorization to trade.</p>
+    <form className="ws-searchbar" role="search" onSubmit={submit}>
+      <label className="ui-field">Instrument, symbol or underlying<input className="ui-input" value={query} onChange={e=>setQuery(e.target.value)} maxLength={80} autoComplete="off" placeholder="e.g. EURUSD, BTCUSDT, XAUUSD"/></label>
+      <label className="ui-field">Market class<select className="ui-select" value={assetClass} onChange={e=>setAssetClass(e.target.value)}>
         {classOptions.map(([value,label])=><option key={value} value={value}>{label}</option>)}
       </select></label>
-      <button className="button" type="submit">Search instruments</button>
-      <button className="sr-secondary-action" type="button" onClick={()=>{setQuery("");setAssetClass("");setSearch({q:"",asset_class:""});setVersion(v=>v+1);setState({kind:"loading",rows:[],message:""});}}>Clear</button>
+      <button className="ui-btn ui-btn--primary" type="submit">Search instruments</button>
+      <button className="ui-btn" type="button" onClick={()=>{setQuery("");setAssetClass("");setSearch({q:"",asset_class:""});setVersion(v=>v+1);setState({kind:"loading",rows:[],message:""});}}>Clear</button>
     </form>
-    {state.kind==="loading"&&<div className="sr-loading" role="status">Retrieving canonical instrument records…</div>}
-    {state.kind==="error"&&<div className="sr-access-state" role="alert"><p>{state.message}</p><button type="button" className="sr-secondary-action" onClick={()=>{setState({kind:"loading",rows:[],message:""});setVersion(v=>v+1);}}>Retry discovery</button></div>}
+    {state.kind==="loading"&&<div className="ui-loading" role="status">Retrieving canonical instrument records…</div>}
+    {state.kind==="error"&&<div className="ui-state" role="alert"><p>{state.message}</p><button type="button" className="ui-btn" onClick={()=>{setState({kind:"loading",rows:[],message:""});setVersion(v=>v+1);}}>Retry discovery</button></div>}
     {state.kind==="ready"&&<>
-      <div className="sr-list-actions"><span>{state.rows.length} records in this response · maximum 30 · global universe count not provided</span></div>
-      {state.rows.length?<div className="sr-market-results">{state.rows.map((instrument,i)=>{
+      <div className="ui-pagination"><span>{state.rows.length} records in this response · maximum 30 · global universe count not provided</span></div>
+      {state.rows.length?<div className="ws-stack">{state.rows.map((instrument,i)=>{
         const providers=Array.isArray(instrument.providers)?instrument.providers.filter((v):v is string=>typeof v==="string"&&v.trim().length>0):[];
         const venues=Array.isArray(instrument.venues)?instrument.venues.filter((v):v is string=>typeof v==="string"&&v.trim().length>0):[];
-        return <article key={display(instrument.instrument_id,String(i))} className="sr-market-instrument">
-          <div className="sr-market-title"><div>
-            <p className="sr-overline">{display(instrument.asset_class)} / {display(instrument.instrument_type)}</p>
+        return <article key={display(instrument.instrument_id,String(i))} className="ws-instrument">
+          <div className="ws-instrument-head"><div>
+            <p className="ui-eyebrow">{display(instrument.asset_class)} / {display(instrument.instrument_type)}</p>
             <h3>{display(instrument.display_symbol,display(instrument.canonical_symbol,"Unidentified asset"))}</h3>
-            <span className="sr-market-canonical">{display(instrument.canonical_symbol)}</span>
-          </div><span className="sr-state">{instrument.tradable===true?"Mapped tradable flag":instrument.tradable===false?"Not marked tradable":"Tradability unverified"}</span></div>
-          <dl><div className="sr-data-pair"><dt>Provider mappings</dt><dd>{numberLabel(instrument.provider_count,0)}</dd></div>
-            <div className="sr-data-pair"><dt>Price tick size</dt><dd>{numberLabel(instrument.tick_size,8)}</dd></div>
-            <div className="sr-data-pair"><dt>Quantity step</dt><dd>{numberLabel(instrument.quantity_step,8)}</dd></div>
-            <div className="sr-data-pair"><dt>Discovery</dt><dd>{display(instrument.discovery_status)}</dd></div></dl>
-          {providers.length>0&&<div className="sr-market-chips" aria-label="Mapped providers">{providers.slice(0,8).map((v,j)=><span key={v+j}>{v}</span>)}</div>}
-          {venues.length>0&&<p className="sr-muted">Mapped venues: {venues.slice(0,8).join(" · ")}</p>}
-          <p className="sr-overline">Mapping evidence only — session, quote and account eligibility separately gated</p>
+            <span className="mono ui-muted">{display(instrument.canonical_symbol)}</span>
+          </div><span className="ui-badge">{instrument.tradable===true?"Mapped tradable flag":instrument.tradable===false?"Not marked tradable":"Tradability unverified"}</span></div>
+          <dl className="ui-kv"><div className="ui-kv-row"><dt>Provider mappings</dt><dd>{numberLabel(instrument.provider_count,0)}</dd></div>
+            <div className="ui-kv-row"><dt>Price tick size</dt><dd>{numberLabel(instrument.tick_size,8)}</dd></div>
+            <div className="ui-kv-row"><dt>Quantity step</dt><dd>{numberLabel(instrument.quantity_step,8)}</dd></div>
+            <div className="ui-kv-row"><dt>Discovery</dt><dd>{display(instrument.discovery_status)}</dd></div></dl>
+          {providers.length>0&&<div className="ui-chip-row" aria-label="Mapped providers">{providers.slice(0,8).map((v,j)=><span key={v+j}>{v}</span>)}</div>}
+          {venues.length>0&&<p className="ui-muted">Mapped venues: {venues.slice(0,8).join(" · ")}</p>}
+          <p className="ui-eyebrow">Mapping evidence only — session, quote and account eligibility separately gated</p>
         </article>;
-      })}</div>:<div className="sr-empty"><strong>No active instruments matched the search.</strong><p>The directory did not report any matching records. This does not indicate that a market is closed or that every data provider is unavailable.</p></div>}
+      })}</div>:<div className="ui-empty"><strong>No active instruments matched the search.</strong><p>The directory did not report any matching records. This does not indicate that a market is closed or that every data provider is unavailable.</p></div>}
     </>}
   </section>;
 }

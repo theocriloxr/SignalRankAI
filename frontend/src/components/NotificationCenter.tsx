@@ -22,19 +22,19 @@ function NotificationRecord({item,refresh}:{item:Row;refresh:()=>void}) {
     }catch{setMessage("Unable to confirm the update. Try again.");}
     finally{setBusy(false);}
   }
-  return <article className="sr-notification-record">
-    <div className="sr-notification-head">
+  return <article className="ws-note">
+    <div className="ws-note-head">
       <div>
-        <p className="sr-overline">{display(item.event_type,"Notification")} / {display(item.severity,"Unclassified")}</p>
+        <p className="ui-eyebrow">{display(item.event_type,"Notification")} / {display(item.severity,"Unclassified")}</p>
         <h3>{display(item.title,"Account notification")}</h3>
       </div>
-      <span className="sr-state">{unread?"UNREAD":"READ"}</span>
+      <span className="ui-badge">{unread?"UNREAD":"READ"}</span>
     </div>
-    <p className="sr-notification-body">{display(item.body,"No additional message was provided.")}</p>
+    <p>{display(item.body,"No additional message was provided.")}</p>
     <footer><span>{timeLabel(item.created_at)}</span>
-      {unread&&<button type="button" className="sr-secondary-action" disabled={busy||!id} onClick={markRead}>{busy?"Updating…":"Mark as read"}</button>}
+      {unread&&<button type="button" className="ui-btn" disabled={busy||!id} onClick={markRead}>{busy?"Updating…":"Mark as read"}</button>}
     </footer>
-    {message&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{message}</p>}
+    {message&&<p role="alert" className="ui-feedback ui-feedback--error">{message}</p>}
   </article>;
 }
 
@@ -42,13 +42,13 @@ export function NotificationCenter({data,onChanged}:{data:Row;onChanged:()=>void
   const [unreadOnly,setUnreadOnly]=useState(false);
   const notifications=rows(data.notifications);
   const visible=unreadOnly?notifications.filter(n=>n.read_at==null):notifications;
-  return <section className="sr-view-stack" aria-label="Account notifications">
-    <p className="sr-risk-note">This lists the most recent account notifications from the canonical service. Notification receipt does not certify trade execution, P&amp;L or delivery to another channel.</p>
-    <div className="sr-list-actions">
+  return <section className="ws-stack" aria-label="Account notifications">
+    <p className="ui-notice ui-notice--neutral">This lists the most recent account notifications from the canonical service. Notification receipt does not certify trade execution, P&amp;L or delivery to another channel.</p>
+    <div className="ui-pagination">
       <span>{notifications.length} recent records · {notifications.filter(n=>n.read_at==null).length} unread in this view</span>
-      <button className="sr-secondary-action" type="button" onClick={()=>setUnreadOnly(v=>!v)} aria-pressed={unreadOnly}>{unreadOnly?"Show recent notifications":"Show unread in this view"}</button>
+      <button className="ui-btn" type="button" onClick={()=>setUnreadOnly(v=>!v)} aria-pressed={unreadOnly}>{unreadOnly?"Show recent notifications":"Show unread in this view"}</button>
     </div>
-    {visible.length?<div className="sr-record-grid">{visible.map((item,i)=><NotificationRecord key={display(item.notification_id,String(i))} item={item} refresh={onChanged}/>)}</div>
-     : <div className="sr-empty"><strong>No {unreadOnly?"unread":"recent"} notifications returned.</strong><p>This display is based on the backend&apos;s latest returned records, not a global audit of notification delivery.</p></div>}
+    {visible.length?<div className="ws-cards">{visible.map((item,i)=><NotificationRecord key={display(item.notification_id,String(i))} item={item} refresh={onChanged}/>)}</div>
+     : <div className="ui-empty"><strong>No {unreadOnly?"unread":"recent"} notifications returned.</strong><p>This display is based on the backend&apos;s latest returned records, not a global audit of notification delivery.</p></div>}
   </section>;
 }

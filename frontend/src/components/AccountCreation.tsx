@@ -54,24 +54,24 @@ export function AccountCreation({ kind, onCreated }: {
     } finally {setSaving(false);}
   }
   const title=kind==="watchlists"?"New watchlist":kind==="support"?"Create a support ticket":"Add journal entry";
-  return <section className="sr-data-panel sr-create-panel">
+  return <section className="ui-card">
     <h2>{title}</h2>
     <p>Saved records are linked to the signed-in account. This form never authorizes broker execution.</p>
-    <form onSubmit={submit} className="sr-create-form">
-      {kind==="watchlists" ? <label>Watchlist name
-        <input name="name" required minLength={2} maxLength={90} placeholder="e.g. FX session watch" />
+    <form onSubmit={submit} className="ui-form">
+      {kind==="watchlists" ? <label className="ui-field">Watchlist name
+        <input className="ui-input" name="name" required minLength={2} maxLength={90} placeholder="e.g. FX session watch" />
       </label> :kind==="support"?<>
-        <label>Subject<input name="subject" required minLength={5} maxLength={160}/></label>
-        <label>Category<select name="category" defaultValue="general">
+        <label className="ui-field">Subject<input className="ui-input" name="subject" required minLength={5} maxLength={160}/></label>
+        <label className="ui-field">Category<select className="ui-select" name="category" defaultValue="general">
           <option value="general">General</option><option value="technical">Technical issue</option><option value="billing">Billing</option><option value="account">Account access</option>
         </select></label>
-        <label>Details<textarea name="message" required minLength={10} maxLength={5000} rows={5}/></label>
+        <label className="ui-field">Details<textarea className="ui-textarea" name="message" required minLength={10} maxLength={5000} rows={5}/></label>
       </>:<>
-        <label>Title (optional)<input name="title" maxLength={180}/></label>
-        <label>Notes<textarea name="notes" required minLength={2} maxLength={5000} rows={6}/></label>
+        <label className="ui-field">Title (optional)<input className="ui-input" name="title" maxLength={180}/></label>
+        <label className="ui-field">Notes<textarea className="ui-textarea" name="notes" required minLength={2} maxLength={5000} rows={6}/></label>
       </>}
-      <button type="submit" className="button" disabled={saving}>{saving?"Saving…":kind==="watchlists"?"Create watchlist":kind==="support"?"Send ticket":"Save journal entry"}</button>
+      <button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Saving…":kind==="watchlists"?"Create watchlist":kind==="support"?"Send ticket":"Save journal entry"}</button>
     </form>
-    {feedback&&<p className={feedback.success?"sr-submit-feedback":"sr-submit-feedback sr-submit-feedback--error"} role={feedback.success?"status":"alert"}>{feedback.message}</p>}
+    {feedback&&<p className={feedback.success?"ui-feedback":"ui-feedback ui-feedback--error"} role={feedback.success?"status":"alert"}>{feedback.message}</p>}
   </section>;
 }

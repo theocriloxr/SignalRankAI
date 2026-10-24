@@ -13,16 +13,24 @@ const links = [
   ["Plans","/pricing"],
 ] as const;
 
-export function PublicNav() {
-  return <nav className="topbar sr-public-nav" aria-label="Public site navigation">
-    <Link className="brand" href="/" aria-label="SignalRankAI home"><Image src="/brand/icon.svg" alt="" width={32} height={32} unoptimized />SignalRank<span>AI</span></Link>
-    <div className="sr-public-links">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</div>
-    <ThemeControl/>
-    <WorkspaceLink className="button secondary" href="/login">Sign in</WorkspaceLink>
-    <WorkspaceLink className="button" href="/app">Workspace</WorkspaceLink>
-    <ResponsiveDisclosure className="sr-public-mobile-menu" label="Explore">
-      <nav aria-label="Mobile public navigation">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}
-        <WorkspaceLink href="/login">Sign in</WorkspaceLink><WorkspaceLink href="/app">Workspace</WorkspaceLink></nav>
-    </ResponsiveDisclosure>
-  </nav>;
+export function PublicNav({ current }: { current?: string }) {
+  return <div className="mk-nav-wrap">
+    <nav className="mk-container mk-nav" aria-label="Public site navigation">
+      <Link className="brand-mark" href="/" aria-label="SignalRankAI home"><Image src="/brand/icon.svg" alt="" width={30} height={30} unoptimized /><span className="brand-word">SignalRank<span>AI</span></span></Link>
+      <div className="mk-nav-links">{links.map(([label,href])=><Link key={href} href={href} aria-current={current===href?"page":undefined}>{label}</Link>)}</div>
+      <div className="mk-nav-actions">
+        <span className="mk-hide-mobile"><ThemeControl/></span>
+        <WorkspaceLink className="ui-btn ui-btn--ghost mk-hide-mobile" href="/login">Sign in</WorkspaceLink>
+        <WorkspaceLink className="ui-btn ui-btn--primary" href="/app">Open workspace</WorkspaceLink>
+        <ResponsiveDisclosure className="mk-menu" label="Explore SignalRankAI" desktopFrom={1180}>
+          <nav aria-label="Mobile public navigation">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</nav>
+          <div className="mk-menu-actions">
+            <WorkspaceLink className="ui-btn ui-btn--lg" href="/login">Sign in</WorkspaceLink>
+            <WorkspaceLink className="ui-btn ui-btn--primary ui-btn--lg" href="/app">Open workspace</WorkspaceLink>
+            <ThemeControl/>
+          </div>
+        </ResponsiveDisclosure>
+      </div>
+    </nav>
+  </div>;
 }

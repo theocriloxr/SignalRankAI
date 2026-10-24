@@ -239,7 +239,7 @@ test("market-alert rules and notification receipts are separate canonical servic
 test("public redesign covers seven reference routes with canonical semantics and one shared design",()=>{
   const routes=readFileSync(new URL("../src/app/[slug]/page.tsx",import.meta.url),"utf8");
   const editorial=readFileSync(new URL("../src/components/PublicEditorial.tsx",import.meta.url),"utf8");
-  const styles=readFileSync(new URL("../src/app/public-design.css",import.meta.url),"utf8");
+  const styles=readFileSync(new URL("../src/styles/marketing.css",import.meta.url),"utf8");
   const layout=readFileSync(new URL("../src/app/layout.tsx",import.meta.url),"utf8");
   for(const slug of ["pricing","methodology","risk","security","status","docs","providers"]){
     assert.ok(routes.includes(slug+": {"),"missing public route: "+slug);
@@ -249,22 +249,23 @@ test("public redesign covers seven reference routes with canonical semantics and
   assert.ok(routes.includes("<PublicEditorial page={page}>"));
   assert.ok(editorial.includes("page.details.map"));
   assert.ok(editorial.includes("page.note"));
-  assert.ok(styles.includes(".sr-editorial-content"));
-  assert.ok(styles.includes("@media(max-width:600px)"));
-  assert.ok(styles.includes("@media(forced-colors:active)"));
-  assert.ok(layout.includes('import "./public-design.css"'));
+  const base=readFileSync(new URL("../src/styles/base.css",import.meta.url),"utf8");
+  assert.ok(styles.includes(".mk-editorial-content"));
+  assert.ok(styles.includes("@media (max-width: 760px)"));
+  assert.ok(base.includes("@media (forced-colors: active)"));
+  assert.ok(layout.includes('import "../styles/marketing.css"'));
 });
 
 test("home page includes truthful market/workflow boundaries without fake live status",()=>{
   const home=readFileSync(new URL("../src/app/page.tsx",import.meta.url),"utf8");
-  const css=readFileSync(new URL("../src/app/public-design.css",import.meta.url),"utf8");
+  const css=readFileSync(new URL("../src/styles/marketing.css",import.meta.url),"utf8");
   assert.ok(home.includes("SCHEMATIC / NOT LIVE"),"Public terminal must explicitly disclose illustrative evidence");
   assert.ok(home.includes("This is a system illustration") || home.includes("No market data"),"Hero may not claim to show live prices");
   assert.ok(home.includes("no trade") || home.includes("NO AUTO-TRADE CLAIM"),"No-trade / no automatic trade boundary must be visible");
   assert.ok(home.includes("paper") || home.includes("simulated"));
   assert.ok(home.includes("/risk"));
   assert.ok(home.includes("/login"));
-  assert.ok(css.includes(".sr-public-home"));
+  assert.ok(css.includes(".mk-hero"));
   assert.doesNotMatch(home,/Math.random|fakeSignal|livePrice|localStorage|sessionStorage/);
 });
 

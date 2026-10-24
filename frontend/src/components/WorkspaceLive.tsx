@@ -19,9 +19,12 @@ import { BrokerAccounts } from "./BrokerAccounts";
 import { MarketDirectory } from "./MarketDirectory";
 import { AccountSecurity } from "./AccountSecurity";
 import { DemoBrokerConnection } from "./DemoBrokerConnection";
+import { BillingCenter } from "./BillingCenter";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
+import { Icon, type IconName } from "./ui/Icon";
+import { Badge, Card, DirectionBadge, Empty, KV, KVList, Notice, Skeleton, Stat, TableWrap, type Tone } from "./ui/primitives";
 import {
-  display, moneyLabel, numberLabel,
+  display, finite, moneyLabel, numberLabel,
   probabilityLabel, record, rows, statusText, timeLabel,
   type Row,
 } from "../lib/presentation";
@@ -35,10 +38,28 @@ type Outcome = { data: Row | null; status: number; success: boolean };
 type State = { kind: "loading" | "ready" | "error" | "auth"; data: Row | null; status?: number };
 const titles: Record<Section, string> = {
   overview: "Decision overview", signals: "Delivered signals", markets: "Market intelligence",
-  research: "Research", watchlists: "Watchlists", alerts: "Custom alerts", notifications: "Notifications", paper: "Paper trading",
-  portfolio: "Portfolio exposure", performance: "Performance evidence", journal: "Journal",
+  research: "Strategy research", watchlists: "Watchlists", alerts: "Custom alerts", notifications: "Notifications", paper: "Paper trading",
+  portfolio: "Portfolio exposure", performance: "Performance evidence", journal: "Trading journal",
   brokers: "Broker connections", billing: "Subscription and billing", support: "Support",
   settings: "Account and trading policy", operations: "Owner operations",
+};
+const descriptions: Record<Section, string> = {
+  overview: "Your account, recent activity and the fastest routes into your workspace.",
+  signals: "Signals delivered to your account, with levels, model context and recorded outcomes.",
+  markets: "Search the canonical instrument registry and review signal-quality decisions.",
+  research: "Which strategies have produced signals recently. Activity counts are not performance.",
+  watchlists: "Follow recognised instruments. Watching never enables execution.",
+  alerts: "Account-owned monitoring rules for prices, signals and provider status.",
+  notifications: "Recent account notifications and the channels that deliver them.",
+  paper: "Simulated positions, capital and rules. Nothing here reaches a broker.",
+  portfolio: "Exposure and ledger history of your canonical paper account.",
+  performance: "Outcome evidence for evaluated signals, with sample size and disclosure.",
+  journal: "Personal reflections linked to signals and outcomes.",
+  brokers: "Each connected account, its verified environment, policy and ledger.",
+  billing: "Plans, checkout, renewal and receipts from the billing service.",
+  support: "Your support conversations with the SignalRankAI team.",
+  settings: "Signal preferences, identity, security and linked channels.",
+  operations: "Owner-only, read-only release posture and execution controls.",
 };
 
 export const workspaceTitles = titles;
@@ -76,171 +97,194 @@ async function readSection(section: Section, signalId?: string, filters: SignalQ
   }
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return <div className="sr-metric"><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</div>;
+function outcomeTone(value: string): Tone {
+  const v = value.toLowerCase();
+  if (/(win|tp|target|profit)/.test(v)) return "positive";
+  if (/(loss|sl|stop)/.test(v)) return "negative";
+  if (/(open|active|pending|running)/.test(v)) return "info";
+  return "neutral";
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="sr-data-panel"><h2>{title}</h2>{children}</section>;
-}
-
-function KeyValue({ label, value }: { label: string; value: string }) {
-  return <div className="sr-data-pair"><dt>{label}</dt><dd>{value}</dd></div>;
-}
-
-function ListEmpty({ name }: { name: string }) {
-  return <div className="sr-empty"><strong>No {name} yet.</strong><p>Your account activity will appear here when available. Adjust any filters or refresh to check again.</p></div>;
-}
-
-function SignalRecord({ signal }: { signal: Row }) {
+function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolean }) {
   const id = display(signal.signal_id, "");
-  const direction = display(signal.direction, "Unspecified").toUpperCase();
-  const probability = probabilityLabel(signal.ml_probability_calibrated);
-  return <article className="sr-signal-record">
-    <header>
-      <div><p className="sr-overline">{display(signal.asset_class, "Market")} / {display(signal.timeframe, "Timeframe unavailable")}</p>
-        <h3>{display(signal.asset, "Instrument withheld")} <span className="sr-direction">{direction}</span></h3></div>
-      <span className="sr-state">{display(signal.outcome_status, "Lifecycle not reported")}</span>
+  const direction = display(signal.direction, "");
+  const probability = finite(signal.ml_probability_calibrated);
+  const outcome = display(signal.outcome_status, "Lifecycle not reported");
+  return <article className="ws-signal">
+    <header className="ws-signal-head">
+      <div>
+        <p className="ui-eyebrow">{display(signal.asset_class, "Market")} · {display(signal.timeframe, "Timeframe unavailable")}</p>
+        <h3 className="ws-signal-symbol">{display(signal.asset, "Instrument withheld")} <DirectionBadge direction={direction}/></h3>
+      </div>
+      <Badge tone={outcomeTone(outcome)}>{outcome}</Badge>
     </header>
-    <dl className="sr-signal-levels">
-      <KeyValue label="Entry" value={numberLabel(signal.entry, 6)} />
-      <KeyValue label="Stop" value={numberLabel(signal.stop_loss, 6)} />
-      <KeyValue label="Target" value={numberLabel(signal.take_profit, 6)} />
-      <KeyValue label="R / R" value={numberLabel(signal.rr_estimate)} />
-      <KeyValue label="Calibrated probability" value={probability} />
-      <KeyValue label="Strategy" value={display(signal.strategy_name)} />
+    <dl className="ws-levels">
+      <div className="ws-level"><dt>Entry</dt><dd>{numberLabel(signal.entry, 6)}</dd></div>
+      <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{numberLabel(signal.stop_loss, 6)}</dd></div>
+      <div className="ws-level ws-level--target"><dt>Target</dt><dd>{numberLabel(signal.take_profit, 6)}</dd></div>
     </dl>
-    <footer><span>Received {timeLabel(signal.delivered_at)}</span>{id && <Link href={`/app/signals/${encodeURIComponent(id)}`}>Inspect signal evidence →</Link>}</footer>
+    <div className="ws-signal-meta">
+      <span>R/R <b>{numberLabel(signal.rr_estimate)}</b></span>
+      <span>Strategy <b>{display(signal.strategy_name)}</b></span>
+    </div>
+    <div className="ws-prob">
+      <div className="ws-signal-meta"><span>Calibrated probability <b>{probabilityLabel(signal.ml_probability_calibrated)}</b></span></div>
+      {probability !== null && probability >= 0 && probability <= 1 &&
+        <div className="ws-prob-bar" aria-hidden="true"><span style={{width:`${(probability*100).toFixed(1)}%`}}/></div>}
+    </div>
+    <footer className="ws-signal-foot"><span>Received {timeLabel(signal.delivered_at)}</span>
+      {!detail && id && <Link className="ui-link" href={`/app/signals/${encodeURIComponent(id)}`}>Inspect evidence <Icon name="arrowRight"/></Link>}</footer>
   </article>;
 }
 
 function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; detail?: boolean; offset?: number; onPage?: (offset: number)=>void }) {
   if (detail) {
     const candidate = record(data.signal);
-    return <div className="sr-view-stack"><p className="sr-risk-note">Detail is delivered for your account only. A signal is not broker authorization or an order.</p>
-      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} /><SignalEvidence data={data} /></> : <Panel title="Signal detail"><p className="sr-muted">No entitled signal detail was returned.</p></Panel>}
-      <Link className="sr-secondary-action" href="/app/signals">← Back to delivered signals</Link>
+    return <div className="ws-stack">
+      <Link className="ui-link" href="/app/signals"><Icon name="arrowLeft"/> All delivered signals</Link>
+      <Notice tone="warning">Detail is delivered for your account only. <strong>A signal is not broker authorization or an order.</strong></Notice>
+      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} detail /><SignalEvidence data={data} /></> : <Empty title="No entitled signal detail was returned." icon="signals"/>}
     </div>;
   }
   const items = rows(data.signals);
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">Review signals delivered to your account, including their evidence and latest recorded outcome.</p>
-    <div className="sr-record-grid">{items.map((s, i) => <SignalRecord key={display(s.signal_id, String(i))} signal={s}/>)}</div>
-    {!items.length && <ListEmpty name="delivered signals matching this page" />}
-    {onPage&&<nav className="sr-list-actions" aria-label="Signal history pages">
-      <span>Page {Math.floor(offset/30)+1} · showing {items.length} records · total count not reported</span>
-      <div className="sr-pagination-actions">
-        <button className="sr-secondary-action" type="button" disabled={offset===0} onClick={()=>onPage(Math.max(0,offset-30))}>Previous</button>
-        <button className="sr-secondary-action" type="button" disabled={items.length<30} onClick={()=>onPage(offset+30)}>Next 30</button>
+  return <div className="ws-stack">
+    {items.length ? <div className="ws-cards">{items.map((s, i) => <SignalRecord key={display(s.signal_id, String(i))} signal={s}/>)}</div>
+      : <Empty title="No delivered signals match this page." icon="signals">New signals appear only when market data, strategy and risk checks qualify. Adjust filters or check back later.</Empty>}
+    {onPage&&<nav className="ui-pagination" aria-label="Signal history pages">
+      <span>Page {Math.floor(offset/30)+1} · {items.length} records on this page · total count not reported</span>
+      <div className="ui-actions">
+        <button className="ui-btn ui-btn--sm" type="button" disabled={offset===0} onClick={()=>onPage(Math.max(0,offset-30))}><Icon name="arrowLeft"/>Previous</button>
+        <button className="ui-btn ui-btn--sm" type="button" disabled={items.length<30} onClick={()=>onPage(offset+30)}>Next 30<Icon name="arrowRight"/></button>
       </div>
     </nav>}
   </div>;
 }
 
+const quickLinks: { href: string; label: string; copy: string; icon: IconName }[] = [
+  { href:"/app/signals", label:"Delivered signals", copy:"Levels, model context and outcomes", icon:"signals" },
+  { href:"/app/markets", label:"Market intelligence", copy:"Instrument registry and quality gates", icon:"markets" },
+  { href:"/app/paper", label:"Paper desk", copy:"Practise with simulated capital", icon:"paper" },
+  { href:"/app/brokers", label:"Broker connections", copy:"Verify accounts and policies", icon:"brokers" },
+  { href:"/app/performance", label:"Performance", copy:"Evaluated outcomes and disclosure", icon:"performance" },
+  { href:"/app/alerts", label:"Alerts", copy:"Price and signal monitoring rules", icon:"alerts" },
+];
+
 function OverviewView({ data }: { data: Row }) {
   const summary = record(data.summary), user = record(data.user), subscription = record(data.subscription);
-  return <div className="sr-view-stack">
-    <div className="sr-metrics">
-      <Metric label="Delivered signals" value={numberLabel(summary.delivered_signals, 0)} detail="Receipt-backed history" />
-      <Metric label="Open paper positions" value={numberLabel(summary.open_positions, 0)} detail="Simulated orders only" />
-      <Metric label="Paper cash (currency not reported)" value={numberLabel(summary.paper_cash)} detail="Paper account — NOT live broker funds; currency is not supplied by this endpoint" />
-      <Metric label="Watchlists" value={numberLabel(summary.watchlists, 0)} detail="Account-owned" />
+  const name = display(user.display_name, "");
+  const tier = display(subscription.tier, display(user.tier, "Plan unavailable"));
+  return <div className="ws-stack">
+    <section className="ws-hero-card" aria-labelledby="ws-welcome">
+      <div className="ui-actions"><Badge tone="brand">{tier}</Badge><Badge tone={subscription.status==="active"?"positive":"neutral"}>{display(subscription.status, "Subscription unverified")}</Badge></div>
+      <h2 id="ws-welcome">{name ? `Welcome back, ${name}.` : "Welcome back."}</h2>
+      <p>New signals appear only when market data, strategy and risk checks all qualify. A quiet feed can be the correct outcome.</p>
+      <div className="ui-actions"><Link className="ui-btn ui-btn--primary" href="/app/signals">Open delivered signals <Icon name="arrowRight"/></Link><Link className="ui-btn" href="/app/settings">Account settings</Link></div>
+    </section>
+    <div className="ui-stat-grid">
+      <Stat icon="signals" label="Delivered signals" value={numberLabel(summary.delivered_signals, 0)} detail="Receipt-backed history" />
+      <Stat icon="paper" label="Open paper positions" value={numberLabel(summary.open_positions, 0)} detail="Simulated orders only" />
+      <Stat icon="portfolio" label="Paper cash" value={numberLabel(summary.paper_cash)} detail="Simulated units — not broker funds" />
+      <Stat icon="watchlists" label="Watchlists" value={numberLabel(summary.watchlists, 0)} detail="Account-owned" />
     </div>
-    <div className="sr-grid-two">
-      <Panel title="Account and entitlement"><dl><KeyValue label="Plan" value={display(subscription.tier, display(user.tier))}/><KeyValue label="Subscription" value={display(subscription.status, "Unverified")}/><KeyValue label="Account" value={display(user.account_status)}/></dl><Link href="/app/settings">View account settings →</Link></Panel>
-      <Panel title="Your trading connections"><p>Review each broker account, its verified environment and its permissions before trading. Linking an account does not enable automatic execution.</p><Link href="/app/brokers">Review broker connections →</Link></Panel>
+    <div className="ws-quick-links">{quickLinks.map(link=><Link key={link.href} href={link.href} className="ws-quick-link">
+      <span className="ws-quick-icon"><Icon name={link.icon}/></span>
+      <span>{link.label}<Icon name="arrowRight"/></span><small>{link.copy}</small></Link>)}</div>
+    <div className="ws-grid-2">
+      <Card title="Account and entitlement" eyebrow="Server-verified">
+        <KVList><KV label="Plan" value={tier}/><KV label="Subscription" value={display(subscription.status, "Unverified")}/><KV label="Account" value={display(user.account_status)}/></KVList>
+        <Link className="ui-link" href="/app/billing">Manage plan and billing <Icon name="arrowRight"/></Link>
+      </Card>
+      <Card title="Trading connections" eyebrow="Separate authorization">
+        <p className="ui-card-desc">Review each broker account, its verified environment and its permissions before trading. Linking an account does not enable automatic execution.</p>
+        <Link className="ui-link" href="/app/brokers">Review broker connections <Icon name="arrowRight"/></Link>
+      </Card>
     </div>
-    <Panel title="Today's decisions"><p>Explore your delivered signals and the evidence behind each setup. New signals appear only when market data, strategy and risk checks qualify.</p><Link href="/app/signals">Open delivered signals →</Link></Panel>
   </div>;
 }
 
 function PaperView({ data }: { data: Row }) {
   const account = record(data.account), snapshot = record(data.snapshot), positions = rows(data.positions);
   const currency = account.currency;
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">SIMULATED FUNDS ONLY — paper positions and P&amp;L are not proof of live broker fills.</p>
-    <div className="sr-metrics">
-      <Metric label="Paper cash" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
-      <Metric label="Paper equity" value={moneyLabel(snapshot.equity, currency)} />
-      <Metric label="Open paper positions" value={numberLabel(snapshot.open_positions, 0)} />
-      <Metric label="Paper realized P&L" value={moneyLabel(snapshot.realized_pnl, currency)} />
+  return <div className="ws-stack">
+    <Notice tone="warning"><strong>Simulated funds only.</strong> Paper positions and P&amp;L are not proof of live broker fills.</Notice>
+    <div className="ui-stat-grid">
+      <Stat icon="portfolio" label="Paper cash" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
+      <Stat icon="performance" label="Paper equity" value={moneyLabel(snapshot.equity, currency)} />
+      <Stat icon="layers" label="Open paper positions" value={numberLabel(snapshot.open_positions, 0)} />
+      <Stat icon="check" label="Paper realized P&L" value={moneyLabel(snapshot.realized_pnl, currency)} />
     </div>
-    <Panel title="Paper positions">{positions.length ? <div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable paper positions"><table><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Quantity</th><th>Unrealized P&amp;L</th><th>State</th></tr></thead><tbody>{positions.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td>{display(p.direction)}</td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{display(p.status)}</td></tr>)}</tbody></table></div>:<ListEmpty name="paper positions"/>}</Panel>
+    <Card title="Open paper positions">{positions.length ? <TableWrap label="Scrollable paper positions"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Quantity</th><th>Unrealized P&amp;L</th><th>State</th></tr></thead><tbody>{positions.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{display(p.status)}</td></tr>)}</tbody></TableWrap>:<Empty title="No open paper positions." icon="paper"/>}</Card>
   </div>;
 }
 
 function PortfolioView({ data }: { data: Row }) {
   const account = record(data.account), exposures = rows(data.exposures);
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">These values describe the canonical paper-account portfolio returned by the API, not a consolidated balance across brokers.</p>
-    <div className="sr-metrics"><Metric label="Paper equity" value={moneyLabel(data.equity,account.currency)}/><Metric label="Exposures" value={numberLabel(exposures.length,0)}/></div>
-    <Panel title="Instrument exposure">{exposures.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable position exposure"><table><thead><tr><th>Asset</th><th>Class</th><th>Direction</th><th>Positions</th><th>Notional</th><th>Unrealized P&amp;L</th></tr></thead><tbody>{exposures.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.asset_class)}</td><td>{display(p.direction)}</td><td>{numberLabel(p.positions,0)}</td><td>{moneyLabel(p.notional,account.currency)}</td><td>{moneyLabel(p.unrealized_pnl,account.currency)}</td></tr>)}</tbody></table></div>:<ListEmpty name="exposures"/>}</Panel>
+  return <div className="ws-stack">
+    <Notice>These values describe the canonical paper-account portfolio, not a consolidated balance across brokers.</Notice>
+    <div className="ui-stat-grid"><Stat icon="portfolio" label="Paper equity" value={moneyLabel(data.equity,account.currency)}/><Stat icon="layers" label="Instruments with exposure" value={numberLabel(exposures.length,0)}/></div>
+    <Card title="Instrument exposure">{exposures.length?<TableWrap label="Scrollable position exposure"><thead><tr><th>Asset</th><th>Class</th><th>Direction</th><th>Positions</th><th>Notional</th><th>Unrealized P&amp;L</th></tr></thead><tbody>{exposures.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.asset_class)}</td><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.positions,0)}</td><td>{moneyLabel(p.notional,account.currency)}</td><td>{moneyLabel(p.unrealized_pnl,account.currency)}</td></tr>)}</tbody></TableWrap>:<Empty title="No exposures." icon="portfolio">Open paper positions will appear here grouped by instrument.</Empty>}</Card>
     <PaperEquityChart ledger={rows(data.equity_curve)} currency={account.currency}/>
   </div>;
 }
 
+/** Minimum evaluated outcomes before a ratio is shown without a small-sample warning. */
+const MIN_SAMPLE = 30;
+
 function PerformanceView({ data }: { data: Row }) {
   const summary = record(data.summary), breakdown=rows(data.breakdown);
-  return <div className="sr-view-stack"><p className="sr-risk-note">{display(summary.disclaimer,"Historical performance is not a guarantee of future results.")} Claim certified: {summary.claim_certified === true ? "yes" : "no"}.</p>
-    <div className="sr-metrics"><Metric label="Evaluated signals" value={numberLabel(summary.signals,0)}/><Metric label="Wins" value={numberLabel(summary.wins,0)}/><Metric label="Losses" value={numberLabel(summary.losses,0)}/><Metric label="Historical win ratio" value={probabilityLabel(summary.win_rate)} detail="Not a forward performance promise"/></div>
-    <Panel title="Breakdown by instrument">{breakdown.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable performance breakdown"><table><thead><tr><th>Instrument</th><th>Timeframe</th><th>Signals</th><th>Mean R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>)}</tbody></table></div>:<ListEmpty name="performance records"/>}</Panel>
-  </div>;
-}
-
-function BillingView({ data }: { data: Row }) {
-  const subscriptions=rows(data.subscriptions), receipts=rows(data.receipts);
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">Subscription and receipt records are server-owned. Opening this page does not create a checkout or charge your account.</p>
-    <Panel title="Automatic renewal"><dl><KeyValue label="Auto renew" value={data.auto_renew===true?"Enabled":data.auto_renew===false?"Disabled":"Unavailable"}/><KeyValue label="Provider subscription" value={data.provider_subscription_linked===true?"Linked":data.provider_subscription_linked===false?"Not linked":"Unavailable"}/></dl></Panel>
-    <Panel title="Subscriptions">{subscriptions.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable subscription history"><table><thead><tr><th>Plan</th><th>State</th><th>Start</th><th>Expires</th></tr></thead><tbody>{subscriptions.map((p,i)=><tr key={display(p.id,String(i))}><th>{display(p.tier)}</th><td>{display(p.status)}</td><td>{timeLabel(p.started_at)}</td><td>{timeLabel(p.expires_at)}</td></tr>)}</tbody></table></div>:<ListEmpty name="subscriptions"/>}</Panel>
-    <Panel title="Confirmed receipt records">{receipts.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable payment receipts"><table><thead><tr><th>Receipt</th><th>Plan</th><th>Amount</th><th>Payment state</th><th>Date</th></tr></thead><tbody>{receipts.map((r,i)=><tr key={display(r.receipt_number,String(i))}><th>{display(r.receipt_number)}</th><td>{display(r.plan)}</td><td>{moneyLabel(r.amount,r.currency)}</td><td>{display(r.status)}</td><td>{timeLabel(r.payment_date)}</td></tr>)}</tbody></table></div>:<ListEmpty name="receipts"/>}</Panel>
+  const sample = finite(summary.signals);
+  return <div className="ws-stack">
+    <Notice tone="warning">{display(summary.disclaimer,"Historical performance is not a guarantee of future results.")} Claim certified: <strong>{summary.claim_certified === true ? "yes" : "no"}</strong>.</Notice>
+    {sample !== null && sample < MIN_SAMPLE && <Notice tone="neutral">Only {numberLabel(sample,0)} evaluated signals. Ratios from fewer than {MIN_SAMPLE} outcomes are statistically weak — treat them as anecdotal.</Notice>}
+    <div className="ui-stat-grid"><Stat icon="signals" label="Evaluated signals" value={numberLabel(summary.signals,0)}/><Stat icon="check" label="Wins" value={numberLabel(summary.wins,0)}/><Stat icon="x" label="Losses" value={numberLabel(summary.losses,0)}/><Stat icon="performance" label="Historical win ratio" value={probabilityLabel(summary.win_rate)} detail="Not a forward performance promise"/></div>
+    <Card title="Breakdown by instrument" description="Mean and total R express outcomes in multiples of the planned risk.">{breakdown.length?<TableWrap label="Scrollable performance breakdown"><thead><tr><th>Instrument</th><th>Timeframe</th><th>Signals</th><th>Mean R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>)}</tbody></TableWrap>:<Empty title="No evaluated outcomes yet." icon="performance"/>}</Card>
   </div>;
 }
 
 function QualityView({ data }: { data: Row }) {
   const bucket=record(data.reject_buckets),reasons=rows(data.top_reasons);
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">These are quality decisions over the backend-reported {numberLabel(data.window_hours,0)}-hour window, not an account return or a promised signal volume.</p>
-    <div className="sr-metrics"><Metric label="Issued decisions" value={numberLabel(data.issued,0)}/><Metric label="Rejected or skipped" value={numberLabel(data.rejected_or_skipped,0)}/><Metric label="Acceptance fraction" value={probabilityLabel(data.acceptance_rate)}/></div>
-    <Panel title="Gate rejection categories"><dl>{Object.entries(bucket).filter(([key])=>["ml","score","news","stale","slippage","other"].includes(key)).map(([key,value])=><KeyValue key={key} label={key} value={numberLabel(value,0)}/>)}</dl></Panel>
-    <Panel title="Most frequent rejection reasons">{reasons.length?<div className="sr-table-scroll" tabIndex={0} aria-label="Scrollable rejection breakdown"><table><thead><tr><th>Reason</th><th>Decisions</th></tr></thead><tbody>{reasons.map((r,i)=><tr key={display(r.reason,String(i))}><th>{display(r.reason)}</th><td>{numberLabel(r.rows,0)}</td></tr>)}</tbody></table></div>:<ListEmpty name="rejection reasons"/>}</Panel>
-  </div>;
+  const categories=Object.entries(bucket).filter(([key])=>["ml","score","news","stale","slippage","other"].includes(key));
+  return <Card title="Signal quality gate" eyebrow={`Last ${numberLabel(data.window_hours,0)} hours`} description="Quality decisions over the backend-reported window. Not an account return or a promised signal volume.">
+    <div className="ui-stat-grid"><Stat label="Issued decisions" value={numberLabel(data.issued,0)}/><Stat label="Rejected or skipped" value={numberLabel(data.rejected_or_skipped,0)}/><Stat label="Acceptance fraction" value={probabilityLabel(data.acceptance_rate)}/></div>
+    <div className="ws-grid-2">
+      <div className="ws-subsection"><h3>Rejection categories</h3>{categories.length?<KVList>{categories.map(([key,value])=><KV key={key} label={key} value={numberLabel(value,0)}/>)}</KVList>:<p className="ui-muted">No categories reported.</p>}</div>
+      <div className="ws-subsection"><h3>Most frequent reasons</h3>{reasons.length?<KVList>{reasons.map((r,i)=><KV key={display(r.reason,String(i))} label={display(r.reason)} value={numberLabel(r.rows,0)}/>)}</KVList>:<p className="ui-muted">No rejection reasons reported.</p>}</div>
+    </div>
+  </Card>;
+}
+
+function ResearchView({ data }: { data: Row }) {
+  const items=rows(data.strategies);
+  const top=Math.max(1,...items.map(item=>finite(item.signals)??0));
+  return <Card title="Strategy activity" eyebrow={`Last ${numberLabel(data.window_days,0)} days`} description="Signals generated per strategy. Volume is not quality: compare outcomes on the Performance page.">
+    {items.length?<ol className="ui-list">{items.map((item,i)=>{
+      const count=finite(item.signals);
+      return <li className="ui-list-row" key={display(item.strategy_name,String(i))}>
+        <strong>{i+1}. {display(item.strategy_name,"Unnamed strategy")}</strong><span className="num">{numberLabel(count,0)}</span>
+        {count!==null&&<small><span className="ws-prob-bar" aria-hidden="true" style={{display:"block"}}><span style={{width:`${(count/top*100).toFixed(1)}%`}}/></span></small>}
+      </li>;})}</ol>:<Empty title="No strategy activity in this window." icon="research"/>}
+  </Card>;
 }
 
 function OperationsView({ data }: { data: Row }) {
   const release=record(data.release),execution=record(data.execution);
-  const flag=(value:unknown)=>value===true?"On":value===false?"Off":"Unavailable";
-  return <div className="sr-view-stack"><p className="sr-risk-note">Owner-authorized read-only release posture. A healthy process is not evidence of trading readiness. No kill-switch or live-money state is changed here.</p>
-    <div className="sr-grid-two">
-      <Panel title="Deployed source"><dl><KeyValue label="Environment" value={display(release.environment)}/><KeyValue label="Branch" value={display(release.branch)}/><KeyValue label="Commit" value={display(release.commit)}/></dl></Panel>
-      <Panel title="Execution controls"><dl><KeyValue label="Live financial features" value={flag(execution.live_financial_features_enabled)}/><KeyValue label="Real execution" value={flag(execution.real_execution_enabled)}/><KeyValue label="Automated execution" value={flag(execution.auto_execution_enabled)}/><KeyValue label="Global kill switch" value={flag(execution.kill_switch)}/></dl></Panel>
+  const flag=(value:unknown, dangerOn=false)=>value===true?<Badge tone={dangerOn?"warning":"positive"}>On</Badge>:value===false?<Badge tone={dangerOn?"positive":"neutral"}>Off</Badge>:<Badge>Unavailable</Badge>;
+  return <div className="ws-stack"><Notice tone="warning">Owner-authorized, read-only release posture. A healthy process is not evidence of trading readiness. No kill-switch or live-money state is changed here.</Notice>
+    <div className="ws-grid-2">
+      <Card title="Deployed source" eyebrow="Runtime identity"><KVList><KV label="Environment" value={display(release.environment)}/><KV label="Branch" value={display(release.branch)}/><KV label="Commit" value={<span className="mono">{display(release.commit)}</span>}/></KVList></Card>
+      <Card title="Execution controls" eyebrow="Safety posture"><KVList><KV label="Live financial features" value={flag(execution.live_financial_features_enabled,true)}/><KV label="Real execution" value={flag(execution.real_execution_enabled,true)}/><KV label="Automated execution" value={flag(execution.auto_execution_enabled,true)}/><KV label="Global kill switch" value={flag(execution.kill_switch)}/></KVList></Card>
     </div></div>;
 }
 
-function GeneralView({ section, data }: { section: Section; data: Row }) {
-  const list = (
-    section === "watchlists" ? rows(data.watchlists) :
-    section === "alerts" ? rows(data.notifications) :
-    section === "journal" ? rows(data.entries) :
-    section === "support" ? rows(data.tickets) :
-    section === "research" ? rows(data.strategies) : []
-  );
-  const facts = section==="settings" ? record(data.preferences) :
-    section==="billing" ? record(data.subscription) :
-    section==="operations" ? record(data) :
-    section==="markets" ? record(data) : {};
-  const allowed = section === "settings" ? ["trade_profile","risk_profile","min_signal_score","max_signals_per_day","session"] :
-    section === "billing" ? ["tier","status","expires_at","auto_renew"] :
-    section === "operations" ? ["release","readiness","engine","worker","delivery","queue","kill_switch"] :
-    ["status","provider","updated_at","coverage"];
-  return <div className="sr-view-stack">
-    <p className="sr-risk-note">Read-only canonical information. Unreported fields remain unavailable; no settings, payments or execution permissions change here.</p>
-    {allowed.some(key=>Object.hasOwn(facts,key))&&<Panel title={titles[section]}><dl>{allowed.filter(key=>Object.hasOwn(facts,key)).map(key=><KeyValue key={key} label={key.replaceAll("_"," ")} value={display(facts[key])}/>)}</dl></Panel>}
-    {list.length?<div className="sr-record-grid">{list.map((item,i)=><article className="sr-data-panel" key={display(item.id,String(i))}>
-      <h2>{display(item.title,display(item.name,display(item.asset,display(item.strategy_name,display(item.subject,"Item "+(i+1))))))}</h2>
-      <dl><KeyValue label="State" value={display(item.status)}/><KeyValue label="Updated" value={timeLabel(item.updated_at ?? item.created_at)}/></dl>
-    </article>)}</div>:<ListEmpty name={titles[section].toLowerCase()+" entries"}/>}
-  </div>;
+function StatusPanel({ state, section, onRetry, pathname }: { state: State; section: Section; onRetry: () => void; pathname: string }) {
+  if (state.kind === "auth") return <div className="ui-state" role="alert"><Icon name="lock"/><h2>Sign in required</h2><p>Sign in to view your account. We will bring you back to this page.</p>
+    <Link className="ui-btn ui-btn--primary" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in securely</Link></div>;
+  const restricted = state.status === 403;
+  return <div className="ui-state" role="alert"><Icon name={restricted?"lock":"warning"}/>
+    <h2>{restricted?"Access restricted":"Data could not be verified"}</h2>
+    <p>{restricted && section==="research" ? "Strategy research is available to administrator accounts." : statusText(state.status)}</p>
+    <div className="ui-actions"><button type="button" className="ui-btn" onClick={onRetry}><Icon name="refresh"/>Retry</button>
+      {restricted&&<Link className="ui-btn ui-btn--ghost" href="/app/billing">View plans</Link>}</div></div>;
 }
 
 export function WorkspaceLive({ section, signalId }: { section: Section; signalId?: string }) {
@@ -275,29 +319,33 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
     return ()=>{cancelled=true};
   },[section,signalId,filters,signalOffset,epoch]);
 
-  return <div className="sr-workspace-content">
-    <header className="sr-workspace-heading"><div><p className="sr-overline">Your workspace / {["settings","watchlists","alerts","notifications","support","journal"].includes(section)?"Preferences and activity":"Research and records"}</p><h1>{titles[section]}</h1></div><button type="button" className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)} disabled={state.kind==="loading"}>Refresh data</button></header>
+  const refresh=()=>setEpoch(value=>value+1);
+  return <>
+    <header className="ws-page-head">
+      <div><h1>{signalId?"Signal evidence":titles[section]}</h1><p>{descriptions[section]}</p></div>
+      <button type="button" className="ui-btn" onClick={refresh} disabled={state.kind==="loading"}><Icon name="refresh"/>Refresh</button>
+    </header>
     {section==="signals"&&!signalId&&<SignalFilters onApply={next=>{setSignalOffset(0);setFilters(next);}} />}
-    {state.kind==="loading"&&<div className="sr-loading" role="status" aria-live="polite">Checking your session and retrieving authorized records…</div>}
-    {state.kind==="auth"&&<div className="sr-access-state" role="alert"><h2>Sign in required</h2><p>Sign in to view your account. We will bring you back to this page.</p><Link className="button" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in securely</Link></div>}
-    {state.kind==="error"&&<div className="sr-access-state" role="alert"><h2>{state.status===403?"Access restricted":"Data could not be verified"}</h2><p>{statusText(state.status)}</p><button className="sr-secondary-action" onClick={()=>setEpoch(n=>n+1)}>Retry</button></div>}
+    {state.kind==="loading"&&<div role="status" aria-live="polite"><span className="visually-hidden">Checking your session and retrieving authorized records…</span><Skeleton rows={3}/></div>}
+    {(state.kind==="auth"||state.kind==="error")&&<StatusPanel state={state} section={section} onRetry={refresh} pathname={pathname}/>}
     {state.kind==="ready"&&state.data&&(
       section==="overview"?<OverviewView data={state.data}/>:
       section==="signals"?<SignalView data={state.data} detail={Boolean(signalId)} offset={signalOffset} onPage={signalId?undefined:setSignalOffset}/>:
-      section==="paper"?<div className="sr-view-stack"><PaperView data={state.data}/><PaperDesk onChanged={()=>setEpoch(value=>value+1)}/></div>:
+      section==="paper"?<div className="ws-stack"><PaperView data={state.data}/><PaperDesk onChanged={refresh}/></div>:
       section==="portfolio"?<PortfolioView data={state.data}/>:
       section==="performance"?<PerformanceView data={state.data}/>:
-      section==="brokers"?<div className="sr-view-stack"><BrokerAccounts data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><DemoBrokerConnection onChanged={()=>setEpoch(value=>value+1)}/></div>:
-      section==="markets"?<div className="sr-view-stack"><MarketDirectory/><QualityView data={state.data}/></div>:
-      section==="billing"?<BillingView data={state.data}/>:
+      section==="research"?<ResearchView data={state.data}/>:
+      section==="brokers"?<div className="ws-stack"><BrokerAccounts data={state.data} onChanged={refresh}/><DemoBrokerConnection onChanged={refresh}/></div>:
+      section==="markets"?<div className="ws-stack"><MarketDirectory/><QualityView data={state.data}/></div>:
+      section==="billing"?<BillingCenter data={state.data} onChanged={refresh}/>:
       section==="operations"?<OperationsView data={state.data}/>:
-      section==="notifications"?<div className="sr-view-stack"><NotificationCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><NotificationPreferences/></div>:
-      section==="alerts"?<AlertRules data={state.data} onChanged={()=>setEpoch(value=>value+1)}/>:
-      section==="watchlists"?<div className="sr-view-stack"><WatchlistsView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="watchlists" onCreated={()=>setEpoch(value=>value+1)}/></div>:
-      section==="journal"?<div className="sr-view-stack"><JournalView data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="journal" onCreated={()=>setEpoch(value=>value+1)}/></div>:
-      section==="settings"?<div className="sr-view-stack"><TradingPreferences data={state.data} onSaved={()=>setEpoch(value=>value+1)}/><AccountSecurity onChanged={()=>setEpoch(value=>value+1)}/></div>:
-      section==="support"?<div className="sr-view-stack"><SupportCenter data={state.data} onChanged={()=>setEpoch(value=>value+1)}/><AccountCreation kind="support" onCreated={()=>setEpoch(value=>value+1)}/></div>:
-      <GeneralView section={section} data={state.data}/>
+      section==="notifications"?<div className="ws-stack"><NotificationCenter data={state.data} onChanged={refresh}/><NotificationPreferences/></div>:
+      section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
+      section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:
+      section==="journal"?<div className="ws-stack"><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:
+      section==="settings"?<div className="ws-stack"><TradingPreferences data={state.data} onSaved={refresh}/><AccountSecurity onChanged={refresh}/></div>:
+      section==="support"?<div className="ws-stack"><SupportCenter data={state.data} onChanged={refresh}/><AccountCreation kind="support" onCreated={refresh}/></div>:
+      null
     )}
-  </div>;
+  </>;
 }

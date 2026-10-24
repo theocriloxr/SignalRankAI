@@ -85,45 +85,45 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
     finally{setCreating(false);}
   }
 
-  return <section className="sr-data-panel sr-demo-link" aria-labelledby="sr-demo-link-heading">
-    <div><p className="sr-overline">Onboarding / Demo-first / Provider-hosted credentials</p>
+  return <section className="ui-card" aria-labelledby="sr-demo-link-heading">
+    <div><p className="ui-eyebrow">Onboarding / Demo-first / Provider-hosted credentials</p>
       <h2 id="sr-demo-link-heading">Connect a MetaTrader demo account</h2></div>
-    <p className="sr-risk-note">This flow only requests a provider-hosted credential entry link for an MT4 or MT5 <strong>demo</strong> account. Do not use a live or prop account here. Creating a connection does not turn on auto-execution or certify trading safety.</p>
-    <form className="sr-create-form" role="search" onSubmit={findServers}>
-      <div className="sr-form-grid"><label>MetaTrader version
-        <select value={platform} onChange={e=>{setPlatform(e.target.value as "mt4"|"mt5");setBrokers(null);setSelectedServer("");}}>
+    <p className="ui-notice ui-notice--neutral">This flow only requests a provider-hosted credential entry link for an MT4 or MT5 <strong>demo</strong> account. Do not use a live or prop account here. Creating a connection does not turn on auto-execution or certify trading safety.</p>
+    <form className="ui-form" role="search" onSubmit={findServers}>
+      <div className="ui-form-grid"><label className="ui-field">MetaTrader version
+        <select className="ui-select" value={platform} onChange={e=>{setPlatform(e.target.value as "mt4"|"mt5");setBrokers(null);setSelectedServer("");}}>
           <option value="mt5">MetaTrader 5</option><option value="mt4">MetaTrader 4</option>
         </select>
-      </label><label>Search known demo broker servers
-        <input autoComplete="off" value={query} onChange={e=>setQuery(e.target.value)} minLength={2} maxLength={128} placeholder="Search broker name or server"/>
+      </label><label className="ui-field">Search known demo broker servers
+        <input className="ui-input" autoComplete="off" value={query} onChange={e=>setQuery(e.target.value)} minLength={2} maxLength={128} placeholder="Search broker name or server"/>
       </label></div>
-      <button className="sr-secondary-action" disabled={searching||query.trim().length<2} type="submit">{searching?"Checking servers…":"Search broker servers"}</button>
+      <button className="ui-btn" disabled={searching||query.trim().length<2} type="submit">{searching?"Checking servers…":"Search broker servers"}</button>
     </form>
-    {brokers!==null&&<div className="sr-demo-servers">
+    {brokers!==null&&<div className="ws-stack">
       {!brokers.length&&<p role="status">No matching broker servers were returned by the configured provider.</p>}
-      {brokers.map((broker,i)=><div key={i} className="sr-demo-broker">
+      {brokers.map((broker,i)=><div key={i} className="ws-subsection">
         <h3>{broker.broker}</h3>
-        <div className="sr-demo-server-choices">{broker.servers.map((server,j)=><button key={j} type="button" className={selectedServer===server?"sr-secondary-action active":"sr-secondary-action"}
+        <div className="ui-actions">{broker.servers.map((server,j)=><button key={j} type="button" className={selectedServer===server?"ui-btn ui-btn--sm is-selected":"ui-btn"}
           aria-pressed={selectedServer===server} onClick={()=>selectServer(server,broker.broker)}>{server}</button>)}</div>
       </div>)}
     </div>}
-    {selectedServer&&<form className="sr-create-form sr-demo-confirm" onSubmit={requestLink}>
+    {selectedServer&&<form className="ui-form ui-card ui-card--muted" onSubmit={requestLink}>
       <p><strong>Selected:</strong> {brokerName} / {selectedServer} ({platform.toUpperCase()})</p>
-      <label>Account label (optional)
-        <input autoComplete="off" value={label} onChange={e=>setLabel(e.target.value)} maxLength={128} placeholder="Practice account"/>
+      <label className="ui-field">Account label (optional)
+        <input className="ui-input" autoComplete="off" value={label} onChange={e=>setLabel(e.target.value)} maxLength={128} placeholder="Practice account"/>
       </label>
       <p>No passwords, API keys or account login IDs are entered here. The provider will collect the needed credentials through its own secure link.</p>
-      <button className="button" type="submit" disabled={creating||Boolean(connectionId)}>{creating?"Requesting provider link…":"Request demo secure link"}</button>
+      <button className="ui-btn ui-btn--primary" type="submit" disabled={creating||Boolean(connectionId)}>{creating?"Requesting provider link…":"Request demo secure link"}</button>
     </form>}
-    {providerMessage&&<p role="status" className="sr-submit-feedback">{providerMessage}</p>}
-    {link&&<div className="sr-demo-link-result">
+    {providerMessage&&<p role="status" className="ui-feedback">{providerMessage}</p>}
+    {link&&<div className="ui-confirm">
       <strong>Provider link available</strong>
       <p>Check that the destination host belongs to the expected provider before entering your demo credentials: <code>{link.hostname}</code>.</p>
-      <a className="sr-secondary-action" href={link.href} target="_blank" rel="noopener noreferrer">Open provider secure setup ↗</a>
+      <a className="ui-btn" href={link.href} target="_blank" rel="noopener noreferrer">Open provider secure setup ↗</a>
       <p>Return to SignalRankAI after provider setup. Use read-only verification on the matching broker account before proceeding with any certification.</p>
-      <button type="button" className="sr-secondary-action" onClick={onChanged}>I finished provider setup — refresh broker accounts</button>
+      <button type="button" className="ui-btn" onClick={onChanged}>I finished provider setup — refresh broker accounts</button>
     </div>}
-    {connectionId&&<p className="sr-overline">Connection reference: {connectionId}</p>}
-    {error&&<p role="alert" className="sr-submit-feedback sr-submit-feedback--error">{error}</p>}
+    {connectionId&&<p className="ui-eyebrow">Connection reference: {connectionId}</p>}
+    {error&&<p role="alert" className="ui-feedback ui-feedback--error">{error}</p>}
   </section>;
 }

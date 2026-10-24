@@ -62,14 +62,14 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
     }catch{setFeedback("The service could not confirm the reply. Please retry.");}
     finally{setSaving(false);}
   }
-  return <section className="sr-view-stack">
-    <p className="sr-risk-note">Tickets and messages are retrieved for the signed-in account only. Ticket status comes from the support service; no response time is promised.</p>
-    {tickets.length===0&&<div className="sr-empty"><strong>No account support tickets returned.</strong><p>Use the form below to open a new request.</p></div>}
-    <div className="sr-support-layout">
-      {tickets.length>0&&<nav className="sr-support-list" aria-label="Your support tickets">
+  return <section className="ws-stack">
+    <p className="ui-notice ui-notice--neutral">Tickets and messages are retrieved for the signed-in account only. Ticket status comes from the support service; no response time is promised.</p>
+    {tickets.length===0&&<div className="ui-empty"><strong>No account support tickets returned.</strong><p>Use the form below to open a new request.</p></div>}
+    <div className="ws-split">
+      {tickets.length>0&&<nav className="ws-select-list" aria-label="Your support tickets">
         {tickets.map((ticket,i)=>{
           const id=display(ticket.ticket_id,"");
-          return <button className={id===selected?"sr-support-ticket active":"sr-support-ticket"} aria-pressed={id===selected}
+          return <button className="ws-select-item" aria-pressed={id===selected}
             disabled={!id} key={id||i} type="button" onClick={()=>choose(id)}>
             <strong>{display(ticket.subject,"Support ticket")}</strong>
             <span>{display(ticket.category)} · {display(ticket.status)}</span>
@@ -77,28 +77,28 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
           </button>;
         })}
       </nav>}
-      <div className="sr-support-detail">
-        {!selected&&tickets.length>0&&<div className="sr-empty">Select a ticket to review its message history and reply.</div>}
-        {loading&&<div className="sr-loading" role="status">Retrieving the selected account ticket…</div>}
-        {error&&<div className="sr-access-state" role="alert"><p>{error}</p><button className="sr-secondary-action" type="button" onClick={()=>setVersion(x=>x+1)}>Retry</button></div>}
-        {detail&&!loading&&<section className="sr-data-panel">
-          <p className="sr-overline">Account ticket / {display(detail.ticket.priority,"Standard")}</p>
+      <div className="ws-stack">
+        {!selected&&tickets.length>0&&<div className="ui-empty">Select a ticket to review its message history and reply.</div>}
+        {loading&&<div className="ui-loading" role="status">Retrieving the selected account ticket…</div>}
+        {error&&<div className="ui-state" role="alert"><p>{error}</p><button className="ui-btn" type="button" onClick={()=>setVersion(x=>x+1)}>Retry</button></div>}
+        {detail&&!loading&&<section className="ui-card">
+          <p className="ui-eyebrow">Account ticket / {display(detail.ticket.priority,"Standard")}</p>
           <h2>{display(detail.ticket.subject)}</h2>
           <p>State: <strong>{display(detail.ticket.status)}</strong> · Created {timeLabel(detail.ticket.created_at)}</p>
-          <div className="sr-support-messages">
+          <div className="ws-thread">
             {detail.messages.length===0&&<p>No messages returned for this ticket.</p>}
-            {detail.messages.map((message,i)=><article className="sr-support-message" key={display(message.message_id,String(i))}>
-              <div className="sr-list-actions"><strong>{message.author_role==="user"?"Your message":"Support team"}</strong><small>{timeLabel(message.created_at)}</small></div>
+            {detail.messages.map((message,i)=><article className="ws-message" key={display(message.message_id,String(i))}>
+              <div className="ui-pagination"><strong>{message.author_role==="user"?"Your message":"Support team"}</strong><small>{timeLabel(message.created_at)}</small></div>
               <p>{display(message.message,"Message unavailable")}</p>
             </article>)}
           </div>
-          {detail.ticket.status!=="closed"&&<form className="sr-create-form" onSubmit={reply}>
-            <label>Reply to this ticket<textarea value={text} onChange={e=>setText(e.target.value)} maxLength={20000} rows={5} required placeholder="Describe what happened and any relevant non-sensitive details."/></label>
-            <button type="submit" className="button" disabled={saving||!text.trim()}>{saving?"Sending…":"Send reply"}</button>
+          {detail.ticket.status!=="closed"&&<form className="ui-form" onSubmit={reply}>
+            <label className="ui-field">Reply to this ticket<textarea className="ui-textarea" value={text} onChange={e=>setText(e.target.value)} maxLength={20000} rows={5} required placeholder="Describe what happened and any relevant non-sensitive details."/></label>
+            <button type="submit" className="ui-btn ui-btn--primary" disabled={saving||!text.trim()}>{saving?"Sending…":"Send reply"}</button>
             <p>Avoid sending passwords, broker API keys, one-time codes or card data in a support message.</p>
           </form>}
-          {detail.ticket.status==="closed"&&<p className="sr-risk-note">This ticket is closed and cannot receive new replies.</p>}
-          {feedback&&<p role="status" className="sr-submit-feedback">{feedback}</p>}
+          {detail.ticket.status==="closed"&&<p className="ui-notice ui-notice--neutral">This ticket is closed and cannot receive new replies.</p>}
+          {feedback&&<p role="status" className="ui-feedback">{feedback}</p>}
         </section>}
       </div>
     </div>

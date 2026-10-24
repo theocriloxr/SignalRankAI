@@ -112,24 +112,24 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
     finally{setBusy(false);}
   }
 
-  return <section className="sr-view-stack sr-security-center" aria-labelledby="sr-account-security-title">
-    <div className="sr-data-panel"><div className="sr-section-head"><div><p className="sr-overline">Identity / Your own account only</p><h2 id="sr-account-security-title">Identity and security</h2></div>
-      <button type="button" className="sr-secondary-action" onClick={()=>{setLoading(true);refresh();}}>Refresh security status</button></div>
-      <p className="sr-risk-note">Account profile, authenticated sessions and MFA proof are controlled by the backend. This screen never changes broker or prop trading permissions.</p>
+  return <section className="ws-stack" aria-labelledby="sr-account-security-title">
+    <div className="ui-card"><div className="ui-card-head"><div><p className="ui-eyebrow">Identity / Your own account only</p><h2 id="sr-account-security-title">Identity and security</h2></div>
+      <button type="button" className="ui-btn" onClick={()=>{setLoading(true);refresh();}}>Refresh security status</button></div>
+      <p className="ui-notice ui-notice--neutral">Account profile, authenticated sessions and MFA proof are controlled by the backend. This screen never changes broker or prop trading permissions.</p>
       {loading&&<p role="status">Checking account identity and device sessions…</p>}
-      {data.errors.length>0&&<div role="alert" className="sr-security-errors">{data.errors.map((e,i)=><p key={i}>{e}</p>)}</div>}
-      {data.user&&<dl><div className="sr-data-pair"><dt>Email</dt><dd>{display(data.user.primary_email)}</dd></div>
-        <div className="sr-data-pair"><dt>Account name</dt><dd>{display(data.user.display_name)}</dd></div>
-        <div className="sr-data-pair"><dt>Access tier</dt><dd>{display(data.user.tier)}</dd></div>
-        <div className="sr-data-pair"><dt>Verification</dt><dd>{data.user.email_verified_at?"Verified":"Not verified or not reported"}</dd></div>
-        <div className="sr-data-pair"><dt>Timezone</dt><dd>{display(data.user.timezone)}</dd></div></dl>}
-      {data.user&&<form className="sr-create-form" onSubmit={saveProfile}>
-        <div className="sr-form-grid">
-          <label>Update display name<input value={name} onChange={e=>setName(e.target.value)} maxLength={160} placeholder={display(data.user.display_name,"Display name")}/></label>
-          <label>Update timezone (IANA)<input value={timezone} onChange={e=>setTimezone(e.target.value)} maxLength={64} placeholder={display(data.user.timezone,"e.g. Africa/Lagos")}/></label>
-        </div><button className="button" type="submit" disabled={busy}>Save account profile</button>
+      {data.errors.length>0&&<div role="alert" className="ui-notice ui-notice--danger">{data.errors.map((e,i)=><p key={i}>{e}</p>)}</div>}
+      {data.user&&<dl className="ui-kv"><div className="ui-kv-row"><dt>Email</dt><dd>{display(data.user.primary_email)}</dd></div>
+        <div className="ui-kv-row"><dt>Account name</dt><dd>{display(data.user.display_name)}</dd></div>
+        <div className="ui-kv-row"><dt>Access tier</dt><dd>{display(data.user.tier)}</dd></div>
+        <div className="ui-kv-row"><dt>Verification</dt><dd>{data.user.email_verified_at?"Verified":"Not verified or not reported"}</dd></div>
+        <div className="ui-kv-row"><dt>Timezone</dt><dd>{display(data.user.timezone)}</dd></div></dl>}
+      {data.user&&<form className="ui-form" onSubmit={saveProfile}>
+        <div className="ui-form-grid">
+          <label className="ui-field">Update display name<input className="ui-input" value={name} onChange={e=>setName(e.target.value)} maxLength={160} placeholder={display(data.user.display_name,"Display name")}/></label>
+          <label className="ui-field">Update timezone (IANA)<input className="ui-input" value={timezone} onChange={e=>setTimezone(e.target.value)} maxLength={64} placeholder={display(data.user.timezone,"e.g. Africa/Lagos")}/></label>
+        </div><button className="ui-btn ui-btn--primary" type="submit" disabled={busy}>Save account profile</button>
       </form>}
-      {data.user&&!data.user.email_verified_at&&<button className="sr-secondary-action" type="button" disabled={busy} onClick={async()=>{
+      {data.user&&!data.user.email_verified_at&&<button className="ui-btn" type="button" disabled={busy} onClick={async()=>{
         setBusy(true);respond("");
         try{const r=await client.POST("/api/v1/platform/auth/email-verification/request");
           if(r.response.ok&&r.data?.accepted===true)respond(r.data.already_verified===true?"Email is already verified.":"Verification email request accepted. Check your inbox without sharing the token.");
@@ -139,53 +139,53 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
       }}>Request email verification</button>}
     </div>
     {data.user&&<TelegramConnection user={data.user} onRefresh={refresh}/>}
-    <div className="sr-grid-two">
-      <section className="sr-data-panel"><h2>Authenticator protection</h2>
+    <div className="ws-grid-2">
+      <section className="ui-card"><h2>Authenticator protection</h2>
         <p>Multi-factor authentication is separate from your SignalRankAI broker policies.</p>
-        <dl><div className="sr-data-pair"><dt>MFA status</dt><dd>{data.mfa?.enabled===true?"Enabled":data.mfa?.enabled===false?"Not enabled":"Unavailable"}</dd></div></dl>
-        {data.mfa?.enabled===false&&!enrollment&&!recoveryCodes&&<button className="sr-secondary-action" type="button" disabled={busy} onClick={startMfa}>Set up authenticator MFA</button>}
-        {enrollment&&<form className="sr-create-form sr-mfa-enrollment" onSubmit={finishMfa}>
-          <p className="sr-risk-note">Enter this setup key manually in your authenticator. Keep it private. It is held only in this open page and is not saved in browser storage.</p>
-          <code className="sr-mfa-secret">{enrollment.secret}</code><small>Expires: {timeLabel(enrollment.expires)}</small>
-          <label>Authenticator&apos;s current code<input value={code} onChange={e=>setCode(e.target.value)} autoComplete="one-time-code" minLength={6} maxLength={32} required inputMode="numeric"/></label>
-          <button className="button" type="submit" disabled={busy}>Enable MFA with this code</button>
-          <button className="sr-secondary-action" type="button" disabled={busy} onClick={()=>{setEnrollment(null);setCode("");}}>Cancel enrollment</button>
+        <dl className="ui-kv"><div className="ui-kv-row"><dt>MFA status</dt><dd>{data.mfa?.enabled===true?"Enabled":data.mfa?.enabled===false?"Not enabled":"Unavailable"}</dd></div></dl>
+        {data.mfa?.enabled===false&&!enrollment&&!recoveryCodes&&<button className="ui-btn" type="button" disabled={busy} onClick={startMfa}>Set up authenticator MFA</button>}
+        {enrollment&&<form className="ui-confirm" onSubmit={finishMfa}>
+          <p className="ui-notice ui-notice--neutral">Enter this setup key manually in your authenticator. Keep it private. It is held only in this open page and is not saved in browser storage.</p>
+          <code className="ui-secret">{enrollment.secret}</code><small>Expires: {timeLabel(enrollment.expires)}</small>
+          <label className="ui-field">Authenticator&apos;s current code<input className="ui-input" value={code} onChange={e=>setCode(e.target.value)} autoComplete="one-time-code" minLength={6} maxLength={32} required inputMode="numeric"/></label>
+          <button className="ui-btn ui-btn--primary" type="submit" disabled={busy}>Enable MFA with this code</button>
+          <button className="ui-btn" type="button" disabled={busy} onClick={()=>{setEnrollment(null);setCode("");}}>Cancel enrollment</button>
         </form>}
-        {recoveryCodes&&<div className="sr-mfa-recovery" role="status"><h3>Recovery codes — shown once</h3>
+        {recoveryCodes&&<div className="ui-confirm" role="status"><h3>Recovery codes — shown once</h3>
           <p>Store these codes offline. Do not share them in support messages or screenshots.</p>
           <ul>{recoveryCodes.map((v,i)=><li key={i}><code>{v}</code></li>)}</ul>
-          <button className="sr-secondary-action" type="button" onClick={()=>{setRecoveryCodes(null);refresh();}}>I saved these codes — hide them</button>
+          <button className="ui-btn" type="button" onClick={()=>{setRecoveryCodes(null);refresh();}}>I saved these codes — hide them</button>
         </div>}
       </section>
-      <section className="sr-data-panel"><h2>Signed-in devices</h2>
+      <section className="ui-card"><h2>Signed-in devices</h2>
         <p>Sessions shown below belong to your account. Each revocation requires confirmation and is enforced on the server.</p>
-        <div className="sr-session-list">{data.sessions.map((session,i)=>{
+        <div className="ui-list">{data.sessions.map((session,i)=>{
           const id=display(session.session_id,"");
           const current=id===data.current;
           const revoked=Boolean(session.revoked_at);
-          return <div className="sr-history-row" key={id||i}>
+          return <div className="ui-list-row" key={id||i}>
             <strong>{current?"This device":display(session.device_id,"Unidentified device")}</strong>
             <span>{revoked?"Revoked":current?"Current session":"Other session"}</span>
             <small>Last activity: {timeLabel(session.last_used_at)} · Expires {timeLabel(session.expires_at)}</small>
-            {!current&&!revoked&&id&&<button type="button" className="sr-secondary-action" onClick={()=>{setRevokeId(id);setRevokePhrase("");}}>Revoke this session</button>}
+            {!current&&!revoked&&id&&<button type="button" className="ui-btn" onClick={()=>{setRevokeId(id);setRevokePhrase("");}}>Revoke this session</button>}
           </div>;
         })}</div>
-        {data.sessions.length===0&&<p className="sr-muted">No device sessions were returned. This is not proof all sessions are revoked.</p>}
-        {revokeId&&<div className="sr-create-form sr-paper-confirm"><h3>Revoke selected session?</h3>
-          <label>Type REVOKE SESSION<input value={revokePhrase} onChange={e=>setRevokePhrase(e.target.value)} autoComplete="off"/></label>
-          <div className="sr-paper-action-row"><button className="button" type="button" disabled={busy} onClick={revoke}>Confirm revocation</button>
-            <button type="button" className="sr-secondary-action" onClick={()=>setRevokeId("")} disabled={busy}>Cancel</button></div>
+        {data.sessions.length===0&&<p className="ui-muted">No device sessions were returned. This is not proof all sessions are revoked.</p>}
+        {revokeId&&<div className="ui-confirm"><h3>Revoke selected session?</h3>
+          <label className="ui-field">Type REVOKE SESSION<input className="ui-input" value={revokePhrase} onChange={e=>setRevokePhrase(e.target.value)} autoComplete="off"/></label>
+          <div className="ui-actions"><button className="ui-btn ui-btn--primary" type="button" disabled={busy} onClick={revoke}>Confirm revocation</button>
+            <button type="button" className="ui-btn" onClick={()=>setRevokeId("")} disabled={busy}>Cancel</button></div>
         </div>}
       </section>
     </div>
-    <section className="sr-data-panel sr-broker-freeze"><h2>Sign out everywhere</h2>
+    <section className="ui-card ui-card--danger"><h2>Sign out everywhere</h2>
       <p>Revoke all sessions for this account, including this browser. Trading controls remain unchanged.</p>
-      {!logoutAll?<button type="button" className="sr-secondary-action" onClick={()=>setLogoutAll(true)}>Review all-device sign-out</button>:
-      <div className="sr-create-form sr-paper-confirm"><label>Type SIGN OUT ALL DEVICES to confirm
-        <input value={logoutPhrase} onChange={e=>setLogoutPhrase(e.target.value)} autoComplete="off"/></label>
-        <div className="sr-paper-action-row"><button className="button" type="button" onClick={signOutAll} disabled={busy}>Revoke all sessions</button>
-          <button type="button" className="sr-secondary-action" onClick={()=>{setLogoutAll(false);setLogoutPhrase("");}} disabled={busy}>Cancel</button></div></div>}
+      {!logoutAll?<button type="button" className="ui-btn" onClick={()=>setLogoutAll(true)}>Review all-device sign-out</button>:
+      <div className="ui-confirm"><label className="ui-field">Type SIGN OUT ALL DEVICES to confirm
+        <input className="ui-input" value={logoutPhrase} onChange={e=>setLogoutPhrase(e.target.value)} autoComplete="off"/></label>
+        <div className="ui-actions"><button className="ui-btn ui-btn--primary" type="button" onClick={signOutAll} disabled={busy}>Revoke all sessions</button>
+          <button type="button" className="ui-btn" onClick={()=>{setLogoutAll(false);setLogoutPhrase("");}} disabled={busy}>Cancel</button></div></div>}
     </section>
-    {feedback&&<p role={error?"alert":"status"} className={error?"sr-submit-feedback sr-submit-feedback--error":"sr-submit-feedback"}>{feedback}</p>}
+    {feedback&&<p role={error?"alert":"status"} className={error?"ui-feedback ui-feedback--error":"ui-feedback"}>{feedback}</p>}
   </section>;
 }
