@@ -1754,8 +1754,8 @@
       "name": "ASSET_REPEAT_LOCK_HOURS",
       "production_example_default": "4",
       "read_locations": [
-        "db/pg_features.py:4108",
-        "db/pg_features.py:4157",
+        "db/pg_features.py:4115",
+        "db/pg_features.py:4164",
         "services/platform/signal_delivery.py:255"
       ],
       "required_by_code": true,
@@ -1906,7 +1906,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/tiered_executor.py:47",
-        "services/mt5_signal_router.py:1702",
+        "services/mt5_signal_router.py:1711",
         "signalrank_telegram/commands.py:7735"
       ],
       "required_by_code": true,
@@ -2404,7 +2404,7 @@
       "name": "BYBIT_MAX_ENTRY_DEVIATION_PCT",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_signal_router.py:345"
+        "services/bybit_signal_router.py:354"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2414,7 +2414,7 @@
       "name": "BYBIT_MAX_NOTIONAL_MULTIPLIER",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_signal_router.py:361"
+        "services/bybit_signal_router.py:370"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2424,7 +2424,7 @@
       "name": "BYBIT_MAX_QUOTE_AGE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_signal_router.py:338"
+        "services/bybit_signal_router.py:347"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2488,7 +2488,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/broker_verification.py:78",
-        "services/bybit_signal_router.py:309",
+        "services/bybit_signal_router.py:318",
         "web/platform_api.py:4943"
       ],
       "required_by_code": true,
@@ -4254,7 +4254,7 @@
       "name": "DELIVERY_DEDUPE_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1347"
+        "db/pg_features.py:1354"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4264,7 +4264,7 @@
       "name": "DELIVERY_DEDUPE_RESET_EPOCH",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1359"
+        "db/pg_features.py:1366"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4335,7 +4335,7 @@
       "name": "DELIVERY_INFLIGHT_RETRY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1653"
+        "db/pg_features.py:1660"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4355,7 +4355,7 @@
       "name": "DELIVERY_MARKET_COOLDOWN_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1397"
+        "db/pg_features.py:1404"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4487,7 +4487,7 @@
         "core/redis_streams.py:32",
         "railway_main.py:287",
         "railway_main.py:2883",
-        "railway_main.py:3072",
+        "railway_main.py:3076",
         "railway_main.py:460"
       ],
       "required_by_code": true,
@@ -4526,7 +4526,7 @@
       "name": "DELIVERY_REQUIRE_QUALITY_GATE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:4016"
+        "db/pg_features.py:4023"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4590,7 +4590,7 @@
       "name": "DELIVERY_UNRESOLVED_BLOCK_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1439",
+        "db/pg_features.py:1446",
         "signalrank_telegram/bot.py:1774"
       ],
       "required_by_code": true,
@@ -4611,7 +4611,7 @@
       "name": "DEMO_EXECUTION_REQUIRES_LIVE_INTEGRITY",
       "production_example_default": null,
       "read_locations": [
-        "services/mt5_signal_router.py:1351"
+        "services/mt5_signal_router.py:1360"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5399,7 +5399,7 @@
       "name": "ENGINE_RUNTIME_HEARTBEAT_MAX_AGE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:3225"
+        "railway_main.py:3238"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5674,7 +5674,7 @@
       "name": "EXPECTED_RELEASE_COMMIT",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:3135"
+        "railway_main.py:3139"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5961,7 +5961,7 @@
       "name": "FOCUSED_UNIVERSE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "core/focused_universe.py:77"
+        "core/focused_universe.py:79"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6395,8 +6395,8 @@
         "engine/admin_pulse.py:344",
         "engine/core.py:3209",
         "engine/shadow_outcome_worker.py:80",
-        "railway_main.py:3134",
-        "railway_main.py:3227",
+        "railway_main.py:3138",
+        "railway_main.py:3240",
         "services/account_policies.py:666",
         "web/app.py:483"
       ],
@@ -6933,7 +6933,7 @@
       "name": "LIVE_MAX_RISK_PER_TRADE_PCT",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_signal_router.py:356"
+        "services/bybit_signal_router.py:365"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7263,7 +7263,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/mt5_bridge.py:271",
-        "services/mt5_signal_router.py:1696"
+        "services/mt5_signal_router.py:1705"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11048,7 +11048,7 @@
       "name": "PERFORMANCE_BASELINE_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1302",
+        "db/pg_features.py:1309",
         "signalrank_telegram/commands.py:3506",
         "signalrank_telegram/commands.py:8341"
       ],
@@ -12075,8 +12075,8 @@
         "engine/admin_pulse.py:344",
         "engine/core.py:3209",
         "engine/shadow_outcome_worker.py:80",
-        "railway_main.py:3134",
-        "railway_main.py:3227",
+        "railway_main.py:3138",
+        "railway_main.py:3240",
         "services/account_policies.py:666",
         "web/app.py:483",
         "web/platform_api.py:1106"
@@ -12336,7 +12336,7 @@
         "core/redis_state.py:85",
         "core/trade_tracker.py:323",
         "railway_main.py:2882",
-        "railway_main.py:3069",
+        "railway_main.py:3073",
         "railway_main.py:457",
         "railway_main.py:97",
         "services/dead_letter_queue.py:58",
@@ -12359,8 +12359,8 @@
       "read_locations": [
         "core/redis_state.py:1057",
         "railway_main.py:1721",
-        "railway_main.py:3419",
-        "railway_main.py:3616"
+        "railway_main.py:3440",
+        "railway_main.py:3637"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12370,9 +12370,9 @@
       "name": "REFERRALS_PER_REWARD",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3272",
-        "db/pg_features.py:3406",
-        "db/pg_features.py:3610",
+        "db/pg_features.py:3279",
+        "db/pg_features.py:3413",
+        "db/pg_features.py:3617",
         "web/platform_api.py:3407"
       ],
       "required_by_code": true,
@@ -12383,9 +12383,9 @@
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3273",
-        "db/pg_features.py:3407",
-        "db/pg_features.py:3611",
+        "db/pg_features.py:3280",
+        "db/pg_features.py:3414",
+        "db/pg_features.py:3618",
         "web/platform_api.py:3418"
       ],
       "required_by_code": true,
@@ -12396,8 +12396,8 @@
       "name": "REFERRAL_MONTHLY_CAP_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3426",
-        "db/pg_features.py:3646"
+        "db/pg_features.py:3433",
+        "db/pg_features.py:3653"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13862,7 +13862,7 @@
       "name": "SIGNALRANK_STATE_REDIS_URL",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:3068",
+        "railway_main.py:3072",
         "railway_main.py:456"
       ],
       "required_by_code": true,
@@ -13883,7 +13883,7 @@
       "name": "SIGNAL_DEDUP_BLOCK_ORPHAN_ACTIVE_TRADE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:791"
+        "db/pg_features.py:798"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13999,8 +13999,8 @@
       "name": "SIGNAL_SEMANTIC_ENTRY_TOLERANCE_PCT",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:1032",
-        "db/repository.py:444"
+        "db/pg_features.py:1039",
+        "db/repository.py:448"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14032,8 +14032,8 @@
       "name": "SIGNAL_THESIS_DEDUP_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2843",
-        "db/pg_features.py:954",
+        "db/pg_features.py:2850",
+        "db/pg_features.py:961",
         "services/performance_ledger.py:436"
       ],
       "required_by_code": true,
@@ -14515,7 +14515,7 @@
       "read_locations": [
         "core/redis_state.py:87",
         "railway_main.py:2882",
-        "railway_main.py:3067",
+        "railway_main.py:3071",
         "railway_main.py:455",
         "signalrank_telegram/commands.py:2808"
       ],
@@ -14746,7 +14746,7 @@
         "engine/core.py:1760",
         "engine/signal_deduplicator.py:1074",
         "railway_main.py:2878",
-        "railway_main.py:3271",
+        "railway_main.py:3292",
         "railway_main.py:449",
         "railway_main.py:588",
         "railway_main.py:899",
@@ -15050,8 +15050,8 @@
       "read_locations": [
         "core/telegram_webhook_config.py:32",
         "railway_main.py:2879",
-        "railway_main.py:3276",
-        "railway_main.py:3530",
+        "railway_main.py:3297",
+        "railway_main.py:3551",
         "railway_main.py:461"
       ],
       "required_by_code": true,
@@ -15205,7 +15205,7 @@
       "name": "TIME_STOP",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3145"
+        "db/pg_features.py:3152"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15573,8 +15573,8 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:76",
-        "railway_main.py:3707",
-        "railway_main.py:3806"
+        "railway_main.py:3728",
+        "railway_main.py:3827"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -15984,7 +15984,7 @@
       "name": "WEBHOOK_MAX_BODY_BYTES",
       "production_example_default": null,
       "read_locations": [
-        "railway_main.py:3552"
+        "railway_main.py:3573"
       ],
       "required_by_code": true,
       "sensitive": false

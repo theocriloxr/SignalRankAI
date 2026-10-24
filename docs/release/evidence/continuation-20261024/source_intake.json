@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "privacy": "Owner-supplied private planning export. Only hashes, line anchors and sanitized requirement IDs are published; original wording is not committed.",
+  "ingestion_is_acceptance": false,
+  "source": {
+    "name": "message.txt (Telegram export of the owner's ChatGPT planning conversation)",
+    "sha256": "b78374d0ccb60066410559372d896f058b594f0f509dc0041e0267bd113bdc1b",
+    "lines": 10298,
+    "bytes": 309415,
+    "received": "2026-10-24",
+    "previously_indexed": false
+  },
+  "documents": [
+    {"lines": "8-3676", "title": "Master Blueprint, Parts I-XXXIII"},
+    {"lines": "3677-4228", "title": "Addendum I - zero-omission governance and quantitative validation"},
+    {"lines": "4229-4892", "title": "Addendum II - system integrity, financial safety, data quality, model governance"},
+    {"lines": "4893-5510", "title": "Addendum III - product ecosystem, extensibility, customer operations"},
+    {"lines": "5511-5942", "title": "Addendum IV - adversarial testing, failure injection, concurrency"},
+    {"lines": "5943-6385", "title": "Addendum V - historical requirements archaeology; profiles/auto-trading/prop coverage"},
+    {"lines": "6386-9905", "title": "Ultimate Master Execution Prompt, Parts I-XXVIII"},
+    {"lines": "9906-10298", "title": "Final Addendum A-O - regression prevention, multi-user correctness, staged trading safety"},
+    {"lines": "n/a (chat message)", "title": "Final five safeguards and consolidation instruction"}
+  ],
+  "consolidation": {
+    "artifact": "SIGNALRANKAI_CONSOLIDATED_EXECUTION_SPEC.md (delivered privately to the owner; not committed)",
+    "requirement_ids": 287,
+    "duplicate_ids": 0,
+    "historical_fact_leads": 28,
+    "id_prefixes": ["GOV","MIS","OPS","AUTH","HIST","FACT","STATE","PROD","USER","ROLE","ENT","PAY","ASSET","INST","DATA","CAL","SIG","AI","ML","RES","BT","STRAT","EXE","RISK","PORT","COPY","PROP","BRK","CHAN","TG","WEB","UX","NOTIF","MU","DB","Q","SEC","PRIV","COMP","OBS","ADMIN","FLAG","RUN","INF","COST","CAP","TEST","DR","DOC","SG","GATE","DONE"]
+  }
+}

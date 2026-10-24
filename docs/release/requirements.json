@@ -48,6 +48,22 @@
         "immutable local attempts and launch-failure receipts",
         "HTML entity escaping for complete static parsing"
       ]
+    },
+    "continuation_20261024": {
+      "branch": "feat/frontend-rebuild-and-stage1-hardening",
+      "base": "393f3d88",
+      "stage_acceptance": "FAILED",
+      "production_authorized": false,
+      "live_trading_authorized": false,
+      "live_observation": {
+        "deployed_git_sha": "9865a3d1bcee632bfd9347e50d5de34d355225d9",
+        "deployed_alembic_revision": "0053_research_market_inputs",
+        "readyz": "503 degraded: engine_runtime heartbeat absent",
+        "login_route": "404"
+      },
+      "python_suite_on_branch": "NOT_RUN (dependency install blocked by network)",
+      "frontend_checks": "tsc, eslint, next build and node tests pass locally",
+      "audit": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
     }
   },
   "inventory_is_verification": false,
