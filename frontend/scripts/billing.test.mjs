@@ -38,3 +38,12 @@ test("billing UI uses server-priced checkout, explicit recurring consent and exp
   assert.ok(src.includes("body: { confirm: true }"));
   assert.doesNotMatch(src, /localStorage|sessionStorage|\/broker\/|\/execute|kill.switch/);
 });
+
+test("signal feedback is delivery-scoped, explicit and never touches orders", () => {
+  const src = readFileSync(new URL("../src/components/SignalFeedback.tsx", import.meta.url), "utf8");
+  const workspace = readFileSync(new URL("../src/components/WorkspaceLive.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes('client.POST("/api/v1/platform/signals/{signal_id}/feedback"'));
+  assert.ok(src.includes("r.data.recorded === true"));
+  assert.ok(workspace.includes("<SignalFeedback signalId="));
+  assert.doesNotMatch(src, /\/execute|\/broker\/|client\.(PUT|PATCH|DELETE)\(|localStorage|sessionStorage/);
+});
