@@ -378,6 +378,34 @@ async def rate_limit(request: Request, user_id: int = 0) -> None:
         logger.warning("[rate_limit] backend unavailable category=%s err=%s", category, type(exc).__name__)
 
 
+_HSTS_VALUE = "max-age=31536000"
+
+
+def _request_is_https(request: Request) -> bool:
+    forwarded = str(request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or forwarded == "https"
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Baseline headers for responses served directly by the API.
+
+    The Next.js proxy adds these for browser traffic it forwards; production also
+    serves this app directly (legacy workspace, mobile, API keys, webhooks).
+    Route-specific headers always win. HSTS is sent only over HTTPS and never
+    includes subdomains.
+    """
+    response = await call_next(request)
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if request.url.path.startswith("/api/v1/platform/") and "cache-control" not in headers:
+        headers["Cache-Control"] = "private, no-store, max-age=0"
+    if _request_is_https(request) and env_bool("SECURITY_HSTS_ENABLED", True):
+        headers.setdefault("Strict-Transport-Security", _HSTS_VALUE)
+    return response
+
+
 @app.middleware("http")
 async def platform_csrf_middleware(request: Request, call_next):
     """Double-submit CSRF protection for cookie-authenticated mutations.
