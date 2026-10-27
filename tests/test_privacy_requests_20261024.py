@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,8 @@ async def test_deletion_request_requires_a_recent_sign_in(isolated_postgres, pla
 
 
 @pytest.mark.parametrize("zone", ["America/New_York", "Asia/Tokyo"])
+@pytest.mark.skipif(not hasattr(time, "tzset"),
+                    reason="time.tzset is POSIX-only; the host-offset regression runs on Linux and macOS")
 @pytest.mark.asyncio
 async def test_recent_sign_in_age_does_not_depend_on_host_timezone(isolated_postgres, platform_app, monkeypatch, zone):
     """Regression: auth age used naive utcnow().timestamp(), shifted by the host UTC offset."""
