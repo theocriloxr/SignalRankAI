@@ -62,5 +62,16 @@
     },
     "frontend_checks": "tsc, eslint, next build and node tests pass locally",
     "audit": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+  },
+  "continuation_20261027": {
+    "branch": "feat/frontend-rebuild-and-stage1-hardening",
+    "base": "5f848d96",
+    "code_commit": "bd2574213a89f61015b4f28d253e942d50b552bb",
+    "stage_acceptance": "FAILED",
+    "production_authorized": false,
+    "live_trading_authorized": false,
+    "change": "CX-OBS-03 partial: /version falls back to the code's Alembic head for schema_head",
+    "tests": "tests/test_version_schema_head_20261027.py: 3 passed (local Windows, Python 3.13.7; not CI, staging or production)",
+    "promotion": "requested without PROMOTE_TO_PRODUCTION or plan prerequisites; not executed"
   }
 }
