@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover
 
 
 _KILL_KEY = "signalrankai:killswitch"
+_SCOPED_KILL_KEY = "signalrankai:killswitch:scoped"
 _EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
 _WEBHOOK_QUEUE_KEY = "telegram_updates_queue"
@@ -547,6 +548,52 @@ class RedisState:
             }
             return
         r.hset(_KILL_KEY, mapping=payload)
+
+    def get_scoped_killswitches_sync(self) -> dict:
+        """Uncached read of the strategy/instrument/asset-class kill switches.
+
+        Like the global switch, this bypasses the local write cache so a process
+        never trusts its own stale "clear" after another process engaged a switch.
+        Raises when a configured backend cannot be read; callers fail closed.
+        """
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                # Always one row on success, so None can only mean the read failed.
+                row = self._pg_exec_one(
+                    "SELECT COALESCE((SELECT value FROM runtime_state WHERE key=%s), '{}'::jsonb)",
+                    (_SCOPED_KILL_KEY,),
+                )
+                if row is None:
+                    raise RuntimeError("scoped_killswitch_store_unavailable")
+                data = row[0]
+                return dict(json.loads(data) if isinstance(data, str) else data or {})
+            raw = self._memory.get(_SCOPED_KILL_KEY)
+            return dict(raw) if isinstance(raw, dict) else {}
+        raw = r.get(_SCOPED_KILL_KEY)
+        if raw is None:
+            return {}
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+        parsed = json.loads(str(raw))
+        if not isinstance(parsed, dict):
+            raise ValueError("scoped_killswitch_document_invalid")
+        return parsed
+
+    def set_scoped_killswitches_sync(self, document: dict) -> None:
+        encoded = json.dumps(document, sort_keys=True, default=str)
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                self._pg_exec_one(
+                    "INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (%s, %s::jsonb, NULL, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()",
+                    (_SCOPED_KILL_KEY, encoded),
+                )
+                return
+            self._memory[_SCOPED_KILL_KEY] = json.loads(encoded)
+            return
+        r.set(_SCOPED_KILL_KEY, encoded)
 
     def set_temp_owner_sync(self, telegram_user_id: int, ttl_seconds: int) -> None:
         key = f"signalrankai:owner_bypass:{telegram_user_id}"
@@ -1280,6 +1327,12 @@ class RedisState:
 
     async def set_killswitch(self, enabled: bool, reason: str = "") -> None:
         await asyncio.to_thread(self.set_killswitch_sync, enabled, reason)
+
+    async def get_scoped_killswitches(self) -> dict:
+        return await asyncio.to_thread(self.get_scoped_killswitches_sync)
+
+    async def set_scoped_killswitches(self, document: dict) -> None:
+        await asyncio.to_thread(self.set_scoped_killswitches_sync, document)
 
     async def set_temp_owner(self, telegram_user_id: int, ttl_seconds: int) -> None:
         await asyncio.to_thread(self.set_temp_owner_sync, telegram_user_id, ttl_seconds)

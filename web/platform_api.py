@@ -105,6 +105,14 @@ class OperatorKillSwitchRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorScopedKillSwitchRequest(BaseModel):
+    action: str = Field(pattern=r"^(status|on|off)$")
+    scope: str | None = Field(default=None, pattern=r"^(strategy|instrument|asset_class)$")
+    key: str | None = Field(default=None, max_length=64)
+    reason: str = Field(default="", max_length=200)
+    confirm: bool = False
+
+
 class OperatorRebuildRequest(BaseModel):
     action: str = Field(pattern=r"^(status|dry_run|apply)$")
     confirm: bool = False
@@ -1291,6 +1299,46 @@ async def operator_kill_switch(
         "authority": authority,
         "enabled": bool(getattr(status, "enabled", True)),
         "reason": str(getattr(status, "reason", "") or ""),
+    }
+
+
+@router.post("/operator/kill-switch/scoped")
+async def operator_scoped_kill_switch(
+    payload: OperatorScopedKillSwitchRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Engage or release one strategy, instrument or asset-class execution switch."""
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from core.redis_state import state as redis_state
+    from core.scoped_kill_switch import apply_change
+
+    action = str(payload.action or "status").lower()
+    try:
+        document = await redis_state.get_scoped_killswitches()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Kill-switch store unavailable; execution stays blocked")
+    if action in {"on", "off"}:
+        if payload.confirm is not True:
+            raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+        if not payload.scope or not payload.key:
+            raise HTTPException(status_code=422, detail="scope and key are required")
+        _require_recent_auth(user)
+        actor = f"owner:{user.get('public_user_id') or user.get('id') or 'unknown'}"
+        try:
+            document = apply_change(
+                document, scope=payload.scope, key=payload.key, active=(action == "on"),
+                actor=actor, reason=payload.reason,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        await redis_state.set_scoped_killswitches(document)
+        logger.warning("[operator] scoped kill switch %s %s:%s by %s", action, payload.scope, payload.key, actor)
+    return {
+        "authority": authority,
+        "switches": document.get("switches") or {},
+        "audit": list(document.get("audit") or [])[-20:],
     }
 
 

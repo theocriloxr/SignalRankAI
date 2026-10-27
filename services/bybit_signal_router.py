@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import time
@@ -542,6 +543,13 @@ async def _route_signal_to_bybit_for_identity(
         kill_switch = bool(getattr(kill_state, "enabled", True))
     except Exception:
         kill_switch = True
+    if not kill_switch:
+        from core.scoped_kill_switch import execution_block_reason
+
+        scoped_block = await execution_block_reason(signal)
+        if scoped_block:
+            logging.getLogger("BybitSignalRouter").warning("[bybit_router] execution blocked by %s", scoped_block)
+            kill_switch = True
 
     gate_request = ExecutionRequest(
         user_id=int(principal_id),

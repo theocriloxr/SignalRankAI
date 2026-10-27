@@ -1027,6 +1027,13 @@ class MT5SignalRouter:
                 # Inability to establish kill-switch clearance is itself a
                 # block; never infer "clear" from an unavailable backend.
                 kill_switch = True
+            if not kill_switch:
+                from core.scoped_kill_switch import execution_block_reason
+
+                scoped_block = await execution_block_reason(signal, state=state)
+                if scoped_block:
+                    logger.warning("[mt5_router] execution blocked by %s", scoped_block)
+                    kill_switch = True
 
             volume = await self._calculate_position_size(
                 user_id=user_id,
