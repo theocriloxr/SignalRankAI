@@ -763,9 +763,11 @@
    "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "docs/release/BRANCH_RECONCILIATION.md"
+    "docs/release/BRANCH_RECONCILIATION.md",
+    "services/platform/account_merge.py",
+    "tests/test_account_merge_postgres_20261027.py"
    ],
-   "note": ""
+   "note": "27 Oct: account merge moves rows only when no unique index collides and owned parent rows move with them; unmovable rows are kept and counted."
   },
   {
    "id": "CX-STATE-04",
@@ -857,9 +859,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_final_cross_channel_parity_20260925.py",
-    "tests/test_cross_channel_profile_parity.py"
+    "tests/test_cross_channel_profile_parity.py",
+    "tests/test_account_merge_postgres_20261027.py"
    ],
-   "note": ""
+   "note": "27 Oct: bot-first users keep subscription, paper, watchlists and preferences after linking a web account via reviewed merge."
   },
   {
    "id": "CX-USER-01",
@@ -879,9 +882,12 @@
    "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_unified_platform_identity.py"
+    "tests/test_unified_platform_identity.py",
+    "services/platform/account_merge.py",
+    "tests/test_account_merge_postgres_20261027.py",
+    "tools/complete_account_merge.py"
    ],
-   "note": ""
+   "note": "27 Oct: reviewed Telegram/web merges can now be completed (owner endpoint or CLI) without deleting data; previously they stayed in merge_review forever. Real-PostgreSQL tests. Not exercised against production data."
   },
   {
    "id": "CX-USER-03",
@@ -2201,7 +2207,7 @@
     "frontend/src/styles/tokens.css",
     "frontend/scripts/cinematic-contract.test.mjs"
    ],
-   "note": "Checked at 375/1024/1440 px; no automated axe audit run."
+   "note": "Checked at 375/1024/1440 px; no automated axe audit run. 27 Oct: 320/375/414 px checks on 8 routes in the production build found the public Menu button off-screen at 320 px (fixed, regression test); basic a11y sweep (labels, names, headings, ids, autocomplete) clean on Settings, Signals, Login. axe not run (strict CSP)."
   },
   {
    "id": "CX-WEB-03",
@@ -2492,9 +2498,11 @@
    "evidence": [
     "tests/test_npm_audit_gate.mjs",
     "tests/test_semgrep_gate.py",
-    "requirements.lock"
+    "requirements.lock",
+    "frontend/package-lock.json",
+    "requirements-market-data-sdk.lock"
    ],
-   "note": "CI blocked by billing so gates do not run on push."
+   "note": "CI blocked by billing so gates do not run on push. 27 Oct: npm audit 0 vulnerabilities after Next.js 16.3.8->16.4.2 (two critical RCE advisories) and zod; pip-audit found 49 advisories in aiohttp, certifi, opentelemetry-api and Pillow, all bumped (7-day release-age rule respected)."
   },
   {
    "id": "CX-SEC-07",

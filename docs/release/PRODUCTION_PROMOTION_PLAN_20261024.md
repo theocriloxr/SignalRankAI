@@ -6,7 +6,7 @@
 
 | Item | Today (production) | After promotion |
 | --- | --- | --- |
-| Code on `fix/provider-discovery-readiness-20260923` | `9865a3d1` | Fast-forward to the feature branch head (432 commits, no divergence) |
+| Code on `fix/provider-discovery-readiness-20260923` | `9865a3d1` | Fast-forward to the feature branch head (no divergence; more than 450 commits as of 28 Oct — recount at promotion time) |
 | Database revision | `0053_research_market_inputs` | `0055_user_renewal_default` |
 | Services that redeploy on push | `SignalRankAI`, `signalrankai-analytics-prod`, `striking-optimism`, `bountiful-miracle` | same, all at once (watch pattern `**`) |
 | Public web (`SignalRankAI-Public-Web`) | tracks `fix/release-recovery-20261008` | **unchanged** — the rebuilt frontend is not served until this service is pointed at the promoted branch (Railway setting, owner action) |
@@ -41,6 +41,13 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 - **Code:** redeploy the previous Railway deployment (`9865a3d1`). This only works while the database is still at `0053`; after step 5 the old code's schema gate will refuse `0055`.
 - **Schema:** `alembic downgrade 0053_research_market_inputs` reverses both migrations (drops the index, restores the `TRUE` default). Accounts created during the window keep `auto_renew=FALSE`; that is the consent-safe value and is not reverted.
 - **Data:** restore the step-1 backup only if data loss is proven, with explicit authorization.
+
+## Changes added on 27–28 October that a promotion would also deploy
+
+- Nixpacks gains a `[phases.build]` step writing `.build-timestamp` (`|| true`, cannot fail a build).
+- Dependency upgrades: Next.js 16.4.2 (public web only after repointing), aiohttp 3.14.5, certifi 2026.10.19, OpenTelemetry 1.45.1, Pillow 13.0.0.
+- New owner-only endpoints: scoped kill switches and reviewed account merges. HSTS (`max-age=31536000`, no subdomains) on HTTPS responses; `SECURITY_HSTS_ENABLED=0` turns it off on the API.
+- No new migration: the head is still `0055`.
 
 ## Known limits at promotion time
 

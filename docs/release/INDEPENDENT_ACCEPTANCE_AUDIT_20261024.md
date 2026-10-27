@@ -157,3 +157,18 @@ Every consolidated requirement ID (287, plus the FACT-00 recording rule) now has
 | CX-COST-01 | No cost attribution or budgets (OpenAI token counters only) | Design usage ledger; owner to set budgets |
 | CX-OBS-03 | Production `/version` reports unknown `schema_head` and `build_timestamp` | Set build metadata in the Railway build; verify after the next authorized deploy |
 | CX-STRAT-07, CX-COPY-01 | Marketplace and copy-trading activation | Proposals only; need owner approval |
+
+## 10. Second pass, 27–28 October 2026
+
+Performed by the implementing agent, so it is not independent review (CX-SG-05 still open). Local evidence only: Windows 11, Python 3.13.7, owned PostgreSQL 17, Node 22.19. Details and commits are in `COMPLETION_EVIDENCE.md` under the 27–28 October heading.
+
+| Finding | Class | Evidence |
+| --- | --- | --- |
+| Early engine-cycle exits left no heartbeat, so a skipping engine looked stopped | Fixed (diagnostics); production root cause still blocked on Railway logs | `tests/test_engine_skip_heartbeat_20261027.py` |
+| Telegram/web merges could never be completed | Fixed: reviewed merge preview/apply, nothing deleted | `tests/test_account_merge_postgres_20261027.py` |
+| Every execution-quota refusal reported as "quota unavailable" | Fixed; limits always held | `tests/test_execution_quota_concurrency_postgres_20261027.py` |
+| Next.js 16.3.8 critical RCE advisories; 49 Python advisories | Fixed by upgrades within the 7-day release-age rule | `frontend/package-lock.json`, `requirements.lock` |
+| Direct API responses without nosniff/no-store/HSTS | Fixed | `tests/test_api_security_headers_20261027.py` |
+| Public Menu button off-screen at 320 px | Fixed | `frontend/scripts/cinematic-contract.test.mjs` |
+| Guarded migration needs a volume observation the plan did not list | Plan corrected; rehearsal recorded | `evidence/continuation-20261027/migration_rehearsal_0053_0055.json` |
+| `engine/correlation_guard.py`, `core/risk_authority.py` cited as evidence but not wired into runtime | Recorded; evidence notes corrected | `evidence/continuation-20261024/cx_assessment.json` |
