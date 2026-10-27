@@ -1,0 +1,15 @@
+::group::market-data-sdk-consumer-tests - Exercise installed vendor request models, parsers and fail-closed feed contracts in the isolated SDK interpreter
+test_alpaca_real_request_models_and_response_parser (test_installed_data_sdks.InstalledSDKTests.test_alpaca_real_request_models_and_response_parser) ... C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.pytest-tmp\data-sdk-venv\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+ok
+test_ccxt_real_kraken_parser_and_active_market_check (test_installed_data_sdks.InstalledSDKTests.test_ccxt_real_kraken_parser_and_active_market_check) ... ok
+test_ibapi_real_client_callback_contract_without_order_methods (test_installed_data_sdks.InstalledSDKTests.test_ibapi_real_client_callback_contract_without_order_methods) ... ok
+test_ibapi_rejects_delayed_market_data_type (test_installed_data_sdks.InstalledSDKTests.test_ibapi_rejects_delayed_market_data_type) ... ok
+test_marketdata_real_http_transport_and_dataclass_parser (test_installed_data_sdks.InstalledSDKTests.test_marketdata_real_http_transport_and_dataclass_parser) ... ok
+test_websocket_real_dependency_and_quote_freshness (test_installed_data_sdks.InstalledSDKTests.test_websocket_real_dependency_and_quote_freshness) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 9.210s
+
+OK
+::endgroup::

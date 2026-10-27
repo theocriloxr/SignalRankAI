@@ -1,0 +1,85 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_20261001_signal_paper_integrity.py' 'tests\test_access.py' 'tests\test_access_tier_cache.py' 'tests\test_adaptive_candle_store.py' 'tests\test_adaptive_dataset_and_wfo.py' 'tests\test_adaptive_health_lifecycle.py' 'tests\test_adaptive_runtime_integration.py' 'tests\test_adaptive_strategy_intelligence.py' 'tests\test_adaptive_worker_research_postgres.py' 'tests\test_admin_pulse_delivery_count.py' 'tests\test_ai_governance_hardening.py' 'tests\test_ai_review_router_consensus.py' 'tests\test_alembic_migration_url_contract.py' 'tests\test_api_key_security_contract.py' 'tests\test_asset_certification_evidence.py' 'tests\test_asset_repeat_policy.py' 'tests\test_auth_fail_closed_boundaries.py' 'tests\test_backtest_wfo.py' 'tests\test_blueprint_certification_safety.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 28%]
+........................................................................ [ 56%]
+................................................................F....... [ 84%]
+.......................................                                  [100%]
+================================== FAILURES ===================================
+_ test_all_login_methods_require_enabled_mfa_before_creating_sessions[telegram/complete-payload3] _
+
+auth_runtime = (<tests.test_auth_fail_closed_boundaries._Database object at 0x00000179AFEDACD0>, <fastapi.applications.FastAPI object at 0x00000179B0011150>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000179B02160D0>
+path = 'telegram/complete'
+payload = {'token_or_code': '123456', 'email': 'person@example.test', 'password': 'LongPassword123'}
+
+    @pytest.mark.parametrize("path,payload", [
+        ("login", {"email": "person@example.test", "password": "password"}),
+        ("telegram/login", {"payload": {"id": "1"}}),
+        ("telegram/mini-app", {"init_data": "test-first-factor"}),
+        ("telegram/complete", {"token_or_code": "123456", "email": "person@example.test", "password": "LongPassword123"}),
+        ("magic-link/complete", {"token": "src_" + "x" * 40}),
+    ])
+    async def test_all_login_methods_require_enabled_mfa_before_creating_sessions(auth_runtime, monkeypatch, path, payload):
+        db, app = auth_runtime
+        db.add_mfa()
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+        for name in ("authenticate_email_password", "ensure_telegram_user", "complete_telegram_activation", "consume_magic_login"):
+            monkeypatch.setattr(platform_api, name, AsyncMock(return_value=1))
+        monkeypatch.setattr(platform_api, "validate_telegram_login_payload", lambda *args: {"id": "1"})
+        monkeypatch.setattr(platform_api, "validate_telegram_mini_app_init_data", lambda *args: {"user": {"id": "1"}})
+        async with _client(app) as client:
+            response = await client.post(f"/api/v1/platform/auth/{path}", json=payload)
+>       assert response.status_code == 200, response.text
+E       AssertionError: {"detail":"Accept the Terms of Use before activating app access"}
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests\test_auth_fail_closed_boundaries.py:334: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_auth_fail_closed_boundaries.py::test_all_login_methods_require_enabled_mfa_before_creating_sessions[telegram/complete-payload3]
+1 failed, 254 passed in 456.74s (0:07:36)
+
+RETRYING_IN_FRESH_PROCESS
+
+ATTEMPT 2/2
+
+........................................................................ [ 28%]
+........................................................................ [ 56%]
+................................................................F....... [ 84%]
+.......................................                                  [100%]
+================================== FAILURES ===================================
+_ test_all_login_methods_require_enabled_mfa_before_creating_sessions[telegram/complete-payload3] _
+
+auth_runtime = (<tests.test_auth_fail_closed_boundaries._Database object at 0x00000150439497D0>, <fastapi.applications.FastAPI object at 0x000001504399FE50>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000015069831390>
+path = 'telegram/complete'
+payload = {'token_or_code': '123456', 'email': 'person@example.test', 'password': 'LongPassword123'}
+
+    @pytest.mark.parametrize("path,payload", [
+        ("login", {"email": "person@example.test", "password": "password"}),
+        ("telegram/login", {"payload": {"id": "1"}}),
+        ("telegram/mini-app", {"init_data": "test-first-factor"}),
+        ("telegram/complete", {"token_or_code": "123456", "email": "person@example.test", "password": "LongPassword123",
+                               "platform_terms_accepted": True, "privacy_acknowledged": True,
+                               "age_eligibility_confirmed": True}),
+        ("magic-link/complete", {"token": "src_" + "x" * 40}),
+    ])
+    async def test_all_login_methods_require_enabled_mfa_before_creating_sessions(auth_runtime, monkeypatch, path, payload):
+        db, app = auth_runtime
+        db.add_mfa()
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+        for name in ("authenticate_email_password", "ensure_telegram_user", "complete_telegram_activation", "consume_magic_login"):
+            monkeypatch.setattr(platform_api, name, AsyncMock(return_value=1))
+        monkeypatch.setattr(platform_api, "validate_telegram_login_payload", lambda *args: {"id": "1"})
+        monkeypatch.setattr(platform_api, "validate_telegram_mini_app_init_data", lambda *args: {"user": {"id": "1"}})
+>       async with _client(app) as client:
+E       AssertionError: {"detail":"Accept the Terms of Use before activating app access"}
+E       assert 422 == 200
+E        +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+
+tests\test_auth_fail_closed_boundaries.py:334: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_auth_fail_closed_boundaries.py::test_all_login_methods_require_enabled_mfa_before_creating_sessions[telegram/complete-payload3]
+1 failed, 254 passed in 404.05s (0:06:44)

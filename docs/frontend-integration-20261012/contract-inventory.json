@@ -1,0 +1,2142 @@
+{
+  "schema_version": "1.0",
+  "inventory_is_verification": false,
+  "financial_readiness_certified": false,
+  "backend_route_count": 134,
+  "frontend_dependencies": [
+    {
+      "component": "frontend/src/components/AccountCreation.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/watchlists",
+      "handler": "create_watchlist",
+      "source": "web/platform_api.py:3259",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountCreation.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/support/tickets",
+      "handler": "create_support_ticket",
+      "source": "web/platform_api.py:4055",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountCreation.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/journal",
+      "handler": "create_journal_entry",
+      "source": "web/platform_api.py:3634",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEmailLink.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/me",
+      "handler": "me",
+      "source": "web/platform_api.py:2304",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEmailLink.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/email-verification/complete",
+      "handler": "email_verification_complete",
+      "source": "web/platform_api.py:4205",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEmailLink.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/magic-link/complete",
+      "handler": "magic_link_complete",
+      "source": "web/platform_api.py:4141",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEmailLink.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/mfa/complete",
+      "handler": "mfa_login_complete",
+      "source": "web/platform_api.py:4097",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEntry.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/me",
+      "handler": "me",
+      "source": "web/platform_api.py:2304",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEntry.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/mfa/complete",
+      "handler": "mfa_login_complete",
+      "source": "web/platform_api.py:4097",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEntry.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/register",
+      "handler": "register",
+      "source": "web/platform_api.py:2057",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountEntry.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/login",
+      "handler": "login",
+      "source": "web/platform_api.py:2128",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/me",
+      "handler": "me",
+      "source": "web/platform_api.py:2304",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/devices",
+      "handler": "devices",
+      "source": "web/platform_api.py:3522",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/security/mfa",
+      "handler": "get_mfa_status",
+      "source": "web/platform_api.py:4216",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "PATCH",
+      "endpoint": "/api/v1/platform/profile",
+      "handler": "update_profile",
+      "source": "web/platform_api.py:4269",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "DELETE",
+      "endpoint": "/api/v1/platform/devices/{session_id}",
+      "handler": "revoke_device_session",
+      "source": "web/platform_api.py:6137",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/logout-all",
+      "handler": "logout_all",
+      "source": "web/platform_api.py:2283",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/security/mfa/setup",
+      "handler": "setup_mfa",
+      "source": "web/platform_api.py:4224",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/security/mfa/enable",
+      "handler": "confirm_mfa",
+      "source": "web/platform_api.py:4243",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AccountSecurity.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/email-verification/request",
+      "handler": "email_verification_request",
+      "source": "web/platform_api.py:4189",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AlertRules.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/alerts",
+      "handler": "create_alert",
+      "source": "web/platform_api.py:6854",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/AlertRules.tsx",
+      "method": "DELETE",
+      "endpoint": "/api/v1/platform/alerts/{alert_id}",
+      "handler": "delete_alert",
+      "source": "web/platform_api.py:6887",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/BrokerAccounts.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/broker/connections/{connection_id}/policy",
+      "handler": "broker_account_policy",
+      "source": "web/platform_api.py:5136",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/BrokerAccounts.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/broker/connections/{connection_id}/ledger",
+      "handler": "broker_account_ledger",
+      "source": "web/platform_api.py:5152",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/BrokerAccounts.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/broker/connections/{connection_id}/verify",
+      "handler": "verify_broker_connection",
+      "source": "web/platform_api.py:5379",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/BrokerAccounts.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/broker/connections/{connection_id}/safety-freeze",
+      "handler": "broker_account_safety_freeze",
+      "source": "web/platform_api.py:5342",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/DemoBrokerConnection.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/broker/metatrader/servers",
+      "handler": "search_broker_metatrader_servers",
+      "source": "web/platform_api.py:4930",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/DemoBrokerConnection.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/broker/metatrader/secure-link",
+      "handler": "create_broker_metatrader_secure_link",
+      "source": "web/platform_api.py:5037",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/JournalView.tsx",
+      "method": "DELETE",
+      "endpoint": "/api/v1/platform/journal/{journal_entry_id}",
+      "handler": "delete_journal_entry",
+      "source": "web/platform_api.py:3669",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/MagicSignIn.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/magic-link/request",
+      "handler": "magic_link_request",
+      "source": "web/platform_api.py:4129",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/MarketDirectory.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/instruments/search",
+      "handler": "instrument_search",
+      "source": "web/platform_api.py:3199",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/NotificationCenter.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/notifications/{notification_id}/read",
+      "handler": "mark_notification_read",
+      "source": "web/platform_api.py:6613",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/NotificationPreferences.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/notifications/preferences",
+      "handler": "get_notification_preferences",
+      "source": "web/platform_api.py:3542",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/NotificationPreferences.tsx",
+      "method": "PUT",
+      "endpoint": "/api/v1/platform/notifications/preferences",
+      "handler": "update_notification_preferences",
+      "source": "web/platform_api.py:3558",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/OperationsNavLink.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/me",
+      "handler": "me",
+      "source": "web/platform_api.py:2304",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PaperDesk.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/paper/detail",
+      "handler": "paper_detail",
+      "source": "web/platform_api.py:3037",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PaperDesk.tsx",
+      "method": "PUT",
+      "endpoint": "/api/v1/platform/paper/settings",
+      "handler": "paper_settings",
+      "source": "web/platform_api.py:3083",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PaperDesk.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/paper/close-all",
+      "handler": "paper_close_all",
+      "source": "web/platform_api.py:3132",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PaperDesk.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/paper/reset",
+      "handler": "paper_reset",
+      "source": "web/platform_api.py:3156",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PaperDesk.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/paper/retry",
+      "handler": "paper_retry",
+      "source": "web/platform_api.py:3180",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PasswordRecovery.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/password-reset/request",
+      "handler": "password_reset_request",
+      "source": "web/platform_api.py:4162",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/PasswordRecovery.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/password-reset/complete",
+      "handler": "password_reset_complete",
+      "source": "web/platform_api.py:4173",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/SessionExit.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/auth/logout",
+      "handler": "logout",
+      "source": "web/platform_api.py:2272",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/SupportCenter.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/support/tickets/{ticket_id}",
+      "handler": "support_ticket_detail",
+      "source": "web/platform_api.py:6761",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/SupportCenter.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/support/tickets/{ticket_id}/messages",
+      "handler": "add_support_message",
+      "source": "web/platform_api.py:6796",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/TelegramConnection.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/account/telegram-link",
+      "handler": "create_telegram_link",
+      "source": "web/platform_api.py:3423",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/TradingPreferences.tsx",
+      "method": "PUT",
+      "endpoint": "/api/v1/platform/trading-profile",
+      "handler": "update_trading_profile",
+      "source": "web/platform_api.py:4361",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WatchlistsView.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/instruments/search",
+      "handler": "instrument_search",
+      "source": "web/platform_api.py:3199",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WatchlistsView.tsx",
+      "method": "POST",
+      "endpoint": "/api/v1/platform/watchlists/{watchlist_id}/items",
+      "handler": "add_watchlist_item",
+      "source": "web/platform_api.py:3277",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/dashboard",
+      "handler": "dashboard",
+      "source": "web/platform_api.py:2345",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/signals/{signal_id}",
+      "handler": "signal_detail",
+      "source": "web/platform_api.py:2461",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/signals",
+      "handler": "signal_feed",
+      "source": "web/platform_api.py:2384",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/quality",
+      "handler": "quality_report",
+      "source": "web/platform_api.py:4629",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/strategy-leaderboard",
+      "handler": "strategy_leaderboard",
+      "source": "web/platform_api.py:4764",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/watchlists",
+      "handler": "list_watchlists",
+      "source": "web/platform_api.py:3237",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/alerts",
+      "handler": "list_alerts",
+      "source": "web/platform_api.py:6833",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/notifications",
+      "handler": "notification_center",
+      "source": "web/platform_api.py:6586",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/paper",
+      "handler": "paper_summary",
+      "source": "web/platform_api.py:2968",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/portfolio",
+      "handler": "portfolio",
+      "source": "web/platform_api.py:6182",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/performance",
+      "handler": "performance",
+      "source": "web/platform_api.py:6234",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/journal",
+      "handler": "journal_entries",
+      "source": "web/platform_api.py:3609",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/broker/connections",
+      "handler": "broker_connections",
+      "source": "web/platform_api.py:4835",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/billing",
+      "handler": "billing",
+      "source": "web/platform_api.py:6430",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/support/tickets",
+      "handler": "support_tickets",
+      "source": "web/platform_api.py:4035",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/trading-profile",
+      "handler": "trading_profile",
+      "source": "web/platform_api.py:4315",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/operator/overview",
+      "handler": "operator_overview",
+      "source": "web/platform_api.py:1083",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    },
+    {
+      "component": "frontend/src/components/WorkspaceLive.tsx",
+      "method": "GET",
+      "endpoint": "/api/v1/platform/me",
+      "handler": "me",
+      "source": "web/platform_api.py:2304",
+      "status": "IMPLEMENTED",
+      "runtime_acceptance": "NOT_PROVEN_BY_INVENTORY"
+    }
+  ],
+  "telegram_web_destinations": [
+    {
+      "command": "start",
+      "description": "Start the bot and accept the risk terms",
+      "minimum_tier": "FREE",
+      "section": "Getting started",
+      "retained_web_view": "overview",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "help",
+      "description": "Show commands available for your account",
+      "minimum_tier": "FREE",
+      "section": "Getting started",
+      "retained_web_view": "overview",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "about",
+      "description": "Platform features and your verified signal totals",
+      "minimum_tier": "FREE",
+      "section": "Getting started",
+      "retained_web_view": "overview",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "status",
+      "description": "Subscription, tier, and account status",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "account",
+      "description": "Open your account controls",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "app",
+      "description": "Open or activate your unified web and mobile account",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "login_code",
+      "description": "Generate a one-time app activation code",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "link",
+      "description": "Link an app-created account to Telegram",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "devices",
+      "description": "Review signed-in application sessions",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "security",
+      "description": "Review account security guidance",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "pricing",
+      "description": "View current plans and prices",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "upgrade",
+      "description": "Subscribe or change plan",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "tiers",
+      "description": "Compare Free, Premium, and VIP access",
+      "minimum_tier": "FREE",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "signals",
+      "description": "Show signals confirmed for your tier",
+      "minimum_tier": "FREE",
+      "section": "Signals",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "signal",
+      "description": "Open one signal by its reference",
+      "minimum_tier": "FREE",
+      "section": "Signals",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "outcome",
+      "description": "Check a delivered signal outcome",
+      "minimum_tier": "FREE",
+      "section": "Signals",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "proof",
+      "description": "View verified completed outcomes",
+      "minimum_tier": "FREE",
+      "section": "Signals",
+      "retained_web_view": "evidence",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "liveprice",
+      "description": "Fetch the current price of an asset",
+      "minimum_tier": "FREE",
+      "section": "Market",
+      "retained_web_view": "tools",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "market",
+      "description": "View the current multi-asset market overview",
+      "minimum_tier": "FREE",
+      "section": "Market",
+      "retained_web_view": "markets",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "profile",
+      "description": "Choose scalp, day, swing, or position style",
+      "minimum_tier": "FREE",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_balance",
+      "description": "View or initialize your virtual balance",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_positions",
+      "description": "View open automatic paper positions",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_history",
+      "description": "View completed and skipped paper trades",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_performance",
+      "description": "View paper-only performance statistics",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_settings",
+      "description": "Control automatic paper entries and risk",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_close_all",
+      "description": "Close all virtual positions with confirmation",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_reset",
+      "description": "Reset paper history with explicit confirmation",
+      "minimum_tier": "FREE",
+      "section": "Paper trading",
+      "retained_web_view": "paper",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "invite",
+      "description": "Get your referral link",
+      "minimum_tier": "FREE",
+      "section": "Referrals",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "referral_leaderboard",
+      "description": "View the referral leaderboard",
+      "minimum_tier": "FREE",
+      "section": "Referrals",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "referral_rewards",
+      "description": "View your referral rewards",
+      "minimum_tier": "FREE",
+      "section": "Referrals",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "support",
+      "description": "Contact support and report a problem",
+      "minimum_tier": "FREE",
+      "section": "Support",
+      "retained_web_view": "support",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "faq",
+      "description": "Read common product questions",
+      "minimum_tier": "FREE",
+      "section": "Support",
+      "retained_web_view": "support",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "disclaimer",
+      "description": "Read the financial-risk disclaimer",
+      "minimum_tier": "FREE",
+      "section": "Support",
+      "retained_web_view": "support",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "myid",
+      "description": "Show your Telegram ID and tier",
+      "minimum_tier": "FREE",
+      "section": "Support",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "language",
+      "description": "Change notification language",
+      "minimum_tier": "FREE",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "timezone",
+      "description": "Set the timezone used for signal times",
+      "minimum_tier": "FREE",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "settings",
+      "description": "Review account and timezone preferences",
+      "minimum_tier": "FREE",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "performance",
+      "description": "Delivered-signal performance with provenance",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "performance",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "stats",
+      "description": "Win rate, R multiples, and sample size",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "performance",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "history",
+      "description": "View your delivered signal history",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dashboard",
+      "description": "Open your analytics dashboard",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "overview",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "portfolio",
+      "description": "View active signals and exposure",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "portfolio",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "mission",
+      "description": "Open Signal Mission Control",
+      "minimum_tier": "PREMIUM",
+      "section": "Analytics",
+      "retained_web_view": "overview",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "risk",
+      "description": "View or update risk guidance",
+      "minimum_tier": "PREMIUM",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "alerts",
+      "description": "Configure TP, SL, and quiet-hour alerts",
+      "minimum_tier": "PREMIUM",
+      "section": "Preferences",
+      "retained_web_view": "tools",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "filter",
+      "description": "Set score, R/R, asset, and regime filters",
+      "minimum_tier": "PREMIUM",
+      "section": "Preferences",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "notify",
+      "description": "Choose notification assets and timeframes",
+      "minimum_tier": "PREMIUM",
+      "section": "Preferences",
+      "retained_web_view": "tools",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "analyze",
+      "description": "Request an on-demand asset analysis",
+      "minimum_tier": "PREMIUM",
+      "section": "Market",
+      "retained_web_view": "tools",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "feedback",
+      "description": "Rate a signal or report an incorrect outcome",
+      "minimum_tier": "PREMIUM",
+      "section": "Support",
+      "retained_web_view": "support",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "execution",
+      "description": "Choose manual or eligible automatic execution",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "connect_broker",
+      "description": "Start secure MT5/MetaApi connection setup",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "mt5_link",
+      "description": "Link or replace your MT5/MetaApi account",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "mt5_status",
+      "description": "Check broker readiness and execution preflight",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "verifybroker",
+      "description": "Read-only verification of your linked broker account",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "setlot",
+      "description": "Set the fixed lot used by eligible execution",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "mystats",
+      "description": "View broker execution statistics",
+      "minimum_tier": "PREMIUM",
+      "section": "Broker",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "referral",
+      "description": "View your referral code and statistics",
+      "minimum_tier": "PREMIUM",
+      "section": "Referrals",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "cancel",
+      "description": "Turn off subscription auto-renewal",
+      "minimum_tier": "PREMIUM",
+      "section": "Account",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "simulate",
+      "description": "Simulate using your confirmed delivered outcomes",
+      "minimum_tier": "VIP",
+      "section": "VIP analytics",
+      "retained_web_view": "performance",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "setrisk",
+      "description": "Set the execution preflight risk percentage",
+      "minimum_tier": "VIP",
+      "section": "VIP controls",
+      "retained_web_view": "account",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "elite",
+      "description": "View VIP high-conviction signals",
+      "minimum_tier": "VIP",
+      "section": "VIP signals",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "early",
+      "description": "View eligible early-access alerts",
+      "minimum_tier": "VIP",
+      "section": "VIP signals",
+      "retained_web_view": "signals",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "report",
+      "description": "Generate the detailed performance report",
+      "minimum_tier": "VIP",
+      "section": "VIP analytics",
+      "retained_web_view": "performance",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "admin",
+      "description": "Open the audited admin dashboard",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "admin_broadcast",
+      "description": "Send an audited platform announcement",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "force_market_scan",
+      "description": "Request one controlled market scan",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "force_signal",
+      "description": "Generate a controlled diagnostic signal",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ai",
+      "description": "Run the configured AI review diagnostics",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ai_review",
+      "description": "Inspect the current AI review pipeline",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ai_improve",
+      "description": "Generate one governed improvement proposal",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "qa_report",
+      "description": "Run the deployment QA report",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "selfcheck",
+      "description": "Run internal command and callback checks",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ops_health",
+      "description": "View operational health and queues",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "system",
+      "description": "View system runtime health",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "db_health",
+      "description": "View database health and admission pressure",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "engine_debug",
+      "description": "Inspect the signal engine pipeline",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "assets",
+      "description": "Inspect enabled assets and capabilities",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "release_guard",
+      "description": "Check launch safety gates",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_status",
+      "description": "Inspect adaptive profiles and lifecycle",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "research",
+      "description": "Inspect immutable trials and validation evidence",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_pause",
+      "description": "Pause adaptive learning and weighting",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_resume",
+      "description": "Resume adaptive learning",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_promote",
+      "description": "Promote an evidence-qualified profile",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_suspend",
+      "description": "Suspend an adaptive profile",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "adaptive_rollback",
+      "description": "Restore an asset rollback profile",
+      "minimum_tier": "ADMIN",
+      "section": "Adaptive",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dev_pause",
+      "description": "Pause the signal engine",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dev_resume",
+      "description": "Resume the signal engine",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "owner_users",
+      "description": "View registered users and tier counts",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "owner_revenue",
+      "description": "View verified subscription revenue",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "version",
+      "description": "Show the deployed build fingerprint",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "provider_status",
+      "description": "View provider circuits and freshness",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ai_status",
+      "description": "View AI routing, models, budget, and circuit state",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ai_test",
+      "description": "Verify the OpenAI Responses API connection",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "broadcast",
+      "description": "Send an owner announcement",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "performance_rebuild",
+      "description": "Run bounded performance projection rebuild",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "performance_audit",
+      "description": "Audit performance projection integrity",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "outcome_rebuild",
+      "description": "Run bounded outcome and outbox rebuild",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "outcome_audit",
+      "description": "Audit outcome projection and notification state",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dedup_audit",
+      "description": "Audit deduplication and lock policy outputs",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "notification_audit",
+      "description": "Audit notification delivery queues",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "paper_audit",
+      "description": "Audit paper trading lifecycle aggregates",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "queue_status",
+      "description": "Show owner job and queue checkpoint status",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "queue_replay",
+      "description": "Replay bounded reconciliation queues",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dead_letter_status",
+      "description": "Inspect dead-letter queue depth",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "dead_letter_replay",
+      "description": "Replay dead-letter items into retry queue",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ledger_audit",
+      "description": "Run canonical ledger consistency audit",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "payment_reconcile",
+      "description": "Audit payment/webhook receipt reconciliation",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "release_status",
+      "description": "Show release fingerprint and runtime version",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "kill_switch",
+      "description": "Inspect or toggle the global kill switch",
+      "minimum_tier": "OWNER",
+      "section": "Owner",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "system_health",
+      "description": "Summarize DB/Redis/runtime safety health",
+      "minimum_tier": "ADMIN",
+      "section": "Admin",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "why_no_signal",
+      "description": "Explain the most recent signal rejections",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "delivery_eligibility",
+      "description": "Inspect a user's delivery eligibility",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "ohlc_health",
+      "description": "Inspect OHLC provider coverage",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "asset_capability",
+      "description": "Inspect one asset's runtime capability",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "asset_class_test",
+      "description": "Run asset-class routing checks",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "all_asset_test_status",
+      "description": "View the all-asset certification status",
+      "minimum_tier": "ADMIN",
+      "section": "Admin diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    },
+    {
+      "command": "owner_test_delivery",
+      "description": "Send one audited owner test delivery",
+      "minimum_tier": "OWNER",
+      "section": "Owner diagnostics",
+      "retained_web_view": "ops",
+      "status": "IMPLEMENTED",
+      "end_to_end_parity": "NOT_PROVEN_BY_DESTINATION_MAPPING"
+    }
+  ],
+  "retained_workspace_views": [
+    "account",
+    "evidence",
+    "journal",
+    "markets",
+    "ops",
+    "overview",
+    "paper",
+    "performance",
+    "portfolio",
+    "signals",
+    "support",
+    "tools"
+  ],
+  "historical_route_requirements": [
+    {
+      "requirement_id": "SR-MASTER-16-001",
+      "title": "/\tPublic value proposition, current product safety language, clear CTA, no misleading win-rate guarantee.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:380",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-002",
+      "title": "/pricing\tPlans/entitlements, billing states, clear live-execution separation.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:381",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-003",
+      "title": "/methodology\tSignal qualification funnel, model/recovery explanation, no marketing overclaim.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:382",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-004",
+      "title": "/risk\tRisk disclosures, no-trade behavior, sizing/kill-switch concepts.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:383",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-005",
+      "title": "/security\tAccount/broker/API key security practices.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:384",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-006",
+      "title": "/status\tLive service/provider/release status from safe public aggregate data.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:385",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-007",
+      "title": "/docs\tProduct/API docs and lifecycle terminology.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:386",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-008",
+      "title": "/providers\tProvider capability/freshness/source-lineage policy.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:387",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-009",
+      "title": "/app\tOperational overview, current readiness and no-trade state.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:388",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-010",
+      "title": "/app/signals\tDelivered/active/history filters with canonical lifecycle.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:389",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-011",
+      "title": "/app/signals/:id\tImmutable plan + observations + model/risk + delivery + paper/broker + outcome timeline.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:390",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-012",
+      "title": "/app/markets\tCoverage, sessions, provider health, freshness, instrument metadata.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:391",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-013",
+      "title": "/app/research\tResearch distinct from execution-authoritative signals.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:392",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-014",
+      "title": "/app/watchlists\tPersistent watchlists across channels.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:393",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-015",
+      "title": "/app/alerts\tAlert CRUD, status and notification receipts.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:394",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-016",
+      "title": "/app/notifications\tNotification history, preferences, quiet hours and retry visibility.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:395",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-017",
+      "title": "/app/paper\tAccounts, settings, eligible/rejected signals, positions, fills, ledger, P&L and reconciliation.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:396",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-018",
+      "title": "/app/portfolio\tExposure, correlation/concentration, risk-at-stop, daily loss budget.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:397",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-019",
+      "title": "/app/performance\tSegmented forward vs paper vs shadow/replay metrics.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:398",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-020",
+      "title": "/app/journal\tNotes linked to signal/trade lifecycle.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:399",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-021",
+      "title": "/app/brokers\tConnections, demo certification, account status, reconciliation and execution eligibility.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:400",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-022",
+      "title": "/app/billing\tSubscription, invoices, receipts, entitlements.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:401",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-023",
+      "title": "/app/referrals\tOnly if in scope; otherwise remove dead navigation.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:402",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-024",
+      "title": "/app/support\tSupport tickets/contact with authenticated context.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:403",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-025",
+      "title": "/app/settings\tProfile, signal/paper preferences, notification preferences, sessions, MFA, API keys.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:404",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-026",
+      "title": "/app/developer\tAPI keys/scopes/docs if developer access is a product feature.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:405",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    },
+    {
+      "requirement_id": "SR-MASTER-16-027",
+      "title": "/app/operations\tOwner-only release, provider, DB, queue, ML, incident, outbox, migration and execution control cockpit.",
+      "source": "docs/SIGNALRANKAI_MASTER_DIRECTIVE_20261002.txt:406",
+      "section": "16",
+      "severity": "P1",
+      "status": "PARTIAL",
+      "code_evidence": [],
+      "test_evidence": [],
+      "runtime_evidence": [],
+      "staging_evidence": [],
+      "production_evidence": [],
+      "blocker": "Audit pending; this inventory makes no implementation or verification claim.",
+      "last_verified_sha": null,
+      "last_verified_at": null,
+      "regression_link": null
+    }
+  ],
+  "cutover_mode": "Public website on Next; existing workspace retained until full parity is verified"
+}

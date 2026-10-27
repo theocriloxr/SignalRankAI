@@ -89,7 +89,7 @@ def main() -> int:
 
     railway = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
     deploy = railway.get("deploy") or {}
-    require(deploy.get("startCommand") == "bash start.sh", "neutral Railway start command")
+    require(deploy.get("startCommand") == "sh start.sh", "neutral Railway start command")
     require("healthcheckPath" not in deploy, "healthcheck is frontdoor service-specific")
     require("preDeployCommand" not in deploy, "predeploy is frontdoor service-specific")
 

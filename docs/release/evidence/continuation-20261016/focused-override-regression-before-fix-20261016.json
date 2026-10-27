@@ -1,0 +1,25 @@
+{
+  "name": "focused-override-regression-before-fix-20261016",
+  "sha": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-16T20:29:20.447019+00:00",
+  "finished_at": "2026-10-16T20:29:22.486287+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_focused_universe_policy_20261016.py",
+    "-k",
+    "invalid_runtime_config"
+  ],
+  "cwd": ".",
+  "exit_code": 1,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/focused-override-regression-before-fix-20261016.log",
+  "log_sha256": "0b67b659885f930f0df511f650335728ce993e00d1543cf30cfe835ac6f0ead4",
+  "result": "FAIL",
+  "source_fingerprint_before": "0a71571b91e5fb0e739796444a4188ce50b20f97beb579e109365636df990eb9",
+  "source_fingerprint_after": "0a71571b91e5fb0e739796444a4188ce50b20f97beb579e109365636df990eb9",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

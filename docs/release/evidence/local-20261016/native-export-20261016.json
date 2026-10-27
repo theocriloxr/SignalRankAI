@@ -1,0 +1,27 @@
+{
+  "name": "native-export-20261016",
+  "sha": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-16T13:37:36.235992+00:00",
+  "finished_at": "2026-10-16T13:39:12.080887+00:00",
+  "command": [
+    "node",
+    "node_modules/expo/bin/cli",
+    "export",
+    "--platform",
+    "android",
+    "--platform",
+    "ios",
+    "--output-dir",
+    "../artifacts/stage1-20261014/native-export-20261016"
+  ],
+  "cwd": "mobile",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/native-export-20261016.log",
+  "log_sha256": "424846c04c857665d465e1f893f6dd4b1e46d52a03c63f30ec681dfb281d752e",
+  "result": "PASS",
+  "source_fingerprint_before": "d63e989853ad0ed6eb180c60f658673008f145f7cdbfa95e3a192d5ed490b348",
+  "source_fingerprint_after": "d63e989853ad0ed6eb180c60f658673008f145f7cdbfa95e3a192d5ed490b348",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

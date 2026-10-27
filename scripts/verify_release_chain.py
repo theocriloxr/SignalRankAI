@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0053_research_market_inputs")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0055_user_renewal_default")
 
 
 def main() -> int:
@@ -49,6 +49,11 @@ def main() -> int:
         "0051_strategy_health_baselines",
         "0052_research_dataset_snapshots",
         "0053_research_market_inputs",
+        "0054_shadow_pending_index",
+        "0055_user_renewal_default",
+        "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
+        "shadow_pending_index_invalid_or_definition_mismatch",
         "CREATE TABLE research_market_inputs",
         "research_market_inputs_immutable",
         "research_market_inputs_no_truncate",

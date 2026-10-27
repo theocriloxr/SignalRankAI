@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -149,7 +150,14 @@ def test_production_audience_allowlist_is_not_a_normal_recipient_filter(monkeypa
 
 def test_engine_pulse_has_one_scheduler_owner_and_fail_closed_production_lock() -> None:
     callers = []
-    for path in ROOT.rglob("*.py"):
+    # Inspect this checkout's source, including new files, without treating
+    # ignored virtual environments or separate recovery worktrees as its code.
+    names = subprocess.check_output(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.py"],
+        cwd=ROOT, text=True,
+    ).split("\0")
+    for name in sorted(set(names) - {""}):
+        path = ROOT / name
         if "/tests/" in f"/{path.as_posix()}" or path.as_posix().endswith("engine/admin_pulse.py"):
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")

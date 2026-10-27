@@ -1,0 +1,12 @@
+PASS compileall (1.469s) -> artifacts\full-system-5f7ae60c\compileall.log
+PASS env_contracts (0.484s) -> artifacts\full-system-5f7ae60c\env_contracts.log
+PASS schema_audit (3.922s) -> artifacts\full-system-5f7ae60c\schema_audit.log
+PASS architecture_smoke (0.422s) -> artifacts\full-system-5f7ae60c\architecture_smoke.log
+PASS db_session_audit (3.828s) -> artifacts\full-system-5f7ae60c\db_session_audit.log
+PASS governance_validation (0.219s) -> artifacts\full-system-5f7ae60c\governance_validation.log
+PASS secret_scan (19.094s) -> artifacts\full-system-5f7ae60c\secret_scan.log
+PASS production_readiness (0.219s) -> artifacts\full-system-5f7ae60c\production_readiness.log
+PASS runtime_config (0.312s) -> artifacts\full-system-5f7ae60c\runtime_config.log
+PASS railway_simulation (11.860s) -> artifacts\full-system-5f7ae60c\railway_simulation.log
+PASS fanout_load (1.422s) -> artifacts\full-system-5f7ae60c\fanout_load.log
+PASS provider_certification (5.235s) -> artifacts\full-system-5f7ae60c\provider_certification.log

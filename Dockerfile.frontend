@@ -1,0 +1,52 @@
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm install --global npm@11.17.0
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
+COPY frontend/vendor ./vendor
+RUN npm ci --no-fund
+COPY frontend/ ./
+ARG SIGNALRANK_PLATFORM_API_ORIGIN
+ARG SIGNALRANK_WORKSPACE_MODE=next
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SIGNALRANK_PLATFORM_API_ORIGIN=$SIGNALRANK_PLATFORM_API_ORIGIN \
+    SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE \
+    SIGNALRANK_FRONTEND_COMMIT=$RAILWAY_GIT_COMMIT_SHA
+RUN npm run lint && npm run test:transport && npm run test:presentation \
+    && npm run test:dependencies && npm audit --audit-level=high && npm run build
+
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS stripped-runtime
+# The standalone server needs Node only. Inherited package managers carry
+# unrelated vulnerable dependencies and must not be shipped in the runtime.
+RUN apk add --no-cache --upgrade zlib=1.3.2-r1 \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+      /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx \
+    && test -x /usr/local/bin/node
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=8080
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV SIGNALRANK_FRONTEND_COMMIT=$RAILWAY_GIT_COMMIT_SHA
+ARG SIGNALRANK_WORKSPACE_MODE=next
+ENV SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/public ./public
+RUN test ! -e /usr/local/lib/node_modules/npm/package.json \
+    && test ! -e /usr/local/bin/npm \
+    && node -e "require('node:fs').writeFileSync('/etc/signalrank-runtime.json',JSON.stringify({npmAbsent:true,node:process.version}))"
+
+# Ship only the resulting filesystem. Removed package-manager files must not
+# remain in inherited image layers or depend on deletion-marker handling.
+FROM scratch AS runtime
+COPY --from=stripped-runtime / /
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=8080 \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ARG RAILWAY_GIT_COMMIT_SHA
+ARG SIGNALRANK_WORKSPACE_MODE=next
+ENV SIGNALRANK_FRONTEND_COMMIT=$RAILWAY_GIT_COMMIT_SHA \
+    SIGNALRANK_WORKSPACE_MODE=$SIGNALRANK_WORKSPACE_MODE
+USER node
+EXPOSE 8080
+CMD ["node", "server.js"]

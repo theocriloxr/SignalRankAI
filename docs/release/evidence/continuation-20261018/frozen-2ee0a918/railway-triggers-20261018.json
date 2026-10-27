@@ -1,0 +1,463 @@
+{
+  "observed_at": {
+    "current_time": "2026-10-18 08:42:37 UTC"
+  },
+  "scope": "Read-only deployment source/trigger inspection; no variables fetched or mutations",
+  "inventory": {
+    "project": {
+      "id": "5baa1c14-a748-4dc8-8eb6-411c621e56c3",
+      "name": "trading-bot-account2"
+    },
+    "environments": [
+      {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      }
+    ],
+    "services": [
+      {
+        "id": "12284998-d47e-4964-a113-dcd8d5de0046",
+        "name": "SignalRankAI-Public-Web"
+      },
+      {
+        "id": "b8d0c7d3-0de8-4edf-beb7-2832733756cf",
+        "name": "signalrank-readonly-soak-20261012"
+      },
+      {
+        "id": "b22a7a44-9bec-4348-878c-5c4372fa5973",
+        "name": "r39-readonly-provider-cert"
+      },
+      {
+        "id": "7682c07a-8e79-4e70-ba01-8ebe79bb338a",
+        "name": "signalrank-prod-ml-certify-20260924"
+      },
+      {
+        "id": "72de530c-93b8-429f-9e39-3c5bfc7497fa",
+        "name": "signalrank-prod-migrate-0039-main"
+      },
+      {
+        "id": "d4c4c475-c54a-4caf-8cc5-65237937a785",
+        "name": "signalrank-prod-migrate-0039"
+      },
+      {
+        "id": "5658004b-4056-4704-ac3d-79dce7d87bfc",
+        "name": "production-db-backup-20260923"
+      },
+      {
+        "id": "b0833ab8-04cb-4c88-a764-d527bbde93c7",
+        "name": "signalrankai-analytics-prod"
+      },
+      {
+        "id": "1c518c7b-678f-4259-8dc8-3bab521ff887",
+        "name": "postgres-diagnostic"
+      },
+      {
+        "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+        "name": "striking-optimism"
+      },
+      {
+        "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+        "name": "bountiful-miracle"
+      },
+      {
+        "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+        "name": "Redis-_-ro"
+      },
+      {
+        "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+        "name": "PgBouncer"
+      },
+      {
+        "id": "1488765d-749c-4415-8ac3-52d346591879",
+        "name": "Postgres-R8Lr"
+      },
+      {
+        "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+        "name": "Redis"
+      },
+      {
+        "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+        "name": "SignalRankAI"
+      }
+    ]
+  },
+  "results": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "12284998-d47e-4964-a113-dcd8d5de0046",
+          "name": "SignalRankAI-Public-Web"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/release-recovery-20261008",
+          "commitSha": "f026bd16d90c0fbde2292e326525524fd75966ea"
+        },
+        "buildWatchPatterns": [
+          "__manual_verified_ui_candidate_only__/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "b8d0c7d3-0de8-4edf-beb7-2832733756cf",
+          "name": "signalrank-readonly-soak-20261012"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+        },
+        "buildWatchPatterns": [
+          "__pinned_readonly_observer_only__/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "b22a7a44-9bec-4348-878c-5c4372fa5973",
+          "name": "r39-readonly-provider-cert"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "8f8583933a853a54ba1b3585610ee466903c08fc"
+        },
+        "buildWatchPatterns": [
+          "__immutable_provider_candidate_only__/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "7682c07a-8e79-4e70-ba01-8ebe79bb338a",
+          "name": "signalrank-prod-ml-certify-20260924"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e"
+        },
+        "buildWatchPatterns": [
+          "production-ml-certifier-disabled/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "72de530c-93b8-429f-9e39-3c5bfc7497fa",
+          "name": "signalrank-prod-migrate-0039-main"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "main",
+          "checkSuites": false
+        },
+        "buildWatchPatterns": [
+          "__disabled_production_diagnostic__/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "d4c4c475-c54a-4caf-8cc5-65237937a785",
+          "name": "signalrank-prod-migrate-0039"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "checkSuites": false
+        },
+        "buildWatchPatterns": [
+          "production-migration-helper-disabled/**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "5658004b-4056-4704-ac3d-79dce7d87bfc",
+          "name": "production-db-backup-20260923"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722"
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "b0833ab8-04cb-4c88-a764-d527bbde93c7",
+          "name": "signalrankai-analytics-prod"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+        },
+        "buildWatchPatterns": [
+          "**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "1c518c7b-678f-4259-8dc8-3bab521ff887",
+          "name": "postgres-diagnostic"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "postgres:18-alpine"
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+          "name": "striking-optimism"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+        },
+        "buildWatchPatterns": [
+          "**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+          "name": "bountiful-miracle"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+        },
+        "buildWatchPatterns": [
+          "**"
+        ],
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+          "name": "Redis-_-ro"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "redis:8.2.9",
+          "autoUpdates": {
+            "type": "vuln",
+            "tagMode": "sha",
+            "schedule": [
+              {
+                "day": 6,
+                "endHour": 24,
+                "startHour": 10
+              },
+              {
+                "day": 0,
+                "endHour": 18,
+                "startHour": 0
+              }
+            ],
+            "remediationNotice": null
+          }
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+          "name": "PgBouncer"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "ghcr.io/railwayapp-templates/pgbouncer:1",
+          "autoUpdates": {
+            "type": "minor",
+            "tagMode": "sha",
+            "schedule": [
+              {
+                "day": 6,
+                "endHour": 6,
+                "startHour": 0
+              }
+            ]
+          }
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "1488765d-749c-4415-8ac3-52d346591879",
+          "name": "Postgres-R8Lr"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+          "autoUpdates": {
+            "type": "vuln",
+            "tagMode": "sha",
+            "schedule": [
+              {
+                "day": 0,
+                "endHour": 18,
+                "startHour": 0
+              }
+            ],
+            "remediationNotice": null
+          }
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+          "name": "Redis"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "image": "redis:8.2.9",
+          "autoUpdates": {
+            "type": "vuln",
+            "tagMode": "sha",
+            "schedule": [
+              {
+                "day": 6,
+                "endHour": 24,
+                "startHour": 10
+              },
+              {
+                "day": 0,
+                "endHour": 18,
+                "startHour": 0
+              }
+            ],
+            "remediationNotice": null
+          }
+        },
+        "stagedChangeCount": 0
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "service": {
+          "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+          "name": "SignalRankAI"
+        },
+        "environment": {
+          "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+          "name": "production"
+        },
+        "source": {
+          "repo": "theocriloxr/SignalRankAI",
+          "branch": "fix/provider-discovery-readiness-20260923",
+          "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+        },
+        "buildWatchPatterns": [
+          "**"
+        ],
+        "stagedChangeCount": 0
+      }
+    }
+  ]
+}

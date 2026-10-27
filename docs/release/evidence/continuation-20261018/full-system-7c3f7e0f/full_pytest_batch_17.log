@@ -1,0 +1,17 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_strategy_health_baselines.py' 'tests\test_strategy_market_data_gate.py' 'tests\test_strategy_runner.py' 'tests\test_strategy_runner_async.py' 'tests\test_telegram_broker_linking_security.py' 'tests\test_telegram_reachability.py' 'tests\test_telegram_webhook_registration_contract.py' 'tests\test_telemetry.py' 'tests\test_tick_liquidity.py' 'tests\test_tiered_execution_canonical_routing.py' 'tests\test_time_stop_outcome_persistence.py' 'tests\test_timeutils.py' 'tests\test_timezone_and_performance_v2.py' 'tests\test_traceability_completion_boundary.py' 'tests\test_trade_manager_breakeven_persistence.py' 'tests\test_trade_tracker.py' 'tests\test_trader_profiles_and_platform_reliability.py' 'tests\test_trading_account_ledger.py' 'tests\test_trading_ecosystem_intelligence.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 58%]
+....................................................                     [100%]
+============================== warnings summary ===============================
+.audit-venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_strategy_runner.py::StrategyRunnerTests::test_runner_invokes_strategy
+  C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\engine\strategies\runner.py:38: DeprecationWarning: There is no current event loop
+    _asyncio.get_event_loop().create_task(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+124 passed, 2 warnings in 65.13s (0:01:05)

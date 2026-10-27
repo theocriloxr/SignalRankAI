@@ -1,0 +1,71 @@
+::group::static-ruff - Ruff release-critical Python correctness
+All checks passed!
+::endgroup::
+::group::static-pyright-critical - Zero-error Pyright analysis for release-critical safety boundaries
+0 errors, 0 warnings, 0 informations
+::endgroup::
+::group::market-data-sdk-consumer-tests - Exercise installed vendor request models, parsers and fail-closed feed contracts in the isolated SDK interpreter
+test_alpaca_real_request_models_and_response_parser (test_installed_data_sdks.InstalledSDKTests.test_alpaca_real_request_models_and_response_parser) ... ERROR
+test_ccxt_real_kraken_parser_and_active_market_check (test_installed_data_sdks.InstalledSDKTests.test_ccxt_real_kraken_parser_and_active_market_check) ... ERROR
+test_ibapi_real_client_callback_contract_without_order_methods (test_installed_data_sdks.InstalledSDKTests.test_ibapi_real_client_callback_contract_without_order_methods) ... ERROR
+test_ibapi_rejects_delayed_market_data_type (test_installed_data_sdks.InstalledSDKTests.test_ibapi_rejects_delayed_market_data_type) ... ERROR
+test_marketdata_real_http_transport_and_dataclass_parser (test_installed_data_sdks.InstalledSDKTests.test_marketdata_real_http_transport_and_dataclass_parser) ... ERROR
+test_websocket_real_dependency_and_quote_freshness (test_installed_data_sdks.InstalledSDKTests.test_websocket_real_dependency_and_quote_freshness) ... ERROR
+
+======================================================================
+ERROR: test_alpaca_real_request_models_and_response_parser (test_installed_data_sdks.InstalledSDKTests.test_alpaca_real_request_models_and_response_parser)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 36, in test_alpaca_real_request_models_and_response_parser
+    rows = worker.alpaca_bars(dict(symbol="AAPL", timeframe="4h", limit=2, feed="iex"), 5)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\market_data_sdk\worker.py", line 68, in alpaca_bars
+    from alpaca.common.enums import Sort
+ModuleNotFoundError: No module named 'alpaca'
+
+======================================================================
+ERROR: test_ccxt_real_kraken_parser_and_active_market_check (test_installed_data_sdks.InstalledSDKTests.test_ccxt_real_kraken_parser_and_active_market_check)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 73, in test_ccxt_real_kraken_parser_and_active_market_check
+    import ccxt
+ModuleNotFoundError: No module named 'ccxt'
+
+======================================================================
+ERROR: test_ibapi_real_client_callback_contract_without_order_methods (test_installed_data_sdks.InstalledSDKTests.test_ibapi_real_client_callback_contract_without_order_methods)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 88, in test_ibapi_real_client_callback_contract_without_order_methods
+    from ibapi.client import EClient
+ModuleNotFoundError: No module named 'ibapi'
+
+======================================================================
+ERROR: test_ibapi_rejects_delayed_market_data_type (test_installed_data_sdks.InstalledSDKTests.test_ibapi_rejects_delayed_market_data_type)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 116, in test_ibapi_rejects_delayed_market_data_type
+    from ibapi.client import EClient
+ModuleNotFoundError: No module named 'ibapi'
+
+======================================================================
+ERROR: test_marketdata_real_http_transport_and_dataclass_parser (test_installed_data_sdks.InstalledSDKTests.test_marketdata_real_http_transport_and_dataclass_parser)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 46, in test_marketdata_real_http_transport_and_dataclass_parser
+    from marketdata import MarketDataClient
+ModuleNotFoundError: No module named 'marketdata'
+
+======================================================================
+ERROR: test_websocket_real_dependency_and_quote_freshness (test_installed_data_sdks.InstalledSDKTests.test_websocket_real_dependency_and_quote_freshness)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\tests_sdk\test_installed_data_sdks.py", line 130, in test_websocket_real_dependency_and_quote_freshness
+    import websocket
+ModuleNotFoundError: No module named 'websocket'
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.664s
+
+FAILED (errors=6)
+::endgroup::
+release gate failed: market-data-sdk-consumer-tests exit=1

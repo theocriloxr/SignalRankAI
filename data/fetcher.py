@@ -284,8 +284,22 @@ def _provider_queue_timeout_seconds() -> float:
         return 10.0
 
 
-def _max_provider_attempts() -> int:
-    return _env_positive_int("OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME", 2)
+def _max_provider_attempts(asset_kind: str | None = None) -> int:
+    """Allow an explicit class budget without changing the default provider policy."""
+    global_limit = _env_positive_int("OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME", 2)
+    kind = str(asset_kind or "").strip().lower()
+    kind = {"forex": "fx", "equity": "stock", "stocks": "stock", "indices": "index"}.get(kind, kind)
+    env_by_kind = {
+        "fx": "OHLC_FX_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME",
+        "stock": "OHLC_STOCK_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME",
+        "index": "OHLC_INDEX_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME",
+        "commodity": "OHLC_COMMODITY_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME",
+        "crypto": "OHLC_CRYPTO_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME",
+    }
+    env_name = env_by_kind.get(kind)
+    if not env_name or not str(os.getenv(env_name) or "").strip():
+        return global_limit
+    return _env_positive_int(env_name, global_limit)
 
 
 def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_kind: str = "", timeframe: str = "") -> list[tuple[str, object]]:
@@ -304,7 +318,7 @@ def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_k
             continue
         seen.add(alias)
         ordered.append(item)
-        if len(ordered) >= _max_provider_attempts():
+        if len(ordered) >= _max_provider_attempts(asset_kind):
             break
     return ordered
 
@@ -413,7 +427,7 @@ def _try_provider_chain(
         "[provider_capability_result] asset=%s endpoint=ohlc attempted=%s max_attempts=%s state=DISABLED_NO_PROVIDER",
         asset,
         attempted,
-        _max_provider_attempts(),
+        _max_provider_attempts(asset_kind),
     )
     return []
 
@@ -2712,7 +2726,7 @@ async def async_get_candles(asset, timeframe):
         # Apply endpoint/timeframe capability before the attempt budget so an
         # analysis-only daily provider never consumes an intraday attempt.
         ordered_provs = [p for p in ordered_provs if _provider_timeframe_eligible(p[0], timeframe)]
-        ordered_provs = ordered_provs[: _max_provider_attempts()]
+        ordered_provs = ordered_provs[: _max_provider_attempts(asset_type)]
 
         if str(asset_type or "").lower().strip() == "crypto":
             order_names = [str(name).replace("_connector", "") for name, _ in ordered_provs]

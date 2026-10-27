@@ -1,0 +1,17 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/production_readiness_check.py
+
+ATTEMPT 1/1
+
+PASS required_files: all present
+PASS governance_docs: valid
+PASS env_contracts: required keys documented
+PASS profile_contract:SignalRankAI_v1.3.3_Railway_Staging_Certification.env.example: profile-specific gates documented
+PASS profile_contract:SignalRankAI_v1.3.3_Railway_Production_Advisory.env.example: profile-specific gates documented
+PASS profile_contract:SignalRankAI_v1.3.3_Railway_Live_Owner_Canary.env.example: profile-specific gates documented
+PASS web_health_routes: health and metrics routes present
+PASS railway_direct_observability_routes: Railway owns direct healthz and Prometheus routes
+PASS telemetry_markers: core metrics present
+PASS telegram_core_commands: core commands registered
+PASS actual_market_data_contract: fetcher declares real chart candles with no demo/synthetic generation
+PASS documented_high_risk_items: open high-risk items documented in docs/LIVING_TECHNICAL_DEBT_REGISTER.md,docs/LIVING_RISK_REGISTER.md
+overall=PASS checks=12

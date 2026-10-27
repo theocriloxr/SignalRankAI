@@ -156,7 +156,7 @@ In Telegram:
 Verify the token from PowerShell:
 
 ```powershell
-$env:TELEGRAM_BOT_TOKEN = "PASTE_TOKEN_HERE"
+$env:TELEGRAM_BOT_TOKEN = "<YOUR_TELEGRAM_BOT_TOKEN>"
 Invoke-RestMethod "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/getMe" | ConvertTo-Json -Depth 8
 ```
 

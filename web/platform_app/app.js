@@ -56,7 +56,7 @@ async function refreshBrowserSession(){
     const headers={'Content-Type':'application/json'};
     const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf;
     const response=await fetch(API+'/auth/refresh',{method:'POST',credentials:'include',headers,body:JSON.stringify({client_type:'web'})});
-    if(!response.ok)return false;
+    if(!response.ok){await response.body?.cancel().catch(()=>{});return false;}
     try{const data=await response.json();if(data?.user)state.user=data.user}catch{}
     return true
   })().finally(()=>{sessionRefreshPromise=null});
@@ -74,12 +74,13 @@ async function request(path,options={},allowSessionRefresh=true,transientAttempt
     const error=new Error('SignalRank connection was interrupted. Your session is safe; please retry.');error.status=0;error.cause=fetchError;throw error
   }
   if(safeRead&&[502,503,504].includes(response.status)&&transientAttempt<2){
+    await response.body?.cancel().catch(()=>{});
     await wait(350*(transientAttempt+1));
     return request(path,options,allowSessionRefresh,transientAttempt+1)
   }
   let data={};try{data=await response.json()}catch{}
   const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
-  if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
+  if(response.status===401&&safeRead&&allowSessionRefresh&&!authBootstrapPath){
     const refreshed=await refreshBrowserSession().catch(()=>false);
     if(refreshed)return request(path,options,false)
   }
@@ -166,8 +167,8 @@ $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>set
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
 $('#loginForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/login',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}))}catch(err){toast(err.message,true)}};
 function signupContext(){const qs=new URLSearchParams(location.search);return{referral_code:qs.get('ref')||qs.get('referral')||qs.get('referral_code')||null,signup_source:'web',landing_path:location.pathname+location.search,http_referrer:document.referrer||null,utm_source:qs.get('utm_source'),utm_medium:qs.get('utm_medium'),utm_campaign:qs.get('utm_campaign'),utm_content:qs.get('utm_content'),utm_term:qs.get('utm_term')}}
-$('#registerForm').onsubmit=async e=>{e.preventDefault();try{const data=await request('/auth/register',{method:'POST',body:JSON.stringify({...formData(e.target),...signupContext(),client_type:'web'})});await completeAuth(data);toast('Account created. Check your email to verify it. You can connect Telegram later from Account.')}catch(err){toast(err.message,true)}};
-$('#activateForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/telegram/complete',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}));history.replaceState({},'',location.pathname);toast('Telegram account activated')}catch(err){toast(err.message,true)}};
+$('#registerForm').onsubmit=async e=>{e.preventDefault();try{const raw=formData(e.target);const payload={...raw,...signupContext(),client_type:'web',platform_terms_accepted:Boolean(e.target.elements.platform_terms_accepted?.checked),privacy_acknowledged:Boolean(e.target.elements.privacy_acknowledged?.checked),age_eligibility_confirmed:Boolean(e.target.elements.age_eligibility_confirmed?.checked),marketing_consent:Boolean(e.target.elements.marketing_consent?.checked)};const data=await request('/auth/register',{method:'POST',body:JSON.stringify(payload)});await completeAuth(data);toast('Account created. Check your email to verify it. Execution-risk acceptance remains separate from account creation.')}catch(err){toast(err.message,true)}};
+$('#activateForm').onsubmit=async e=>{e.preventDefault();try{const raw=formData(e.target);const payload={...raw,client_type:'web',platform_terms_accepted:Boolean(e.target.elements.platform_terms_accepted?.checked),privacy_acknowledged:Boolean(e.target.elements.privacy_acknowledged?.checked),age_eligibility_confirmed:Boolean(e.target.elements.age_eligibility_confirmed?.checked),marketing_consent:Boolean(e.target.elements.marketing_consent?.checked)};await completeAuth(await request('/auth/telegram/complete',{method:'POST',body:JSON.stringify(payload)}));history.replaceState({},'',location.pathname);toast('Telegram account activated. Broker execution remains separately controlled.')}catch(err){toast(err.message,true)}};
 $('#mfaForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/mfa/complete',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}))}catch(err){toast(err.message,true)}};
 $('#passwordResetForm').onsubmit=async e=>{e.preventDefault();try{await request('/auth/password-reset/complete',{method:'POST',body:JSON.stringify(formData(e.target))});history.replaceState({},'',location.pathname);setAuthTab('login');toast('Password reset. Sign in again.')}catch(err){toast(err.message,true)}};
 $('#magicLinkButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/magic-link/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, a sign-in link was queued.')}catch(err){toast(err.message,true)}};
@@ -627,10 +628,58 @@ $('#createApiKeyButton').onclick=async()=>{const name=prompt('Name this API key'
 $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Turn off subscription auto-renew? Your current paid access remains active until its expiry, and this does not issue a refund.'))return;try{const result=await request('/billing/cancel-auto-renew',{method:'POST',body:JSON.stringify({confirm:true})});toast(result.provider_follow_up_required?'Auto-renew is off in SignalRankAI, but Paystack needs manual follow-up. A billing review is recommended.':'Auto-renew cancelled. Current access remains until expiry.');await loadAccount()}catch(err){toast(err.message,true)}});
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
+async function createPrivacyRightsTicket(kind){
+  const deletion=kind==='deletion';
+  const subject=deletion?'Account deletion review':'Personal data access / export request';
+  const message=deletion
+    ?'I am requesting review of account deletion and erasure where legally available. Please preserve only records that must be retained for security, payment, tax, dispute, fraud-prevention, regulatory or immutable trading-evidence obligations, and tell me what cannot be deleted and why. Do not abandon any active broker position.'
+    :'I am requesting access to and an export of personal information associated with my authenticated SignalRankAI account, subject to identity/security verification and lawful exclusions.';
+  const result=await request('/support/tickets',{method:'POST',body:JSON.stringify({subject,category:'privacy',message})});
+  toast(`Privacy request created: ${result.ticket_id}`);
+  await loadSupport();
+}
+$('#requestDataExportButton')?.addEventListener('click',async()=>{try{await createPrivacyRightsTicket('export')}catch(err){toast(err.message,true)}});
+$('#requestAccountDeletionButton')?.addEventListener('click',async()=>{if(!window.confirm('Request account deletion review? Active broker positions, paid-period state and legally required records must be handled safely before any erasure.'))return;try{await createPrivacyRightsTicket('deletion')}catch(err){toast(err.message,true)}});
+
 async function loadBillingProducts(){
-  const data=await request('/billing/products');const products=data.products||[];const current=String(state.user?.tier||'free').toLowerCase();
-  $('#billingProducts').innerHTML=products.length?products.map(p=>{const active=String(p.tier||'').toLowerCase()===current;return `<article class="metric-card plan-card ${active?'current-plan':''}"><div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button></article>`}).join(''):'<p>No public checkout products are available right now.</p>';
-  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Opening secure checkout…';try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;button.textContent=original;if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');toast(err.message,true)}})
+  const data=await request('/billing/products');
+  const products=data.products||[];
+  const current=String(state.user?.tier||'free').toLowerCase();
+  $('#billingProducts').innerHTML=products.length?products.map(p=>{
+    const active=String(p.tier||'').toLowerCase()===current;
+    const renewal=p.recurring
+      ?'<small class="warning">Renews automatically until cancelled</small>'
+      :'<small class="muted">One-off paid period · no automatic renewal</small>';
+    return `<article class="metric-card plan-card ${active?'current-plan':''}">
+      <div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div>
+      <strong>${esc(p.display_name)}</strong>
+      <p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p>
+      ${renewal}
+      <p class="muted"><a href="/billing-policy" target="_blank" rel="noopener">Billing, cancellation & refund policy</a></p>
+      <button class="primary billing-checkout" data-product="${esc(p.product_id)}" data-recurring="${p.recurring?'1':'0'}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button>
+    </article>`;
+  }).join(''):'<p>No public checkout products are available right now.</p>';
+  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{
+    if(button.disabled)return;
+    const recurring=button.dataset.recurring==='1';
+    if(recurring&&!window.confirm('This plan renews automatically until you cancel auto-renew from Account. Current paid access continues through the paid period after cancellation. Continue to Paystack?'))return;
+    button.disabled=true;
+    const original=button.textContent;
+    button.textContent='Opening secure checkout…';
+    try{
+      const checkout=await request('/billing/checkout',{
+        method:'POST',
+        body:JSON.stringify({product_id:button.dataset.product,currency:'NGN',recurring_acknowledged:recurring})
+      });
+      if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');
+      location.assign(checkout.authorization_url);
+    }catch(err){
+      button.disabled=false;
+      button.textContent=original;
+      if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');
+      toast(err.message,true);
+    }
+  });
 }
 async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile({preserveForm:true});const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile({preserveForm:true})}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}

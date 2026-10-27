@@ -1,0 +1,680 @@
+{
+  "observed_at": "2026-10-16 20:37:41 UTC",
+  "scope": "READ_ONLY_CONTROL_PLANE_METADATA; no runtime DB, provider, broker, billing or deployment actions",
+  "inventory": {
+    "project": {
+      "id": "5baa1c14-a748-4dc8-8eb6-411c621e56c3",
+      "name": "trading-bot-account2"
+    },
+    "environments": [
+      {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      }
+    ],
+    "services": [
+      {
+        "id": "12284998-d47e-4964-a113-dcd8d5de0046",
+        "name": "SignalRankAI-Public-Web"
+      },
+      {
+        "id": "b8d0c7d3-0de8-4edf-beb7-2832733756cf",
+        "name": "signalrank-readonly-soak-20261012"
+      },
+      {
+        "id": "b22a7a44-9bec-4348-878c-5c4372fa5973",
+        "name": "r39-readonly-provider-cert"
+      },
+      {
+        "id": "7682c07a-8e79-4e70-ba01-8ebe79bb338a",
+        "name": "signalrank-prod-ml-certify-20260924"
+      },
+      {
+        "id": "72de530c-93b8-429f-9e39-3c5bfc7497fa",
+        "name": "signalrank-prod-migrate-0039-main"
+      },
+      {
+        "id": "d4c4c475-c54a-4caf-8cc5-65237937a785",
+        "name": "signalrank-prod-migrate-0039"
+      },
+      {
+        "id": "5658004b-4056-4704-ac3d-79dce7d87bfc",
+        "name": "production-db-backup-20260923"
+      },
+      {
+        "id": "b0833ab8-04cb-4c88-a764-d527bbde93c7",
+        "name": "signalrankai-analytics-prod"
+      },
+      {
+        "id": "1c518c7b-678f-4259-8dc8-3bab521ff887",
+        "name": "postgres-diagnostic"
+      },
+      {
+        "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+        "name": "striking-optimism"
+      },
+      {
+        "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+        "name": "bountiful-miracle"
+      },
+      {
+        "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+        "name": "Redis-_-ro"
+      },
+      {
+        "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+        "name": "PgBouncer"
+      },
+      {
+        "id": "1488765d-749c-4415-8ac3-52d346591879",
+        "name": "Postgres-R8Lr"
+      },
+      {
+        "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+        "name": "Redis"
+      },
+      {
+        "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+        "name": "SignalRankAI"
+      }
+    ]
+  },
+  "triggers": [
+    {
+      "service": {
+        "id": "12284998-d47e-4964-a113-dcd8d5de0046",
+        "name": "SignalRankAI-Public-Web"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/release-recovery-20261008",
+        "commitSha": "f026bd16d90c0fbde2292e326525524fd75966ea"
+      },
+      "watchPatterns": [
+        "__manual_verified_ui_candidate_only__/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "b8d0c7d3-0de8-4edf-beb7-2832733756cf",
+        "name": "signalrank-readonly-soak-20261012"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+      },
+      "watchPatterns": [
+        "__pinned_readonly_observer_only__/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "b22a7a44-9bec-4348-878c-5c4372fa5973",
+        "name": "r39-readonly-provider-cert"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "8f8583933a853a54ba1b3585610ee466903c08fc"
+      },
+      "watchPatterns": [
+        "__immutable_provider_candidate_only__/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "7682c07a-8e79-4e70-ba01-8ebe79bb338a",
+        "name": "signalrank-prod-ml-certify-20260924"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e"
+      },
+      "watchPatterns": [
+        "production-ml-certifier-disabled/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "72de530c-93b8-429f-9e39-3c5bfc7497fa",
+        "name": "signalrank-prod-migrate-0039-main"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "main",
+        "checkSuites": false
+      },
+      "watchPatterns": [
+        "__disabled_production_diagnostic__/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "d4c4c475-c54a-4caf-8cc5-65237937a785",
+        "name": "signalrank-prod-migrate-0039"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "checkSuites": false
+      },
+      "watchPatterns": [
+        "production-migration-helper-disabled/**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "5658004b-4056-4704-ac3d-79dce7d87bfc",
+        "name": "production-db-backup-20260923"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722"
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "b0833ab8-04cb-4c88-a764-d527bbde93c7",
+        "name": "signalrankai-analytics-prod"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+      },
+      "watchPatterns": [
+        "**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "1c518c7b-678f-4259-8dc8-3bab521ff887",
+        "name": "postgres-diagnostic"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "postgres:18-alpine"
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "437eef9d-c41a-43d1-b41e-eb788b51c072",
+        "name": "striking-optimism"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+      },
+      "watchPatterns": [
+        "**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "2f71448c-6218-4355-abd0-381d8dfdc241",
+        "name": "bountiful-miracle"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+      },
+      "watchPatterns": [
+        "**"
+      ],
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "eeee9403-0cbe-4452-ad78-29f688ac5ee9",
+        "name": "Redis-_-ro"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "redis:8.2.9",
+        "autoUpdates": {
+          "type": "vuln",
+          "tagMode": "sha",
+          "schedule": [
+            {
+              "day": 6,
+              "endHour": 24,
+              "startHour": 10
+            },
+            {
+              "day": 0,
+              "endHour": 18,
+              "startHour": 0
+            }
+          ],
+          "remediationNotice": null
+        }
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "1e6c8209-6bcc-4479-90b1-b05cacb571e8",
+        "name": "PgBouncer"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "ghcr.io/railwayapp-templates/pgbouncer:1",
+        "autoUpdates": {
+          "type": "minor",
+          "tagMode": "sha",
+          "schedule": [
+            {
+              "day": 6,
+              "endHour": 6,
+              "startHour": 0
+            }
+          ]
+        }
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "1488765d-749c-4415-8ac3-52d346591879",
+        "name": "Postgres-R8Lr"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+        "autoUpdates": {
+          "type": "vuln",
+          "tagMode": "sha",
+          "schedule": [
+            {
+              "day": 0,
+              "endHour": 18,
+              "startHour": 0
+            }
+          ],
+          "remediationNotice": null
+        }
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "352909a9-16ce-4182-8c1b-7d737d6ee263",
+        "name": "Redis"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "image": "redis:8.2.9",
+        "autoUpdates": {
+          "type": "vuln",
+          "tagMode": "sha",
+          "schedule": [
+            {
+              "day": 6,
+              "endHour": 24,
+              "startHour": 10
+            },
+            {
+              "day": 0,
+              "endHour": 18,
+              "startHour": 0
+            }
+          ],
+          "remediationNotice": null
+        }
+      },
+      "staged": null
+    },
+    {
+      "service": {
+        "id": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+        "name": "SignalRankAI"
+      },
+      "environment": {
+        "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+        "name": "production"
+      },
+      "source": {
+        "repo": "theocriloxr/SignalRankAI",
+        "branch": "fix/provider-discovery-readiness-20260923",
+        "commitSha": "9865a3d1bcee632bfd9347e50d5de34d355225d9"
+      },
+      "watchPatterns": [
+        "**"
+      ],
+      "staged": null
+    }
+  ],
+  "deployments": [
+    {
+      "id": "8185ed4f-dc98-41eb-bfe6-183135838310",
+      "serviceId": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+      "status": "SUCCESS",
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "Merge pull request #199 from theocriloxr/fix/release-recovery-20261008\n\nFix broker page and MetaTrader lookup session crashes",
+        "commitHash": "9865a3d1bcee632bfd9347e50d5de34d355225d9",
+        "branch": "fix/provider-discovery-readiness-20260923"
+      },
+      "createdAt": "2026-10-12T09:44:14.073Z"
+    },
+    {
+      "id": "db9abe4b-bee9-4f39-a629-5bd9bd8b93f4",
+      "serviceId": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+      "status": "SKIPPED",
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "Merge pull request #199 from theocriloxr/fix/release-recovery-20261008\n\nFix broker page and MetaTrader lookup session crashes",
+        "commitHash": "9865a3d1bcee632bfd9347e50d5de34d355225d9",
+        "branch": "fix/provider-discovery-readiness-20260923"
+      },
+      "createdAt": "2026-10-12T09:42:48.434Z"
+    },
+    {
+      "id": "1861636b-22cb-4d01-823a-4d45e2468dcf",
+      "serviceId": "12284998-d47e-4964-a113-dcd8d5de0046",
+      "status": "SUCCESS",
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "fix(frontend): release legacy refresh streams at public handoff",
+        "commitHash": "f026bd16d90c0fbde2292e326525524fd75966ea",
+        "branch": "fix/release-recovery-20261008"
+      },
+      "createdAt": "2026-10-13T01:53:45.766Z"
+    },
+    {
+      "id": "93b71821-78a4-433b-bb5a-ac8579b70436",
+      "serviceId": "12284998-d47e-4964-a113-dcd8d5de0046",
+      "status": "REMOVED",
+      "meta": {
+        "reason": "deploy",
+        "commitMessage": "fix(security): pin patched zlib in frontend runtime",
+        "commitHash": "e7ac20df5ebf8b82e34367a1d4ea5a24c2aaf40f",
+        "branch": "fix/release-recovery-20261008"
+      },
+      "createdAt": "2026-10-13T01:28:58.744Z"
+    }
+  ],
+  "health": {
+    "environment": {
+      "id": "05a014d1-73c1-485c-b767-e734c7ea2877",
+      "name": "production"
+    },
+    "services": [
+      {
+        "serviceId": "b8d0c7d3-0de8-4edf-beb7-2832733756cf",
+        "serviceName": "signalrank-readonly-soak-20261012",
+        "state": "crashed",
+        "statusText": "Crashed about 15 hours ago",
+        "activeDeployments": [
+          {
+            "id": "0bbc2ed3-0f38-4ba1-9341-53403bc4d3dd",
+            "status": "CRASHED",
+            "createdAt": "2026-10-13T05:11:25.348Z",
+            "statusUpdatedAt": "2026-10-16T05:14:10.348Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 0,
+          "crashed": 1,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 1
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": true,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "12284998-d47e-4964-a113-dcd8d5de0046",
+        "serviceName": "SignalRankAI-Public-Web",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "1861636b-22cb-4d01-823a-4d45e2468dcf",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-13T01:53:45.766Z",
+            "statusUpdatedAt": "2026-10-13T01:54:56.065Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "b0833ab8-04cb-4c88-a764-d527bbde93c7",
+        "serviceName": "signalrankai-analytics-prod",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "73455f4b-07f8-4591-9bef-2bd02e3a8d51",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-12T09:44:22.003Z",
+            "statusUpdatedAt": "2026-10-12T09:47:20.213Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "60ad5d9b-02af-40ec-a677-6ce574c2ba09",
+        "serviceName": "SignalRankAI",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "8185ed4f-dc98-41eb-bfe6-183135838310",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-12T09:44:14.073Z",
+            "statusUpdatedAt": "2026-10-12T09:48:26.315Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "d4c4c475-c54a-4caf-8cc5-65237937a785",
+        "serviceName": "signalrank-prod-migrate-0039",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "ababeaab-d02e-4456-bc29-41deb534b3db",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-06T23:09:12.555Z",
+            "statusUpdatedAt": "2026-10-06T23:11:13.424Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "72de530c-93b8-429f-9e39-3c5bfc7497fa",
+        "serviceName": "signalrank-prod-migrate-0039-main",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "710734b9-3382-4390-b9c4-e08c03be9948",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-03T16:59:29.010Z",
+            "statusUpdatedAt": "2026-10-03T17:00:01.999Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 1,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      },
+      {
+        "serviceId": "7682c07a-8e79-4e70-ba01-8ebe79bb338a",
+        "serviceName": "signalrank-prod-ml-certify-20260924",
+        "state": "online",
+        "statusText": "Online",
+        "activeDeployments": [
+          {
+            "id": "8d9ec3c7-c130-45ad-9e04-8a18c24684a2",
+            "status": "SUCCESS",
+            "createdAt": "2026-10-03T13:28:05.662Z",
+            "statusUpdatedAt": "2026-10-03T13:28:11.738Z"
+          }
+        ],
+        "replicaStatus": {
+          "running": 0,
+          "crashed": 0,
+          "total": 1
+        },
+        "cronJob": null,
+        "issues": {
+          "warningCount": 0,
+          "criticalCount": 0
+        },
+        "recentFailures": 0,
+        "recentFailedDeployments": [],
+        "hasIssues": false,
+        "isCronJob": false,
+        "hasVolume": false
+      }
+    ],
+    "pendingWork": [],
+    "summary": {
+      "totalServices": 7,
+      "servicesWithIssues": 1,
+      "totalFailures": 0
+    }
+  }
+}

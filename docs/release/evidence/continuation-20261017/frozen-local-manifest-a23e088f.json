@@ -1,0 +1,34 @@
+{
+  "name": "frozen-local-manifest-a23e088f",
+  "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-16T20:43:20.343913+00:00",
+  "finished_at": "2026-10-16T20:43:50.075619+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "scripts/run_release_manifest.py",
+    "--environment",
+    "local"
+  ],
+  "cwd": ".",
+  "exit_code": 1,
+  "command_exit_code": 1,
+  "require_clean": true,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/frozen-local-manifest-a23e088f.log",
+  "log_sha256": "728548e97c2e1fba5edcaca15b27ebd32dead961ce68e880b66e4d463e29d715",
+  "result": "FAIL",
+  "source_unchanged": true,
+  "source_fingerprint_before": "864de10962d0e1873a84cf766815fd06e20bf3bf572f989027afb9c40eccdc89",
+  "source_fingerprint_after": "864de10962d0e1873a84cf766815fd06e20bf3bf572f989027afb9c40eccdc89",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

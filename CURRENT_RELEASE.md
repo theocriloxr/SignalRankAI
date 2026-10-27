@@ -1,18 +1,24 @@
 # Current SignalRankAI Release
 
+The authoritative recovery/handoff contract is now
+[`docs/release/MASTER_EXECUTION_CONTRACT.md`](docs/release/MASTER_EXECUTION_CONTRACT.md),
+with exact source revisions in [`baseline.json`](docs/release/baseline.json).
+Stage 1 acceptance and current evidence are recorded there. Production baseline
+values below are historical observations, not a fresh deployment certification.
+
 ```text
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0053_research_market_inputs
-Release-candidate branch: fix/provider-discovery-readiness-20260923
+Repository Alembic head: 0055_user_renewal_default
+Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
-Production runtime baseline: 8f8583933a853a54ba1b3585610ee466903c08fc
+Production runtime baseline: 9865a3d1bcee632bfd9347e50d5de34d355225d9 (schema 0053_research_market_inputs)
 Production live-money posture during certification: keep disabled / fail-closed
 ```
 
-This file is the current source for release provenance. Historical staging,
+This file summarizes release provenance. Historical staging,
 production and clean-room reports remain evidence for the exact older SHAs they
 name; they do **not** certify the current release candidate.
 
@@ -30,6 +36,10 @@ chain with:
 
 - `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.
 - `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.
+
+- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.
+
+- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.
 
 The current release candidate also includes:
 

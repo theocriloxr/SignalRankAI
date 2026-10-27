@@ -1,0 +1,21 @@
+{
+  "name": "mobile-typecheck-frozen",
+  "sha": "2e94cae344c18ac58810f43b86b9aa187465a5cb",
+  "environment": "isolated_local_postgresql17",
+  "started_at": "2026-10-15T12:28:05.969551+00:00",
+  "finished_at": "2026-10-15T12:28:20.622340+00:00",
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "cwd": "mobile",
+  "exit_code": 0,
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/mobile-typecheck-frozen.log",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "result": "PASS",
+  "source_fingerprint_before": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "source_fingerprint_after": "3bf65c169f29977b992b2a5ef52ac1653ccf6f937406145500dcae939e0d4c4a",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

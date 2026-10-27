@@ -1,0 +1,203 @@
+{
+  "git_sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "candidate_dirty": false,
+  "scope": "NEXT_PRODUCTION_BUILD_REAL_FASTAPI_POSTGRES_SYNTHETIC_ACCOUNTS",
+  "native_devices_verified": false,
+  "checks": [
+    "both frontend health URLs prove candidate identity without financial certification",
+    "explicit consent registration creates a real isolated database account and verified cookie session",
+    "fresh nonces, caller nonce rejected, unauthorized inline script blocked",
+    "real account login, HttpOnly session cookies, no browser-storage tokens",
+    "watchlist UI write persisted after refresh; missing CSRF rejected by backend",
+    "expired access cookie renewed by authenticated refresh without losing account state",
+    "public and workspace fit nine viewport widths in both themes; theme persists across routes",
+    "logout invalidates account access",
+    "second account cannot see first account watchlist; customer denied operator API and UI",
+    "already-linked Telegram account and verified email are not prompted to reconnect or verify again"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/ai",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/contact",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/docs",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/faq",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/features",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/login",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/markets",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/methodology",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/pricing",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/privacy",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/product",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/providers",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/risk",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/security",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/status",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/strategies",
+      "status": 200,
+      "scope": "public"
+    },
+    {
+      "path": "/app",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/signals",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/markets",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/research",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/watchlists",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/alerts",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/notifications",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/paper",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/portfolio",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/performance",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/journal",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/brokers",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/billing",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/support",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/settings",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    },
+    {
+      "path": "/app/operations",
+      "status": 200,
+      "state": "account data rendered",
+      "scope": "authenticated"
+    }
+  ],
+  "errors": [],
+  "status": "PASS"
+}

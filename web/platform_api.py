@@ -21,7 +21,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import StrictBool, BaseModel, Field
 from sqlalchemy import text
 
 from db.session import get_session, is_db_configured
@@ -75,10 +75,17 @@ SESSION_COOKIE = "sr_session"
 CSRF_COOKIE = "sr_csrf"
 
 
+CURRENT_PLATFORM_TERMS_VERSION = "2026-10-03"
+
+
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=10, max_length=256)
     display_name: str | None = Field(default=None, max_length=160)
+    platform_terms_accepted: StrictBool = False
+    privacy_acknowledged: StrictBool = False
+    age_eligibility_confirmed: StrictBool = False
+    marketing_consent: StrictBool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
     referral_code: str | None = Field(default=None, max_length=64)
@@ -157,6 +164,10 @@ class TelegramActivationCompleteRequest(BaseModel):
     token_or_code: str = Field(min_length=6, max_length=256)
     email: str = Field(min_length=5, max_length=320)
     password: str = Field(min_length=10, max_length=256)
+    platform_terms_accepted: StrictBool = False
+    privacy_acknowledged: StrictBool = False
+    age_eligibility_confirmed: StrictBool = False
+    marketing_consent: StrictBool = False
     client_type: str = Field(default="web", pattern=r"^(web|mobile|pwa)$")
     device_id: str | None = Field(default=None, max_length=64)
 
@@ -188,6 +199,7 @@ class PushDeviceRequest(BaseModel):
 class CheckoutCreateRequest(BaseModel):
     product_id: str = Field(min_length=3, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]+$")
     currency: str = Field(default="NGN", pattern=r"^NGN$")
+    recurring_acknowledged: StrictBool = False
 
 
 class BillingConfirmRequest(BaseModel):
@@ -2057,6 +2069,12 @@ async def operator_force_signal(
 async def register(payload: RegisterRequest, request: Request, response: Response) -> dict[str, Any]:
     if not is_db_configured():
         raise HTTPException(status_code=503, detail="Database unavailable")
+    if payload.platform_terms_accepted is not True:
+        raise HTTPException(status_code=422, detail="Accept the Terms of Use before creating an account")
+    if payload.privacy_acknowledged is not True:
+        raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before creating an account")
+    if payload.age_eligibility_confirmed is not True:
+        raise HTTPException(status_code=422, detail="Confirm that you are at least 18 and legally able to use the service")
     try:
         async with get_session() as session:
             user_id = await create_email_account(
@@ -2064,6 +2082,17 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                 email=payload.email,
                 password=payload.password,
                 display_name=payload.display_name,
+            )
+            await session.execute(
+                text(
+                    "UPDATE users SET marketing_consent=:marketing, privacy_consent_at=NOW(), "
+                    "terms_version=:terms_version, terms_accepted_at=NOW(), updated_at=NOW() WHERE id=:uid"
+                ),
+                {
+                    "uid": int(user_id),
+                    "marketing": bool(payload.marketing_consent),
+                    "terms_version": CURRENT_PLATFORM_TERMS_VERSION,
+                },
             )
             signup_origin = str(request.headers.get("origin") or request.base_url).rstrip("/")[:255]
             signup_channel = str(payload.signup_source or payload.client_type or "web").strip().lower()[:32] or "web"
@@ -2093,6 +2122,8 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                         {
                             "host": str(request.url.hostname or "")[:255],
                             "web_first": payload.client_type in {"web", "pwa"},
+                            "age_eligibility_confirmed": bool(payload.age_eligibility_confirmed),
+                            "age_eligibility_version": CURRENT_PLATFORM_TERMS_VERSION,
                         },
                         separators=(",", ":"),
                     ),
@@ -2184,6 +2215,12 @@ async def telegram_activation_complete(
     request: Request,
     response: Response,
 ) -> dict[str, Any]:
+    if payload.platform_terms_accepted is not True:
+        raise HTTPException(status_code=422, detail="Accept the Terms of Use before activating app access")
+    if payload.privacy_acknowledged is not True:
+        raise HTTPException(status_code=422, detail="Acknowledge the Privacy Notice before activating app access")
+    if payload.age_eligibility_confirmed is not True:
+        raise HTTPException(status_code=422, detail="Confirm that you are at least 18 and legally able to use the service")
     try:
         async with get_session() as session:
             user_id = await complete_telegram_activation(
@@ -2192,6 +2229,24 @@ async def telegram_activation_complete(
                 email=payload.email,
                 password=payload.password,
                 ip_address=_client_ip(request),
+            )
+            await session.execute(
+                text(
+                    "UPDATE users SET marketing_consent=:marketing, privacy_consent_at=NOW(), "
+                    "terms_version=:terms_version, terms_accepted_at=NOW(), updated_at=NOW() WHERE id=:uid"
+                ),
+                {
+                    "uid": int(user_id),
+                    "marketing": bool(payload.marketing_consent),
+                    "terms_version": CURRENT_PLATFORM_TERMS_VERSION,
+                },
+            )
+            from services.platform.identity import record_security_event
+            await record_security_event(
+                session,
+                user_id=int(user_id),
+                event_type="account.age_eligibility_confirmed",
+                metadata={"version": CURRENT_PLATFORM_TERMS_VERSION, "client_type": payload.client_type},
             )
             await session.commit()
     except IdentityConflict as exc:
@@ -6292,16 +6347,22 @@ async def billing_products(user: dict[str, Any] = Depends(current_user)) -> dict
                 product = await resolve_checkout_product(session, str(row[0]), currency="NGN")
             except ProductCatalogueError:
                 continue
-            products.append(
-                {
-                    "product_id": product.product_id,
-                    "tier": product.tier,
-                    "display_name": product.display_name,
-                    "duration_days": product.duration_days,
-                    "currency": product.currency,
-                    "price_ngn": product.price_ngn,
-                }
-            )
+            from payments.checkout import is_recurring_product
+            recurring = is_recurring_product(product)
+            products.append({
+                "product_id": product.product_id,
+                "tier": product.tier,
+                "display_name": product.display_name,
+                "duration_days": product.duration_days,
+                "currency": product.currency,
+                "price_ngn": product.price_ngn,
+                "recurring": recurring,
+                "renewal_disclosure": (
+                    "Renews automatically until cancelled. Cancel auto-renew from Account."
+                    if recurring else
+                    "One-off paid period. No automatic renewal is configured for this product."
+                ),
+            })
         await session.rollback()
     return {"products": products}
 
@@ -6340,8 +6401,12 @@ async def create_billing_checkout(
         await session.rollback()
 
     try:
-        from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout
-
+        from payments.checkout import CheckoutInitializationError, initialize_paystack_checkout, is_recurring_product
+        if is_recurring_product(product) and payload.recurring_acknowledged is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm recurring billing before opening checkout for this plan",
+            )
         checkout = await initialize_paystack_checkout(
             product=product,
             canonical_user_id=uid,
@@ -6349,6 +6414,7 @@ async def create_billing_checkout(
                 int(account["telegram_user_id"]) if account.get("telegram_user_id") is not None else None
             ),
             email=str(account["primary_email"]),
+            recurring_acknowledged=bool(payload.recurring_acknowledged),
         )
     except CheckoutInitializationError as exc:
         logger.warning("[billing_checkout] user=%s product=%s blocked=%s", uid, payload.product_id, exc)
@@ -6500,7 +6566,7 @@ async def cancel_billing_auto_renew(
                     subject="Subscription cancellation provider follow-up",
                     category="billing",
                     message=(
-                        "SignalRankAI recorded auto-renew as disabled, but the "
+                        "SignalRankAI received a cancellation request, but the "
                         "Paystack subscription-disable request could not be confirmed "
                         "after retries. Please verify the provider subscription is "
                         "stopped before the next billing date."
@@ -6518,6 +6584,8 @@ async def cancel_billing_auto_renew(
         **result,
         "support_ticket_id": support_ticket_id,
         "policy": (
+            "Cancellation is not yet confirmed by the provider. Renewal may still occur; contact billing support before the next charge."
+            if result.get("provider_follow_up_required") else
             "Auto-renew is off. Current paid access remains until its expiry. This action does not issue a refund."
         ),
     }

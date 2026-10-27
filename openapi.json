@@ -569,6 +569,157 @@
         ]
       }
     },
+    "/api/v1/platform/operator/research": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Research",
+        "operationId": "operator_research_api_v1_platform_operator_research_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "asset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Research Api V1 Platform Operator Research Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/operator/health-baseline": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Health Baseline",
+        "operationId": "operator_health_baseline_api_v1_platform_operator_health_baseline_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Health Baseline Api V1 Platform Operator Health Baseline Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Approve Health Baseline",
+        "operationId": "operator_approve_health_baseline_api_v1_platform_operator_health_baseline_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorHealthBaselineRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Approve Health Baseline Api V1 Platform Operator Health Baseline Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/operator/business": {
       "get": {
         "tags": [
@@ -1008,6 +1159,51 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/platform/auth/logout-mobile": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Logout Mobile",
+        "operationId": "logout_mobile_api_v1_platform_auth_logout_mobile_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileLogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "type": "object",
+                  "title": "Response Logout Mobile Api V1 Platform Auth Logout Mobile Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/platform/me": {
@@ -5959,48 +6155,10 @@
         }
       }
     },
-    "/readyz": {
-      "get": {
-        "summary": "Health",
-        "description": "Liveness + readiness probe.\n\nRailway healthcheck - should return quickly even if DB is slow/unavailable.\nUses a deadline to avoid blocking Railway's healthcheck.",
-        "operationId": "health_readyz_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/ready": {
-      "get": {
-        "summary": "Health",
-        "description": "Liveness + readiness probe.\n\nRailway healthcheck - should return quickly even if DB is slow/unavailable.\nUses a deadline to avoid blocking Railway's healthcheck.",
-        "operationId": "health_ready_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/healthz": {
       "get": {
         "summary": "Health",
-        "description": "Liveness + readiness probe.\n\nRailway healthcheck - should return quickly even if DB is slow/unavailable.\nUses a deadline to avoid blocking Railway's healthcheck.",
+        "description": "Process liveness only. Never perform database/provider work here.",
         "operationId": "health_healthz_get",
         "responses": {
           "200": {
@@ -6019,7 +6177,7 @@
     "/health": {
       "get": {
         "summary": "Health",
-        "description": "Liveness + readiness probe.\n\nRailway healthcheck - should return quickly even if DB is slow/unavailable.\nUses a deadline to avoid blocking Railway's healthcheck.",
+        "description": "Process liveness only. Never perform database/provider work here.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -6028,6 +6186,63 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness",
+        "description": "Bounded dependency readiness for traffic admission.\n\nReadiness is deliberately distinct from liveness: a process can stay alive\nfor diagnostics while refusing trading/API traffic when its durable state\ndependencies are unavailable.",
+        "operationId": "readiness_readyz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Readiness",
+        "description": "Bounded dependency readiness for traffic admission.\n\nReadiness is deliberately distinct from liveness: a process can stay alive\nfor diagnostics while refusing trading/API traffic when its durable state\ndependencies are unavailable.",
+        "operationId": "readiness_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "summary": "Version",
+        "description": "Immutable release provenance exposed without secrets.",
+        "operationId": "version_version_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
                 }
               }
             }
@@ -7070,6 +7285,11 @@
             "pattern": "^NGN$",
             "title": "Currency",
             "default": "NGN"
+          },
+          "recurring_acknowledged": {
+            "type": "boolean",
+            "title": "Recurring Acknowledged",
+            "default": false
           }
         },
         "type": "object",
@@ -7225,21 +7445,11 @@
           "uptime": {
             "type": "number",
             "title": "Uptime"
-          },
-          "signals_active": {
-            "type": "integer",
-            "title": "Signals Active"
-          },
-          "cache_hit_rate": {
-            "type": "number",
-            "title": "Cache Hit Rate"
           }
         },
         "type": "object",
         "required": [
-          "uptime",
-          "signals_active",
-          "cache_hit_rate"
+          "uptime"
         ],
         "title": "HealthResponse"
       },
@@ -7628,6 +7838,21 @@
         ],
         "title": "MetricsResponse"
       },
+      "MobileLogoutRequest": {
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 20,
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "refresh_token"
+        ],
+        "title": "MobileLogoutRequest"
+      },
       "NotificationPreferenceRequest": {
         "properties": {
           "telegram_enabled": {
@@ -7813,6 +8038,38 @@
         },
         "type": "object",
         "title": "OperatorForceSignalRequest"
+      },
+      "OperatorHealthBaselineRequest": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Profile Id"
+          },
+          "profile_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Profile Version"
+          },
+          "conditions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Conditions"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "profile_version",
+          "conditions"
+        ],
+        "title": "OperatorHealthBaselineRequest"
       },
       "OperatorKillSwitchRequest": {
         "properties": {
@@ -8476,6 +8733,27 @@
         ],
         "title": "PushDeviceRequest"
       },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessResponse"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -8548,6 +8826,26 @@
               }
             ],
             "title": "Display Name"
+          },
+          "platform_terms_accepted": {
+            "type": "boolean",
+            "title": "Platform Terms Accepted",
+            "default": false
+          },
+          "privacy_acknowledged": {
+            "type": "boolean",
+            "title": "Privacy Acknowledged",
+            "default": false
+          },
+          "age_eligibility_confirmed": {
+            "type": "boolean",
+            "title": "Age Eligibility Confirmed",
+            "default": false
+          },
+          "marketing_consent": {
+            "type": "boolean",
+            "title": "Marketing Consent",
+            "default": false
           },
           "client_type": {
             "type": "string",
@@ -8898,6 +9196,26 @@
             "minLength": 10,
             "title": "Password"
           },
+          "platform_terms_accepted": {
+            "type": "boolean",
+            "title": "Platform Terms Accepted",
+            "default": false
+          },
+          "privacy_acknowledged": {
+            "type": "boolean",
+            "title": "Privacy Acknowledged",
+            "default": false
+          },
+          "age_eligibility_confirmed": {
+            "type": "boolean",
+            "title": "Age Eligibility Confirmed",
+            "default": false
+          },
+          "marketing_consent": {
+            "type": "boolean",
+            "title": "Marketing Consent",
+            "default": false
+          },
           "client_type": {
             "type": "string",
             "pattern": "^(web|mobile|pwa)$",
@@ -9079,7 +9397,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Risk Per Trade Pct",
@@ -9093,7 +9412,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Daily Loss Pct",
@@ -9107,7 +9427,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Weekly Loss Pct",
@@ -9121,7 +9442,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Total Drawdown Pct",
@@ -9142,7 +9464,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Leverage",
@@ -9156,7 +9479,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Spread Bps",
@@ -9170,7 +9494,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Max Slippage Bps",
@@ -9184,7 +9509,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Min Confidence",
@@ -9198,7 +9524,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Min Expected Rr",
@@ -9212,7 +9539,8 @@
                 "minimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               }
             ],
             "title": "Safety Buffer Pct",
@@ -9226,7 +9554,8 @@
                 "exclusiveMinimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               },
               {
                 "type": "null"
@@ -9242,7 +9571,8 @@
                 "exclusiveMinimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               },
               {
                 "type": "null"
@@ -9258,7 +9588,8 @@
                 "exclusiveMinimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               },
               {
                 "type": "null"
@@ -9692,6 +10023,49 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VersionResponse": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "git_sha": {
+            "type": "string",
+            "title": "Git Sha"
+          },
+          "git_branch": {
+            "type": "string",
+            "title": "Git Branch"
+          },
+          "build_id": {
+            "type": "string",
+            "title": "Build Id"
+          },
+          "build_timestamp": {
+            "type": "string",
+            "title": "Build Timestamp"
+          },
+          "image_digest": {
+            "type": "string",
+            "title": "Image Digest"
+          },
+          "schema_head": {
+            "type": "string",
+            "title": "Schema Head"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "git_sha",
+          "git_branch",
+          "build_id",
+          "build_timestamp",
+          "image_digest",
+          "schema_head"
+        ],
+        "title": "VersionResponse"
       },
       "WatchlistCreateRequest": {
         "properties": {

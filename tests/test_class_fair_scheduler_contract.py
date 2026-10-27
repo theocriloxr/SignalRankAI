@@ -1,42 +1,80 @@
-from __future__ import annotations
-
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
+"""Exercise the engine scheduler, including coverage displacement and caps."""
+from engine.cycle_queue import AssetCycleQueue
+from engine.cycle_selection import schedule_cycle
 
 
-def test_engine_round_robin_is_class_interleaved_and_persistent() -> None:
-    source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
-    queue = (ROOT / "engine" / "cycle_queue.py").read_text(encoding="utf-8")
-
-    assert "AssetCycleQueue" in source
-    assert "_cycle_queue = AssetCycleQueue()" in source
-    assert "_cat_iters = [iter(c) for c in [crypto_assets, fx_assets, stock_assets, index_assets, commodity_assets] if c]" in source
-    assert "_cycle_queue.refresh_universe(_all_open, force=(cycle_no == 1))" in source
-    assert "_cycle_queue.pop_batch(CYCLE_BATCH_SIZE)" in source
-    assert "every asset in the current round has been" in queue
-    assert "self._queue = deque(self._universe)" in queue
+def run_cycle(queue, universe, pools, cursors, *, capacity, first=False):
+    classes = {asset: key for key, members in pools.items() for asset in members}
+    batch, counts = schedule_cycle(queue, universe, capacity=capacity, force_refresh=first,
+                                  pools=pools, cursors=cursors, classify=classes.__getitem__)
+    queue.mark_done(batch)
+    return batch, counts
 
 
-def test_every_open_asset_class_gets_rotating_cycle_coverage_when_capacity_allows() -> None:
-    source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
-    block = source[
-        source.index("# Guarantee class coverage:"):
-        source.index("cycle_assets = len(assets)")
-    ]
+def test_small_work_cap_never_permanently_excludes_the_universe_tail():
+    queue = AssetCycleQueue()
+    pools = {"crypto": [f"C{i}USDT" for i in range(41)], "fx": ["EURUSD"],
+             "stock": ["AAPL"], "index": ["NAS100"], "commodity": ["XAUUSD"]}
+    universe = [asset for pool in pools.values() for asset in pool]
+    cursors = {}
+    seen = set()
+    for cycle in range(41):
+        batch, counts = run_cycle(queue, universe, pools, cursors, capacity=5, first=cycle == 0)
+        assert len(batch) <= 5 and len(batch) == len(set(batch))
+        assert all(counts[key] >= 1 for key in pools)
+        assert queue.universe_size == len(universe)
+        seen.update(batch)
+    assert seen == set(universe)
+    assert queue.queue_remaining == 0
+    assert queue.round_no == 0
 
-    for name in ("crypto", "fx", "stock", "index", "commodity"):
-        assert f'"{name}"' in block
-    assert "_required_classes = [k for k, v in _open_by_class.items() if v]" in block
-    assert "CYCLE_BATCH_SIZE < len(_required_classes)" in block
-    assert "_class_cursor.get(_cls, 0) % len(_pool)" in block
-    assert "_selected_counts.get(_existing_cls, 0) > 1" in block
-    assert "_cycle_queue.remove_from_queue(_injected)" in block
+
+def test_anchors_rotate_without_losing_displaced_tail_members():
+    queue = AssetCycleQueue()
+    pools = {"crypto": [f"C{i}USDT" for i in range(10)], "fx": ["EURUSD", "GBPUSD"]}
+    universe = pools["crypto"] + pools["fx"]
+    cursors = {}
+    batches = [run_cycle(queue, universe, pools, cursors, capacity=2, first=True)[0]]
+    for _ in range(9):
+        batches.append(run_cycle(queue, universe, pools, cursors, capacity=2)[0])
+    assert [batch[0] for batch in batches] == pools["crypto"]
+    assert [batch[1] for batch in batches] == ["EURUSD", "GBPUSD"] * 5
+    assert queue.queue_remaining == 0
 
 
-def test_closed_or_disabled_classes_do_not_consume_fairness_slots() -> None:
-    source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
-    disabled_filter = source.index("_filter_assets_by_enabled_classes(open_assets)")
-    partitions = source.index("crypto_assets = [a for a in open_assets if is_crypto(a)]")
-    fairness = source.index("# Guarantee class coverage:")
-    assert disabled_filter < partitions < fairness
+def test_closed_or_disabled_classes_cannot_be_requeued_or_consume_slots():
+    queue = AssetCycleQueue()
+    pools = {"crypto": ["BTCUSDT", "ETHUSDT", "SOLUSDT"], "fx": ["EURUSD"]}
+    universe = pools["crypto"] + pools["fx"]
+    first, _ = run_cycle(queue, universe, pools, {}, capacity=2, first=True)
+    assert first == ["BTCUSDT", "EURUSD"]
+    pools = {"crypto": ["BTCUSDT", "SOLUSDT"]}
+    queue.refresh_universe(pools["crypto"])
+    queue.return_to_front(["ETHUSDT", "EURUSD", "BTCUSDT", "SOLUSDT", "SOLUSDT"])
+    batch, counts = run_cycle(queue, pools["crypto"], pools, {}, capacity=2)
+    assert batch == ["SOLUSDT"]
+    assert counts == {"crypto": 1}
+    assert queue.queue_remaining == 0
+
+
+def test_capacity_smaller_than_class_count_preserves_progress_and_budget():
+    queue = AssetCycleQueue()
+    pools = {"crypto": ["BTCUSDT", "ETHUSDT"], "fx": ["EURUSD"], "stock": ["AAPL"]}
+    universe = [asset for pool in pools.values() for asset in pool]
+    seen = []
+    for cycle in range(len(universe)):
+        batch, _ = run_cycle(queue, universe, pools, {}, capacity=1, first=cycle == 0)
+        assert len(batch) == 1
+        seen.extend(batch)
+    assert seen == universe
+
+
+def test_single_class_completes_each_round_before_repeating():
+    queue = AssetCycleQueue()
+    pools = {"crypto": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LTCUSDT", "XRPUSDT"]}
+    seen = []
+    for cycle in range(3):
+        batch, _ = run_cycle(queue, pools["crypto"], pools, {}, capacity=2, first=cycle == 0)
+        seen.extend(batch)
+    assert seen == pools["crypto"]
+    assert run_cycle(queue, pools["crypto"], pools, {}, capacity=2)[0] == pools["crypto"][:2]

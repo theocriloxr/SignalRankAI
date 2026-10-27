@@ -104,7 +104,7 @@ def test_brand_sidebar_and_theme_follow_signal_rank_logo_contract() -> None:
     assert "--brand-silver:#e6eeea" in css
     assert "--brand-gradient:linear-gradient" in css
     assert ':root[data-theme="light"]' in css
-    assert "#00a96e" in manifest
+    assert '"theme_color": "#4ce0a4"' in manifest
     assert validate_shell_assets(ROOT) >= 38
     assert "/app-assets/icon.svg" in worker
     assert "/app-assets/logo.svg" in worker

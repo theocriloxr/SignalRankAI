@@ -1,4 +1,6 @@
 from copy import deepcopy
+import hashlib
+import json
 import shutil
 
 import pytest
@@ -83,3 +85,43 @@ def test_missing_implementation_paths_or_unactionable_external_blockers_are_reje
     value = disposition(entry) | {"status": "BLOCKED_EXTERNAL", "external": {"cause": "upstream"}}
     with pytest.raises(ValueError, match="action_and_retry"):
         validate_disposition(value, entry, ROOT)
+
+
+def retained_disposition(tmp_path):
+    entry = source_inventory(ROOT)[0]
+    value = disposition(entry)
+    proof = value["evidence"][0]
+    proof["artifact"] = "receipt.json"
+    receipt = {key: proof[key] for key in ("sha", "environment", "timestamp", "command", "result", "scope", "subrequirements")}
+    receipt.update(requirement_sha256=entry["text_sha256"], exit_code=0, passed=4, failed=0, errors=0, skipped=0)
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+    proof["artifact_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return entry, value, receipt
+
+
+def test_verified_section_requires_retained_content_addressed_execution_evidence(tmp_path):
+    entry, value, _ = retained_disposition(tmp_path)
+    validate_disposition(value, entry, tmp_path)
+    (tmp_path / "receipt.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="digest_mismatch"):
+        validate_disposition(value, entry, tmp_path)
+
+
+@pytest.mark.parametrize("change", ["source", "sha", "scope", "skipped", "failed", "empty", "escape", "url"])
+def test_artifact_cannot_certify_another_source_or_hide_failed_or_unexecuted_acceptance(tmp_path, change):
+    entry, value, receipt = retained_disposition(tmp_path)
+    proof = value["evidence"][0]
+    if change in {"escape", "url"}:
+        proof["artifact"] = "../receipt.json" if change == "escape" else "https://example.invalid/pass"
+    else:
+        if change == "source": receipt["requirement_sha256"] = "b" * 64
+        elif change == "sha": receipt["sha"] = "b" * 40
+        elif change == "scope": receipt["scope"] = "VERIFIED_STAGING"
+        elif change == "empty": receipt["passed"] = 0
+        else: receipt[change] = 1
+        path = tmp_path / "receipt.json"
+        path.write_text(json.dumps(receipt), encoding="utf-8")
+        proof["artifact_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="acceptance_artifact"):
+        validate_disposition(value, entry, tmp_path)

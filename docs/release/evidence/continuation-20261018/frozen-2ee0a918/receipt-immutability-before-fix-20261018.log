@@ -1,0 +1,197 @@
+FFFF                                                                     [100%]
+================================== FAILURES ===================================
+_______ test_retry_cannot_replace_a_failed_receipt_or_run_another_child _______
+
+checkout = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-receipt-immutability-before-fix-20261018/test_retry_cannot_replace_a_fa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002629D7CB750>
+
+    def test_retry_cannot_replace_a_failed_receipt_or_run_another_child(checkout, monkeypatch):
+        assert invoke(monkeypatch, "print('first attempt'); raise SystemExit(7)") == 7
+        directory = checkout / "artifacts/stage1-20261014"
+        original = {name: (directory / name).read_bytes() for name in ("identity.json", "identity.log")}
+>       with pytest.raises(SystemExit) as error:
+E       Failed: DID NOT RAISE SystemExit
+
+tests\test_stage1_local_check_identity.py:77: Failed
+---------------------------- Captured stdout call -----------------------------
+{"name": "identity", "sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "environment": "sanitized_local_test", "started_at": "2026-10-18T08:49:24.174923+00:00", "finished_at": "2026-10-18T08:49:24.346122+00:00", "command": ["C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe", "-c", "print('first attempt'); raise SystemExit(7)"], "cwd": ".", "exit_code": 7, "command_exit_code": 7, "require_clean": true, "acceptance_eligible": false, "worktree_before": {"sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "dirty": false}, "worktree_after": {"sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "dirty": false}, "step_timeout_seconds": null, "log": "artifacts/stage1-20261014/identity.log", "log_sha256": "6f963d729ccdcdfb2eec9b84b18cc0a6f8e984f271d8c0e38f43308ac1360ce9", "result": "FAIL", "source_unchanged": true, "source_fingerprint_before": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "source_fingerprint_after": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
+first attempt
+
+{"name": "identity", "sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "environment": "sanitized_local_test", "started_at": "2026-10-18T08:49:24.484574+00:00", "finished_at": "2026-10-18T08:49:24.671967+00:00", "command": ["C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe", "-c", "from pathlib import Path; Path('artifacts/replayed').touch()"], "cwd": ".", "exit_code": 0, "command_exit_code": 0, "require_clean": true, "acceptance_eligible": true, "worktree_before": {"sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "dirty": false}, "worktree_after": {"sha": "e265c9259689f15b909fceb5ef924d64ecd3d741", "dirty": false}, "step_timeout_seconds": null, "log": "artifacts/stage1-20261014/identity.log", "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "result": "PASS", "source_unchanged": true, "source_fingerprint_before": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "source_fingerprint_after": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
+
+__________ test_partial_previous_attempt_is_preserved[identity.log] ___________
+
+checkout = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-receipt-immutability-before-fix-20261018/test_partial_previous_attempt_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002629D7CB150>
+existing = 'identity.log'
+
+    @pytest.mark.parametrize("existing", ["identity.log", "identity.json"])
+    def test_partial_previous_attempt_is_preserved(checkout, monkeypatch, existing):
+        directory = checkout / "artifacts/stage1-20261014"
+        directory.mkdir(parents=True)
+        target = directory / existing
+        target.write_bytes(b"incomplete previous evidence\n")
+>       with pytest.raises(SystemExit) as error:
+E       Failed: DID NOT RAISE SystemExit
+
+tests\test_stage1_local_check_identity.py:90: Failed
+---------------------------- Captured stdout call -----------------------------
+{"name": "identity", "sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "environment": "sanitized_local_test", "started_at": "2026-10-18T08:49:25.195064+00:00", "finished_at": "2026-10-18T08:49:25.381330+00:00", "command": ["C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe", "-c", "from pathlib import Path; Path('artifacts/replayed').touch()"], "cwd": ".", "exit_code": 0, "command_exit_code": 0, "require_clean": true, "acceptance_eligible": true, "worktree_before": {"sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "dirty": false}, "worktree_after": {"sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "dirty": false}, "step_timeout_seconds": null, "log": "artifacts/stage1-20261014/identity.log", "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "result": "PASS", "source_unchanged": true, "source_fingerprint_before": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "source_fingerprint_after": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
+
+__________ test_partial_previous_attempt_is_preserved[identity.json] __________
+
+checkout = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-receipt-immutability-before-fix-20261018/test_partial_previous_attempt_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002629D6F79D0>
+existing = 'identity.json'
+
+    @pytest.mark.parametrize("existing", ["identity.log", "identity.json"])
+    def test_partial_previous_attempt_is_preserved(checkout, monkeypatch, existing):
+        directory = checkout / "artifacts/stage1-20261014"
+        directory.mkdir(parents=True)
+        target = directory / existing
+        target.write_bytes(b"incomplete previous evidence\n")
+>       with pytest.raises(SystemExit) as error:
+E       Failed: DID NOT RAISE SystemExit
+
+tests\test_stage1_local_check_identity.py:90: Failed
+---------------------------- Captured stdout call -----------------------------
+{"name": "identity", "sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "environment": "sanitized_local_test", "started_at": "2026-10-18T08:49:25.783361+00:00", "finished_at": "2026-10-18T08:49:25.971369+00:00", "command": ["C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe", "-c", "from pathlib import Path; Path('artifacts/replayed').touch()"], "cwd": ".", "exit_code": 0, "command_exit_code": 0, "require_clean": true, "acceptance_eligible": true, "worktree_before": {"sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "dirty": false}, "worktree_after": {"sha": "4e3a46ff139f1589e8eb5ddaab37c475a4889ac1", "dirty": false}, "step_timeout_seconds": null, "log": "artifacts/stage1-20261014/identity.log", "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "result": "PASS", "source_unchanged": true, "source_fingerprint_before": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "source_fingerprint_after": "529b43fe6ea2bb976fee6609f124bca1b936d2762de8ca4d6ca930f6890bedae", "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"}
+
+______________ test_missing_executable_produces_a_failed_receipt ______________
+
+checkout = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-receipt-immutability-before-fix-20261018/test_missing_executable_produc0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002629D795810>
+
+    def test_missing_executable_produces_a_failed_receipt(checkout, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["stage1_local_checks.py", "--name", "identity",
+            "--require-clean", "--", str(checkout / "missing-tool")])
+>       assert runner.main() == 127
+               ^^^^^^^^^^^^^
+
+tests\test_stage1_local_check_identity.py:100: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+scripts\stage1_local_checks.py:91: in main
+    result = subprocess.run(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\subprocess.py:546: in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\subprocess.py:1022: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Popen: returncode: None args: ['C:\\Users\\sammm\\Desktop\\a folder of ever...>
+args = '"C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.pytest-tmp\\stage1-pytest-receipt-immutability-before-fix-20261018\\test_missing_executable_produc0\\missing-tool"'
+executable = None, preexec_fn = None, close_fds = False, pass_fds = ()
+cwd = 'C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.pytest-tmp\\stage1-pytest-receipt-immutability-before-fix-20261018\\test_missing_executable_produc0'
+env = {'APPDATA': 'C:\\Users\\sammm\\AppData\\Roaming', 'COMSPEC': 'C:\\WINDOWS\\system32\\cmd.exe', 'HOMEDRIVE': 'C:', 'HOMEPATH': '\\Users\\sammm', ...}
+startupinfo = <subprocess.STARTUPINFO object at 0x000002629D794190>
+creationflags = 0, shell = False, p2cread = Handle(872), p2cwrite = -1
+c2pread = -1, c2pwrite = Handle(924), errread = -1, errwrite = Handle(668)
+unused_restore_signals = True, unused_gid = None, unused_gids = None
+unused_uid = None, unused_umask = -1, unused_start_new_session = False
+unused_process_group = -1
+
+    def _execute_child(self, args, executable, preexec_fn, close_fds,
+                       pass_fds, cwd, env,
+                       startupinfo, creationflags, shell,
+                       p2cread, p2cwrite,
+                       c2pread, c2pwrite,
+                       errread, errwrite,
+                       unused_restore_signals,
+                       unused_gid, unused_gids, unused_uid,
+                       unused_umask,
+                       unused_start_new_session, unused_process_group):
+        """Execute program (MS Windows version)"""
+    
+        assert not pass_fds, "pass_fds not supported on Windows."
+    
+        if isinstance(args, str):
+            pass
+        elif isinstance(args, bytes):
+            if shell:
+                raise TypeError('bytes args is not allowed on Windows')
+            args = list2cmdline([args])
+        elif isinstance(args, os.PathLike):
+            if shell:
+                raise TypeError('path-like args is not allowed when '
+                                'shell is true')
+            args = list2cmdline([args])
+        else:
+            args = list2cmdline(args)
+    
+        if executable is not None:
+            executable = os.fsdecode(executable)
+    
+        # Process startup details
+        if startupinfo is None:
+            startupinfo = STARTUPINFO()
+        else:
+            # bpo-34044: Copy STARTUPINFO since it is modified above,
+            # so the caller can reuse it multiple times.
+            startupinfo = startupinfo.copy()
+    
+        use_std_handles = -1 not in (p2cread, c2pwrite, errwrite)
+        if use_std_handles:
+            startupinfo.dwFlags |= _winapi.STARTF_USESTDHANDLES
+            startupinfo.hStdInput = p2cread
+            startupinfo.hStdOutput = c2pwrite
+            startupinfo.hStdError = errwrite
+    
+        attribute_list = startupinfo.lpAttributeList
+        have_handle_list = bool(attribute_list and
+                                "handle_list" in attribute_list and
+                                attribute_list["handle_list"])
+    
+        # If we were given an handle_list or need to create one
+        if have_handle_list or (use_std_handles and close_fds):
+            if attribute_list is None:
+                attribute_list = startupinfo.lpAttributeList = {}
+            handle_list = attribute_list["handle_list"] = \
+                list(attribute_list.get("handle_list", []))
+    
+            if use_std_handles:
+                handle_list += [int(p2cread), int(c2pwrite), int(errwrite)]
+    
+            handle_list[:] = self._filter_handle_list(handle_list)
+    
+            if handle_list:
+                if not close_fds:
+                    warnings.warn("startupinfo.lpAttributeList['handle_list'] "
+                                  "overriding close_fds", RuntimeWarning)
+    
+                # When using the handle_list we always request to inherit
+                # handles but the only handles that will be inherited are
+                # the ones in the handle_list
+                close_fds = False
+    
+        if shell:
+            startupinfo.dwFlags |= _winapi.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = _winapi.SW_HIDE
+            comspec = os.environ.get("COMSPEC", "cmd.exe")
+            args = '{} /c "{}"'.format (comspec, args)
+    
+        if cwd is not None:
+            cwd = os.fsdecode(cwd)
+    
+        sys.audit("subprocess.Popen", executable, args, cwd, env)
+    
+        # Start the process
+        try:
+>           hp, ht, pid, tid = _winapi.CreateProcess(executable, args,
+                                     # no special security
+                                     None, None,
+                                     int(not close_fds),
+                                     creationflags,
+                                     env,
+                                     cwd,
+                                     startupinfo)
+E                                    FileNotFoundError: [WinError 2] The system cannot find the file specified
+
+C:\Program Files\Python311\Lib\subprocess.py:1491: FileNotFoundError
+=========================== short test summary info ===========================
+FAILED tests/test_stage1_local_check_identity.py::test_retry_cannot_replace_a_failed_receipt_or_run_another_child
+FAILED tests/test_stage1_local_check_identity.py::test_partial_previous_attempt_is_preserved[identity.log]
+FAILED tests/test_stage1_local_check_identity.py::test_partial_previous_attempt_is_preserved[identity.json]
+FAILED tests/test_stage1_local_check_identity.py::test_missing_executable_produces_a_failed_receipt
+4 failed, 6 deselected in 2.82s

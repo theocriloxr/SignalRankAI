@@ -1,0 +1,175 @@
+{
+  "scope": "Exact-revision local checks, failed attempts and interrupted full-suite run. Not release certification.",
+  "artifacts": [
+    {
+      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c-cleanup.json",
+      "sha256": "ef2e47caf39ad0e50583568c482a68e78dc235326056fb7155e206770ebbd350",
+      "bytes": 168
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.json",
+      "sha256": "12ac29d56ede2fbe5d18d99d22199a15dfc91006ff1db39d4ebb47e63693215e",
+      "bytes": 1526
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.log",
+      "sha256": "5754a80f87c2cfbce088b8af82ac3d2108d263f9e325fbb285a5fbb315aeab0f",
+      "bytes": 2781
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.json",
+      "sha256": "396b12202f1bb59b80656cba1d727f9e25c56ae541ccf750f9f6a34b31632925",
+      "bytes": 1509
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.log",
+      "sha256": "b26fa0c11adad5948cedbf0478aa020ff4daeb7398618896ed2f044042c9db85",
+      "bytes": 8199
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-r2-20261017.json",
+      "sha256": "826621983f326d1b4a0196c12cc0eb7f96f899126869eeb8facbfb4cd74fe968",
+      "bytes": 1515
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-r2-20261017.log",
+      "sha256": "666e0b97a517d33e2184b0889d5ec8dbd8974a4886aa34af912275f8e5850f95",
+      "bytes": 102
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.json",
+      "sha256": "bbe1232c796a19c3d7986a9c125573310af6a59abae1aff6a950806132860afc",
+      "bytes": 1245
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.log",
+      "sha256": "cf682d5bf5cd7d8b9cb43e2ad85d204e2133c904bbf67a41ea7c31f010555fc9",
+      "bytes": 364
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.json",
+      "sha256": "5f5a340046b4011cbf758d2742a39b792649e7a449c09d8f3276f96b48c70675",
+      "bytes": 1210
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.json",
+      "sha256": "e036d8c865ab313ca480a78ee9deba7cc0e51a15ba7d6216aa84f5544ca38596",
+      "bytes": 1496
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.log",
+      "sha256": "28fc4f8790e89e6f5e370737d537a8075b7c76017fe5b9a632cd567071f9fb20",
+      "bytes": 16424
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.json",
+      "sha256": "3db23c37303424cc754be1588d43369813044afd930ed1595e37129857d39465",
+      "bytes": 1336
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.log",
+      "sha256": "728548e97c2e1fba5edcaca15b27ebd32dead961ce68e880b66e4d463e29d715",
+      "bytes": 5459
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/full-system-5f7ae60c.log",
+      "sha256": "618e26f288daa017083aa51b715f878917736eb983a4e5ed8371bffc99fcebb5",
+      "bytes": 1034
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c-progress.json",
+      "sha256": "fca9ecb93e92ec2cbaf947348d88b286d657f3e51b1ec8002b1382949223c36e",
+      "bytes": 7543
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c.json",
+      "sha256": "591b213a4e41965253ad81673bf02479b2b769a2bc1dfa2545155f810f7fb4d1",
+      "bytes": 542
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.json",
+      "sha256": "cf27b385ae8841ceefb75c3f0a309f8eeaa58f5dc4fd90d04215a3ebf1ed012d",
+      "bytes": 1239
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.log",
+      "sha256": "ef7d1d70eed6027eabd9691e1b1fb7f3ca161021d6fe145c9cb132faa4cfc946",
+      "bytes": 2552
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.json",
+      "sha256": "1d8bbd495bb5511555048f955eccd31cb14932a1183adb7ac86bb19ebd15b701",
+      "bytes": 1298
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.log",
+      "sha256": "fb7aad56853fcd7ed2ace04e8d217a62a4b7c68450ea670c8a25b230cf8fa28e",
+      "bytes": 257
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.json",
+      "sha256": "7743fb5e43a1492cc75f6b74f047b39ee8bba9d03152a01eb668e8efc80469d1",
+      "bytes": 1195
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.log",
+      "sha256": "e02093314856ed8277f17d297814c79207ea1de32c662f12856b3e24743a970a",
+      "bytes": 10867
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.json",
+      "sha256": "78afbc7311e513e7696fd1ecc6fa9616bcda7cfd74307ad0cdf909d1a19a3429",
+      "bytes": 1218
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/node-forge-advisory-observation.json",
+      "sha256": "b7bafd6a30975efb81f900773f0e49fe1b8e2853611be119482e0ca664f5b04c",
+      "bytes": 322
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-before-fix.txt",
+      "sha256": "3968a14c75a98f216324ff0ec871562d898ac20eab0f352e68a1b674515daced",
+      "bytes": 86
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.json",
+      "sha256": "568860347713f2902048325401ccbd40adb338d21309eae30c3eb9acb58c8c46",
+      "bytes": 1347
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.log",
+      "sha256": "c44638c0103f94e1c3ae9810272344b8a8e5ce255c9a94d3490ec24f357b8599",
+      "bytes": 101
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.json",
+      "sha256": "6befcccc6aa9b95adaebe693009d22354072e2564fc1b45cb5d2d28154d2e896",
+      "bytes": 1501
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.log",
+      "sha256": "4a24dd8491e09c6c5e5e3b12ba39aaa466eac324a96773d49c7700653a521911",
+      "bytes": 974
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.json",
+      "sha256": "5b5e2fd02e55bc563a39b1ddc38a3ddbf620e11f89900f5c2e9cd730e178d8c2",
+      "bytes": 1386
+    },
+    {
+      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.log",
+      "sha256": "47677a667f85f547199c804103e6fc4be2d0e7fba7749e80ce7a7ab4b743c04e",
+      "bytes": 1567
+    }
+  ]
+}

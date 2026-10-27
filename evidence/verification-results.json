@@ -1,0 +1,474 @@
+{
+  "release_decision": "NO-GO",
+  "results": [
+    {
+      "receipt": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.json",
+      "name": "crosschat-intake-diagnostic-20261017",
+      "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:37:51.237594+00:00",
+      "finished_at": "2026-10-17T12:38:12.305118+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_crosschat_intake.py",
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py",
+        "tests/test_stage1_local_check_identity.py"
+      ],
+      "cwd": ".",
+      "exit_code": 1,
+      "command_exit_code": 1,
+      "require_clean": false,
+      "acceptance_eligible": false,
+      "worktree_before": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": true
+      },
+      "worktree_after": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": true
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/crosschat-intake-diagnostic-20261017.log",
+      "log_sha256": "b26fa0c11adad5948cedbf0478aa020ff4daeb7398618896ed2f044042c9db85",
+      "result": "FAIL",
+      "source_unchanged": true,
+      "source_fingerprint_before": "c8fb5c63623271643f4fad53f0d85480cbdf75221c22d92ac43e259ecac8f372",
+      "source_fingerprint_after": "c8fb5c63623271643f4fad53f0d85480cbdf75221c22d92ac43e259ecac8f372",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-r2-20261017.json",
+      "name": "crosschat-intake-diagnostic-r2-20261017",
+      "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:39:45.319391+00:00",
+      "finished_at": "2026-10-17T12:40:06.966553+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_crosschat_intake.py",
+        "tests/test_focused_universe_policy_20261016.py",
+        "tests/test_focused_universe_database_postgres.py",
+        "tests/test_stage1_local_check_identity.py"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": false,
+      "acceptance_eligible": false,
+      "worktree_before": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": true
+      },
+      "worktree_after": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": true
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/crosschat-intake-diagnostic-r2-20261017.log",
+      "log_sha256": "666e0b97a517d33e2184b0889d5ec8dbd8974a4886aa34af912275f8e5850f95",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "c8fb5c63623271643f4fad53f0d85480cbdf75221c22d92ac43e259ecac8f372",
+      "source_fingerprint_after": "c8fb5c63623271643f4fad53f0d85480cbdf75221c22d92ac43e259ecac8f372",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.json",
+      "name": "frozen-local-manifest-a23e088f",
+      "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-16T20:43:20.343913+00:00",
+      "finished_at": "2026-10-16T20:43:50.075619+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/run_release_manifest.py",
+        "--environment",
+        "local"
+      ],
+      "cwd": ".",
+      "exit_code": 1,
+      "command_exit_code": 1,
+      "require_clean": true,
+      "acceptance_eligible": false,
+      "worktree_before": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "a23e088feafb63f00e22fb34232e44d803311aa4",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/frozen-local-manifest-a23e088f.log",
+      "log_sha256": "728548e97c2e1fba5edcaca15b27ebd32dead961ce68e880b66e4d463e29d715",
+      "result": "FAIL",
+      "source_unchanged": true,
+      "source_fingerprint_before": "864de10962d0e1873a84cf766815fd06e20bf3bf572f989027afb9c40eccdc89",
+      "source_fingerprint_after": "864de10962d0e1873a84cf766815fd06e20bf3bf572f989027afb9c40eccdc89",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/browser-next-7c3f7e0f.json",
+      "name": "browser-next-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:53:55.281397+00:00",
+      "finished_at": "2026-10-17T12:56:40.225903+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/run_frontend_browser_drill.py",
+        "--output-dir",
+        "artifacts/browser-next-7c3f7e0f",
+        "--browser-python",
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-browser-venv\\Scripts\\python.exe",
+        "--workspace-mode",
+        "next"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/browser-next-7c3f7e0f.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/frontend-lint-7c3f7e0f.json",
+      "name": "frontend-lint-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:54:01.277762+00:00",
+      "finished_at": "2026-10-17T12:54:42.324384+00:00",
+      "command": [
+        "node",
+        "node_modules/eslint/bin/eslint.js",
+        "."
+      ],
+      "cwd": "frontend",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/frontend-lint-7c3f7e0f.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/frontend-tests-7c3f7e0f.json",
+      "name": "frontend-tests-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:55:30.972019+00:00",
+      "finished_at": "2026-10-17T12:55:33.981923+00:00",
+      "command": [
+        "node",
+        "--experimental-strip-types",
+        "--test",
+        "scripts/transport.test.mjs",
+        "scripts/presentation.test.mjs",
+        "scripts/server-boundaries.test.mjs",
+        "scripts/platform-proxy.test.mjs",
+        "scripts/retained-session.test.mjs",
+        "scripts/dependency-contract.test.mjs",
+        "scripts/cinematic-contract.test.mjs"
+      ],
+      "cwd": "frontend",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/frontend-tests-7c3f7e0f.log",
+      "log_sha256": "ece2498726c69597aaa3cc86d0da1cd9f9b22571df818647feca0055c0774d2f",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/full-system-7c3f7e0f.json",
+      "name": "full-system-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:52:44.321719+00:00",
+      "finished_at": "2026-10-17T13:10:35.024184+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/run_complete_system_test.py",
+        "--full",
+        "--output-dir",
+        "artifacts/full-system-7c3f7e0f"
+      ],
+      "cwd": ".",
+      "exit_code": 1,
+      "command_exit_code": 1,
+      "require_clean": true,
+      "acceptance_eligible": false,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": 1200,
+      "log": "artifacts/stage1-20261014/full-system-7c3f7e0f.log",
+      "log_sha256": "be7b148a8c448a31da41e57363493f0940c0a8f6d1d580c7ed289deb6dc7ef1e",
+      "result": "FAIL",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/mobile-export-all-7c3f7e0f.json",
+      "name": "mobile-export-all-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:52:49.227568+00:00",
+      "finished_at": "2026-10-17T12:53:08.838323+00:00",
+      "command": [
+        "node",
+        "node_modules/expo/bin/cli",
+        "export",
+        "--platform",
+        "android",
+        "--platform",
+        "ios",
+        "--output-dir",
+        "../artifacts/mobile-export-7c3f7e0f"
+      ],
+      "cwd": "mobile",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/mobile-export-all-7c3f7e0f.log",
+      "log_sha256": "0a6e13202024331f87ab6da66308ca792b07c409050a66fb6c7c8bd8748715b0",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/mobile-tests-7c3f7e0f.json",
+      "name": "mobile-tests-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:55:18.603020+00:00",
+      "finished_at": "2026-10-17T12:55:22.021473+00:00",
+      "command": [
+        "node",
+        "--test",
+        "scripts/*.test.cjs"
+      ],
+      "cwd": "mobile",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/mobile-tests-7c3f7e0f.log",
+      "log_sha256": "241865ead13aec4bf6492fa0226631ea71fa4b2baedff2db42ab6a9a7fbc81bc",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/mobile-typecheck-7c3f7e0f.json",
+      "name": "mobile-typecheck-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:55:30.963937+00:00",
+      "finished_at": "2026-10-17T12:55:37.512649+00:00",
+      "command": [
+        "node",
+        "node_modules/typescript/bin/tsc",
+        "--noEmit"
+      ],
+      "cwd": "mobile",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/mobile-typecheck-7c3f7e0f.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/runtime-manifest-7c3f7e0f.json",
+      "name": "runtime-manifest-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:54:01.827744+00:00",
+      "finished_at": "2026-10-17T12:55:02.614035+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/run_release_manifest.py",
+        "--environment",
+        "local",
+        "--gate",
+        "static-ruff",
+        "--gate",
+        "static-pyright-critical",
+        "--gate",
+        "stage1-source-inventory",
+        "--gate",
+        "stage1-crosschat-intake"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/runtime-manifest-7c3f7e0f.log",
+      "log_sha256": "4a24dd8491e09c6c5e5e3b12ba39aaa466eac324a96773d49c7700653a521911",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    },
+    {
+      "receipt": "docs/release/evidence/continuation-20261018/sdk-manifest-7c3f7e0f.json",
+      "name": "sdk-manifest-7c3f7e0f",
+      "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+      "environment": "sanitized_local_test",
+      "started_at": "2026-10-17T12:54:01.858715+00:00",
+      "finished_at": "2026-10-17T12:54:18.870384+00:00",
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.pytest-tmp\\data-sdk-venv\\Scripts\\python.exe",
+        "scripts/run_release_manifest.py",
+        "--environment",
+        "local",
+        "--gate",
+        "market-data-sdk-consumer-tests"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "command_exit_code": 0,
+      "require_clean": true,
+      "acceptance_eligible": true,
+      "worktree_before": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "worktree_after": {
+        "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+        "dirty": false
+      },
+      "step_timeout_seconds": null,
+      "log": "artifacts/stage1-20261014/sdk-manifest-7c3f7e0f.log",
+      "log_sha256": "4e9399d7d1e38ab8d87331e41219414d74a924c34fd38ec0fb2743016aef4aa1",
+      "result": "PASS",
+      "source_unchanged": true,
+      "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+      "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+    }
+  ],
+  "scope": "Exact-revision local results, retained failures and unfinished acceptance. No deployment/provider/broker certification.",
+  "latest_tested_code_commit": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+  "latest_full_suite": {
+    "passed": 4080,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "result": "PASS",
+    "scope": "Owned local tests only; external release gates remain open"
+  },
+  "latest_evidence_index": "docs/release/evidence/continuation-20261018/correction-393f3d88/index.json",
+  "followup_source_changes": {
+    "status": "VERIFIED_LOCAL",
+    "changes": [
+      "immutable local attempts and launch-failure receipts",
+      "HTML entity escaping for complete static parsing"
+    ]
+  }
+}

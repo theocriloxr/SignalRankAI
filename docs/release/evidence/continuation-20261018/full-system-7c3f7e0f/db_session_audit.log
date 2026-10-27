@@ -1,0 +1,5 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/audit_db_session_calls.py
+
+ATTEMPT 1/1
+
+[db_session_api] legacy_call_sites=0

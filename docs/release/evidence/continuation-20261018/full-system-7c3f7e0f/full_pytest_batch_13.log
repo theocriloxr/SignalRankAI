@@ -1,0 +1,7 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_railway_lifecycle.py' 'tests\test_railway_monolith_contract.py' 'tests\test_railway_no_redis.py' 'tests\test_railway_redis_queue.py' 'tests\test_railway_release_credential.py' 'tests\test_railway_runtime_incident_fixes.py' 'tests\test_railway_simulation_contract.py' 'tests\test_railway_staging_activation_hotfix_20260727.py' 'tests\test_ranking_weights.py' 'tests\test_realistic_paper_execution.py' 'tests\test_realtime_outcome_delivery_tier_gates.py' 'tests\test_realtime_outcome_tp_tiers.py' 'tests\test_realtime_outcome_tracker_user_perf_ids.py' 'tests\test_recent_chat_requirements_20260928.py' 'tests\test_redis_webhook_queue.py' 'tests\test_referral_reliability_v133.py' 'tests\test_release_certification_manifest_contract.py' 'tests\test_release_evidence_identity.py' 'tests\test_release_guard_runtime_decisions.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 56%]
+.......................................................                  [100%]
+127 passed in 8.61s

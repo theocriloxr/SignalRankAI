@@ -74,6 +74,7 @@ async def worker_database():
             "APPDATA", "LOCALAPPDATA", "COMSPEC", "PROGRAMFILES", "PROGRAMFILES(X86)",
             "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH"}}
         env.update(APP_ENV="test", ENVIRONMENT="test", SIGNALRANK_ALLOW_DOTENV="0",
+                   PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
                    GLOBAL_EXECUTION_KILL_SWITCH="1", REAL_EXECUTION_ENABLED="0",
                    AUTO_EXECUTION_ENABLED="0", AUTO_TRADE_ENABLED="0", COPY_TRADE_ENABLED="0",
                    PROP_EXECUTION_ENABLED="0", REAL_PAYOUTS_ENABLED="0",
@@ -241,7 +242,7 @@ async def seed_research_outcomes(get_session, asset):
     from utils.timeutils import now_utc_naive
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0053_research_market_inputs"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0055_user_renewal_default"
         for i in range(160):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",

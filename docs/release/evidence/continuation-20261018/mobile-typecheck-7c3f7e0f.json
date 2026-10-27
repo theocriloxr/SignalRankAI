@@ -1,0 +1,33 @@
+{
+  "name": "mobile-typecheck-7c3f7e0f",
+  "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-17T12:55:30.963937+00:00",
+  "finished_at": "2026-10-17T12:55:37.512649+00:00",
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "cwd": "mobile",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/mobile-typecheck-7c3f7e0f.log",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+  "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

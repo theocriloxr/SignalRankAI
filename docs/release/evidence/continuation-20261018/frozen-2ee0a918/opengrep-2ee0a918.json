@@ -1,0 +1,37 @@
+{
+  "name": "opengrep-2ee0a918",
+  "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:43:10.456344+00:00",
+  "finished_at": "2026-10-18T08:46:40.002430+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "artifacts/run_windows_static_tool.py",
+    "scripts.semgrep_gate",
+    "--engine",
+    "opengrep",
+    "--minimum-scanned",
+    "400"
+  ],
+  "cwd": ".",
+  "exit_code": 2,
+  "command_exit_code": 2,
+  "require_clean": true,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "step_timeout_seconds": 900,
+  "log": "artifacts/stage1-20261014/opengrep-2ee0a918.log",
+  "log_sha256": "ce8f67f7161f6c4a78c0b1d5124885b92dd56606e711d1260190237d2c51de4e",
+  "result": "FAIL",
+  "source_unchanged": true,
+  "source_fingerprint_before": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "source_fingerprint_after": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

@@ -57,9 +57,11 @@ class _Database:
         self.connection.create_function("NOW", 0, lambda: datetime.utcnow().isoformat(" "))
         self.connection.create_function("gen_random_uuid", 0, lambda: str(uuid4()))
         self.connection.executescript("""
-            CREATE TABLE users(id INTEGER PRIMARY KEY,account_status TEXT,tier TEXT);
-            INSERT INTO users VALUES(1,'active','professional');
-            INSERT INTO users VALUES(2,'active','professional');
+            CREATE TABLE users(id INTEGER PRIMARY KEY,account_status TEXT,tier TEXT,
+                marketing_consent BOOLEAN DEFAULT FALSE,privacy_consent_at TEXT,
+                terms_version TEXT,terms_accepted_at TEXT,updated_at TEXT);
+            INSERT INTO users(id,account_status,tier) VALUES(1,'active','professional');
+            INSERT INTO users(id,account_status,tier) VALUES(2,'active','professional');
             CREATE TABLE user_sessions(
                 session_id TEXT PRIMARY KEY,user_id INTEGER,refresh_token_hash TEXT,
                 session_family_id TEXT,device_id TEXT,user_agent_hash TEXT,ip_hash TEXT,
@@ -318,7 +320,9 @@ async def test_session_id_cannot_be_borrowed_from_another_user(auth_runtime):
     ("login", {"email": "person@example.test", "password": "password"}),
     ("telegram/login", {"payload": {"id": "1"}}),
     ("telegram/mini-app", {"init_data": "test-first-factor"}),
-    ("telegram/complete", {"token_or_code": "123456", "email": "person@example.test", "password": "LongPassword123"}),
+    ("telegram/complete", {"token_or_code": "123456", "email": "person@example.test", "password": "LongPassword123",
+                           "platform_terms_accepted": True, "privacy_acknowledged": True,
+                           "age_eligibility_confirmed": True}),
     ("magic-link/complete", {"token": "src_" + "x" * 40}),
 ])
 async def test_all_login_methods_require_enabled_mfa_before_creating_sessions(auth_runtime, monkeypatch, path, payload):
