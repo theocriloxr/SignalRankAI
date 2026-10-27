@@ -475,6 +475,33 @@ async def readiness():
     return payload
 
 
+_REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_code_schema_head_cache: Optional[str] = None
+
+
+def _code_schema_head() -> str:
+    """The single Alembic head shipped with this code.
+
+    The boot schema gate refuses to start a database-backed service unless the
+    database is at exactly this revision, so it identifies the deployed schema
+    without a manually maintained environment variable.
+    """
+    global _code_schema_head_cache
+    if _code_schema_head_cache is None:
+        try:
+            from alembic.config import Config
+            from alembic.script import ScriptDirectory
+
+            config = Config(os.path.join(_REPOSITORY_ROOT, "alembic.ini"))
+            config.set_main_option("script_location", os.path.join(_REPOSITORY_ROOT, "db", "migrations"))
+            heads = tuple(ScriptDirectory.from_config(config).get_heads())
+            _code_schema_head_cache = str(heads[0]) if len(heads) == 1 else "unknown"
+        except Exception as exc:
+            logger.warning("[version] alembic head unavailable: %s", type(exc).__name__)
+            _code_schema_head_cache = "unknown"
+    return _code_schema_head_cache
+
+
 @app.get("/version", response_model=VersionResponse)
 async def version():
     """Immutable release provenance exposed without secrets."""
@@ -485,7 +512,7 @@ async def version():
         build_id=str(os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("BUILD_ID") or "unknown"),
         build_timestamp=str(os.getenv("BUILD_TIMESTAMP") or os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT") or "unknown"),
         image_digest=str(os.getenv("IMAGE_DIGEST") or "unknown"),
-        schema_head=str(os.getenv("EXPECTED_SCHEMA_HEAD") or "unknown"),
+        schema_head=str(os.getenv("EXPECTED_SCHEMA_HEAD") or _code_schema_head()),
     )
 
 
