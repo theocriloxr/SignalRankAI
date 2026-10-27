@@ -1282,6 +1282,21 @@ async def operator_ai_test(user: dict[str, Any] = Depends(current_user)) -> dict
     return {"authority": authority, "status": status, "test": result}
 
 
+async def _audit_operator_action(user: dict[str, Any], event_type: str, metadata: dict[str, Any]) -> bool:
+    """Best effort: a control action must never fail because its audit row could not be written."""
+    try:
+        from services.platform.identity import record_security_event
+
+        async with get_session(label="platform.operator.audit", timeout_seconds=5.0) as session:
+            await record_security_event(session, user_id=int(user["id"]), event_type=event_type,
+                                        severity="warning", session_id=user.get("session_id"), metadata=metadata)
+            await session.commit()
+        return True
+    except Exception as exc:
+        logger.error("[operator] audit write failed event=%s err=%s", event_type, type(exc).__name__)
+        return False
+
+
 @router.post("/operator/kill-switch")
 async def operator_kill_switch(
     payload: OperatorKillSwitchRequest,
@@ -1299,6 +1314,8 @@ async def operator_kill_switch(
         await redis_state.set_killswitch(True, reason="platform_owner_kill_switch")
     elif action == "off":
         await redis_state.set_killswitch(False, reason="platform_owner_release")
+    if action in {"on", "off"}:
+        await _audit_operator_action(user, "operator.kill_switch_" + action, {"scope": "global"})
     status = await redis_state.get_killswitch()
     return {
         "authority": authority,
@@ -1340,6 +1357,9 @@ async def operator_scoped_kill_switch(
             raise HTTPException(status_code=422, detail=str(exc))
         await redis_state.set_scoped_killswitches(document)
         logger.warning("[operator] scoped kill switch %s %s:%s by %s", action, payload.scope, payload.key, actor)
+        await _audit_operator_action(user, "operator.kill_switch_" + action,
+                                     {"scope": payload.scope, "key": document["audit"][-1]["key"],
+                                      "reason": payload.reason})
     return {
         "authority": authority,
         "switches": document.get("switches") or {},

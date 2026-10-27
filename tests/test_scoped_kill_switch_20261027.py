@@ -141,3 +141,27 @@ def test_operator_endpoint_reports_unavailable_store(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         _call(_owner(monkeypatch, FakeState(broken=True)), action="status")
     assert exc.value.status_code == 503
+
+
+def test_kill_switch_changes_write_an_audit_event_and_survive_audit_failure(monkeypatch):
+    fake = FakeState()
+    user = _owner(monkeypatch, fake)
+    events = []
+
+    async def record(_user, event_type, metadata):
+        events.append((event_type, metadata))
+        return True
+
+    monkeypatch.setattr(platform_api, "_audit_operator_action", record)
+    _call(user, action="on", scope="asset_class", key="fx", reason="feed incident", confirm=True)
+    assert events == [("operator.kill_switch_on", {"scope": "asset_class", "key": "FOREX", "reason": "feed incident"})]
+
+    monkeypatch.undo()
+    user = _owner(monkeypatch, fake)
+
+    def failing_session(*_a, **_k):
+        raise ConnectionError("db down")
+
+    monkeypatch.setattr(platform_api, "get_session", failing_session)
+    result = _call(user, action="off", scope="asset_class", key="fx", confirm=True)
+    assert result["switches"]["asset_class"] == {}
