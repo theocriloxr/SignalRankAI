@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-27",
+  "tested_revision": "83d4da0181b365e237257637fc17d34c2713adc9",
+  "environment": "Local Windows 11, PostgreSQL 17 (EDB build, pgcrypto available), owned cluster on 127.0.0.1:55434 initialised for this rehearsal, Python 3.13.7. Not staging or production; no production data.",
+  "scope": "Schema behaviour of 0054/0055 on synthetic production-shaped data and the guarded migration path. Does not measure production table sizes, lock contention under live writes, or Railway volume capacity.",
+  "plain_alembic_rehearsal": {
+    "commands": [
+      "alembic upgrade 0053_research_market_inputs (empty database)",
+      "alembic upgrade head",
+      "alembic downgrade 0053_research_market_inputs",
+      "alembic upgrade head"
+    ],
+    "seed": "5,000 users (75% auto_renew TRUE), 200,000 decision_log rows",
+    "steps": [
+      {
+        "command": "alembic upgrade head",
+        "exit": 0,
+        "seconds": 1.66,
+        "tail": [
+          "INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users.",
+          "INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users."
+        ]
+      },
+      {
+        "command": "alembic downgrade 0053_research_market_inputs",
+        "exit": 0,
+        "seconds": 1.32,
+        "tail": [
+          "INFO  [alembic.runtime.migration] Running downgrade 0054_shadow_pending_index -> 0053_research_market_inputs, Bound pending ML-shadow observation cost without blocking decision writes.",
+          "INFO  [alembic.runtime.migration] Running downgrade 0054_shadow_pending_index -> 0053_research_market_inputs, Bound pending ML-shadow observation cost without blocking decision writes."
+        ]
+      },
+      {
+        "command": "alembic upgrade head",
+        "exit": 0,
+        "seconds": 1.46,
+        "tail": [
+          "INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users.",
+          "INFO  [alembic.runtime.migration] Running upgrade 0054_shadow_pending_index -> 0055_user_renewal_default, Make recurring billing opt-in for future accounts without rewriting users."
+        ]
+      }
+    ],
+    "before": {
+      "revision": "0053_research_market_inputs",
+      "auto_renew_default": "true",
+      "index_valid": [],
+      "users": [
+        [
+          false,
+          1250
+        ],
+        [
+          true,
+          3750
+        ]
+      ],
+      "decision_rows": 200000,
+      "pending_ml_rows": 66667
+    },
+    "after_upgrade": {
+      "revision": "0055_user_renewal_default",
+      "auto_renew_default": "false",
+      "index_valid": [
+        true
+      ],
+      "users": [
+        [
+          false,
+          1250
+        ],
+        [
+          true,
+          3750
+        ]
+      ],
+      "decision_rows": 200000,
+      "pending_ml_rows": 66667
+    },
+    "new_user_after_upgrade_auto_renew": false,
+    "after_downgrade": {
+      "revision": "0053_research_market_inputs",
+      "auto_renew_default": "true",
+      "index_valid": [],
+      "users": [
+        [
+          false,
+          1251
+        ],
+        [
+          true,
+          3750
+        ]
+      ],
+      "decision_rows": 200000,
+      "pending_ml_rows": 66667
+    },
+    "new_user_after_downgrade_auto_renew": true,
+    "after_reupgrade": {
+      "revision": "0055_user_renewal_default",
+      "auto_renew_default": "false",
+      "index_valid": [
+        true
+      ],
+      "users": [
+        [
+          false,
+          1251
+        ],
+        [
+          true,
+          3751
+        ]
+      ],
+      "decision_rows": 200000,
+      "pending_ml_rows": 66667
+    }
+  },
+  "controlled_migrate_rehearsal": {
+    "command": "python scripts/controlled_migrate.py --output <file>",
+    "settings": "APP_ENV=production naming against the local database only; EXPECTED_RELEASE_COMMIT=GIT_COMMIT_SHA=tested revision; rehearsal backup id 'local-rehearsal-only'",
+    "without_backup_evidence": {
+      "environment": "production",
+      "error": "RuntimeError: PRODUCTION_DB_BACKUP_VERIFIED must be 1; PRODUCTION_DB_BACKUP_ID is missing; PRODUCTION_DB_BACKUP_CREATED_AT must be a timezone-aware ISO-8601 timestamp",
+      "evidence_type": "integration",
+      "finished_at": "2026-10-27T22:12:22.277331+00:00",
+      "status": "BLOCKED"
+    },
+    "with_backup_without_volume_observation": {
+      "status": "BLOCKED",
+      "error": "RuntimeError: PRODUCTION_DB_VOLUME_SIZE_MB must match the observed Railway volume capacity"
+    },
+    "with_backup_and_volume_observation": {
+      "advisory_lock_acquired": true,
+      "advisory_lock_id": 915337121,
+      "alembic_before": "0053_research_market_inputs",
+      "alembic_current": "0055_user_renewal_default",
+      "alembic_expected_head": "0055_user_renewal_default",
+      "backup_id": "local-rehearsal-only",
+      "environment": "production",
+      "evidence_type": "integration",
+      "finished_at": "2026-10-27T22:12:40.993795+00:00",
+      "migration_required": true,
+      "release_commit": "83d4da0181b3",
+      "started_at": "2026-10-27T22:12:39.874108+00:00",
+      "status": "PASS"
+    },
+    "rerun_at_head": {
+      "advisory_lock_acquired": false,
+      "advisory_lock_id": 915337121,
+      "alembic_before": "0055_user_renewal_default",
+      "alembic_current": "0055_user_renewal_default",
+      "alembic_expected_head": "0055_user_renewal_default",
+      "backup_id": "local-rehearsal-only",
+      "environment": "production",
+      "evidence_type": "integration",
+      "finished_at": "2026-10-27T22:12:42.239168+00:00",
+      "migration_required": false,
+      "release_commit": "83d4da0181b3",
+      "started_at": "2026-10-27T22:12:42.189090+00:00",
+      "status": "PASS"
+    }
+  },
+  "findings": [
+    "Existing users keep their auto_renew value through upgrade, downgrade and re-upgrade (3,750 TRUE / 1,250 FALSE seeded).",
+    "A user created at 0055 gets auto_renew FALSE and keeps it after downgrade; a user created at 0053 gets TRUE.",
+    "ix_decision_log_ml_pending_created builds valid (indisvalid) on 200,000 rows and is dropped by the downgrade.",
+    "controlled_migrate.py also requires PRODUCTION_DB_VOLUME_SIZE_MB and PRODUCTION_DB_VOLUME_OBSERVED_AT (under one hour old) and needs pg_ls_waldir() privilege (superuser or pg_monitor); the 24 Oct promotion plan did not list these."
+  ]
+}

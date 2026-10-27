@@ -28,7 +28,7 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 
 ## Steps (owner-authorized window)
 
-1. **Backup.** Take a Railway PostgreSQL backup and confirm a restore of it into a scratch database. Record `PRODUCTION_DB_BACKUP_ID`, `PRODUCTION_DB_BACKUP_CREATED_AT` (ISO-8601, under 24 h old) and `PRODUCTION_DB_BACKUP_VERIFIED=1` on the migration-role service. `scripts/controlled_migrate.py` refuses to migrate without them.
+1. **Backup.** Take a Railway PostgreSQL backup and confirm a restore of it into a scratch database. Record `PRODUCTION_DB_BACKUP_ID`, `PRODUCTION_DB_BACKUP_CREATED_AT` (ISO-8601, under 24 h old) and `PRODUCTION_DB_BACKUP_VERIFIED=1` on the migration-role service. `scripts/controlled_migrate.py` refuses to migrate without them. *(Added 27 Oct after a local rehearsal:)* it also refuses without `PRODUCTION_DB_VOLUME_SIZE_MB` (the Railway volume capacity) and `PRODUCTION_DB_VOLUME_OBSERVED_AT` (ISO-8601, under **one hour** old, so set it at the start of the window), and it reads `pg_ls_waldir()`, which needs a superuser or `pg_monitor` connection. Rehearsal evidence: `evidence/continuation-20261027/migration_rehearsal_0053_0055.json`.
 2. **Engine diagnosis first.** Production readiness is 503 because the engine heartbeat is absent (engine not cycling). Read the engine service logs before the release so the cause is known; a deploy may not fix it.
 3. **Approve the source.** Set `EXPECTED_RELEASE_COMMIT` to the full SHA being promoted on all four services (and the migration role). Leave `EXPECTED_RELEASE_BRANCH` as `fix/provider-discovery-readiness-20260923`. Never disable `RELEASE_SOURCE_GATE_ENABLED`.
 4. **Push** the feature branch head to `fix/provider-discovery-readiness-20260923` as a fast-forward (no force).
@@ -46,4 +46,5 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 
 - Evidence is local only: GitHub Actions is billing-locked, there is no staging environment, and no live provider, broker or Paystack test keys were exercised.
 - Requirement status: 8 verified locally, 248 partially verified, 20 blocked, 7 awaiting approval, 5 not implemented (`evidence/continuation-20261024/cx_assessment.json`).
-- Production `/version` reports unknown build metadata (CX-OBS-03); set it in the build so the deployed SHA can be proven.
+- Production `/version` reports unknown build metadata (CX-OBS-03); set it in the build so the deployed SHA can be proven. From `bd257421` the promoted code reports its own Alembic head as `schema_head` without configuration.
+- 27 Oct local rehearsal (PostgreSQL 17, synthetic production-shaped data): `0053 → 0055 → 0053 → 0055` with plain Alembic and `0053 → 0055` through `controlled_migrate.py` all passed; existing `auto_renew` values unchanged. Not a measurement of production size or live write load.
