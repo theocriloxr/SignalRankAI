@@ -1424,6 +1424,8 @@ async def load_training_data(lookback_days: int = 90):
             logger.warning("Failed to load paper-execution training rows: %s", paper_err)
 
         df = pd.DataFrame(data)
+        df, focus = _restrict_to_focused_universe(df)
+        df.attrs["focused_universe"] = focus
         source_counts = (
             df["source_type"].value_counts().to_dict() if not df.empty and "source_type" in df.columns else {}
         )
@@ -1453,6 +1455,33 @@ async def load_training_data(lookback_days: int = 90):
         failed.attrs["read_status"] = "failed"
         failed.attrs["read_error"] = f"{type(e).__name__}: {e}"
         return failed
+
+
+def _restrict_to_focused_universe(df, environment=None):
+    """Train only on focused-shortlist instruments while that universe is enabled.
+
+    The same membership source as every new-entry path (CX-ASSET-12). Disabled
+    leaves the dataset untouched; an enable flag in production fails closed with
+    an empty dataset, so training keeps the current model instead of learning
+    from instruments the platform will not trade.
+    """
+    from core.focused_universe import focused_admission, focused_universe_enabled
+
+    env = os.environ if environment is None else environment
+    try:
+        enabled = focused_universe_enabled(env)
+    except (RuntimeError, ValueError) as exc:
+        return df.iloc[0:0].copy(), {"applied": True, "status": "blocked", "reason": str(exc), "rows_removed": len(df)}
+    if not enabled:
+        return df, {"applied": False, "status": "disabled"}
+    if df.empty or "asset" not in df.columns:
+        return df, {"applied": True, "status": "empty", "rows_removed": 0}
+    admitted = {asset: focused_admission(asset, env)[0] for asset in df["asset"].dropna().unique()}
+    keep = df["asset"].map(lambda asset: bool(admitted.get(asset, False)))
+    restricted = df[keep].copy()
+    restricted.attrs.update(df.attrs)
+    return restricted, {"applied": True, "status": "restricted", "rows_removed": int((~keep).sum()),
+                        "instruments_kept": sorted(a for a, ok in admitted.items() if ok)}
 
 
 def _govern_training_source_influence(df):
