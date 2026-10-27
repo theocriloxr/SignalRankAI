@@ -9,19 +9,18 @@
   "BLOCKED_CREDENTIALS_OR_ACCESS": 9,
   "BLOCKED_EXTERNAL_DEPENDENCY": 4,
   "BLOCKED_HUMAN_DECISION": 4,
-  "DEFECTIVE": 1,
   "IMPLEMENTED_AND_VERIFIED": 8,
-  "IMPLEMENTED_NOT_VERIFIED": 124,
+  "IMPLEMENTED_NOT_VERIFIED": 126,
   "MISSING": 2,
-  "PARTIALLY_IMPLEMENTED": 124,
+  "PARTIALLY_IMPLEMENTED": 123,
   "PROPOSED_NOT_APPROVED": 2,
   "UNRESOLVED_HISTORICAL_AMBIGUITY": 3
  },
  "acceptance_counts": {
   "awaiting approval": 7,
   "blocked": 20,
-  "not implemented": 5,
-  "partially verified": 248,
+  "not implemented": 4,
+  "partially verified": 249,
   "verified": 8
  },
  "requirements": [
@@ -468,9 +467,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "db/migrations/versions",
-    "tests/test_migration_revision_ids.py"
+    "tests/test_migration_revision_ids.py",
+    "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json"
    ],
-   "note": "Head 0055; production at 0053 (from /version); staging revision unknown."
+   "note": "Head 0055; production at 0053 (from /version); staging revision unknown. Upgrade/downgrade rehearsed locally 27 Oct."
   },
   {
    "id": "CX-FACT-04",
@@ -499,9 +499,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "web/platform_api.py",
-    "frontend/src/components/WorkspaceLive.tsx"
+    "frontend/src/components/WorkspaceLive.tsx",
+    "tests/test_engine_skip_heartbeat_20261027.py"
    ],
-   "note": "Rejection distribution exposed via /quality; current live root cause is the engine not cycling (heartbeat absent)."
+   "note": "Rejection distribution exposed via /quality; current live root cause is the engine not cycling (heartbeat absent). 27 Oct: skipped cycles now name their reason; /quality breaks rejections down by asset, timeframe, strategy and layer."
   },
   {
    "id": "CX-FACT-07",
@@ -572,9 +573,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_runtime_heartbeat_identity.py"
+    "tests/test_runtime_heartbeat_identity.py",
+    "tests/test_version_schema_head_20261027.py"
    ],
-   "note": "Live /version shows schema_head/build_timestamp 'unknown' — stale identity persists in prod."
+   "note": "Live /version shows schema_head/build_timestamp 'unknown'. Fixed in code on 27 Oct (bd257421, 131224e7); not deployed."
   },
   {
    "id": "CX-FACT-14",
@@ -1078,9 +1080,11 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_focused_universe_admission_20261024.py"
+    "tests/test_focused_universe_admission_20261024.py",
+    "ml/train_model.py",
+    "tests/test_focused_universe_ml_training_20261027.py"
    ],
-   "note": "Signal store, persistence, MT5/Bybit routers, paper trading enforced; Telegram presentation and ML training filters not yet."
+   "note": "Signal store, persistence, MT5/Bybit routers, paper trading and (27 Oct) ML training enforced. Telegram delivers only persisted signals, so new Telegram signals are covered transitively; no separate Telegram filter. Inference outside the engine scan (on-demand analysis) is not restricted."
   },
   {
    "id": "CX-ASSET-13",
@@ -1315,9 +1319,11 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "frontend/src/components/WorkspaceLive.tsx"
+    "frontend/src/components/WorkspaceLive.tsx",
+    "web/platform_api.py",
+    "tests/test_quality_breakdowns_postgres_20261027.py"
    ],
-   "note": "Quality view shows 24 h buckets; per-strategy/timeframe breakdown limited."
+   "note": "27 Oct: /quality and the web Quality view break decisions down by asset, timeframe, strategy and pipeline layer (real-PostgreSQL test). Engine Pulse not yet extended; strategy is often unattributed in decision_log meta."
   },
   {
    "id": "CX-SIG-22",
@@ -1932,19 +1938,25 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "engine/correlation_guard.py"
+    "engine/correlation_guard.py",
+    "services/execution_quota.py",
+    "tests/test_execution_quota_concurrency_postgres_20261027.py"
    ],
-   "note": "Concurrency atomicity not proven by a test."
+   "note": "27 Oct: real-PostgreSQL race test — 12 simultaneous reservations against a limit of 3 approve exactly 3 (row lock). Found and fixed every refusal reporting 'execution_quota_unavailable'. engine/correlation_guard.py and core/risk_authority.py are not wired into runtime; cross-position exposure atomicity is not proven."
   },
   {
    "id": "CX-RISK-04",
    "label": "Multi-level kill switches",
-   "status": "PARTIALLY_IMPLEMENTED",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "core/risk_authority.py"
+    "core/risk_authority.py",
+    "core/scoped_kill_switch.py",
+    "tests/test_scoped_kill_switch_20261027.py",
+    "services/mt5_signal_router.py",
+    "services/bybit_signal_router.py"
    ],
-   "note": "Global/account freeze exist; strategy/instrument/class-level switches partial."
+   "note": "27 Oct: strategy, instrument and asset-class switches beside the global one; fail closed when unreadable; enforced at the MT5 and Bybit chokepoints; owner-only confirmed endpoint with bounded audit trail. Concurrent owner edits can lose an update (read-modify-write). No web UI yet. core/risk_authority.py (previous evidence) is not wired into runtime."
   },
   {
    "id": "CX-RISK-05",
@@ -2320,9 +2332,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_stage1_renewal_migration_postgres.py"
+    "tests/test_stage1_renewal_migration_postgres.py",
+    "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json"
    ],
-   "note": "Upgrade from 0053 with production-like data not rehearsed."
+   "note": "27 Oct: 0053->0055->0053->0055 and the guarded controlled_migrate path rehearsed on local PostgreSQL 17 with synthetic production-shaped data; existing auto_renew values unchanged. Production size and live write load not rehearsed."
   },
   {
    "id": "CX-DB-03",
@@ -2413,9 +2426,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_phase4_pass7_runtime_roles.py"
+    "tests/test_phase4_pass7_runtime_roles.py",
+    "tests/test_engine_skip_heartbeat_20261027.py"
    ],
-   "note": "Engine currently not cycling in prod (heartbeat absent)."
+   "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs."
   },
   {
    "id": "CX-SEC-01",
@@ -2545,12 +2559,15 @@
   {
    "id": "CX-OBS-03",
    "label": "Runtime identity",
-   "status": "DEFECTIVE",
-   "acceptance_class": "not implemented",
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_runtime_heartbeat_identity.py"
+    "tests/test_runtime_heartbeat_identity.py",
+    "web/app.py",
+    "nixpacks.toml",
+    "tests/test_version_schema_head_20261027.py"
    ],
-   "note": "Production /version reports unknown schema_head/build_timestamp."
+   "note": "27 Oct: /version reports the code's Alembic head and the Nixpacks build stamp when no variable is set (tested locally). image_digest stays unknown under Nixpacks. Not deployed: production still reports unknown until an authorized promotion."
   },
   {
    "id": "CX-OBS-04",
@@ -2998,6 +3015,25 @@
     "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
    ],
    "note": "Readiness level: development-ready (local evidence)."
+  }
+ ],
+ "revised_at": "2026-10-27",
+ "revisions": [
+  {
+   "date": "2026-10-27",
+   "ids": [
+    "CX-OBS-03",
+    "CX-FACT-13",
+    "CX-RISK-03",
+    "CX-RISK-04",
+    "CX-ASSET-12",
+    "CX-SIG-21",
+    "CX-DB-02",
+    "CX-FACT-03",
+    "CX-Q-05",
+    "CX-FACT-06"
+   ],
+   "note": "Local evidence only (Windows 11, Python 3.13.7, PostgreSQL 17). Nothing deployed."
   }
  ]
 }
