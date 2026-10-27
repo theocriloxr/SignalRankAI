@@ -4909,6 +4909,36 @@ async def quality_report(
             .mappings()
             .all()
         )
+        # One scan of the same window, split four ways (CX-SIG-21). A missing
+        # strategy is reported as unattributed, never inferred.
+        dimension_rows = (
+            (
+                await session.execute(
+                    text(
+                        """
+                    SELECT CASE WHEN GROUPING(asset) = 0 THEN 'asset'
+                                WHEN GROUPING(timeframe) = 0 THEN 'timeframe'
+                                WHEN GROUPING(COALESCE(meta->>'strategy', meta->>'strategy_name')) = 0 THEN 'strategy'
+                                ELSE 'layer' END AS dimension,
+                           COALESCE(asset, timeframe, COALESCE(meta->>'strategy', meta->>'strategy_name'), meta->>'layer') AS value,
+                           LOWER(COALESCE(decision, '')) AS decision,
+                           COUNT(*) AS rows
+                    FROM decision_log
+                    WHERE created_at >= :cutoff
+                    GROUP BY GROUPING SETS (
+                        (asset, decision),
+                        (timeframe, decision),
+                        (COALESCE(meta->>'strategy', meta->>'strategy_name'), decision),
+                        (meta->>'layer', decision)
+                    )
+                    """
+                    ),
+                    {"cutoff": cutoff},
+                )
+            )
+            .mappings()
+            .all()
+        )
         await session.rollback()
 
     issued = 0
@@ -4945,7 +4975,46 @@ async def quality_report(
         "acceptance_rate": (issued / total if total else None),
         "reject_buckets": buckets,
         "top_reasons": [{"reason": reason, "rows": count} for reason, count in top_reasons],
+        "breakdowns": _quality_breakdowns(dimension_rows),
     }
+
+
+_QUALITY_UNATTRIBUTED = {"asset": "(no asset)", "timeframe": "(no timeframe)",
+                         "strategy": "(unattributed)", "layer": "(no layer)"}
+
+
+def _quality_breakdowns(rows: Any, limit: int = 12) -> dict[str, list[dict[str, Any]]]:
+    """Issued vs rejected decisions per asset, timeframe, strategy and pipeline layer."""
+    tallies: dict[str, dict[str, dict[str, int]]] = {name: {} for name in _QUALITY_UNATTRIBUTED}
+    for row in rows or []:
+        dimension = str(row.get("dimension") or "")
+        if dimension not in tallies:
+            continue
+        value = str(row.get("value") or "").strip() or _QUALITY_UNATTRIBUTED[dimension]
+        decision = str(row.get("decision") or "")
+        count = int(row.get("rows") or 0)
+        entry = tallies[dimension].setdefault(value, {"issued": 0, "rejected_or_skipped": 0, "other": 0})
+        if decision == "issued":
+            entry["issued"] += count
+        elif decision in {"rejected", "skipped"}:
+            entry["rejected_or_skipped"] += count
+        else:
+            entry["other"] += count
+    result: dict[str, list[dict[str, Any]]] = {}
+    for dimension, values in tallies.items():
+        ordered = sorted(values.items(), key=lambda item: (-item[1]["rejected_or_skipped"], -item[1]["issued"], item[0]))
+        result[dimension] = [
+            {
+                "value": value,
+                **counts,
+                "acceptance_rate": (
+                    counts["issued"] / (counts["issued"] + counts["rejected_or_skipped"])
+                    if counts["issued"] + counts["rejected_or_skipped"] else None
+                ),
+            }
+            for value, counts in ordered[: max(1, int(limit))]
+        ]
+    return result
 
 
 @router.get("/shadow-report")
