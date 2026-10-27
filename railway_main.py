@@ -3254,6 +3254,10 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
                 "git_sha": cycle_sha or None,
                 "release_match": sha_ok,
             }
+            if cycle.get("status") == "skipped":
+                # Alive but not working: name the early exit instead of a bare status.
+                checks["engine_runtime"]["skip_reason"] = str(cycle.get("skip_reason") or "unknown")
+                checks["engine_runtime"]["next_attempt_in_seconds"] = cycle.get("next_attempt_in_seconds")
         except _EngineHeartbeatMissing as missing:
             checks["engine_runtime"] = {
                 "ok": False,

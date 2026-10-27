@@ -1557,6 +1557,26 @@ def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200
         logger.debug("[engine] failed to publish cycle state", exc_info=True)
 
 
+def _publish_engine_cycle_skip(cycle_no: int, reason: str, sleep_seconds: float) -> None:
+    """Record a cycle that ended before universe selection.
+
+    Without this, an engine that is alive but skipping every cycle leaves no
+    heartbeat and is indistinguishable from a stopped engine. ``skipped`` is
+    not a healthy readiness status; it only names why no work was attempted.
+    """
+    _publish_engine_cycle_state(
+        {
+            "status": "skipped",
+            "skip_reason": _compact_reason(reason),
+            "cycle": int(cycle_no),
+            "git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+            "deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "next_attempt_in_seconds": max(0, int(sleep_seconds)),
+        }
+    )
+
+
 def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_error: str | None = None) -> str:
     def _i(key: str) -> int:
         try:
@@ -2772,6 +2792,7 @@ def main_loop(DRY_RUN: bool = False):
             logger.info("[engine] Market Health Check: is_healthy=%s", is_healthy)
             if not is_healthy:
                 logger.warning("[engine] Circuit breaker activated - skipping cycle due to market flash crash")
+                _publish_engine_cycle_skip(cycle_no, "circuit_breaker_active", max(5, cycle_sleep_seconds))
                 time.sleep(max(5, cycle_sleep_seconds))
                 continue
         except Exception as cb_err:
@@ -2782,6 +2803,9 @@ def main_loop(DRY_RUN: bool = False):
                 exc_info=True,
             )
             if _env_bool("MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True):
+                _publish_engine_cycle_skip(
+                    cycle_no, f"circuit_breaker_check_failed:{type(cb_err).__name__}", max(5, cycle_sleep_seconds)
+                )
                 time.sleep(max(5, cycle_sleep_seconds))
                 continue
 
@@ -3003,6 +3027,7 @@ def main_loop(DRY_RUN: bool = False):
         _profile_filtered_universe = list(assets)
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
+            _publish_engine_cycle_skip(cycle_no, "no_assets", max(5, cycle_sleep_seconds))
             time.sleep(max(5, cycle_sleep_seconds))
             continue
 
@@ -3032,6 +3057,9 @@ def main_loop(DRY_RUN: bool = False):
                     cycle_no,
                     _off_market.sleep_seconds,
                     _off_market.reason,
+                )
+                _publish_engine_cycle_skip(
+                    cycle_no, f"off_market_throttle:{_off_market.reason}", max(60, int(_off_market.sleep_seconds))
                 )
                 time.sleep(max(60, int(_off_market.sleep_seconds)))
                 continue
@@ -3171,6 +3199,7 @@ def main_loop(DRY_RUN: bool = False):
 
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=empty_queue")
+            _publish_engine_cycle_skip(cycle_no, "empty_queue", max(5, cycle_sleep_seconds))
             time.sleep(max(5, cycle_sleep_seconds))
             continue
 
