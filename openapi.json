@@ -398,6 +398,145 @@
         ]
       }
     },
+    "/api/v1/platform/operator/account-merges": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Account Merges",
+        "description": "Telegram/web merges waiting for review (owners and admins).",
+        "operationId": "operator_account_merges_api_v1_platform_operator_account_merges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Operator Account Merges Api V1 Platform Operator Account Merges Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/operator/account-merges/{merge_id}": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Account Merge Preview",
+        "description": "Read-only preview of what a merge would move, keep and never move.",
+        "operationId": "operator_account_merge_preview_api_v1_platform_operator_account_merges__merge_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "merge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Merge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Account Merge Preview Api V1 Platform Operator Account Merges  Merge Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/operator/account-merges/{merge_id}/apply": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Account Merge Apply",
+        "description": "Complete a reviewed merge; owner only, confirmed, recent sign-in, single transaction.",
+        "operationId": "operator_account_merge_apply_api_v1_platform_operator_account_merges__merge_id__apply_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "merge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Merge Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorAccountMergeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Account Merge Apply Api V1 Platform Operator Account Merges  Merge Id  Apply Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/operator/maintenance": {
       "get": {
         "tags": [
@@ -8103,6 +8242,26 @@
         },
         "type": "object",
         "title": "NotificationPreferenceRequest"
+      },
+      "OperatorAccountMergeRequest": {
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "confirm_merge_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Confirm Merge Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirm_merge_id"
+        ],
+        "title": "OperatorAccountMergeRequest"
       },
       "OperatorAdaptiveRequest": {
         "properties": {
