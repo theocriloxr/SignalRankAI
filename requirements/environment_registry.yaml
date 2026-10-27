@@ -2364,7 +2364,7 @@
       "name": "BUILD_ID",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:485"
+        "web/app.py:512"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2374,7 +2374,7 @@
       "name": "BUILD_TIMESTAMP",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:486"
+        "web/app.py:513"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5684,7 +5684,7 @@
       "name": "EXPECTED_SCHEMA_HEAD",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:488"
+        "web/app.py:515"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6371,7 +6371,7 @@
       "name": "GIT_BRANCH",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:484",
+        "web/app.py:511",
         "web/platform_api.py:1105"
       ],
       "required_by_code": true,
@@ -6398,7 +6398,7 @@
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:666",
-        "web/app.py:483"
+        "web/app.py:510"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6544,7 +6544,7 @@
       "name": "IMAGE_DIGEST",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:487"
+        "web/app.py:514"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10683,7 +10683,7 @@
       "read_locations": [
         "payments/paystack_events.py:34",
         "payments/paystack_webhook.py:107",
-        "web/app.py:851"
+        "web/app.py:878"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10917,8 +10917,8 @@
         "payments/paystack_policy.py:133",
         "railway_main.py:2909",
         "services/subscription_cancellation.py:25",
-        "web/app.py:957",
-        "web/app.py:992",
+        "web/app.py:1019",
+        "web/app.py:984",
         "web/platform_api.py:6590"
       ],
       "required_by_code": true,
@@ -11025,7 +11025,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:61",
-        "web/app.py:957"
+        "web/app.py:984"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -11264,7 +11264,7 @@
       "production_example_default": null,
       "read_locations": [
         "railway_main.py:1315",
-        "web/app.py:1309",
+        "web/app.py:1336",
         "web/userdash/app.py:46"
       ],
       "required_by_code": true,
@@ -11969,7 +11969,7 @@
       "name": "RAILWAY_DEPLOYMENT_CREATED_AT",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:486"
+        "web/app.py:513"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11985,7 +11985,7 @@
         "engine/core.py:3210",
         "engine/shadow_outcome_worker.py:79",
         "railway_main.py:1194",
-        "web/app.py:485"
+        "web/app.py:512"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12059,7 +12059,7 @@
       "name": "RAILWAY_GIT_BRANCH",
       "production_example_default": null,
       "read_locations": [
-        "web/app.py:484",
+        "web/app.py:511",
         "web/platform_api.py:1105"
       ],
       "required_by_code": true,
@@ -12078,7 +12078,7 @@
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:666",
-        "web/app.py:483",
+        "web/app.py:510",
         "web/platform_api.py:1106"
       ],
       "required_by_code": true,
@@ -15786,7 +15786,7 @@
         "signalrank_telegram/bot.py:9378",
         "signalrank_telegram/commands.py:271",
         "signalrank_telegram/commands.py:4956",
-        "web/app.py:1201"
+        "web/app.py:1228"
       ],
       "required_by_code": true,
       "sensitive": false

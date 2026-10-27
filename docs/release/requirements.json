@@ -72,6 +72,17 @@
       },
       "frontend_checks": "tsc, eslint, next build and node tests pass locally",
       "audit": "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
+    },
+    "continuation_20261027": {
+      "branch": "feat/frontend-rebuild-and-stage1-hardening",
+      "base": "5f848d96",
+      "code_commit": "bd2574213a89f61015b4f28d253e942d50b552bb",
+      "stage_acceptance": "FAILED",
+      "production_authorized": false,
+      "live_trading_authorized": false,
+      "change": "CX-OBS-03 partial: /version falls back to the code's Alembic head for schema_head",
+      "tests": "tests/test_version_schema_head_20261027.py: 3 passed (local Windows, Python 3.13.7; not CI, staging or production)",
+      "promotion": "requested without PROMOTE_TO_PRODUCTION or plan prerequisites; not executed"
     }
   },
   "inventory_is_verification": false,
@@ -506143,7 +506154,7 @@
     {
       "id": "SR-ENDPOINT-a261718885178c64",
       "kind": "ENDPOINT",
-      "source": "web/app.py:479",
+      "source": "web/app.py:506",
       "requirement": "GET /version",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::version",
@@ -506159,7 +506170,7 @@
     {
       "id": "SR-ENDPOINT-3ef8f19ebb44f7d2",
       "kind": "ENDPOINT",
-      "source": "web/app.py:493",
+      "source": "web/app.py:520",
       "requirement": "GET /metrics",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::metrics",
@@ -506177,7 +506188,7 @@
     {
       "id": "SR-ENDPOINT-9694c887c444b111",
       "kind": "ENDPOINT",
-      "source": "web/app.py:528",
+      "source": "web/app.py:555",
       "requirement": "GET /metrics/prometheus",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::metrics_prometheus",
@@ -506193,7 +506204,7 @@
     {
       "id": "SR-ENDPOINT-8a83a0d704d96e10",
       "kind": "ENDPOINT",
-      "source": "web/app.py:536",
+      "source": "web/app.py:563",
       "requirement": "GET /signals/{user_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::get_signals",
@@ -506211,7 +506222,7 @@
     {
       "id": "SR-ENDPOINT-fafa9c70e4fe229f",
       "kind": "ENDPOINT",
-      "source": "web/app.py:597",
+      "source": "web/app.py:624",
       "requirement": "POST /broker/validate-api-permissions",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::validate_broker_api_permissions",
@@ -506227,7 +506238,7 @@
     {
       "id": "SR-ENDPOINT-c0684028ca731132",
       "kind": "ENDPOINT",
-      "source": "web/app.py:621",
+      "source": "web/app.py:648",
       "requirement": "POST /broker/exchange/link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::link_exchange_broker",
@@ -506245,7 +506256,7 @@
     {
       "id": "SR-ENDPOINT-dc945445e6e6b98a",
       "kind": "ENDPOINT",
-      "source": "web/app.py:741",
+      "source": "web/app.py:768",
       "requirement": "POST /payout/account/link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::link_payout_account",
@@ -506263,7 +506274,7 @@
     {
       "id": "SR-ENDPOINT-3d9dba5fc0ca611f",
       "kind": "ENDPOINT",
-      "source": "web/app.py:765",
+      "source": "web/app.py:792",
       "requirement": "POST /payout/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::request_payout",
@@ -506281,7 +506292,7 @@
     {
       "id": "SR-ENDPOINT-12e3d9b748d619de",
       "kind": "ENDPOINT",
-      "source": "web/app.py:784",
+      "source": "web/app.py:811",
       "requirement": "POST /payout/approve",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::approve_payout",
@@ -506299,7 +506310,7 @@
     {
       "id": "SR-ENDPOINT-f6e4db39d135194d",
       "kind": "ENDPOINT",
-      "source": "web/app.py:798",
+      "source": "web/app.py:825",
       "requirement": "POST /payout/finalize",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::finalize_payout_transfer",
@@ -506317,7 +506328,7 @@
     {
       "id": "SR-ENDPOINT-d6a1c87626ad9acd",
       "kind": "ENDPOINT",
-      "source": "web/app.py:814",
+      "source": "web/app.py:841",
       "requirement": "GET /payout/verify/{reference}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::verify_payout_transfer",
@@ -506335,7 +506346,7 @@
     {
       "id": "SR-ENDPOINT-e65decdd005c9fc7",
       "kind": "ENDPOINT",
-      "source": "web/app.py:828",
+      "source": "web/app.py:855",
       "requirement": "GET /broker/exchange/status",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::exchange_broker_status",
@@ -506353,7 +506364,7 @@
     {
       "id": "SR-ENDPOINT-a6d692b6ba40f761",
       "kind": "ENDPOINT",
-      "source": "web/app.py:859",
+      "source": "web/app.py:886",
       "requirement": "POST /paystack/webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::paystack_webhook",
@@ -506369,7 +506380,7 @@
     {
       "id": "SR-ENDPOINT-93f1a5dad29358a6",
       "kind": "ENDPOINT",
-      "source": "web/app.py:859",
+      "source": "web/app.py:886",
       "requirement": "POST /webhooks/paystack",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::paystack_webhook",
@@ -506385,7 +506396,7 @@
     {
       "id": "SR-ENDPOINT-0c014f0f20ff6722",
       "kind": "ENDPOINT",
-      "source": "web/app.py:902",
+      "source": "web/app.py:929",
       "requirement": "POST /paystack/charge",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/app.py::paystack_charge_create",
