@@ -1,5 +1,12 @@
 # Branch reconciliation
 
+## Stage 0 forensic branch audit and ref verification, 22–23 October 2026
+
+The exact observed code is e01e7c41f49a3e35335b00edc2de97367aa2dade; evidence is retained at [Stage 0 forensics index](evidence/continuation-20261022/index.json). Non-destructive remote fetch of all heads/tags without prune confirmed zero stale refs; origin/fix/stage1-canonical-reconciliation-20261014 is at 393f3d88. Local checkout has 1 unpushed evidence commit e01e7c41.
+
+The fresh branch audit (`artifacts/branch-audit-e01e7c41-20261022.json`, SHA-256 `F1A2F3A1AF2587C148EF52633C5F5CAEAA56E64AC4C8A6CD64712BDF64E3A3A9`) evaluated all 247 refs (4,695 reachable commits): 218 ancestor-preserved, 1 patch-equivalent/merge-only, and 28 divergent refs containing 118 distinct unmatched patch commits. All 28 divergent heads match `docs/release/branch_dispositions.json` with 0 missing refs and 0 moved heads. This confirms head continuity without semantic acceptance of the 118 historical patch commits. All 18 worktrees are preserved (17 clean, 1 dirty `.pytest-tmp/release-ci-closure-20261007` with 25 entries preserved untouched). Single Alembic migration head `0055_user_renewal_default` is confirmed.
+
+
 ## Local correction checkpoint, 18 October 2026
 
 The exact tested code is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc; its local evidence is [retained here](evidence/continuation-20261018/correction-393f3d88/index.json). The correction is committed locally and has not been pushed. It is still based on the same reconciled remote integration head, so the previously read GitHub ruleset, draft PR state, service trigger inventory and no-deploy decision remain controlling.

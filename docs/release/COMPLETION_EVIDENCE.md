@@ -1,5 +1,22 @@
 ## Current local continuation — 16 October 2026
 
+## Stage 0 safe local Git and historical forensics, 22–23 October 2026
+
+The exact observed source is e01e7c41f49a3e35335b00edc2de97367aa2dade. Evidence: [Stage 0 forensics index](evidence/continuation-20261022/index.json).
+
+| Check | Result and scope |
+| --- | --- |
+| Local Git checkout & branch | Clean checkout on fix/stage1-canonical-reconciliation-20261014; 1 unpushed commit ahead of origin |
+| Non-destructive remote fetch | PASS: fetched all heads/tags without --prune; 0 stale refs reported |
+| Full branch & commit audit | PASS: 247 refs, 4,695 reachable commits; 28 divergent refs with 118 unique commits match branch_dispositions.json (0 missing, 0 moved heads) |
+| Worktree preservation | PASS: 18 worktrees found, 17 clean, 1 dirty (.pytest-tmp/release-ci-closure-20261007) preserved untouched |
+| Migration head verification | PASS: 0055_user_renewal_default (single head confirmed) |
+| Governance checks | PASS: all 5 check scripts (build_release_inventory, completion_matrix, validate_current_scope, crosschat_intake, build_v7_governance) pass with 0 drift |
+| GitHub PR #201 & Ruleset | Verified: PR #201 draft open, ruleset 24410166 active, CI failed at 0 steps due to account billing lock (BLOCKED_EXTERNAL) |
+| Runtime public route check | Observed: / (200 JSON), /login (404), /app (200 HTML), /healthz (200 JSON), /pricing (404) |
+| Railway control-plane re-verification | BLOCKED_EXTERNAL: Railway CLI session expired; unauthenticated |
+
+
 ## Correction source: complete local suite, 18 October 2026
 
 The exact tested source is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. Evidence: [correction index](evidence/continuation-20261018/correction-393f3d88/index.json).
