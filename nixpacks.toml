@@ -14,7 +14,12 @@ cmds = [
   "/opt/venv/bin/pip install -r requirements.txt --quiet --no-cache-dir",
 ]
 
-# [phases.build] — Alembic migrations intentionally removed from build phase.
+[phases.build]
+# Record when this image was built so /version can report it (CX-OBS-03).
+# Railway exposes no build-time variable; a failure here must never fail a build.
+cmds = ["date -u +%Y-%m-%dT%H:%M:%SZ > .build-timestamp || true"]
+
+# Alembic migrations intentionally removed from build phase.
 # Build containers do not have access to runtime DATABASE_URL, so running
 # "alembic upgrade head" here would either fail silently (no DB) or target the
 # wrong database.  Migrations are applied at runtime inside db.auto_ops

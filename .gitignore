@@ -48,3 +48,6 @@ node_modules/
 # Native JavaScript export outputs are built and certified from the release.
 mobile/dist-android/
 mobile/dist-ios/
+
+# Written by the Nixpacks build for /version (CX-OBS-03)
+.build-timestamp

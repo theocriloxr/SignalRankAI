@@ -23,6 +23,7 @@ from datetime import timedelta
 import hashlib
 import hmac
 import json
+import re
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends, Request
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
@@ -502,6 +503,22 @@ def _code_schema_head() -> str:
     return _code_schema_head_cache
 
 
+_BUILD_TIMESTAMP_SHAPE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def _build_timestamp() -> str:
+    """Explicit build metadata first, then the stamp written by the Nixpacks build."""
+    explicit = os.getenv("BUILD_TIMESTAMP") or os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT")
+    if explicit:
+        return str(explicit)
+    try:
+        with open(os.path.join(_REPOSITORY_ROOT, ".build-timestamp"), encoding="utf-8") as handle:
+            recorded = handle.read(64).strip()
+    except OSError:
+        return "unknown"
+    return recorded if _BUILD_TIMESTAMP_SHAPE.match(recorded) else "unknown"
+
+
 @app.get("/version", response_model=VersionResponse)
 async def version():
     """Immutable release provenance exposed without secrets."""
@@ -510,7 +527,7 @@ async def version():
         git_sha=str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
         git_branch=str(os.getenv("RAILWAY_GIT_BRANCH") or os.getenv("GIT_BRANCH") or "unknown"),
         build_id=str(os.getenv("RAILWAY_DEPLOYMENT_ID") or os.getenv("BUILD_ID") or "unknown"),
-        build_timestamp=str(os.getenv("BUILD_TIMESTAMP") or os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT") or "unknown"),
+        build_timestamp=_build_timestamp(),
         image_digest=str(os.getenv("IMAGE_DIGEST") or "unknown"),
         schema_head=str(os.getenv("EXPECTED_SCHEMA_HEAD") or _code_schema_head()),
     )
