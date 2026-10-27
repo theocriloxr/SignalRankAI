@@ -349,6 +349,55 @@
         ]
       }
     },
+    "/api/v1/platform/operator/kill-switch/scoped": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Scoped Kill Switch",
+        "description": "Engage or release one strategy, instrument or asset-class execution switch.",
+        "operationId": "operator_scoped_kill_switch_api_v1_platform_operator_kill_switch_scoped_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorScopedKillSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Operator Scoped Kill Switch Api V1 Platform Operator Kill Switch Scoped Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/platform/operator/maintenance": {
       "get": {
         "tags": [
@@ -8269,6 +8318,55 @@
         },
         "type": "object",
         "title": "OperatorReplayRequest"
+      },
+      "OperatorScopedKillSwitchRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "pattern": "^(status|on|off)$",
+            "title": "Action"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(strategy|instrument|asset_class)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Reason",
+            "default": ""
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "OperatorScopedKillSwitchRequest"
       },
       "OrganizationCreateRequest": {
         "properties": {
