@@ -105,6 +105,11 @@ class OperatorKillSwitchRequest(BaseModel):
     confirm: bool = False
 
 
+class OperatorAccountMergeRequest(BaseModel):
+    confirm: bool = False
+    confirm_merge_id: str = Field(min_length=8, max_length=64)
+
+
 class OperatorScopedKillSwitchRequest(BaseModel):
     action: str = Field(pattern=r"^(status|on|off)$")
     scope: str | None = Field(default=None, pattern=r"^(strategy|instrument|asset_class)$")
@@ -1340,6 +1345,65 @@ async def operator_scoped_kill_switch(
         "switches": document.get("switches") or {},
         "audit": list(document.get("audit") or [])[-20:],
     }
+
+
+@router.get("/operator/account-merges")
+async def operator_account_merges(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Telegram/web merges waiting for review (owners and admins)."""
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    async with get_session(label="platform.operator.account_merges", timeout_seconds=8.0) as session:
+        rows = (await session.execute(text(
+            "SELECT merge_id, canonical_user_id, merged_user_id, created_at FROM account_merge_records "
+            "WHERE status = 'pending_review' ORDER BY created_at ASC LIMIT 200"
+        ))).mappings().all()
+        await session.rollback()
+    return {"authority": authority, "pending": [dict(row) for row in rows]}
+
+
+@router.get("/operator/account-merges/{merge_id}")
+async def operator_account_merge_preview(merge_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Read-only preview of what a merge would move, keep and never move."""
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from services.platform.account_merge import MergeRefused, plan_account_merge
+
+    async with get_session(label="platform.operator.account_merge_preview", timeout_seconds=15.0) as session:
+        try:
+            plan = await plan_account_merge(session, merge_id)
+        except MergeRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        finally:
+            await session.rollback()
+    return {"authority": authority, "plan": plan}
+
+
+@router.post("/operator/account-merges/{merge_id}/apply")
+async def operator_account_merge_apply(
+    merge_id: str,
+    payload: OperatorAccountMergeRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Complete a reviewed merge; owner only, confirmed, recent sign-in, single transaction."""
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    if payload.confirm is not True or payload.confirm_merge_id != merge_id:
+        raise HTTPException(status_code=422, detail="Confirm by repeating the merge id")
+    _require_recent_auth(user)
+    from services.platform.account_merge import MergeRefused, apply_account_merge
+
+    async with get_session(label="platform.operator.account_merge_apply", timeout_seconds=60.0) as session:
+        try:
+            evidence = await apply_account_merge(session, merge_id, reviewer_user_id=int(user["id"]))
+        except MergeRefused as exc:
+            await session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc))
+        await session.commit()
+    logger.warning("[operator] account merge %s completed by user %s", merge_id, user.get("id"))
+    return {"authority": authority, "merge": evidence}
 
 
 @router.get("/operator/maintenance")
