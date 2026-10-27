@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "stage": "0 - Safe local Git and historical forensics (START_HERE_MASTER_CODEX_PROMPT.md Phase 0)",
+  "observed_at": "2026-10-22T00:05:42Z/2026-10-22T00:23:36Z",
+  "observer": "Antigravity agent, local Windows checkout",
+  "environment": "Local Windows workstation, PowerShell, Python runtime on PATH; no production credentials used; Railway CLI unauthenticated",
+  "scope": "Read-only repository, GitHub and public-route observations. No merge, push, deploy, migration, production query, broker, billing or Telegram operation was performed.",
+  "checkout": {
+    "path": "SignalRankAI (workspace root)",
+    "branch": "fix/stage1-canonical-reconciliation-20261014",
+    "head_at_start": "e01e7c41f49a3e35335b00edc2de97367aa2dade",
+    "working_tree": "clean (git status --short --branch: no entries)",
+    "stashes": 0,
+    "reflog_head": "e01e7c41 <- 393f3d88 <- 2ee0a918 <- 7c3f7e0f <- 5f7ae60c <- 1ab600ad <- a23e088f <- 51d2f59e (fast-forward)"
+  },
+  "fetch": {
+    "command": "git fetch origin +refs/heads/*:refs/remotes/origin/* --tags",
+    "exit_code": 0,
+    "updates": ["origin/fix/stage1-canonical-reconciliation-20261014 51d2f59e..393f3d88"],
+    "prune_policy": "Fetched without --prune so remote-deleted refs are not lost. 'git remote prune origin --dry-run' reported zero stale refs.",
+    "origin_integration_head": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+    "origin_main": "98a5de18f92674c9e70ec61a802391bf984de8d6",
+    "local_vs_origin_integration": "0 behind, 1 ahead (e01e7c41 evidence-only commit, unpushed)"
+  },
+  "branch_audit": {
+    "command": "python scripts/stage1_branch_audit.py --baseline HEAD --output artifacts/branch-audit-e01e7c41-20261022.json",
+    "exit_code": 0,
+    "artifact": "artifacts/branch-audit-e01e7c41-20261022.json (ignored; 3,576,767 bytes)",
+    "artifact_sha256": "F1A2F3A1AF2587C148EF52633C5F5CAEAA56E64AC4C8A6CD64712BDF64E3A3A9",
+    "baseline": "e01e7c41f49a3e35335b00edc2de97367aa2dade",
+    "refs": 247,
+    "reachable_commits": 4695,
+    "summary": {"ANCESTOR_PRESERVED": 218, "PATCH_EQUIVALENT_OR_MERGE_ONLY": 1, "DIVERGENT_REVIEW_REQUIRED": 28},
+    "unique_unmatched_commits": 118,
+    "disposition_comparison": {
+      "method": "Compared every DIVERGENT_REVIEW_REQUIRED ref name and head SHA with docs/release/branch_dispositions.json",
+      "divergent_refs_absent_from_dispositions": [],
+      "divergent_refs_with_moved_heads": [],
+      "conclusion": "Head continuity only. No new or moved divergent heads since the reviewed dispositions. This is not semantic acceptance of the 118 historical patch commits."
+    },
+    "divergent_refs": [
+      ["feat/master-blueprint-production-completion-20261001", "3904a623afbeac2ff6aa0acd0e9d237d6d896726", 2],
+      ["origin/archive/live-prod-hotfix-certified-20260928", "08c859ea012bfeeee81cf652f8f5dd642e095795", 13],
+      ["origin/archive/master-blueprint-pre-canonical-staging-20260928", "b1e74e9a1e0e48f0a9cb376d6e8e7fa2c1e74bdc", 1],
+      ["origin/archive/prod-source-alias-pre-canonical-20260928", "08c859ea012bfeeee81cf652f8f5dd642e095795", 13],
+      ["origin/archive/staging-operator-line-pre-final-20260928", "53cc4869904b107801d076a2c39763e32b79e73c", 26],
+      ["origin/archive/staging-pre-canonical-sync-20260928", "b24a37239b5facf6dc59897c3ed22b0bf7f9f964", 3],
+      ["origin/backup/before-v1.0.1-hotfix", "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b", 2],
+      ["origin/copilot/fix-broken-features-and-ux", "d28e57b27c35492ef8e8d6135b63e791e7a5cfad", 3],
+      ["origin/copilot/fix-market-data-pipeline", "fb49f327810d60249e6139b67289881016a30f26", 1],
+      ["origin/feat/ai-operator-controls-20260923", "c0aa315217a7a8956123851120735102cd08be6c", 8],
+      ["origin/feat/master-blueprint-production-completion-20261001", "3904a623afbeac2ff6aa0acd0e9d237d6d896726", 2],
+      ["origin/fix-2", "d92fb329b91f11a562a97a897db7fa73ff857df2", 34],
+      ["origin/fix/ohlc-class-aware-fallback-20260923", "e2b2474bce338c921da9138b632a65e1f2eba535", 3],
+      ["origin/fix/openai-provider-controls-20260923", "43bb231bcc2c0d26e0e3b29efaaf3fe8267dcc8e", 5],
+      ["origin/fix/paystack-and-signal-delivery", "6eb612ad5881c2d15aa827825842c9a0b0a9df55", 6],
+      ["origin/fix/railway-alembic-url", "62f6593c9a2b89066eb37bbf0253a158a4887927", 8],
+      ["origin/fix/railway-startup-readiness", "eb7663d85830105a51be7365a35e3d7fab027dbc", 1],
+      ["origin/fix/remaining-staging-blockers", "534a928e5a6ec854a23f268457abd5b69763f001", 6],
+      ["origin/flyio-new-files", "9bc2c095f119b34111975b6229afb2fbec1c0ea6", 1],
+      ["origin/release/final-2026-07-27", "fcd4137ae0bb6d8bd0bc0220d23fda9b9cdcba4b", 2],
+      ["origin/release/production-adaptive-write-hotfix-20260928", "98d1447032e6524b2832f94eb58bd045437dd596", 1],
+      ["origin/release/production-ai-learning-calculation-qa-20260929", "349f1f33397fac1660694afe3a6ec652f7f3f335", 1],
+      ["origin/release/production-ai-profile-calculation-r2-20260929", "a4ef28d9388e2a7b4b3c00678b514fdd61f54afa", 1],
+      ["origin/release/production-derivatives-squeeze-fix-20260928", "860795a5377710c421ea6592abe7e12b609c8529", 1],
+      ["origin/release/production-qa-learning-profile-parity-20260929", "612049b04d676a08b53de79d96f37dc420674c0f", 1],
+      ["origin/release/production-strategy-aware-quality-r2-20260929", "eeb44c9abf5879aad1244269cecee9ead878c9c0", 1],
+      ["origin/release/site-account-billing-hardening-prod-20260928", "4f080868c4685662d4dd59f012ad65da59597f64", 11],
+      ["origin/release/staging-adaptive-write-hotfix-20260928", "bdc5fa91ad35972efaa2f6ccd55bdee3c6d86b81", 1]
+    ]
+  },
+  "worktrees": {
+    "count": 18,
+    "clean": 17,
+    "dirty": [
+      {
+        "path": ".pytest-tmp/release-ci-closure-20261007",
+        "head": "c7684b34 (detached)",
+        "uncommitted_entries": 25,
+        "action": "Preserved untouched.",
+        "comparison_with_integration_head": {
+          "identical": [
+            "frontend/scripts/dependency-contract.test.mjs",
+            "mobile/scripts/watcher-contract.test.cjs",
+            "frontend/vendor/next-root-glob/index.cjs",
+            "mobile/vendor/metro-watch-glob/index.cjs"
+          ],
+          "differs_numstat_worktree_to_integration_added_removed": {
+            "scripts/production_backup_receipt.py": [2, 0],
+            "tests/test_production_backup_receipt.py": [41, 87],
+            "docs/runbooks/node-dependency-replacements.md": [9, 0],
+            "scripts/approve_production_release.py": [4, 3],
+            "certification/release_manifest.yaml": [64, 6],
+            "mobile/package.json": [6, 1],
+            "frontend/package.json": [10, 3]
+          },
+          "note": "Both copies of tests/test_production_backup_receipt.py define 7 test functions; body divergence (87 lines removed relative to the worktree) requires Stage 1 semantic review to confirm no assertion was lost. Remaining dirty entries (lockfiles, .gitignore, eslint/tsconfig/pyright configs, deleted tracked mobile dist bundles) are not yet compared."
+        }
+      }
+    ]
+  },
+  "migrations": {
+    "command": "python scripts/assert_single_alembic_head.py",
+    "exit_code": 0,
+    "output": "0055_user_renewal_default (head)"
+  },
+  "github": {
+    "pr_201": {
+      "command": "gh pr view 201 --json number,state,isDraft,headRefOid,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup",
+      "state": "OPEN", "draft": true, "head": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc", "base": "main",
+      "merge_state": "BLOCKED", "review_decision": "REVIEW_REQUIRED",
+      "checks": "manifest, release-certification, Next build/contract and both browser-journey jobs FAILURE; remaining jobs SKIPPED (runs 39114130812, 39114134868, 39114134860 on 2026-10-18)"
+    },
+    "ci_failure_cause": {
+      "command": "gh api repos/theocriloxr/SignalRankAI/check-runs/117636324992/annotations",
+      "message": "The job was not started because your account is locked due to a billing issue."
+    },
+    "other_open_prs": [],
+    "ruleset": {"id": 24410166, "name": "SignalRankAI release governance", "enforcement": "active"},
+    "latest_other_run": "Weekly Restore Certification Drill on main 98a5de18, 2026-10-18, failure (cause not separately inspected)"
+  },
+  "governance_checks_at_e01e7c41": [
+    {"command": "python -m scripts.build_release_inventory --check", "exit_code": 0, "summary": "393 documents; 10,014 requirements/source sections; 60,021 source clauses"},
+    {"command": "python -m scripts.completion_matrix --check", "exit_code": 0, "summary": "560 preserved sections, 431 master clauses"},
+    {"command": "python -m scripts.validate_current_scope", "exit_code": 0, "summary": "15 candidates per class x5; production_unchanged=true; scope_only=true"},
+    {"command": "python -m scripts.crosschat_intake --check", "exit_code": 0, "summary": "14,226 clauses, 1,586 headings, 242 seeds; 26,887 rows; reviewed 13; unclassified_applicable 26,874; release_decision NO-GO"},
+    {"command": "python -m scripts.build_v7_governance --check", "exit_code": 0, "summary": "no drift reported"}
+  ],
+  "runtime_observations": {
+    "railway": {
+      "command": "railway whoami",
+      "result": "FAILED: saved login no longer valid; Unauthorized",
+      "consequence": "Railway project/service source mapping, deployed SHAs and environments could NOT be re-verified in this session. Last read-only evidence remains evidence/continuation-20261016/railway-readonly.json and the 18 October trigger re-read."
+    },
+    "public_routes": {
+      "method": "Unauthenticated GET, redirects not followed",
+      "base": "https://www.signalrank.criloxsolutions.com",
+      "results": {"/": "200 application/json (53 bytes)", "/login": "404", "/app": "200 text/html (69,966 bytes)", "/healthz": "200 application/json (109 bytes)", "/pricing": "404"},
+      "interpretation": "Public Next site still not serving this domain (GAP-PUBLIC-ROUTES unchanged). A green /healthz is not runtime certification."
+    }
+  },
+  "private_source_package": {
+    "path": "SignalRankAI_Complete_CrossChat_Codex_Handoff_2026-10-16 (1)/ (git-ignored)",
+    "staged_plan": "START_HERE_MASTER_CODEX_PROMPT.md Phases 0-15; this record executes Phase 0",
+    "committed": false
+  },
+  "stage0_acceptance": {
+    "local_forensics": "PASS",
+    "railway_reverification": "BLOCKED_EXTERNAL (Railway CLI authentication expired; owner must run 'railway login' or provide a read-only project token)",
+    "overall": "Local Phase 0 complete; Railway runtime identity carried forward from 16/18 October evidence and not re-certified."
+  }
+}

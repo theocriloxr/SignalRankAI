@@ -32,7 +32,7 @@
     {
       "id": "RELEASE-ACCEPTANCE",
       "kind": "OPEN_ACCEPTANCE",
-      "action": "Full local checks, client/browser/native proof, security, financial checks, restore/rollback, real soak and two independent audits remain required."
+      "action": "Complete exact current-scope client/native proof, unresolved mobile dependency work, security/financial checks, restore/rollback, real soak and two independent audits."
     }
   ]
 }

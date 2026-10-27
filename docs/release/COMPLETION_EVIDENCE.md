@@ -38,6 +38,37 @@ Branch `feat/frontend-rebuild-and-stage1-hardening` (from `393f3d88`; commits `7
 
 Full details, classifications and information gaps: [INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md](INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md).
 
+## Stage 0 safe local Git and historical forensics, 22–23 October 2026
+
+The exact observed source is e01e7c41f49a3e35335b00edc2de97367aa2dade. Evidence: [Stage 0 forensics index](evidence/continuation-20261022/index.json).
+
+| Check | Result and scope |
+| --- | --- |
+| Local Git checkout & branch | Clean checkout on fix/stage1-canonical-reconciliation-20261014; 1 unpushed commit ahead of origin |
+| Non-destructive remote fetch | PASS: fetched all heads/tags without --prune; 0 stale refs reported |
+| Full branch & commit audit | PASS: 247 refs, 4,695 reachable commits; 28 divergent refs with 118 unique commits match branch_dispositions.json (0 missing, 0 moved heads) |
+| Worktree preservation | PASS: 18 worktrees found, 17 clean, 1 dirty (.pytest-tmp/release-ci-closure-20261007) preserved untouched |
+| Migration head verification | PASS: 0055_user_renewal_default (single head confirmed) |
+| Governance checks | PASS: all 5 check scripts (build_release_inventory, completion_matrix, validate_current_scope, crosschat_intake, build_v7_governance) pass with 0 drift |
+| GitHub PR #201 & Ruleset | Verified: PR #201 draft open, ruleset 24410166 active, CI failed at 0 steps due to account billing lock (BLOCKED_EXTERNAL) |
+| Runtime public route check | Observed: / (200 JSON), /login (404), /app (200 HTML), /healthz (200 JSON), /pricing (404) |
+| Railway control-plane re-verification | BLOCKED_EXTERNAL: Railway CLI session expired; unauthenticated |
+
+
+## Correction source: complete local suite, 18 October 2026
+
+The exact tested source is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. Evidence: [correction index](evidence/continuation-20261018/correction-393f3d88/index.json).
+
+| Check | Result and scope |
+| --- | --- |
+| Complete system | PASS: 4,080 passed, zero failed/errors/skips; 32 owned-local checks |
+| Strict static scan | PASS: OpenGrep probe and 575-file scan, zero findings/errors |
+| Legacy browser | PASS: production build with synthetic accounts and owned PostgreSQL; servers/database/key cleanup confirmed |
+| Evidence wrapper tests | PASS: ten fixture tests cover clean identity, changed source, duplicate names, partial evidence and missing executables |
+
+This evidence replaces only the local pending state for the wrapper/HTML correction. It does not replace the retained 2ee0a918 results for Next browser coverage, frontend/mobile tests, or audits whose source scope was unchanged. It proves no external integration or release acceptance.
+
+
 ## Exact frozen run and retained failures, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.

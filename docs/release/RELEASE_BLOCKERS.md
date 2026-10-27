@@ -35,6 +35,22 @@ Branch `feat/frontend-rebuild-and-stage1-hardening` (from `393f3d88`; commits `7
 
 Full details, classifications and information gaps: [INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md](INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md).
 
+## Stage 0 safe local Git and historical forensics, 22–23 October 2026
+
+The exact observed source is e01e7c41f49a3e35335b00edc2de97367aa2dade. Evidence: [Stage 0 forensics index](evidence/continuation-20261022/index.json). Release remains **NO-GO**.
+
+Stage 0 forensics passed all local checks. Branch audit across 247 refs confirms 118 unique commits across 28 divergent refs, with 0 missing and 0 moved heads compared to `branch_dispositions.json`. Migration head is single: `0055_user_renewal_default`. 18 worktrees discovered; 17 clean, 1 dirty (`.pytest-tmp/release-ci-closure-20261007`) preserved untouched. Draft PR #201 remains OPEN under active ruleset 24410166; CI is blocked external due to GitHub billing lock. Live public routes (`https://www.signalrank.criloxsolutions.com`) confirm `/login` and `/pricing` 404, while `/` serves 200 JSON and `/app` serves 200 HTML workstation. Railway CLI session is expired, blocking fresh authenticated control plane re-verification. All 5 release governance checks pass with 0 drift.
+
+
+## Correction verification closed at local scope, 18 October 2026
+
+The exact tested source is 393f3d88d6018d01c3f04234cc9c44b23a5de8fc. Evidence: [correction index](evidence/continuation-20261018/correction-393f3d88/index.json). The receipt-overwrite defect and strict HTML parse failures are locally resolved: 4,080 clean full-suite passes, a complete zero-finding/zero-error OpenGrep scan, and a passing legacy browser drill with owned-resource cleanup.
+
+Release remains **NO-GO**. The mobile dependency audit still reports four high-severity rows in the Expo/node-forge chain. Stage 1 source reconciliation remains incomplete: 13 reviewed dispositions and 26,874 unresolved applicability/acceptance rows. Focused-universe provider qualification and cross-path enforcement are unfinished local work.
+
+Hosted CI remains unavailable/failed at the prior remote head; independent review, isolated staging, broker-demo/provider/payment/Telegram evidence, native device coverage, restore/rollback and soak gates remain unsatisfied. No deployment or financial permission change is authorized.
+
+
 ## Updated local acceptance, 18 October 2026
 
 The exact tested source is 2ee0a918d915549f7f5ce59d59f0a8a07d2202a9. Evidence: [frozen run index](evidence/continuation-20261018/frozen-2ee0a918/index.json). Stage 1 and release remain NO-GO.
