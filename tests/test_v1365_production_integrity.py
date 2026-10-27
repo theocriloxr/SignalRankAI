@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -75,6 +74,33 @@ def test_public_probability_requires_validated_calibration(monkeypatch):
     metric_failed = probability_for_public_display(_signal(ml_calibration_ece=0.30))
     assert metric_failed.probability is None
     assert not metric_failed.calibrated
+
+
+@pytest.mark.parametrize("field,value", [
+    ("ml_probability_calibrated", float("nan")), ("ml_probability_calibrated", float("inf")),
+    ("ml_probability_calibrated", -0.01), ("ml_probability_calibrated", 1.01),
+    ("ml_probability_calibrated", True), ("ml_probability_calibrated", "0.67"),
+    ("ml_calibration_validated", "false"), ("ml_calibration_validated", 1),
+    ("ml_calibration_version", 123), ("ml_calibration_version", " " * 3),
+    ("ml_calibration_validation_rows", 250.9), ("ml_calibration_validation_rows", "250"),
+    ("ml_calibration_validation_rows", True), ("ml_calibration_brier", -0.01),
+    ("ml_calibration_ece", -0.01), ("ml_calibration_brier", False),
+    ("ml_calibration_ece", float("nan")), ("ml_calibration_brier", "0.16"),
+])
+def test_malformed_calibration_cannot_become_a_public_probability(monkeypatch, field, value):
+    from core.production_integrity import probability_for_public_display
+    monkeypatch.setenv("ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION", "1")
+    monkeypatch.setenv("ML_PUBLIC_CALIBRATION_METRICS_REQUIRED", "1")
+    result = probability_for_public_display(_signal(**{field: value}))
+    assert not result.calibrated and result.probability is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -0.01, 1.01, True, "0.67"])
+def test_unvalidated_score_display_does_not_clamp_malformed_values(monkeypatch, value):
+    from core.production_integrity import probability_for_public_display
+    monkeypatch.setenv("ML_PROBABILITY_DISPLAY_REQUIRES_CALIBRATION", "0")
+    result = probability_for_public_display({"ml_probability_raw": value})
+    assert not result.calibrated and result.probability is None
 
 
 def test_profile_filters_asset_timeframe_strategy_and_score():
@@ -234,17 +260,18 @@ async def test_profile_demand_includes_active_users_without_saved_preferences():
         async def execute(self, statement):
             self.calls += 1
             if self.calls == 1:
-                return Result([])
-            return Result([(1001,), (1002,)])
+                return Result([(1001, None, "free"), (1002, None, "free")])
+            return Result([])
 
     snapshot = await load_profile_demand(Session())
     assert snapshot.active_profiles == 2
-    assert set(snapshot.asset_classes) == {"crypto", "fx", "commodity", "index", "stock"}
+    from core.tier_policy import get_entitlements
+    assert set(snapshot.asset_classes) == set(get_entitlements("free").allowed_asset_classes)
 
 
 def test_pending_outcomes_remain_eligible_for_tracking():
     source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
-    assert 'func.lower(Outcome.status).in_([' in source
+    assert 'func.lower(Outcome.status).in_(' in source
     assert '"pending"' in source
     assert '"active"' in source
     assert '"tp2"' in source
@@ -255,7 +282,15 @@ def test_delivery_integrity_fail_closed_controls_exist():
     assert "DELIVERY_LIMIT_FAIL_CLOSED" in source
     assert "PROFILE_POLICY_FAIL_CLOSED" in source
     assert "DELIVERY_PRICE_VALIDATION_FAIL_CLOSED" in source
-    assert 'continue\n                                # Non-production operators' in source
+    import ast
+
+    tree = ast.parse(source)
+    assert any(
+        isinstance(node, ast.If)
+        and "DELIVERY_PRICE_VALIDATION_FAIL_CLOSED" in ast.unparse(node.test)
+        and any(isinstance(statement, ast.Continue) for statement in node.body)
+        for node in ast.walk(tree)
+    )
 
 
 def test_performance_is_provisional_below_terminal_coverage():
@@ -270,8 +305,10 @@ def test_main_engine_persistence_path_enforces_canonical_thesis_integrity():
     source = Path("db/pg_features.py").read_text(encoding="utf-8")
     assert 'pg_advisory_xact_lock(hashtext(:fingerprint))' in source
     assert 'Signal.thesis_fingerprint == thesis_fingerprint' in source
-    assert 'confirmed_delivery_count == 0' in source
+    assert 'confirmed_delivery_count > 0' in source
+    assert 'SignalDedupBlocked("delivered_active_thesis"' in source
     assert 'existing.entry = entry' in source
+    assert "elif existing.expires_at is None" not in source
     assert 'thesis_fingerprint=thesis_fingerprint' in source
     for field in (
         'asset_discovery_provider=asset_discovery_provider',

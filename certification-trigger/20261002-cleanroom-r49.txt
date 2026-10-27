@@ -1,0 +1,12 @@
+SignalRankAI synchronized certification trigger r49
+branch=implementation-of-master-blueprint
+head_before_trigger=93529f3e3886d1f1dd92d550e9633abc9a4e9d9e
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+schema_head=0048
+oct1_signal_identity_incident_regression=required
+paper_delivery_eligibility_regression=required
+active_signal_visibility_regression=required
+live_execution_authorized=false

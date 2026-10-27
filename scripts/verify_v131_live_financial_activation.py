@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static release verifier for SignalRankAI v1.3.1."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,7 +36,12 @@ def main() -> int:
     require("services/bybit_signal_router.py", "reserve_user_execution_quota", "BrokerExecution", "ExecutionGate")
     require("services/bybit_reconciler.py", "reconcile_bybit_executions_once", "realized_pnl_pct")
     require("payments/payout_service.py", "/transferrecipient", "/transfer/finalize_transfer", "/transfer/verify/")
-    require("web/app.py", '@app.post("/payout/request")', '@app.post("/payout/finalize")', '@app.get("/payout/verify/{reference}")')
+    require(
+        "web/app.py",
+        '@app.post("/payout/request")',
+        '@app.post("/payout/finalize")',
+        '@app.get("/payout/verify/{reference}")',
+    )
     require(
         "db/migrations/versions/0029_live_financial_ledger.py",
         'revision = "0029_live_financial_ledger"',

@@ -5,6 +5,7 @@ This command is deliberately read-only.  It verifies the real PostgreSQL
 catalogue and optionally requires recent end-to-end runtime evidence.
 Credentials are never printed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,11 +21,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 REQUIRED_TABLES = (
-    "subscription_products", "subscription_prices", "subscription_entitlements",
-    "instruments", "provider_instruments", "auth_identities", "user_sessions",
-    "webhook_deliveries", "payment_receipts", "email_outbox",
-    "broker_connections", "trading_account_policies",
-    "broker_reconciliation_state", "trading_account_ledger_entries",
+    "subscription_products",
+    "subscription_prices",
+    "subscription_entitlements",
+    "instruments",
+    "provider_instruments",
+    "auth_identities",
+    "user_sessions",
+    "webhook_deliveries",
+    "payment_receipts",
+    "email_outbox",
+    "broker_connections",
+    "trading_account_policies",
+    "broker_reconciliation_state",
+    "trading_account_ledger_entries",
     "broker_execution_decisions",
 )
 
@@ -58,9 +68,7 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
     from ml.schema_version import get_feature_columns
 
     expected_features = sum(
-        len(get_entitlements(tier).features)
-        for tier in TIER_ORDER
-        if tier not in {Tier.ADMIN, Tier.OWNER}
+        len(get_entitlements(tier).features) for tier in TIER_ORDER if tier not in {Tier.ADMIN, Tier.OWNER}
     )
     expected_controls = 16 * len([tier for tier in TIER_ORDER if tier not in {Tier.ADMIN, Tier.OWNER}])
     expected_feature_defs = len(get_feature_columns())
@@ -75,7 +83,9 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
         conn.set_session(readonly=True, autocommit=True)
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout = '15000ms'")
-            cur.execute("SELECT current_database(), current_user, COALESCE(inet_server_addr()::text,'local'), inet_server_port()")
+            cur.execute(
+                "SELECT current_database(), current_user, COALESCE(inet_server_addr()::text,'local'), inet_server_port()"
+            )
             db_name, db_user, db_host, db_port = cur.fetchone()
             report["database"] = {
                 "name": str(db_name),
@@ -108,11 +118,20 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
             """)
             values = cur.fetchone()
             names = (
-                "subscription_products", "subscription_prices", "subscription_entitlements",
-                "instruments", "provider_instruments", "auth_identities", "user_sessions",
-                "webhook_deliveries", "payment_receipts", "email_outbox",
-                "broker_connections", "trading_account_policies",
-                "broker_reconciliation_state", "trading_account_ledger_entries",
+                "subscription_products",
+                "subscription_prices",
+                "subscription_entitlements",
+                "instruments",
+                "provider_instruments",
+                "auth_identities",
+                "user_sessions",
+                "webhook_deliveries",
+                "payment_receipts",
+                "email_outbox",
+                "broker_connections",
+                "trading_account_policies",
+                "broker_reconciliation_state",
+                "trading_account_ledger_entries",
                 "broker_execution_decisions",
             )
             report["required_tables"] = dict(zip(names, map(bool, values)))
@@ -221,22 +240,32 @@ def collect(window_hours: int = 6) -> dict[str, Any]:
             hours = max(1, int(window_hours))
             cur.execute("SELECT COUNT(*) FROM signals WHERE created_at >= NOW() - (%s * INTERVAL '1 hour')", (hours,))
             recent_signals = int(cur.fetchone()[0] or 0)
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT COUNT(*) FROM signal_deliveries
                 WHERE sent_ok=TRUE
                   AND delivery_confirmed_at IS NOT NULL
                   AND telegram_chat_id IS NOT NULL
                   AND telegram_message_id IS NOT NULL
                   AND delivery_confirmed_at >= NOW() - (%s * INTERVAL '1 hour')
-            """, (hours,))
+            """,
+                (hours,),
+            )
             confirmed_deliveries = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(*) FROM paper_positions WHERE opened_at >= NOW() - (%s * INTERVAL '1 hour')", (hours,))
+            cur.execute(
+                "SELECT COUNT(*) FROM paper_positions WHERE opened_at >= NOW() - (%s * INTERVAL '1 hour')", (hours,)
+            )
             recent_paper = int(cur.fetchone()[0] or 0)
             cur.execute("SELECT COUNT(*) FROM outcomes WHERE closed_at >= NOW() - (%s * INTERVAL '1 hour')", (hours,))
             recent_outcomes = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(*) FROM payment_receipts WHERE payment_date >= NOW() - (%s * INTERVAL '1 hour')", (hours,))
+            cur.execute(
+                "SELECT COUNT(*) FROM payment_receipts WHERE payment_date >= NOW() - (%s * INTERVAL '1 hour')", (hours,)
+            )
             recent_receipts = int(cur.fetchone()[0] or 0)
-            cur.execute("SELECT COUNT(*) FROM email_outbox WHERE status='sent' AND sent_at >= NOW() - (%s * INTERVAL '1 hour')", (hours,))
+            cur.execute(
+                "SELECT COUNT(*) FROM email_outbox WHERE status='sent' AND sent_at >= NOW() - (%s * INTERVAL '1 hour')",
+                (hours,),
+            )
             recent_emails = int(cur.fetchone()[0] or 0)
             cur.execute("""
                 SELECT COUNT(*) FROM (

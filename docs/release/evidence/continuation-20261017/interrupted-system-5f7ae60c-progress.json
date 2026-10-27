@@ -1,0 +1,218 @@
+{
+  "full_suite_requested": true,
+  "generated_at": "2026-10-17T12:45:34.295200+00:00",
+  "invocation": {
+    "full": true,
+    "live_providers": false,
+    "profile": "configs/env/railway-hobby-owner-beta.env.example",
+    "pytest_batches": 20,
+    "simulation_port": 8877,
+    "verification_inputs": {
+      "environment_sha256": "7c75f99cb1f7728b752c642a2f00891c4b6e4b3673eb151ff0895845aaf375eb",
+      "installed_packages_sha256": "deb0b3c71e7ff2247b2146f1d5a6649d5fb7f467f5f26a893ca9482dfd3718b3",
+      "python": "3.11.0 (main, Oct 24 2022, 18:26:48) [MSC v.1933 64 bit (AMD64)]",
+      "python_executable": "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe"
+    }
+  },
+  "profile": "configs/env/railway-hobby-owner-beta.env.example",
+  "pytest_batches": 20,
+  "release_identity": {
+    "branch": "fix/stage1-canonical-reconciliation-20261014",
+    "git_sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "source_sha256": "c20582d4b91af4f70ca2d8ccf9de57b5652f3ce92e5debf26b6f404b51c0c9f9",
+    "worktree_dirty": false
+  },
+  "steps": [
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "-m",
+        "compileall",
+        "-q",
+        "core",
+        "engine",
+        "web",
+        "worker",
+        "db",
+        "data",
+        "market_data_sdk",
+        "strategies",
+        "services",
+        "ml",
+        "signalrank_telegram",
+        "runtime",
+        "execution"
+      ],
+      "duration_seconds": 1.469,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\compileall.log",
+      "name": "compileall",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/validate_env_contract.py",
+        ".env.example",
+        "RAILWAY_ENV_UPDATED.env.example",
+        "configs\\env\\hermetic-test.env.example",
+        "configs\\env\\production.env.example",
+        "configs\\env\\railway-hobby-full-advisory.env.example",
+        "configs\\env\\railway-hobby-owner-beta.env.example",
+        "configs\\env\\railway-hobby-paper-demo.env.example",
+        "configs\\env\\railway-hobby-real-execution-gated.env.example",
+        "configs\\env\\railway-staging.env.example",
+        "deploy\\railway_roles\\analytics.env",
+        "deploy\\railway_roles\\delivery.env",
+        "deploy\\railway_roles\\engine.env",
+        "deploy\\railway_roles\\gateway.env",
+        "deploy\\railway_roles\\monolith_safe.env",
+        "deploy\\railway_roles\\outcome.env",
+        "deploy\\railway_roles\\worker.env"
+      ],
+      "duration_seconds": 0.484,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\env_contracts.log",
+      "name": "env_contracts",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/schema_audit.py"
+      ],
+      "duration_seconds": 3.922,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\schema_audit.log",
+      "name": "schema_audit",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/architecture_smoke.py"
+      ],
+      "duration_seconds": 0.422,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\architecture_smoke.log",
+      "name": "architecture_smoke",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/audit_db_session_calls.py"
+      ],
+      "duration_seconds": 3.828,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\db_session_audit.log",
+      "name": "db_session_audit",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/validate_governance_docs.py"
+      ],
+      "duration_seconds": 0.219,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\governance_validation.log",
+      "name": "governance_validation",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/secret_scan.py"
+      ],
+      "duration_seconds": 19.094,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\secret_scan.log",
+      "name": "secret_scan",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/production_readiness_check.py"
+      ],
+      "duration_seconds": 0.219,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\production_readiness.log",
+      "name": "production_readiness",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/runtime_config_snapshot.py",
+        "--profile",
+        "configs/env/railway-hobby-owner-beta.env.example",
+        "--output",
+        "artifacts\\full-system-5f7ae60c\\runtime_config_snapshot.json"
+      ],
+      "duration_seconds": 0.312,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\runtime_config.log",
+      "name": "runtime_config",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/simulate_railway.py",
+        "--port",
+        "8877"
+      ],
+      "duration_seconds": 11.86,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\railway_simulation.log",
+      "name": "railway_simulation",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/load_test_delivery_planner.py",
+        "--users",
+        "100000",
+        "--shards",
+        "32",
+        "--batch-size",
+        "100",
+        "--max-seconds",
+        "10"
+      ],
+      "duration_seconds": 1.422,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\fanout_load.log",
+      "name": "fanout_load",
+      "ok": true
+    },
+    {
+      "attempts": 1,
+      "command": [
+        "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+        "scripts/certify_providers.py",
+        "--output-dir",
+        "artifacts\\full-system-5f7ae60c\\provider-certification"
+      ],
+      "duration_seconds": 5.235,
+      "exit_code": 0,
+      "log_path": "artifacts\\full-system-5f7ae60c\\provider_certification.log",
+      "name": "provider_certification",
+      "ok": true
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "mobile-export-android-5f7ae60c",
+  "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-17T12:47:23.585689+00:00",
+  "finished_at": "2026-10-17T12:48:17.328551+00:00",
+  "command": [
+    "node",
+    "node_modules/expo/bin/cli",
+    "export",
+    "--platform",
+    "android",
+    "--output-dir",
+    "dist-android"
+  ],
+  "cwd": "mobile",
+  "exit_code": 1,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": false,
+  "worktree_before": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+    "dirty": true
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/mobile-export-android-5f7ae60c.log",
+  "log_sha256": "fb7aad56853fcd7ed2ace04e8d217a62a4b7c68450ea670c8a25b230cf8fa28e",
+  "result": "FAIL",
+  "source_unchanged": false,
+  "source_fingerprint_before": "409e17794662e3ec74afb16ce1ae00c486cba563a2e8326868bfff7faf3be675",
+  "source_fingerprint_after": "7aee1850d7041ae6c6d030c79783f4259c3234793288639e545ff07358c01490",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

@@ -54,10 +54,12 @@ async def ensure_monitoring_for_delivery(
         return None
     row = (
         await session.execute(
-            select(UserSignalMonitoring).where(
+            select(UserSignalMonitoring)
+            .where(
                 UserSignalMonitoring.user_id == int(delivery_user_id),
                 UserSignalMonitoring.signal_id == str(delivery_signal_id),
-            ).with_for_update()
+            )
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if row is None:
@@ -91,34 +93,36 @@ async def apply_monitoring_action(
 
     prior = (
         await session.execute(
-            select(UserSignalMonitoringAction).where(
-                UserSignalMonitoringAction.idempotency_key == key
-            ).limit(1)
+            select(UserSignalMonitoringAction).where(UserSignalMonitoringAction.idempotency_key == key).limit(1)
         )
     ).scalar_one_or_none()
     if prior is not None:
         monitoring = await session.get(UserSignalMonitoring, int(prior.monitoring_id))
         return MonitoringActionResult(
-            str(prior.result), str(prior.signal_id), str(getattr(monitoring, "status", "")),
-            int(prior.stage), duplicate=True,
+            str(prior.result),
+            str(prior.signal_id),
+            str(getattr(monitoring, "status", "")),
+            int(prior.stage),
+            duplicate=True,
         )
 
     user = (
-        await session.execute(
-            select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-        )
+        await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None:
         raise PermissionError("recipient not found")
     delivery = (
         await session.execute(
-            select(SignalDelivery).where(
+            select(SignalDelivery)
+            .where(
                 SignalDelivery.user_id == int(user.id),
                 SignalDelivery.signal_id == str(signal_id),
                 SignalDelivery.sent_ok.is_(True),
                 SignalDelivery.telegram_chat_id.is_not(None),
                 SignalDelivery.telegram_message_id.is_not(None),
-            ).limit(1).with_for_update()
+            )
+            .limit(1)
+            .with_for_update()
         )
     ).scalar_one_or_none()
     if delivery is None:
@@ -131,21 +135,19 @@ async def apply_monitoring_action(
     # may have committed the same callback while this transaction waited.
     prior = (
         await session.execute(
-            select(UserSignalMonitoringAction).where(
-                UserSignalMonitoringAction.idempotency_key == key
-            ).limit(1)
+            select(UserSignalMonitoringAction).where(UserSignalMonitoringAction.idempotency_key == key).limit(1)
         )
     ).scalar_one_or_none()
     if prior is not None:
         return MonitoringActionResult(
-            str(prior.result), str(prior.signal_id), str(monitoring.status),
-            int(prior.stage), duplicate=True,
+            str(prior.result),
+            str(prior.signal_id),
+            str(monitoring.status),
+            int(prior.stage),
+            duplicate=True,
         )
     lifecycle = await session.get(SignalLifecycle, str(signal_id))
-    is_terminal = bool(
-        lifecycle is not None
-        and normalize_lifecycle_state(lifecycle.state) in TERMINAL_SIGNAL_STATES
-    )
+    is_terminal = bool(lifecycle is not None and normalize_lifecycle_state(lifecycle.state) in TERMINAL_SIGNAL_STATES)
     now = now_utc_naive()
     if is_terminal:
         result = "already_closed"
@@ -159,10 +161,12 @@ async def apply_monitoring_action(
             result = "stopped"
             stage_event = (
                 await session.execute(
-                    select(SignalTrackingEvent).where(
+                    select(SignalTrackingEvent)
+                    .where(
                         SignalTrackingEvent.signal_id == str(signal_id),
                         SignalTrackingEvent.event_type == f"tp{int(stage)}_hit",
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             monitoring.realized_r = getattr(stage_event, "r_multiple", None)
@@ -179,15 +183,17 @@ async def apply_monitoring_action(
             monitoring.realized_outcome = None
             result = "continued"
     monitoring.updated_at = now
-    session.add(UserSignalMonitoringAction(
-        monitoring_id=int(monitoring.id),
-        user_id=int(user.id),
-        signal_id=str(signal_id),
-        action=action_l,
-        stage=int(stage),
-        idempotency_key=key,
-        result=result,
-    ))
+    session.add(
+        UserSignalMonitoringAction(
+            monitoring_id=int(monitoring.id),
+            user_id=int(user.id),
+            signal_id=str(signal_id),
+            action=action_l,
+            stage=int(stage),
+            idempotency_key=key,
+            result=result,
+        )
+    )
     await session.flush()
     return MonitoringActionResult(result, str(signal_id), str(monitoring.status), int(stage))
 
@@ -202,10 +208,12 @@ async def monitoring_allows_event(
     """Suppress later recipient events after Stop; terminal truth remains queryable."""
     row = (
         await session.execute(
-            select(UserSignalMonitoring).where(
+            select(UserSignalMonitoring)
+            .where(
                 UserSignalMonitoring.user_id == int(user_id),
                 UserSignalMonitoring.signal_id == str(signal_id),
-            ).limit(1)
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
     if row is None or row.status in ACTIVE_MONITORING_STATES:

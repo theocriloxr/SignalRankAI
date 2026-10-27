@@ -11,10 +11,10 @@ from db.session import get_session
 
 logger = logging.getLogger(__name__)
 
+
 def _retention_db_priority() -> str:
     role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
     return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
-
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -78,7 +78,11 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             """
             WITH doomed AS (
                 SELECT id FROM decision_log
-                WHERE created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+                WHERE NOT (
+                    decision = 'rejected'
+                    AND COALESCE(meta->>'layer', '') = 'ml'
+                )
+                  AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
             )
@@ -92,13 +96,15 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             "rejections_tracked",
             """
             WITH doomed AS (
-                SELECT id FROM ml_rejected_signals
-                WHERE outcome_tracked_at IS NOT NULL
+                SELECT id FROM decision_log
+                WHERE decision = 'rejected'
+                  AND COALESCE(meta->>'layer', '') = 'ml'
+                  AND NULLIF(meta->>'outcome_tracked_at', '') IS NOT NULL
                   AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
             )
-            DELETE FROM ml_rejected_signals AS target
+            DELETE FROM decision_log AS target
             USING doomed
             WHERE target.id = doomed.id
             """,
@@ -108,13 +114,15 @@ async def run_learning_history_retention_once() -> dict[str, int]:
             "rejections_untracked",
             """
             WITH doomed AS (
-                SELECT id FROM ml_rejected_signals
-                WHERE outcome_tracked_at IS NULL
+                SELECT id FROM decision_log
+                WHERE decision = 'rejected'
+                  AND COALESCE(meta->>'layer', '') = 'ml'
+                  AND NULLIF(meta->>'outcome_tracked_at', '') IS NULL
                   AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
             )
-            DELETE FROM ml_rejected_signals AS target
+            DELETE FROM decision_log AS target
             USING doomed
             WHERE target.id = doomed.id
             """,

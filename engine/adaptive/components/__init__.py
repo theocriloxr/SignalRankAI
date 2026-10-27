@@ -9,7 +9,13 @@ from .supply_demand import SupplyDemandComponent
 from .wyckoff import WyckoffComponent
 
 DEFAULT_COMPONENTS = (
-    ICTSmartMoneyComponent(), PriceActionComponent(), SupplyDemandComponent(),
-    FibonacciComponent(), HarmonicComponent(), ElliottWaveComponent(),
-    OrderFlowComponent(), WyckoffComponent(), IndicatorComponent(),
+    ICTSmartMoneyComponent(),
+    PriceActionComponent(),
+    SupplyDemandComponent(),
+    FibonacciComponent(),
+    HarmonicComponent(),
+    ElliottWaveComponent(),
+    OrderFlowComponent(),
+    WyckoffComponent(),
+    IndicatorComponent(),
 )

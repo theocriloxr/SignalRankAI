@@ -1,0 +1,35 @@
+{
+  "name": "frontend-audit-2ee0a918",
+  "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:42:11.649961+00:00",
+  "finished_at": "2026-10-18T08:42:30.510208+00:00",
+  "command": [
+    "npm.cmd",
+    "audit",
+    "--json",
+    "--package-lock-only",
+    "--ignore-scripts"
+  ],
+  "cwd": "frontend",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/frontend-audit-2ee0a918.log",
+  "log_sha256": "cf682d5bf5cd7d8b9cb43e2ad85d204e2133c904bbf67a41ea7c31f010555fc9",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "source_fingerprint_after": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

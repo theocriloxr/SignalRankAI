@@ -6,6 +6,7 @@ and a Railway pre-deploy command.  It validates the selected profile against
 known single-service safety invariants and can optionally compare the process
 environment with the profile.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -104,12 +105,16 @@ def validate_config(values: Mapping[str, str], *, profile_name: str = "") -> lis
         error("state_redis_missing", "STATE_REDIS_URL or REDIS_URL is required")
     if not delivery_url:
         error("delivery_redis_missing", "DELIVERY_REDIS_URL is required")
-    if _truthy(values.get("REQUIRE_DISTINCT_DELIVERY_REDIS", "1")) and state_url and delivery_url and state_url == delivery_url:
+    if (
+        _truthy(values.get("REQUIRE_DISTINCT_DELIVERY_REDIS", "1"))
+        and state_url
+        and delivery_url
+        and state_url == delivery_url
+    ):
         error("redis_not_distinct", "State and delivery Redis services must be distinct")
 
     execution_enabled = any(
-        _truthy(values.get(key))
-        for key in ("AUTO_TRADE_ENABLED", "COPY_TRADE_ENABLED", "REAL_EXECUTION_ENABLED")
+        _truthy(values.get(key)) for key in ("AUTO_TRADE_ENABLED", "COPY_TRADE_ENABLED", "REAL_EXECUTION_ENABLED")
     )
     if execution_enabled:
         if not _truthy(values.get("REAL_EXECUTION_ENABLED")):
@@ -143,14 +148,26 @@ def validate_config(values: Mapping[str, str], *, profile_name: str = "") -> lis
     if _truthy(values.get("AUTO_MIGRATE")) or _truthy(values.get("RUN_DB_MIGRATIONS_AT_BOOT")):
         warning("auto_migrate", "automatic migration should be enabled only for one controlled deployment")
 
-    for key in ("DATABASE_URL", "TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "WEBHOOK_DOMAIN", "OWNER_IDS", "ENCRYPTION_KEY"):
+    for key in (
+        "DATABASE_URL",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET",
+        "WEBHOOK_DOMAIN",
+        "OWNER_IDS",
+        "ENCRYPTION_KEY",
+    ):
         if not str(values.get(key) or "").strip():
-            warning("required_secret_missing", f"{key} is blank in {profile_name or 'configuration'}; set it securely at deployment")
+            warning(
+                "required_secret_missing",
+                f"{key} is blank in {profile_name or 'configuration'}; set it securely at deployment",
+            )
 
     return findings
 
 
-def build_snapshot(profile_path: Path, *, environment: Mapping[str, str] | None = None, merge_environment: bool = False) -> ConfigSnapshot:
+def build_snapshot(
+    profile_path: Path, *, environment: Mapping[str, str] | None = None, merge_environment: bool = False
+) -> ConfigSnapshot:
     profile = parse_env_file(profile_path)
     effective = dict(profile)
     if merge_environment:
@@ -160,8 +177,11 @@ def build_snapshot(profile_path: Path, *, environment: Mapping[str, str] | None 
                 effective[key] = str(source[key])
         # Include safety-relevant variables even if they are absent from the profile.
         for key in (
-            "PAYSTACK_SECRET_KEY", "REAL_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED",
-            "COPY_TRADE_ENABLED", "MT5_ALLOW_LIVE_ACCOUNTS",
+            "PAYSTACK_SECRET_KEY",
+            "REAL_EXECUTION_ENABLED",
+            "AUTO_TRADE_ENABLED",
+            "COPY_TRADE_ENABLED",
+            "MT5_ALLOW_LIVE_ACCOUNTS",
         ):
             if key in source:
                 effective[key] = str(source[key])

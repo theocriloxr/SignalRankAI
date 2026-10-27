@@ -3,6 +3,7 @@
 Train XGBoost model from existing signal history.
 Loads signals + outcomes from Postgres, builds feature matrix, trains model.
 """
+
 from utils.timeutils import now_utc_naive
 
 import os
@@ -98,13 +99,17 @@ def _training_session_kwargs(label: str) -> dict:
 
 def _is_production_runtime() -> bool:
     """Return True where synthetic ML artefacts are unsafe."""
-    app_env = str(
-        os.getenv("APP_ENV")
-        or os.getenv("ENVIRONMENT")
-        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
-        or os.getenv("RAILWAY_ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    app_env = (
+        str(
+            os.getenv("APP_ENV")
+            or os.getenv("ENVIRONMENT")
+            or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+            or os.getenv("RAILWAY_ENVIRONMENT")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if app_env in {"production", "prod", "staging", "stage"}:
         return True
     return any(
@@ -116,6 +121,17 @@ def _is_production_runtime() -> bool:
             "RAILWAY_SERVICE_NAME",
         )
     )
+
+
+def _qualification_number(value: Any, *, minimum: float | None = None,
+                          maximum: float | None = None) -> float:
+    if isinstance(value, bool):
+        raise ValueError("boolean_is_not_qualification_metric")
+    number = float(value)
+    if (not math.isfinite(number) or (minimum is not None and number < minimum)
+            or (maximum is not None and number > maximum)):
+        raise ValueError("invalid_qualification_metric")
+    return number
 
 
 def _promotion_quality_gate(
@@ -133,37 +149,35 @@ def _promotion_quality_gate(
         deployed_runtime = _is_production_runtime()
     default_min_auc = "0.60" if deployed_runtime else "0.52"
     default_min_accuracy = "0.55" if deployed_runtime else "0.50"
-    min_auc = float(os.getenv("ML_MIN_PROMOTION_AUC", default_min_auc) or default_min_auc)
-    min_accuracy = float(
-        os.getenv("ML_MIN_PROMOTION_ACCURACY", default_min_accuracy) or default_min_accuracy
-    )
-    accuracy = float(metrics.get("accuracy", 0.0) or 0.0)
-    auc = float(metrics.get("auc", 0.0) or 0.0)
+    min_auc, min_accuracy = float(default_min_auc), float(default_min_accuracy)
+    try:
+        min_auc = _qualification_number(os.getenv("ML_MIN_PROMOTION_AUC", default_min_auc) or default_min_auc, minimum=0, maximum=1)
+        min_accuracy = _qualification_number(os.getenv("ML_MIN_PROMOTION_ACCURACY", default_min_accuracy) or default_min_accuracy, minimum=0, maximum=1)
+        accuracy = _qualification_number(metrics.get("accuracy", 0.0), minimum=0, maximum=1)
+        auc = _qualification_number(metrics.get("auc", 0.0), minimum=0, maximum=1)
+        balanced_acc = _qualification_number(metrics.get("balanced_accuracy", accuracy), minimum=0, maximum=1)
+        positive_recall = _qualification_number(metrics.get("positive_recall", 0.0), minimum=0, maximum=1)
+        pr_auc = _qualification_number(metrics.get("pr_auc", auc), minimum=0, maximum=1)
+        positive_rate = _qualification_number(metrics.get("positive_rate", 0.0), minimum=0, maximum=1)
+        expected_r = _qualification_number(metrics.get("expected_r", 0.0))
+        min_pr_auc = _qualification_number(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35, minimum=0, maximum=1)
+        min_pr_auc_floor = _qualification_number(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25, minimum=0, maximum=1)
+        min_pr_auc_lift = _qualification_number(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0, minimum=0)
+        min_balanced_acc = _qualification_number(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55, minimum=0, maximum=1)
+        min_positive_recall = _qualification_number(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20, minimum=0, maximum=1)
+        min_expected_r = _qualification_number(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
+    except (TypeError, ValueError, OverflowError):
+        return False, min_accuracy, min_auc
     # Imbalance-aware promotion gate (staging-certification requirement): raw
     # accuracy is never trading accuracy.  A majority-class model (e.g. the
     # staging candidate [[56,0],[13,2]]) must fail on the gates below.
-    balanced_acc = float(metrics.get("balanced_accuracy", accuracy) or 0.0)
-    positive_recall = float(metrics.get("positive_recall", 0.0) or 0.0)
-    pr_auc = float(metrics.get("pr_auc", auc) or 0.0)
-    positive_rate = float(metrics.get("positive_rate", 0.0) or 0.0)
-    expected_r = float(metrics.get("expected_r", 0.0) or 0.0)
-    majority_baseline = float(metrics.get("majority_baseline_accuracy", 0.5) or 0.5)
-
-    min_pr_auc = float(os.getenv("ML_MIN_PR_AUC", "0.35") or 0.35)
-    min_pr_auc_floor = float(os.getenv("ML_MIN_PR_AUC_FLOOR", "0.25") or 0.25)
-    min_pr_auc_lift = float(os.getenv("ML_MIN_PR_AUC_LIFT", "2.0") or 2.0)
     pr_auc_lift = (pr_auc / positive_rate) if positive_rate > 0 else 0.0
     # PR-AUC is prevalence-sensitive. Keep the existing strong absolute gate,
     # but also recognize a candidate that clears a conservative absolute floor
     # while materially outperforming the random/prevalence baseline. This is
     # stricter than accepting raw accuracy on an imbalanced dataset.
     pr_auc_ok = bool(
-        pr_auc >= min_pr_auc
-        or (
-            positive_rate > 0
-            and pr_auc >= min_pr_auc_floor
-            and pr_auc_lift >= min_pr_auc_lift
-        )
+        pr_auc >= min_pr_auc or (positive_rate > 0 and pr_auc >= min_pr_auc_floor and pr_auc_lift >= min_pr_auc_lift)
     )
 
     # Do not require raw accuracy to beat the majority-class baseline. On an
@@ -174,13 +188,12 @@ def _promotion_quality_gate(
     ok = (
         accuracy >= min_accuracy
         and auc >= min_auc
-        and balanced_acc >= float(os.getenv("ML_MIN_BALANCED_ACCURACY", "0.55") or 0.55)
-        and positive_recall >= float(os.getenv("ML_MIN_POSITIVE_RECALL", "0.20") or 0.20)
+        and balanced_acc >= min_balanced_acc
+        and positive_recall >= min_positive_recall
         and pr_auc_ok
-        and expected_r >= float(os.getenv("ML_MIN_EXPECTED_R", "0.05") or 0.05)
+        and expected_r >= min_expected_r
     )
     return ok, min_accuracy, min_auc
-
 
 
 def _champion_comparison_gate(
@@ -209,11 +222,7 @@ def _champion_comparison_gate(
             return True, {"enabled": True, "reason": "no_existing_champion", "source": source}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            champion_metrics = dict(
-                payload.get("metrics")
-                or (payload.get("training_meta") or {}).get("metrics")
-                or {}
-            )
+            champion_metrics = dict(payload.get("metrics") or (payload.get("training_meta") or {}).get("metrics") or {})
         except Exception as exc:
             return False, {
                 "enabled": True,
@@ -222,22 +231,27 @@ def _champion_comparison_gate(
                 "error": type(exc).__name__,
             }
 
-    tolerances = {
-        "auc": float(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01),
-        "pr_auc": float(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02),
-        "balanced_accuracy": float(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02),
-        "expected_r": float(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15),
-    }
+    try:
+        tolerances = {
+            "auc": _qualification_number(os.getenv("ML_CHAMPION_MAX_AUC_REGRESSION", "0.01") or 0.01, minimum=0, maximum=1),
+            "pr_auc": _qualification_number(os.getenv("ML_CHAMPION_MAX_PR_AUC_REGRESSION", "0.02") or 0.02, minimum=0, maximum=1),
+            "balanced_accuracy": _qualification_number(os.getenv("ML_CHAMPION_MAX_BALANCED_ACCURACY_REGRESSION", "0.02") or 0.02, minimum=0, maximum=1),
+            "expected_r": _qualification_number(os.getenv("ML_CHAMPION_MAX_EXPECTED_R_REGRESSION", "0.15") or 0.15, minimum=0),
+        }
+    except (TypeError, ValueError, OverflowError):
+        return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
     regressions: dict[str, dict[str, float]] = {}
     compared: dict[str, dict[str, float]] = {}
     for key, tolerance in tolerances.items():
         if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
             continue
         try:
-            candidate = float(candidate_metrics[key])
-            champion = float(champion_metrics[key])
-        except (TypeError, ValueError):
-            continue
+            candidate = _qualification_number(candidate_metrics[key], minimum=0 if key != "expected_r" else None,
+                                              maximum=1 if key != "expected_r" else None)
+            champion = _qualification_number(champion_metrics[key], minimum=0 if key != "expected_r" else None,
+                                             maximum=1 if key != "expected_r" else None)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_metric", "source": source, "metric": key}
         compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
         if candidate < champion - tolerance:
             regressions[key] = compared[key]
@@ -248,19 +262,28 @@ def _champion_comparison_gate(
         ("calibrated_ece", "ML_CHAMPION_MAX_ECE_REGRESSION", 0.02),
         ("calibrated_brier", "ML_CHAMPION_MAX_BRIER_REGRESSION", 0.02),
     ):
+        try:
+            tolerance = _qualification_number(os.getenv(env_name, str(default)) or default, minimum=0, maximum=1)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
         if candidate_cal.get(key) is None or champion_cal.get(key) is None:
             continue
         try:
-            candidate = float(candidate_cal[key])
-            champion = float(champion_cal[key])
-            tolerance = float(os.getenv(env_name, str(default)) or default)
-        except (TypeError, ValueError):
-            continue
+            candidate = _qualification_number(candidate_cal[key], minimum=0, maximum=1)
+            champion = _qualification_number(champion_cal[key], minimum=0, maximum=1)
+        except (TypeError, ValueError, OverflowError):
+            return False, {"enabled": True, "reason": "invalid_champion_comparison_metric", "source": source, "metric": key}
         compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
         if candidate > champion + tolerance:
             regressions[key] = compared[key]
 
-    minimum_comparable = max(1, int(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2))
+    try:
+        minimum_value = _qualification_number(os.getenv("ML_CHAMPION_MIN_COMPARABLE_METRICS", "2") or 2, minimum=1, maximum=6)
+        if not minimum_value.is_integer():
+            raise ValueError("noninteger_comparison_count")
+        minimum_comparable = int(minimum_value)
+    except (TypeError, ValueError, OverflowError):
+        return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
     if len(compared) < minimum_comparable:
         return False, {
             "enabled": True,
@@ -348,9 +371,7 @@ def _schema_promotion_gate(
         }
 
     authorized = _env_bool("ML_ALLOW_SCHEMA_VERSION_PROMOTION", False)
-    certification_id = str(
-        os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or ""
-    ).strip()
+    certification_id = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or "").strip()
     if authorized and certification_id:
         return True, {
             "enabled": True,
@@ -404,10 +425,7 @@ async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[
             return None, {"source": "durable_registry", "reason": "no_active_primary"}
         payload = dict(row.get("payload") or {})
         metrics = dict(
-            row.get("metrics")
-            or payload.get("metrics")
-            or (payload.get("training_meta") or {}).get("metrics")
-            or {}
+            row.get("metrics") or payload.get("metrics") or (payload.get("training_meta") or {}).get("metrics") or {}
         )
         return metrics or None, {
             "source": "durable_registry",
@@ -415,9 +433,7 @@ async def _load_durable_champion_metrics() -> tuple[dict[str, Any] | None, dict[
             "trained_at": str(row.get("trained_at") or payload.get("trained_at") or ""),
             "metric_count": len(metrics),
             "schema_version": int(payload.get("schema_version") or 1),
-            "feature_schema_hash_sha256": str(
-                payload.get("feature_schema_hash_sha256") or ""
-            ),
+            "feature_schema_hash_sha256": str(payload.get("feature_schema_hash_sha256") or ""),
         }
     except Exception as exc:
         logger.warning("[ml_champion_compare] durable lookup unavailable error=%s", type(exc).__name__)
@@ -489,7 +505,15 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
         regime = str(rng.choice(regimes, p=[0.42, 0.33, 0.25]))
         direction = "long" if float(rng.random()) > 0.47 else "short"
 
-        asset_class_enc = 0.0 if asset.endswith(("USDT", "USDC", "BUSD")) else 1.0 if len(asset) == 6 and asset.isalpha() else 2.0 if asset.startswith("XAU") else 3.0
+        asset_class_enc = (
+            0.0
+            if asset.endswith(("USDT", "USDC", "BUSD"))
+            else 1.0
+            if len(asset) == 6 and asset.isalpha()
+            else 2.0
+            if asset.startswith("XAU")
+            else 3.0
+        )
 
         score = float(np.clip(rng.normal(66.0, 11.0), 25.0, 95.0))
         rr_ratio = float(np.clip(rng.normal(1.75, 0.55), 0.6, 4.0))
@@ -513,7 +537,9 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
         yield_spread = float(np.clip(rng.normal(0.015, 0.008), -0.02, 0.04))
         minutes_since_news = float(np.clip(rng.exponential(180.0), 0.0, 1440.0))
         minutes_until_news = float(np.clip(rng.exponential(210.0), 0.0, 1440.0))
-        news_event_impact_score = float(np.clip(max(0.0, 1.0 - (min(minutes_since_news, minutes_until_news) / 90.0)), 0.0, 1.0))
+        news_event_impact_score = float(
+            np.clip(max(0.0, 1.0 - (min(minutes_since_news, minutes_until_news) / 90.0)), 0.0, 1.0)
+        )
         spx_trend = float(np.clip(rng.normal(0.0, 0.018), -0.07, 0.07))
         btc_corr = float(np.clip(rng.normal(0.2 if asset_class_enc in (0.0, 3.0) else 0.05, 0.25), -0.85, 0.95))
 
@@ -741,7 +767,7 @@ async def load_training_data(lookback_days: int = 90):
             open_times, all_rows = cached
             cutoff_ms = int(created_at.timestamp() * 1000)
             stop = bisect_right(open_times, cutoff_ms)
-            return all_rows[max(0, stop - max(1, int(limit))):stop]
+            return all_rows[max(0, stop - max(1, int(limit))) : stop]
 
         def _atr(highs, lows, closes, period=14):
             if len(closes) < period + 1:
@@ -802,10 +828,18 @@ async def load_training_data(lookback_days: int = 90):
             delivered_proof = exists().where(
                 SignalDelivery.signal_id == Signal.signal_id,
                 SignalDelivery.sent_ok.is_(True),
-                SignalDelivery.delivery_state.in_((
-                    "sent", "delivered", "confirmed", "reconciled",
-                    "SENT", "DELIVERED", "CONFIRMED", "RECONCILED",
-                )),
+                SignalDelivery.delivery_state.in_(
+                    (
+                        "sent",
+                        "delivered",
+                        "confirmed",
+                        "reconciled",
+                        "SENT",
+                        "DELIVERED",
+                        "CONFIRMED",
+                        "RECONCILED",
+                    )
+                ),
                 SignalDelivery.telegram_chat_id.is_not(None),
                 SignalDelivery.telegram_message_id.is_not(None),
             )
@@ -832,9 +866,7 @@ async def load_training_data(lookback_days: int = 90):
                 rows = []
 
         if not rows:
-            logger.warning(
-                "No delivery-proof-backed live outcomes found; loading archive, shadow, and paper evidence"
-            )
+            logger.warning("No delivery-proof-backed live outcomes found; loading archive, shadow, and paper evidence")
 
         live_proof_rows = len(rows)
         logger.info(
@@ -844,23 +876,23 @@ async def load_training_data(lookback_days: int = 90):
         )
         data = []
         for sig, outcome in rows:
-            status = str(getattr(outcome, 'status', '') or '').lower()
-            meta = getattr(outcome, 'meta', None) or {}
+            status = str(getattr(outcome, "status", "") or "").lower()
+            meta = getattr(outcome, "meta", None) or {}
             if not isinstance(meta, dict):
                 meta = {}
-            macro = dict(meta.get('macro') or {})
+            macro = dict(meta.get("macro") or {})
 
-            created_at = getattr(sig, 'created_at', None) or now_utc_naive()
+            created_at = getattr(sig, "created_at", None) or now_utc_naive()
             candles = await _load_candles(
-                str(getattr(sig, 'asset', '') or ''),
-                str(getattr(sig, 'timeframe', '') or ''),
+                str(getattr(sig, "asset", "") or ""),
+                str(getattr(sig, "timeframe", "") or ""),
                 created_at,
                 limit=120,
             )
-            closes = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles]
-            highs = [float(getattr(c, 'high', 0.0) or 0.0) for c in candles]
-            lows = [float(getattr(c, 'low', 0.0) or 0.0) for c in candles]
-            vols = [float(getattr(c, 'volume', 0.0) or 0.0) for c in candles]
+            closes = [float(getattr(c, "close", 0.0) or 0.0) for c in candles]
+            highs = [float(getattr(c, "high", 0.0) or 0.0) for c in candles]
+            lows = [float(getattr(c, "low", 0.0) or 0.0) for c in candles]
+            vols = [float(getattr(c, "volume", 0.0) or 0.0) for c in candles]
 
             vel3 = _pct(closes, 3)
             vel5 = _pct(closes, 5)
@@ -875,10 +907,10 @@ async def load_training_data(lookback_days: int = 90):
                 rel_vol = (vols[-1] / ma20v) if ma20v > 0 else 0.0
             adx_value = _adx_from_ohlc(highs, lows, closes)
 
-            candles_4h = await _load_candles(str(getattr(sig, 'asset', '') or ''), '4h', created_at, limit=60)
-            closes_4h = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_4h]
-            candles_1d = await _load_candles(str(getattr(sig, 'asset', '') or ''), '1d', created_at, limit=60)
-            closes_1d = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_1d]
+            candles_4h = await _load_candles(str(getattr(sig, "asset", "") or ""), "4h", created_at, limit=60)
+            closes_4h = [float(getattr(c, "close", 0.0) or 0.0) for c in candles_4h]
+            candles_1d = await _load_candles(str(getattr(sig, "asset", "") or ""), "1d", created_at, limit=60)
+            closes_1d = [float(getattr(c, "close", 0.0) or 0.0) for c in candles_1d]
             mtf_4h_trend = _trend_from_closes(closes_4h)
             mtf_1d_trend = _trend_from_closes(closes_1d)
 
@@ -930,54 +962,60 @@ async def load_training_data(lookback_days: int = 90):
                 # Keep the sample, but reduce SL penalty so model learns stop-hunt contexts.
                 sample_weight *= 0.65
 
-            rr_raw = _safe_float(getattr(sig, 'rr_estimate', 0))
+            rr_raw = _safe_float(getattr(sig, "rr_estimate", 0))
             rr_eff = min(4.0, max(0.5, rr_raw))
-            sample_weight *= (0.75 + (rr_eff / 4.0))
+            sample_weight *= 0.75 + (rr_eff / 4.0)
 
             row = {
-                'signal_id': sig.signal_id,
-                'asset': sig.asset,
-                'timeframe': sig.timeframe,
-                'direction': sig.direction,
-                'score': _safe_float(getattr(sig, 'score', 0)),
-                'entry': _safe_float(getattr(sig, 'entry', 0)),
-                'stop_loss': _safe_float(getattr(sig, 'stop_loss', 0)),
-                'take_profit': _parse_tp(getattr(sig, 'take_profit', 0)),
-                'rr_ratio': _safe_float(getattr(sig, 'rr_estimate', 0)),
-                'strategy_name': sig.strategy_name or 'unknown',
-                'regime': sig.regime or 'unknown',
-                'strength': _safe_float(getattr(sig, 'strength', 0)),
-                'ml_probability': _safe_float(getattr(sig, 'ml_probability', 0)),
-                'price_velocity_3': float(vel3),
-                'price_velocity_5': float(vel5),
-                'price_velocity_10': float(vel10),
-                'price_acceleration_3_10': float(vel3 - vel10),
-                'atr_rel': float(atr_rel),
-                'atr_regime': float(atr_regime),
-                'relative_volume': float(rel_vol),
-                'mtf_4h_trend': float(mtf_4h_trend),
-                'mtf_1d_trend': float(mtf_1d_trend),
-                'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
-                'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
-                'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
-                'adx': float(adx_value),
-                'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
-                'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
-                'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
-                'yield_spread': _safe_float(macro.get('yield_spread', meta.get('yield_spread', 0.0))),
-                'minutes_since_high_impact_news': _safe_float(macro.get('minutes_since_high_impact_news', meta.get('minutes_since_high_impact_news', 0.0))),
-                'minutes_until_high_impact_news': _safe_float(macro.get('minutes_until_high_impact_news', meta.get('minutes_until_high_impact_news', 0.0))),
-                'news_event_impact_score': _safe_float(macro.get('news_event_impact_score', meta.get('news_event_impact_score', 0.0))),
-                'spx_trend': _safe_float(macro.get('spx_trend', meta.get('spx_trend', 0.0))),
-                'btc_corr': _safe_float(macro.get('btc_corr', meta.get('btc_corr', 0.0))),
-                'partial_tp_progress': float(tp_progress),
-                'false_breakout': int(false_breakout),
-                'barrier_type': barrier,
-                'sample_weight': float(sample_weight),
-                'source_type': 'live_delivery',
-                'source_weight': 1.0,
-                'created_at': created_at,
-                'target': target,
+                "signal_id": sig.signal_id,
+                "asset": sig.asset,
+                "timeframe": sig.timeframe,
+                "direction": sig.direction,
+                "score": _safe_float(getattr(sig, "score", 0)),
+                "entry": _safe_float(getattr(sig, "entry", 0)),
+                "stop_loss": _safe_float(getattr(sig, "stop_loss", 0)),
+                "take_profit": _parse_tp(getattr(sig, "take_profit", 0)),
+                "rr_ratio": _safe_float(getattr(sig, "rr_estimate", 0)),
+                "strategy_name": sig.strategy_name or "unknown",
+                "regime": sig.regime or "unknown",
+                "strength": _safe_float(getattr(sig, "strength", 0)),
+                "ml_probability": _safe_float(getattr(sig, "ml_probability", 0)),
+                "price_velocity_3": float(vel3),
+                "price_velocity_5": float(vel5),
+                "price_velocity_10": float(vel10),
+                "price_acceleration_3_10": float(vel3 - vel10),
+                "atr_rel": float(atr_rel),
+                "atr_regime": float(atr_regime),
+                "relative_volume": float(rel_vol),
+                "mtf_4h_trend": float(mtf_4h_trend),
+                "mtf_1d_trend": float(mtf_1d_trend),
+                "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
+                "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
+                "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
+                "adx": float(adx_value),
+                "dxy_trend": _safe_float(macro.get("dxy_trend", meta.get("dxy_trend", 0.0))),
+                "vix_trend": _safe_float(macro.get("vix_trend", meta.get("vix_trend", 0.0))),
+                "us10y_trend": _safe_float(macro.get("us10y_trend", meta.get("us10y_trend", 0.0))),
+                "yield_spread": _safe_float(macro.get("yield_spread", meta.get("yield_spread", 0.0))),
+                "minutes_since_high_impact_news": _safe_float(
+                    macro.get("minutes_since_high_impact_news", meta.get("minutes_since_high_impact_news", 0.0))
+                ),
+                "minutes_until_high_impact_news": _safe_float(
+                    macro.get("minutes_until_high_impact_news", meta.get("minutes_until_high_impact_news", 0.0))
+                ),
+                "news_event_impact_score": _safe_float(
+                    macro.get("news_event_impact_score", meta.get("news_event_impact_score", 0.0))
+                ),
+                "spx_trend": _safe_float(macro.get("spx_trend", meta.get("spx_trend", 0.0))),
+                "btc_corr": _safe_float(macro.get("btc_corr", meta.get("btc_corr", 0.0))),
+                "partial_tp_progress": float(tp_progress),
+                "false_breakout": int(false_breakout),
+                "barrier_type": barrier,
+                "sample_weight": float(sample_weight),
+                "source_type": "live_delivery",
+                "source_weight": 1.0,
+                "created_at": created_at,
+                "target": target,
             }
             data.append(row)
 
@@ -990,8 +1028,10 @@ async def load_training_data(lookback_days: int = 90):
             async with get_session(**_training_session_kwargs("ml_training_archive_read")) as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
-                await asyncio.wait_for(session.execute(text(
-                    """
+                await asyncio.wait_for(
+                    session.execute(
+                        text(
+                            """
                     CREATE TABLE IF NOT EXISTS ml_past_training_data (
                         id SERIAL PRIMARY KEY,
                         signal_id VARCHAR(36) UNIQUE NOT NULL,
@@ -1016,23 +1056,30 @@ async def load_training_data(lookback_days: int = 90):
                         archived_at TIMESTAMP NOT NULL DEFAULT NOW()
                     )
                     """
-                )), timeout=_training_query_timeout())
+                        )
+                    ),
+                    timeout=_training_query_timeout(),
+                )
                 archive_rows = (
-                    await asyncio.wait_for(
-                        session.execute(
-                            select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
-                        ),
-                        timeout=_training_query_timeout(),
+                    (
+                        await asyncio.wait_for(
+                            session.execute(
+                                select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                            ),
+                            timeout=_training_query_timeout(),
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 await session.commit()
 
             for a in archive_rows:
-                status = str(getattr(a, 'outcome_status', '') or '').lower()
-                meta = getattr(a, 'outcome_meta', None) or {}
+                status = str(getattr(a, "outcome_status", "") or "").lower()
+                meta = getattr(a, "outcome_meta", None) or {}
                 if not isinstance(meta, dict):
                     meta = {}
-                macro = dict(meta.get('macro') or {})
+                macro = dict(meta.get("macro") or {})
 
                 tp_progress = 0
                 for key in ("tp_progress", "max_tp_hit", "tp_hit_count", "highest_tp_reached"):
@@ -1079,64 +1126,70 @@ async def load_training_data(lookback_days: int = 90):
                 if false_breakout:
                     sample_weight *= 0.65
 
-                rr_raw = _safe_float(getattr(a, 'rr_estimate', 0))
+                rr_raw = _safe_float(getattr(a, "rr_estimate", 0))
                 rr_eff = min(4.0, max(0.5, rr_raw))
-                sample_weight *= (0.75 + (rr_eff / 4.0))
+                sample_weight *= 0.75 + (rr_eff / 4.0)
 
-                a_take_profit = _parse_tp(getattr(a, 'take_profit', 0))
-                a_entry = _safe_float(getattr(a, 'entry', 0))
-                a_sl = _safe_float(getattr(a, 'stop_loss', 0))
-                archive_proof = bool(getattr(a, 'delivery_proof_backed', False))
+                a_take_profit = _parse_tp(getattr(a, "take_profit", 0))
+                a_entry = _safe_float(getattr(a, "entry", 0))
+                a_sl = _safe_float(getattr(a, "stop_loss", 0))
+                archive_proof = bool(getattr(a, "delivery_proof_backed", False))
                 archive_source_weight = 0.80 if archive_proof else 0.25
                 sample_weight *= archive_source_weight
 
-                data.append({
-                    'signal_id': getattr(a, 'signal_id', None),
-                    'asset': getattr(a, 'asset', 'UNKNOWN') or 'UNKNOWN',
-                    'timeframe': getattr(a, 'timeframe', '1h') or '1h',
-                    'direction': getattr(a, 'direction', 'long') or 'long',
-                    'score': _safe_float(getattr(a, 'score', 0)),
-                    'entry': a_entry,
-                    'stop_loss': a_sl,
-                    'take_profit': a_take_profit,
-                    'rr_ratio': _safe_float(getattr(a, 'rr_estimate', 0)),
-                    'strategy_name': getattr(a, 'strategy_name', 'unknown') or 'unknown',
-                    'regime': getattr(a, 'regime', 'unknown') or 'unknown',
-                    'strength': _safe_float(getattr(a, 'strength', 0)),
-                    'ml_probability': _safe_float(getattr(a, 'ml_probability', 0)),
-                    'price_velocity_3': _safe_float(meta.get('price_velocity_3', 0.0)),
-                    'price_velocity_5': _safe_float(meta.get('price_velocity_5', 0.0)),
-                    'price_velocity_10': _safe_float(meta.get('price_velocity_10', 0.0)),
-                    'price_acceleration_3_10': _safe_float(meta.get('price_acceleration_3_10', 0.0)),
-                    'atr_rel': _safe_float(meta.get('atr_rel', 0.0)),
-                    'atr_regime': _safe_float(meta.get('atr_regime', 0.0)),
-                    'relative_volume': _safe_float(meta.get('relative_volume', 0.0)),
-                    'mtf_4h_trend': _safe_float(meta.get('mtf_4h_trend', 0.0)),
-                    'mtf_1d_trend': _safe_float(meta.get('mtf_1d_trend', 0.0)),
-                    'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
-                    'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
-                    'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
-                    'adx': _safe_float(
-                        meta.get('adx', meta.get('adx_value', meta.get('trend_adx', 0.0)))
-                    ),
-                    'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
-                    'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
-                    'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
-                    'yield_spread': _safe_float(macro.get('yield_spread', meta.get('yield_spread', 0.0))),
-                    'minutes_since_high_impact_news': _safe_float(macro.get('minutes_since_high_impact_news', meta.get('minutes_since_high_impact_news', 0.0))),
-                    'minutes_until_high_impact_news': _safe_float(macro.get('minutes_until_high_impact_news', meta.get('minutes_until_high_impact_news', 0.0))),
-                    'news_event_impact_score': _safe_float(macro.get('news_event_impact_score', meta.get('news_event_impact_score', 0.0))),
-                    'spx_trend': _safe_float(macro.get('spx_trend', meta.get('spx_trend', 0.0))),
-                    'btc_corr': _safe_float(macro.get('btc_corr', meta.get('btc_corr', 0.0))),
-                    'partial_tp_progress': float(tp_progress),
-                    'false_breakout': int(false_breakout),
-                    'barrier_type': barrier,
-                    'sample_weight': float(sample_weight),
-                    'source_type': 'archive_proof' if archive_proof else 'archive_legacy',
-                    'source_weight': float(archive_source_weight),
-                    'created_at': getattr(a, 'signal_created_at', None) or now_utc_naive(),
-                    'target': target,
-                })
+                data.append(
+                    {
+                        "signal_id": getattr(a, "signal_id", None),
+                        "asset": getattr(a, "asset", "UNKNOWN") or "UNKNOWN",
+                        "timeframe": getattr(a, "timeframe", "1h") or "1h",
+                        "direction": getattr(a, "direction", "long") or "long",
+                        "score": _safe_float(getattr(a, "score", 0)),
+                        "entry": a_entry,
+                        "stop_loss": a_sl,
+                        "take_profit": a_take_profit,
+                        "rr_ratio": _safe_float(getattr(a, "rr_estimate", 0)),
+                        "strategy_name": getattr(a, "strategy_name", "unknown") or "unknown",
+                        "regime": getattr(a, "regime", "unknown") or "unknown",
+                        "strength": _safe_float(getattr(a, "strength", 0)),
+                        "ml_probability": _safe_float(getattr(a, "ml_probability", 0)),
+                        "price_velocity_3": _safe_float(meta.get("price_velocity_3", 0.0)),
+                        "price_velocity_5": _safe_float(meta.get("price_velocity_5", 0.0)),
+                        "price_velocity_10": _safe_float(meta.get("price_velocity_10", 0.0)),
+                        "price_acceleration_3_10": _safe_float(meta.get("price_acceleration_3_10", 0.0)),
+                        "atr_rel": _safe_float(meta.get("atr_rel", 0.0)),
+                        "atr_regime": _safe_float(meta.get("atr_regime", 0.0)),
+                        "relative_volume": _safe_float(meta.get("relative_volume", 0.0)),
+                        "mtf_4h_trend": _safe_float(meta.get("mtf_4h_trend", 0.0)),
+                        "mtf_1d_trend": _safe_float(meta.get("mtf_1d_trend", 0.0)),
+                        "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
+                        "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
+                        "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
+                        "adx": _safe_float(meta.get("adx", meta.get("adx_value", meta.get("trend_adx", 0.0)))),
+                        "dxy_trend": _safe_float(macro.get("dxy_trend", meta.get("dxy_trend", 0.0))),
+                        "vix_trend": _safe_float(macro.get("vix_trend", meta.get("vix_trend", 0.0))),
+                        "us10y_trend": _safe_float(macro.get("us10y_trend", meta.get("us10y_trend", 0.0))),
+                        "yield_spread": _safe_float(macro.get("yield_spread", meta.get("yield_spread", 0.0))),
+                        "minutes_since_high_impact_news": _safe_float(
+                            macro.get("minutes_since_high_impact_news", meta.get("minutes_since_high_impact_news", 0.0))
+                        ),
+                        "minutes_until_high_impact_news": _safe_float(
+                            macro.get("minutes_until_high_impact_news", meta.get("minutes_until_high_impact_news", 0.0))
+                        ),
+                        "news_event_impact_score": _safe_float(
+                            macro.get("news_event_impact_score", meta.get("news_event_impact_score", 0.0))
+                        ),
+                        "spx_trend": _safe_float(macro.get("spx_trend", meta.get("spx_trend", 0.0))),
+                        "btc_corr": _safe_float(macro.get("btc_corr", meta.get("btc_corr", 0.0))),
+                        "partial_tp_progress": float(tp_progress),
+                        "false_breakout": int(false_breakout),
+                        "barrier_type": barrier,
+                        "sample_weight": float(sample_weight),
+                        "source_type": "archive_proof" if archive_proof else "archive_legacy",
+                        "source_weight": float(archive_source_weight),
+                        "created_at": getattr(a, "signal_created_at", None) or now_utc_naive(),
+                        "target": target,
+                    }
+                )
         except Exception as _archive_err:
             logger.warning(f"Failed to load archive training rows: {_archive_err}")
 
@@ -1147,18 +1200,22 @@ async def load_training_data(lookback_days: int = 90):
 
             async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
                 rejected_rows = (
-                    await asyncio.wait_for(
-                        session.execute(
-                            select(MLRejectedSignal).where(
-                                and_(
-                                    MLRejectedSignal.created_at >= cutoff,
-                                    MLRejectedSignal.outcome_tracked_at.is_not(None),
+                    (
+                        await asyncio.wait_for(
+                            session.execute(
+                                select(MLRejectedSignal).where(
+                                    and_(
+                                        MLRejectedSignal.created_at >= cutoff,
+                                        MLRejectedSignal.outcome_tracked_at.is_not(None),
+                                    )
                                 )
-                            )
-                        ),
-                        timeout=_training_query_timeout(),
+                            ),
+                            timeout=_training_query_timeout(),
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
 
             for rj in rejected_rows:
                 outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
@@ -1208,7 +1265,7 @@ async def load_training_data(lookback_days: int = 90):
                 if rr_raw <= 0:
                     rr_raw = _safe_float(feat.get("rr_estimate", 0))
                 rr_eff = min(4.0, max(0.5, rr_raw)) if rr_raw > 0 else 1.0
-                sample_weight *= (0.75 + (rr_eff / 4.0))
+                sample_weight *= 0.75 + (rr_eff / 4.0)
 
                 data.append(
                     {
@@ -1237,16 +1294,20 @@ async def load_training_data(lookback_days: int = 90):
                         "funding_rate": _safe_float(feat.get("funding_rate", 0.0)),
                         "open_interest_change": _safe_float(feat.get("open_interest_change", 0.0)),
                         "asset_class_enc": _safe_float(feat.get("asset_class_enc", 0.0)),
-                        "adx": _safe_float(
-                            feat.get("adx", feat.get("adx_value", feat.get("trend_adx", 0.0)))
-                        ),
+                        "adx": _safe_float(feat.get("adx", feat.get("adx_value", feat.get("trend_adx", 0.0)))),
                         "dxy_trend": _safe_float(macro.get("dxy_trend", feat.get("dxy_trend", 0.0))),
                         "vix_trend": _safe_float(macro.get("vix_trend", feat.get("vix_trend", 0.0))),
                         "us10y_trend": _safe_float(macro.get("us10y_trend", feat.get("us10y_trend", 0.0))),
                         "yield_spread": _safe_float(macro.get("yield_spread", feat.get("yield_spread", 0.0))),
-                        "minutes_since_high_impact_news": _safe_float(macro.get("minutes_since_high_impact_news", feat.get("minutes_since_high_impact_news", 0.0))),
-                        "minutes_until_high_impact_news": _safe_float(macro.get("minutes_until_high_impact_news", feat.get("minutes_until_high_impact_news", 0.0))),
-                        "news_event_impact_score": _safe_float(macro.get("news_event_impact_score", feat.get("news_event_impact_score", 0.0))),
+                        "minutes_since_high_impact_news": _safe_float(
+                            macro.get("minutes_since_high_impact_news", feat.get("minutes_since_high_impact_news", 0.0))
+                        ),
+                        "minutes_until_high_impact_news": _safe_float(
+                            macro.get("minutes_until_high_impact_news", feat.get("minutes_until_high_impact_news", 0.0))
+                        ),
+                        "news_event_impact_score": _safe_float(
+                            macro.get("news_event_impact_score", feat.get("news_event_impact_score", 0.0))
+                        ),
                         "spx_trend": _safe_float(macro.get("spx_trend", feat.get("spx_trend", 0.0))),
                         "btc_corr": _safe_float(macro.get("btc_corr", feat.get("btc_corr", 0.0))),
                         "partial_tp_progress": float(tp_progress),
@@ -1310,61 +1371,61 @@ async def load_training_data(lookback_days: int = 90):
                     meta = {}
                 rr_raw = _safe_float(getattr(sig, "rr_estimate", 0.0))
                 paper_weight = 0.35 * min(1.25, max(0.50, 0.75 + min(4.0, max(0.5, rr_raw or 1.0)) / 4.0))
-                data.append({
-                    "signal_id": sid,
-                    "asset": getattr(sig, "asset", None) or getattr(position, "asset", "UNKNOWN"),
-                    "timeframe": getattr(sig, "timeframe", None) or getattr(position, "timeframe", "1h") or "1h",
-                    "direction": getattr(sig, "direction", None) or getattr(position, "direction", "long"),
-                    "score": _safe_float(getattr(sig, "score", 0)),
-                    "entry": _safe_float(getattr(sig, "entry", getattr(position, "signal_entry", 0))),
-                    "stop_loss": _safe_float(getattr(sig, "stop_loss", getattr(position, "stop_loss", 0))),
-                    "take_profit": _parse_tp(getattr(sig, "take_profit", getattr(position, "take_profits", 0))),
-                    "rr_ratio": rr_raw,
-                    "strategy_name": getattr(sig, "strategy_name", "paper") or "paper",
-                    "regime": getattr(sig, "regime", "unknown") or "unknown",
-                    "strength": _safe_float(getattr(sig, "strength", 0)),
-                    "ml_probability": _safe_float(getattr(sig, "ml_probability", 0)),
-                    "price_velocity_3": _safe_float(meta.get("price_velocity_3", 0.0)),
-                    "price_velocity_5": _safe_float(meta.get("price_velocity_5", 0.0)),
-                    "price_velocity_10": _safe_float(meta.get("price_velocity_10", 0.0)),
-                    "price_acceleration_3_10": _safe_float(meta.get("price_acceleration_3_10", 0.0)),
-                    "atr_rel": _safe_float(meta.get("atr_rel", 0.0)),
-                    "atr_regime": _safe_float(meta.get("atr_regime", 0.0)),
-                    "relative_volume": _safe_float(meta.get("relative_volume", 0.0)),
-                    "mtf_4h_trend": _safe_float(meta.get("mtf_4h_trend", 0.0)),
-                    "mtf_1d_trend": _safe_float(meta.get("mtf_1d_trend", 0.0)),
-                    "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
-                    "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
-                    "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
-                    "adx": _safe_float(
-                        meta.get("adx", meta.get("adx_value", meta.get("trend_adx", 0.0)))
-                    ),
-                    "dxy_trend": _safe_float(meta.get("dxy_trend", 0.0)),
-                    "vix_trend": _safe_float(meta.get("vix_trend", 0.0)),
-                    "us10y_trend": _safe_float(meta.get("us10y_trend", 0.0)),
-                    "yield_spread": _safe_float(meta.get("yield_spread", 0.0)),
-                    "minutes_since_high_impact_news": _safe_float(meta.get("minutes_since_high_impact_news", 0.0)),
-                    "minutes_until_high_impact_news": _safe_float(meta.get("minutes_until_high_impact_news", 0.0)),
-                    "news_event_impact_score": _safe_float(meta.get("news_event_impact_score", 0.0)),
-                    "spx_trend": _safe_float(meta.get("spx_trend", 0.0)),
-                    "btc_corr": _safe_float(meta.get("btc_corr", 0.0)),
-                    "partial_tp_progress": 0.0,
-                    "false_breakout": 0,
-                    "barrier_type": barrier,
-                    "sample_weight": float(paper_weight),
-                    "source_type": "paper_execution",
-                    "source_weight": 0.35,
-                    "created_at": getattr(sig, "created_at", None) or getattr(position, "opened_at", None) or now_utc_naive(),
-                    "target": int(target),
-                })
+                data.append(
+                    {
+                        "signal_id": sid,
+                        "asset": getattr(sig, "asset", None) or getattr(position, "asset", "UNKNOWN"),
+                        "timeframe": getattr(sig, "timeframe", None) or getattr(position, "timeframe", "1h") or "1h",
+                        "direction": getattr(sig, "direction", None) or getattr(position, "direction", "long"),
+                        "score": _safe_float(getattr(sig, "score", 0)),
+                        "entry": _safe_float(getattr(sig, "entry", getattr(position, "signal_entry", 0))),
+                        "stop_loss": _safe_float(getattr(sig, "stop_loss", getattr(position, "stop_loss", 0))),
+                        "take_profit": _parse_tp(getattr(sig, "take_profit", getattr(position, "take_profits", 0))),
+                        "rr_ratio": rr_raw,
+                        "strategy_name": getattr(sig, "strategy_name", "paper") or "paper",
+                        "regime": getattr(sig, "regime", "unknown") or "unknown",
+                        "strength": _safe_float(getattr(sig, "strength", 0)),
+                        "ml_probability": _safe_float(getattr(sig, "ml_probability", 0)),
+                        "price_velocity_3": _safe_float(meta.get("price_velocity_3", 0.0)),
+                        "price_velocity_5": _safe_float(meta.get("price_velocity_5", 0.0)),
+                        "price_velocity_10": _safe_float(meta.get("price_velocity_10", 0.0)),
+                        "price_acceleration_3_10": _safe_float(meta.get("price_acceleration_3_10", 0.0)),
+                        "atr_rel": _safe_float(meta.get("atr_rel", 0.0)),
+                        "atr_regime": _safe_float(meta.get("atr_regime", 0.0)),
+                        "relative_volume": _safe_float(meta.get("relative_volume", 0.0)),
+                        "mtf_4h_trend": _safe_float(meta.get("mtf_4h_trend", 0.0)),
+                        "mtf_1d_trend": _safe_float(meta.get("mtf_1d_trend", 0.0)),
+                        "funding_rate": _safe_float(meta.get("funding_rate", 0.0)),
+                        "open_interest_change": _safe_float(meta.get("open_interest_change", 0.0)),
+                        "asset_class_enc": _safe_float(meta.get("asset_class_enc", 0.0)),
+                        "adx": _safe_float(meta.get("adx", meta.get("adx_value", meta.get("trend_adx", 0.0)))),
+                        "dxy_trend": _safe_float(meta.get("dxy_trend", 0.0)),
+                        "vix_trend": _safe_float(meta.get("vix_trend", 0.0)),
+                        "us10y_trend": _safe_float(meta.get("us10y_trend", 0.0)),
+                        "yield_spread": _safe_float(meta.get("yield_spread", 0.0)),
+                        "minutes_since_high_impact_news": _safe_float(meta.get("minutes_since_high_impact_news", 0.0)),
+                        "minutes_until_high_impact_news": _safe_float(meta.get("minutes_until_high_impact_news", 0.0)),
+                        "news_event_impact_score": _safe_float(meta.get("news_event_impact_score", 0.0)),
+                        "spx_trend": _safe_float(meta.get("spx_trend", 0.0)),
+                        "btc_corr": _safe_float(meta.get("btc_corr", 0.0)),
+                        "partial_tp_progress": 0.0,
+                        "false_breakout": 0,
+                        "barrier_type": barrier,
+                        "sample_weight": float(paper_weight),
+                        "source_type": "paper_execution",
+                        "source_weight": 0.35,
+                        "created_at": getattr(sig, "created_at", None)
+                        or getattr(position, "opened_at", None)
+                        or now_utc_naive(),
+                        "target": int(target),
+                    }
+                )
         except Exception as paper_err:
             logger.warning("Failed to load paper-execution training rows: %s", paper_err)
 
         df = pd.DataFrame(data)
         source_counts = (
-            df["source_type"].value_counts().to_dict()
-            if not df.empty and "source_type" in df.columns
-            else {}
+            df["source_type"].value_counts().to_dict() if not df.empty and "source_type" in df.columns else {}
         )
         df.attrs["read_status"] = "success"
         df.attrs["live_proof_rows"] = int(live_proof_rows)
@@ -1394,7 +1455,6 @@ async def load_training_data(lookback_days: int = 90):
         return failed
 
 
-
 def _govern_training_source_influence(df):
     """Bound shadow-rejected aggregate influence without discarding evidence.
 
@@ -1419,13 +1479,17 @@ def _govern_training_source_influence(df):
     except Exception:
         pass
 
-    weights = pd.to_numeric(
-        governed.get(
-            "sample_weight",
-            pd.Series(1.0, index=governed.index, dtype=float),
-        ),
-        errors="coerce",
-    ).fillna(1.0).clip(lower=0.0)
+    weights = (
+        pd.to_numeric(
+            governed.get(
+                "sample_weight",
+                pd.Series(1.0, index=governed.index, dtype=float),
+            ),
+            errors="coerce",
+        )
+        .fillna(1.0)
+        .clip(lower=0.0)
+    )
     source = governed["source_type"].fillna("").astype(str)
     proof_mask = source.isin(("live_delivery", "archive_proof"))
     shadow_mask = source.eq("shadow_rejected")
@@ -1467,18 +1531,20 @@ def _govern_training_source_influence(df):
     scale = 1.0
     if shadow_effective_before > shadow_cap and shadow_effective_before > 0.0:
         scale = max(0.0, min(1.0, shadow_cap / shadow_effective_before))
-        governed.loc[shadow_mask, "sample_weight"] = (
-            weights.loc[shadow_mask] * scale
-        )
+        governed.loc[shadow_mask, "sample_weight"] = weights.loc[shadow_mask] * scale
         evidence["applied"] = True
 
-    governed_weights = pd.to_numeric(
-        governed.get(
-            "sample_weight",
-            pd.Series(1.0, index=governed.index, dtype=float),
-        ),
-        errors="coerce",
-    ).fillna(1.0).clip(lower=0.0)
+    governed_weights = (
+        pd.to_numeric(
+            governed.get(
+                "sample_weight",
+                pd.Series(1.0, index=governed.index, dtype=float),
+            ),
+            errors="coerce",
+        )
+        .fillna(1.0)
+        .clip(lower=0.0)
+    )
     shadow_effective_after = float(governed_weights.loc[shadow_mask].sum())
     total_effective_after = float(governed_weights.sum())
 
@@ -1490,16 +1556,10 @@ def _govern_training_source_influence(df):
             "proof_effective_weight": round(proof_effective, 6),
             "proof_anchor": round(proof_anchor, 6),
             "maximum_shadow_ratio": round(max_ratio, 6),
-            "shadow_effective_weight_before": round(
-                shadow_effective_before, 6
-            ),
-            "shadow_effective_weight_after": round(
-                shadow_effective_after, 6
-            ),
+            "shadow_effective_weight_before": round(shadow_effective_before, 6),
+            "shadow_effective_weight_after": round(shadow_effective_after, 6),
             "shadow_weight_scale": round(scale, 8),
-            "total_effective_weight_after": round(
-                total_effective_after, 6
-            ),
+            "total_effective_weight_after": round(total_effective_after, 6),
         }
     )
     governed.attrs["source_influence"] = dict(evidence)
@@ -1533,46 +1593,38 @@ def engineer_features(df):
         strategy_model_to_int,
     )
     from ml.schema_version import get_feature_columns
-    X['direction_enc'] = X['direction'].fillna('long').map(direction_to_int)
-    X['regime_enc'] = X['regime'].fillna('neutral').map(regime_model_to_int)
-    X['strategy_enc'] = X['strategy_name'].fillna('unknown').map(strategy_model_to_int)
-    X['asset_enc'] = X['asset'].fillna('UNKNOWN').map(stable_category_to_int)
-    X['timeframe_enc'] = X['timeframe'].fillna('1d').map(stable_category_to_int)
+
+    X["direction_enc"] = X["direction"].fillna("long").map(direction_to_int)
+    X["regime_enc"] = X["regime"].fillna("neutral").map(regime_model_to_int)
+    X["strategy_enc"] = X["strategy_name"].fillna("unknown").map(strategy_model_to_int)
+    X["asset_enc"] = X["asset"].fillna("UNKNOWN").map(stable_category_to_int)
+    X["timeframe_enc"] = X["timeframe"].fillna("1d").map(stable_category_to_int)
 
     # Domain features
-    X['risk_reward_ratio'] = X['rr_ratio'].fillna(1.0)
-    X['score_normalized'] = X['score'] / 100.0
-    X['price_range'] = (X['take_profit'] - X['entry']).abs() / (X['entry'] + 1e-6)
-    X['risk_amount'] = (X['entry'] - X['stop_loss']).abs() / (X['entry'] + 1e-6)
-    X['spread_ratio'] = X['risk_amount'] / (X['price_range'] + 1e-6)
-    X['strength_normalized'] = X['strength'] / 100.0 if X['strength'].max() > 1 else X['strength']
-    adx_series = (
-        X['adx']
-        if 'adx' in X.columns
-        else pd.Series(0.0, index=X.index, dtype=float)
-    )
-    X['adx_normalized'] = (
-        pd.to_numeric(adx_series, errors='coerce')
-        .fillna(0.0)
-        .clip(lower=0.0, upper=100.0)
-        / 100.0
-    )
+    X["risk_reward_ratio"] = X["rr_ratio"].fillna(1.0)
+    X["score_normalized"] = X["score"] / 100.0
+    X["price_range"] = (X["take_profit"] - X["entry"]).abs() / (X["entry"] + 1e-6)
+    X["risk_amount"] = (X["entry"] - X["stop_loss"]).abs() / (X["entry"] + 1e-6)
+    X["spread_ratio"] = X["risk_amount"] / (X["price_range"] + 1e-6)
+    X["strength_normalized"] = X["strength"] / 100.0 if X["strength"].max() > 1 else X["strength"]
+    adx_series = X["adx"] if "adx" in X.columns else pd.Series(0.0, index=X.index, dtype=float)
+    X["adx_normalized"] = pd.to_numeric(adx_series, errors="coerce").fillna(0.0).clip(lower=0.0, upper=100.0) / 100.0
     # FIX: Removed partial_tp_progress_norm - this feature leaks the trade outcome (whether TP was hit)
     # into training data, causing data leakage/lookahead bias and fake 100% accuracy
     # X['partial_tp_progress_norm'] = X['partial_tp_progress'].fillna(0.0) / 3.0
-    X['velocity_abs_3'] = X['price_velocity_3'].abs()
-    X['velocity_abs_10'] = X['price_velocity_10'].abs()
-    X['atr_regime_clamped'] = X['atr_regime'].clip(lower=0.0, upper=5.0)
-    X['relative_volume_clamped'] = X['relative_volume'].clip(lower=0.0, upper=10.0)
+    X["velocity_abs_3"] = X["price_velocity_3"].abs()
+    X["velocity_abs_10"] = X["price_velocity_10"].abs()
+    X["atr_regime_clamped"] = X["atr_regime"].clip(lower=0.0, upper=5.0)
+    X["relative_volume_clamped"] = X["relative_volume"].clip(lower=0.0, upper=10.0)
 
     # Score bins
-    X['high_score'] = (X['score'] >= 75).astype(int)
-    X['medium_score'] = ((X['score'] >= 60) & (X['score'] < 75)).astype(int)
+    X["high_score"] = (X["score"] >= 75).astype(int)
+    X["medium_score"] = ((X["score"] >= 60) & (X["score"] < 75)).astype(int)
 
     # Direction bias
-    X['is_long'] = (X['direction'].str.lower() == 'long').astype(int)
+    X["is_long"] = (X["direction"].str.lower() == "long").astype(int)
 
-# Feature selection for model
+    # Feature selection for model
     # The versioned schema owns feature selection. V4 intentionally excludes
     # score_normalized/high_score/medium_score because persisted canonical
     # scores are computed after ML inference and are not semantically available
@@ -1580,23 +1632,23 @@ def engineer_features(df):
     feature_cols = get_feature_columns()
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
-    y_train = X['target'].astype(np.int32)
-    sample_weights = X['sample_weight'].fillna(1.0).astype(np.float32)
+    y_train = X["target"].astype(np.int32)
+    sample_weights = X["sample_weight"].fillna(1.0).astype(np.float32)
 
     # Recency bias: exponentially emphasize recent outcomes (rolling market adaptation).
     try:
-        ts = pd.to_datetime(X['created_at'], errors='coerce')
+        ts = pd.to_datetime(X["created_at"], errors="coerce")
         newest = ts.max()
         if pd.notna(newest):
             age_days = (newest - ts).dt.total_seconds().fillna(0.0) / 86400.0
-            half_life_days = float(os.getenv('ML_RECENCY_HALF_LIFE_DAYS', '90') or 90)
+            half_life_days = float(os.getenv("ML_RECENCY_HALF_LIFE_DAYS", "90") or 90)
             decay = np.exp(-np.log(2.0) * (age_days / max(1.0, half_life_days)))
             recency_multiplier = 0.6 + (0.9 * decay)
             sample_weights = (sample_weights * recency_multiplier.astype(np.float32)).astype(np.float32)
     except Exception:
         pass
 
-    timestamps = pd.to_datetime(X['created_at'], errors='coerce')
+    timestamps = pd.to_datetime(X["created_at"], errors="coerce")
 
     return X_train, y_train, feature_cols, sample_weights, timestamps
 
@@ -1604,7 +1656,6 @@ def engineer_features(df):
 async def load_training_data_sync(lookback_days: int = 90):
     """Backward-compatible alias for the async training data loader."""
     return await load_training_data(lookback_days)
-
 
 
 def _feature_distribution_baseline(
@@ -1627,6 +1678,7 @@ def _feature_distribution_baseline(
         except Exception:
             continue
     return result
+
 
 def _expected_calibration_error(probabilities, labels, bins: int = 10) -> float:
     probs = np.asarray(probabilities, dtype=float)
@@ -1748,8 +1800,17 @@ def _temporal_three_way_indices(
     ordered_indices=None,
     train_ratio: float = 0.70,
     calibration_ratio: float = 0.15,
+    minimum_train_rows: int = 1,
+    minimum_calibration_rows: int = 1,
+    minimum_validation_rows: int = 1,
 ):
-    """Return non-overlapping model-fit, calibration and validation indices."""
+    """Return non-overlapping chronological fit/calibration/validation indices.
+
+    Ratio behavior remains the default. When a caller supplies evidence floors
+    and the dataset is large enough, rows are reallocated from the oldest
+    model-fit window first so the newest untouched validation window can meet
+    its minimum without leaking future labels into fit/calibration.
+    """
     n = int(row_count)
     if n < 3:
         raise ValueError("At least three rows are required for a three-way split")
@@ -1761,9 +1822,32 @@ def _temporal_three_way_indices(
         raise ValueError("ordered_indices length must match row_count")
     train_ratio = min(0.85, max(0.55, float(train_ratio)))
     calibration_ratio = min(0.30, max(0.05, float(calibration_ratio)))
-    train_end = min(n - 2, max(1, int(n * train_ratio)))
-    calibration_end = min(n - 1, max(train_end + 1, int(n * (train_ratio + calibration_ratio))))
-    return ordered[:train_end], ordered[train_end:calibration_end], ordered[calibration_end:]
+
+    train_count = min(n - 2, max(1, int(n * train_ratio)))
+    calibration_end = min(
+        n - 1,
+        max(train_count + 1, int(n * (train_ratio + calibration_ratio))),
+    )
+    calibration_count = max(1, calibration_end - train_count)
+    validation_count = max(1, n - train_count - calibration_count)
+
+    min_train = max(1, int(minimum_train_rows or 1))
+    min_cal = max(1, int(minimum_calibration_rows or 1))
+    min_val = max(1, int(minimum_validation_rows or 1))
+    if n >= min_train + min_cal + min_val:
+        # Keep every configured floor when capacity permits. Allocate contiguous
+        # windows only; neither fit nor calibration can see validation labels.
+        calibration_count = max(min_cal, min(calibration_count, n - min_train - min_val))
+        validation_count = max(min_val, min(validation_count, n - min_train - calibration_count))
+        train_count = n - calibration_count - validation_count
+
+    train_end = train_count
+    calibration_end = train_count + calibration_count
+    return (
+        ordered[:train_end],
+        ordered[train_end:calibration_end],
+        ordered[calibration_end:],
+    )
 
 
 def _class_balance_scale(y_values, sample_weights=None) -> float:
@@ -1927,7 +2011,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         raise ValueError("Insufficient rows for time-series training")
     idx = np.arange(n)
     if timestamps is not None:
-        ts = pd.to_datetime(timestamps, errors='coerce')
+        ts = pd.to_datetime(timestamps, errors="coerce")
         ts_filled = ts.fillna(pd.Timestamp(now_utc_naive()))
         idx = np.argsort(ts_filled.values)
 
@@ -1936,11 +2020,35 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         0.30,
         max(0.05, float(os.getenv("ML_CALIBRATION_FIT_RATIO", "0.15") or 0.15)),
     )
+    calibration_min_rows = max(
+        20,
+        int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100),
+    )
+    minimum_calibration_fit_rows = max(
+        20,
+        int(os.getenv("ML_MIN_CALIBRATION_FIT_ROWS", "30") or 30),
+    )
+    minimum_model_fit_rows = max(
+        50,
+        int(os.getenv("ML_MIN_MODEL_FIT_ROWS", "50") or 50),
+    )
     idx_tr, idx_cal, idx_te = _temporal_three_way_indices(
         n,
         ordered_indices=idx,
         train_ratio=train_ratio,
         calibration_ratio=calibration_ratio,
+        minimum_train_rows=minimum_model_fit_rows,
+        minimum_calibration_rows=minimum_calibration_fit_rows,
+        minimum_validation_rows=calibration_min_rows,
+    )
+    logger.info(
+        "[ml_temporal_split] total=%s train=%s calibration=%s validation=%s "
+        "required_validation=%s",
+        n,
+        len(idx_tr),
+        len(idx_cal),
+        len(idx_te),
+        calibration_min_rows,
     )
 
     X_tr, X_cal, X_te = X_train.iloc[idx_tr], X_train.iloc[idx_cal], X_train.iloc[idx_te]
@@ -1961,7 +2069,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
-        objective='binary:logistic',
+        objective="binary:logistic",
         scale_pos_weight=class_balance_scale,
         random_state=42,
         verbosity=1,
@@ -2063,8 +2171,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         acc_drop = prev_acc - acc
         auc_drop = prev_auc - auc
         if acc_drop > 0.05 or auc_drop > 0.05:
-            logger.warning(f"[ML DRIFT] Accuracy or AUC dropped significantly! Δacc={acc_drop:.3f}, Δauc={auc_drop:.3f}")
-            print(f"[ML DRIFT] Accuracy or AUC dropped! Δacc={acc_drop:.3f}, Δauc={auc_drop:.3f}", flush=True)
+            logger.warning(
+                f"[ML DRIFT] Accuracy or AUC dropped significantly! Î”acc={acc_drop:.3f}, Î”auc={auc_drop:.3f}"
+            )
+            print(f"[ML DRIFT] Accuracy or AUC dropped! Î”acc={acc_drop:.3f}, Î”auc={auc_drop:.3f}", flush=True)
         # Feature distribution drift (simple mean diff)
         prev_means = drift.get("feature_means", {})
         means = {k: float(v) for k, v in X_train.mean().items()}
@@ -2088,7 +2198,6 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
 
     validation_rows = int(len(X_te))
     calibration_fit_rows = int(len(X_cal))
-    calibration_min_rows = max(20, int(os.getenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100") or 100))
     raw_brier = float(np.mean((np.asarray(y_proba, dtype=float) - np.asarray(y_te, dtype=float)) ** 2))
     calibrated_brier = float(np.mean((calibrated_proba - np.asarray(y_te, dtype=float)) ** 2))
     raw_ece = _expected_calibration_error(y_proba, y_te)
@@ -2114,7 +2223,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         "maximum_brier": max_brier,
         "maximum_ece": max_ece,
         "validated": bool(
-            calibration_x and calibration_y
+            calibration_x
+            and calibration_y
             and validation_rows >= calibration_min_rows
             and len(np.unique(y_te)) >= 2
             and calibrated_brier <= max_brier
@@ -2199,23 +2309,25 @@ def save_model(
 ):
     """Atomically save a primary or candidate model payload."""
     model_path = Path(model_path) if model_path is not None else _primary_model_path()
-    
+
     # Save model as ubj (XGBoost binary JSON) - avoids format warnings
     import base64
+
     booster = model.get_booster()
-    model_bytes = booster.save_raw('ubj')  # Binary format, no warnings
-    
+    model_bytes = booster.save_raw("ubj")  # Binary format, no warnings
+
     artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
     from ml.model_registry import compute_feature_schema_hash
     from ml.features import FEATURE_ENCODING_VERSION
     from ml.schema_version import CURRENT_SCHEMA_VERSION, FEATURE_SCHEMA_VERSION, MODEL_FORMAT_VERSION
+
     ordered_feature_cols = [str(col).strip() for col in feature_cols]
     feature_schema_hash_sha256 = compute_feature_schema_hash(ordered_feature_cols)
     model_dict = {
         "type": "xgboost",
         "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
         "feature_cols": ordered_feature_cols,
-        "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
+        "model_bytes_b64": base64.b64encode(model_bytes).decode("utf-8"),
         "trained_at": now_utc_naive().isoformat(),
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
@@ -2270,10 +2382,7 @@ async def main(lookback_days: int | None = None):
     # Production retraining is challenger-first. Preserve an evidence-bearing
     # challenger while it is collecting forward proof or awaiting an explicit
     # promotion decision. Fail closed if the lease cannot be evaluated.
-    if (
-        _is_production_runtime()
-        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
-    ):
+    if _is_production_runtime() and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True):
         try:
             from ml.candidate_forward import candidate_replacement_lease
 
@@ -2285,10 +2394,7 @@ async def main(lookback_days: int | None = None):
                     "observations=%s resolved=%s primary_model_preserved=true",
                     run_id,
                     lease.get("reason"),
-                    str(
-                        lease.get("candidate_artifact_hash_sha256")
-                        or ""
-                    )[:12],
+                    str(lease.get("candidate_artifact_hash_sha256") or "")[:12],
                     lease.get("candidate_status"),
                     lease.get("observations"),
                     lease.get("resolved"),
@@ -2365,7 +2471,10 @@ async def main(lookback_days: int | None = None):
         logger.warning(
             "[ml_training_run] id=%s status=candidate_only reason=insufficient_live_proof "
             "live_proof=%s required=%s sources=%s primary_model_preserved=true",
-            run_id, live_proof_rows, min_live_proof_rows, source_counts,
+            run_id,
+            live_proof_rows,
+            min_live_proof_rows,
+            source_counts,
         )
 
     if (df is None or len(df) < min_rows) and bootstrap_enabled:
@@ -2381,7 +2490,10 @@ async def main(lookback_days: int | None = None):
         logger.warning(
             "[ml_training_run] id=%s status=skipped reason=insufficient_total_rows "
             "rows=%s required=%s sources=%s current_model_preserved=true",
-            run_id, 0 if df is None else len(df), min_rows, source_counts,
+            run_id,
+            0 if df is None else len(df),
+            min_rows,
+            source_counts,
         )
         return False
 
@@ -2391,20 +2503,23 @@ async def main(lookback_days: int | None = None):
 
     df, source_influence = _govern_training_source_influence(df)
     effective_rows = float(df.get("sample_weight", pd.Series([1.0] * len(df))).fillna(1.0).sum())
-    min_effective_rows = float(os.getenv("ML_MIN_EFFECTIVE_ROWS", str(max(25, min_rows // 2))) or max(25, min_rows // 2))
+    min_effective_rows = float(
+        os.getenv("ML_MIN_EFFECTIVE_ROWS", str(max(25, min_rows // 2))) or max(25, min_rows // 2)
+    )
     if effective_rows < min_effective_rows:
         logger.warning(
             "[ml_training_run] id=%s status=skipped reason=insufficient_effective_rows "
             "effective_rows=%.2f required=%.2f sources=%s",
-            run_id, effective_rows, min_effective_rows, source_counts,
+            run_id,
+            effective_rows,
+            min_effective_rows,
+            source_counts,
         )
         return False
 
     # CPU-heavy feature engineering and XGBoost fitting must not block Telegram
     # callback acknowledgement or the realtime outcome loop.
-    X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(
-        engineer_features, df
-    )
+    X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(engineer_features, df)
 
     from ml.model_registry import (
         active_artifact_hash,
@@ -2426,9 +2541,7 @@ async def main(lookback_days: int | None = None):
         "reason": "not_loaded",
     }
     if deployed_runtime:
-        durable_champion_metrics, durable_champion_evidence = (
-            await _load_durable_champion_metrics()
-        )
+        durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
 
     lineage_capture_error = ""
     local_parent_model_hash_sha256 = ""
@@ -2440,14 +2553,8 @@ async def main(lookback_days: int | None = None):
     except RuntimeError as exc:
         lineage_capture_error = str(exc)
 
-    durable_parent_model_hash_sha256 = str(
-        durable_champion_evidence.get("artifact_hash_sha256") or ""
-    ).strip().lower()
-    if (
-        deployed_runtime
-        and local_parent_model_hash_sha256
-        and not durable_parent_model_hash_sha256
-    ):
+    durable_parent_model_hash_sha256 = str(durable_champion_evidence.get("artifact_hash_sha256") or "").strip().lower()
+    if deployed_runtime and local_parent_model_hash_sha256 and not durable_parent_model_hash_sha256:
         logger.warning(
             "[ml_training_run] id=%s status=deferred "
             "reason=durable_champion_identity_unavailable "
@@ -2482,9 +2589,7 @@ async def main(lookback_days: int | None = None):
         dataset_version,
         parent_model_hash_sha256[:12] if parent_model_hash_sha256 else "none",
         parent_identity_source,
-        local_parent_model_hash_sha256[:12]
-        if local_parent_model_hash_sha256
-        else "none",
+        local_parent_model_hash_sha256[:12] if local_parent_model_hash_sha256 else "none",
     )
     model, feature_cols, calibration_x, calibration_y, metrics = await asyncio.to_thread(
         train_model,
@@ -2496,22 +2601,16 @@ async def main(lookback_days: int | None = None):
     )
 
     candidate_first_requested = bool(
-        deployed_runtime
-        and parent_model_hash_sha256
-        and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
+        deployed_runtime and parent_model_hash_sha256 and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
     )
-    quality_ok, min_accuracy, min_auc = _promotion_quality_gate(
-        metrics, deployed_runtime=deployed_runtime
-    )
+    quality_ok, min_accuracy, min_auc = _promotion_quality_gate(metrics, deployed_runtime=deployed_runtime)
     offline_quality_gate = {
         "passed": bool(quality_ok),
         "minimum_accuracy": float(min_accuracy),
         "minimum_auc": float(min_auc),
         "accuracy": float(metrics.get("accuracy") or 0.0),
         "auc": float(metrics.get("auc") or 0.0),
-        "balanced_accuracy": float(
-            metrics.get("balanced_accuracy") or 0.0
-        ),
+        "balanced_accuracy": float(metrics.get("balanced_accuracy") or 0.0),
         "positive_recall": float(metrics.get("positive_recall") or 0.0),
         "pr_auc": float(metrics.get("pr_auc") or 0.0),
         "expected_r": float(metrics.get("expected_r") or 0.0),
@@ -2522,7 +2621,11 @@ async def main(lookback_days: int | None = None):
             "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
             "majority_baseline=%s balanced_accuracy=%s positive_recall=%s "
             "pr_auc=%s expected_r=%s current_model_preserved=true",
-            run_id, metrics["accuracy"], min_accuracy, metrics["auc"], min_auc,
+            run_id,
+            metrics["accuracy"],
+            min_accuracy,
+            metrics["auc"],
+            min_auc,
             metrics.get("majority_baseline_accuracy"),
             metrics.get("balanced_accuracy"),
             metrics.get("positive_recall"),
@@ -2558,9 +2661,7 @@ async def main(lookback_days: int | None = None):
     }
     if promotion_eligible:
         if durable_champion_evidence.get("reason") == "not_loaded":
-            durable_champion_metrics, durable_champion_evidence = (
-                await _load_durable_champion_metrics()
-            )
+            durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
         schema_ok, schema_promotion = _schema_promotion_gate(
             int(CURRENT_SCHEMA_VERSION),
             primary_path,
@@ -2594,11 +2695,7 @@ async def main(lookback_days: int | None = None):
         training_run_id=run_id,
         parent_model_hash_sha256=parent_model_hash_sha256,
         current_champion_path=primary_path,
-        current_champion_hash_sha256=(
-            durable_parent_model_hash_sha256
-            if deployed_runtime
-            else None
-        ),
+        current_champion_hash_sha256=(durable_parent_model_hash_sha256 if deployed_runtime else None),
     )
     lineage_reasons = list(lineage_decision.reasons)
     if lineage_capture_error and lineage_capture_error not in lineage_reasons:
@@ -2614,9 +2711,7 @@ async def main(lookback_days: int | None = None):
     champion_comparison = {"enabled": False, "reason": "not_evaluated"}
     if promotion_eligible:
         if durable_champion_evidence.get("reason") == "not_loaded":
-            durable_champion_metrics, durable_champion_evidence = (
-                await _load_durable_champion_metrics()
-            )
+            durable_champion_metrics, durable_champion_evidence = await _load_durable_champion_metrics()
         champion_ok, champion_comparison = _champion_comparison_gate(
             metrics,
             primary_path,
@@ -2683,12 +2778,7 @@ async def main(lookback_days: int | None = None):
         "champion_comparison": champion_comparison,
         "candidate_forward_gate": candidate_forward_gate,
     }
-    candidate_path = Path(
-        str(
-            os.getenv("ML_CANDIDATE_MODEL_PATH")
-            or (Path(__file__).parent / "model_candidate.json")
-        )
-    )
+    candidate_path = Path(str(os.getenv("ML_CANDIDATE_MODEL_PATH") or (Path(__file__).parent / "model_candidate.json")))
     target_path = primary_path if promotion_eligible else candidate_path
     previous_model_bytes = target_path.read_bytes() if target_path.exists() else None
     model_path = await asyncio.to_thread(
@@ -2705,6 +2795,7 @@ async def main(lookback_days: int | None = None):
     # changing live decisions until sufficient delivery-proof evidence exists.
     if not promotion_eligible:
         from engine import ml as engine_ml
+
         candidate_reload = await asyncio.to_thread(engine_ml.reload_shadow_model, sync_durable=False)
         if not candidate_reload.get("loaded"):
             if previous_model_bytes is not None:
@@ -2714,17 +2805,17 @@ async def main(lookback_days: int | None = None):
             await asyncio.to_thread(engine_ml.reload_shadow_model, sync_durable=False)
             logger.error(
                 "[ml_training_run] id=%s status=rejected reason=candidate_reload_failed error=%s",
-                run_id, candidate_reload.get("error"),
+                run_id,
+                candidate_reload.get("error"),
             )
             return False
 
         from ml.artifact_store import persist_active_model_artifact
+
         candidate_persisted = await persist_active_model_artifact(
             model_path, training_meta=training_meta, model_name="candidate"
         )
-        require_candidate_durable = _env_bool(
-            "ML_REQUIRE_DURABLE_CANDIDATE_ARTIFACT", _is_production_runtime()
-        )
+        require_candidate_durable = _env_bool("ML_REQUIRE_DURABLE_CANDIDATE_ARTIFACT", _is_production_runtime())
         if require_candidate_durable and not candidate_persisted:
             if previous_model_bytes is not None:
                 target_path.write_bytes(previous_model_bytes)
@@ -2739,8 +2830,14 @@ async def main(lookback_days: int | None = None):
         logger.info(
             "[ml_training_run] id=%s status=candidate_saved model=%s accuracy=%.4f auc=%.4f "
             "rows=%s live=%s sources=%s durable=%s candidate_version=%s",
-            run_id, model_path, metrics["accuracy"], metrics["auc"], len(df),
-            live_proof_rows, source_counts, candidate_persisted,
+            run_id,
+            model_path,
+            metrics["accuracy"],
+            metrics["auc"],
+            len(df),
+            live_proof_rows,
+            source_counts,
+            candidate_persisted,
             candidate_reload.get("version"),
         )
         return True
@@ -2758,7 +2855,8 @@ async def main(lookback_days: int | None = None):
         await asyncio.to_thread(engine_ml.reload_model, sync_durable=False)
         logger.error(
             "[ml_training_run] id=%s status=rejected reason=live_reload_failed error=%s",
-            run_id, reload_status.get("error"),
+            run_id,
+            reload_status.get("error"),
         )
         return False
 
@@ -2779,8 +2877,7 @@ async def main(lookback_days: int | None = None):
             primary_path.unlink()
         await asyncio.to_thread(engine_ml.reload_model, sync_durable=False)
         logger.error(
-            "[ml_training_run] id=%s status=rejected reason=artifact_persistence_failed "
-            "current_model_restored=true",
+            "[ml_training_run] id=%s status=rejected reason=artifact_persistence_failed current_model_restored=true",
             run_id,
         )
         return False
@@ -2788,8 +2885,15 @@ async def main(lookback_days: int | None = None):
     logger.info(
         "[ml_training_run] id=%s status=promoted model=%s accuracy=%.4f auc=%.4f "
         "rows=%s live=%s sources=%s durable=%s active_version=%s",
-        run_id, model_path, metrics["accuracy"], metrics["auc"], len(df), live_proof_rows,
-        source_counts, artifact_persisted, reload_status.get("version"),
+        run_id,
+        model_path,
+        metrics["accuracy"],
+        metrics["auc"],
+        len(df),
+        live_proof_rows,
+        source_counts,
+        artifact_persisted,
+        reload_status.get("version"),
     )
     return True
 
@@ -2797,5 +2901,6 @@ async def main(lookback_days: int | None = None):
 if __name__ == "__main__":
     import asyncio
     from utils.async_runner import run_sync
+
     success = run_sync(main())
     sys.exit(0 if success else 1)

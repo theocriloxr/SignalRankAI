@@ -3,6 +3,7 @@
 Run after ``alembic upgrade head``. Network discovery is opt-in because some
 providers have tight credits and Railway deploys must remain deterministic.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,7 +19,7 @@ from db.ecosystem_bootstrap import (
 from db.session import DBPriority, get_session
 from data.connectors.coingecko_adapter import discover_instruments as coingecko_discover
 from data.connectors.defillama_adapter import discover_instruments as defillama_discover
-from data.instrument_discovery import DynamicInstrumentRegistry, run_discovery
+from data.instrument_discovery import DynamicInstrumentRegistry
 
 
 async def _run(with_discovery: bool, top: int) -> dict:
@@ -31,8 +32,7 @@ async def _run(with_discovery: bool, top: int) -> dict:
         output["seed_verification"] = await verify_ecosystem_bootstrap(session, require_instruments=False)
         if not output["seed_verification"]["ok"]:
             raise RuntimeError(
-                "deterministic ecosystem seed verification failed: "
-                + ",".join(output["seed_verification"]["blockers"])
+                "deterministic ecosystem seed verification failed: " + ",".join(output["seed_verification"]["blockers"])
             )
         await session.commit()
 
@@ -62,8 +62,7 @@ async def _run(with_discovery: bool, top: int) -> dict:
         )
         if not output["verification"]["ok"]:
             raise RuntimeError(
-                "ecosystem post-bootstrap verification failed: "
-                + ",".join(output["verification"]["blockers"])
+                "ecosystem post-bootstrap verification failed: " + ",".join(output["verification"]["blockers"])
             )
     return output
 

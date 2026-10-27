@@ -1,4 +1,3 @@
-import uuid
 from typing import Callable, Awaitable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,9 +11,9 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         corr_id = request.headers.get("X-Correlation-ID")
         if not corr_id:
             corr_id = generate_correlation_id()
-            
+
         token = set_correlation_id(corr_id)
-        
+
         try:
             response = await call_next(request)
             response.headers["X-Correlation-ID"] = corr_id

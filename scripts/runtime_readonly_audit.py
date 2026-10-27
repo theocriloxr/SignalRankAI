@@ -4,6 +4,7 @@
 This script never mutates data and never emits secrets or per-user identifiers.
 It is intended for one-off Railway certification services.
 """
+
 from __future__ import annotations
 
 import json

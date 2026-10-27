@@ -1,0 +1,144 @@
+...............................................................E.......  [100%]
+=================================== ERRORS ====================================
+_ ERROR at setup of test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records _
+
+self = <Coroutine test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records>
+
+    def setup(self) -> None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+        # When loop factories are configured, resolve the loop factory
+        # fixture early so that a factory variant change cascades cache
+        # invalidation before any async fixture checks its cache.
+        hook_caller = self.config.hook.pytest_asyncio_loop_factories
+        if hook_caller.get_hookimpls():
+            _ = self._request.getfixturevalue(_asyncio_loop_factory.__name__)
+>       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+.audit-venv\Lib\site-packages\pytest_asyncio\plugin.py:558: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.audit-venv\Lib\site-packages\pytest_asyncio\plugin.py:944: in pytest_fixture_setup
+    hook_result = yield
+                  ^^^^^
+.audit-venv\Lib\site-packages\pytest_asyncio\plugin.py:407: in _asyncgen_fixture_wrapper
+    result = runner.run(setup(), context=context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\asyncio\base_events.py:650: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\pytest_asyncio\plugin.py:403: in setup
+    res = await gen_obj.__anext__()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_adaptive_worker_research_postgres.py:68: in worker_database
+    async with admin.connect() as connection:
+.audit-venv\Lib\site-packages\sqlalchemy\ext\asyncio\base.py:121: in __aenter__
+    return await self.start(is_ctxmanager=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\ext\asyncio\engine.py:283: in start
+    await greenlet_spawn(self.sync_engine.connect)
+.audit-venv\Lib\site-packages\sqlalchemy\util\concurrency.py:210: in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:3260: in connect
+    return self._connection_cls(self)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:149: in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:3284: in raw_connection
+    return self.pool.connect()
+           ^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:445: in connect
+    return _ConnectionFairy._checkout(self)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:1287: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:709: in checkout
+    rec = pool._do_get()
+          ^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\impl.py:176: in _do_get
+    with util.safe_reraise():
+.audit-venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:166: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.audit-venv\Lib\site-packages\sqlalchemy\pool\impl.py:174: in _do_get
+    return self._create_connection()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:386: in _create_connection
+    return _ConnectionRecord(self)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:671: in __init__
+    self.__connect()
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:895: in __connect
+    with util.safe_reraise():
+.audit-venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:166: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.audit-venv\Lib\site-packages\sqlalchemy\pool\base.py:891: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\engine\create.py:645: in connect
+    return dialect.connect(*cargs_tup, **cparams)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\engine\default.py:857: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py:963: in connect
+    return await_(
+.audit-venv\Lib\site-packages\sqlalchemy\util\concurrency.py:167: in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\util\concurrency.py:205: in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\connectors\asyncio.py:378: in create
+    cls._handle_exception_no_connection(dbapi, error)
+.audit-venv\Lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py:841: in _handle_exception_no_connection
+    super()._handle_exception_no_connection(dbapi, error)
+.audit-venv\Lib\site-packages\sqlalchemy\connectors\asyncio.py:409: in _handle_exception_no_connection
+    raise error.with_traceback(exc_info[2])
+.audit-venv\Lib\site-packages\sqlalchemy\connectors\asyncio.py:376: in create
+    connection = await connection_awaitable
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\asyncpg\connection.py:2443: in connect
+    return await connect_utils._connect(
+.audit-venv\Lib\site-packages\asyncpg\connect_utils.py:1249: in _connect
+    raise last_error or exceptions.TargetServerAttributeNotMatched(
+.audit-venv\Lib\site-packages\asyncpg\connect_utils.py:1218: in _connect
+    conn = await _connect_addr(
+.audit-venv\Lib\site-packages\asyncpg\connect_utils.py:1054: in _connect_addr
+    return await __connect_addr(params, True, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\asyncpg\connect_utils.py:1099: in __connect_addr
+    tr, pr = await connector
+             ^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\asyncpg\connect_utils.py:969: in _create_ssl_connection
+    tr, pr = await loop.create_connection(
+C:\Program Files\Python311\Lib\asyncio\base_events.py:1073: in create_connection
+    raise exceptions[0]
+C:\Program Files\Python311\Lib\asyncio\base_events.py:1058: in create_connection
+    sock = await self._connect_sock(
+C:\Program Files\Python311\Lib\asyncio\base_events.py:964: in _connect_sock
+    await self.sock_connect(sock, address)
+C:\Program Files\Python311\Lib\asyncio\proactor_events.py:722: in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\Python311\Lib\asyncio\windows_events.py:837: in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+trans = 0, key = 0, ov = <_overlapped.Overlapped object at 0x00000202335CBDB0>
+
+    def finish_connect(trans, key, ov):
+>       ov.getresult()
+E       ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection
+
+C:\Program Files\Python311\Lib\asyncio\windows_events.py:624: ConnectionRefusedError
+=========================== short test summary info ===========================
+ERROR tests/test_focused_universe_database_postgres.py::test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records
+70 passed, 1 error in 16.18s

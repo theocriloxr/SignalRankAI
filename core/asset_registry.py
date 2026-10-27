@@ -5,6 +5,7 @@ Macro/yield/volatility instruments may be useful context without being valid
 trade-delivery instruments. Unknown symbols fail closed instead of silently
 receiving US equity market hours.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -63,8 +64,18 @@ _register(AssetSpec("XAUTUSDT", "crypto", "tokenised_commodity", "UTC", "crypto_
 
 # FX majors and selected liquid crosses.
 for symbol in (
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
-    "EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "CADJPY",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "USDCHF",
+    "AUDUSD",
+    "USDCAD",
+    "NZDUSD",
+    "EURGBP",
+    "EURJPY",
+    "GBPJPY",
+    "AUDJPY",
+    "CADJPY",
 ):
     _register(AssetSpec(symbol, "forex", "fx_spot", "UTC", "fx_24_5"))
 
@@ -77,32 +88,93 @@ _register(AssetSpec("NATGAS", "commodity", "energy", "UTC", "commodity_23_5"))
 
 # US and international indices. These are mapped to explicit regional sessions,
 # never the US cash calendar by accident.
-_register(AssetSpec("US500", "index", "index_cfd", "America/New_York", "us_equity", aliases=("SP500", "SPX500", "SPX", "GSPC", "^GSPC")))
-_register(AssetSpec("NAS100", "index", "index_cfd", "America/New_York", "us_equity", aliases=("US100", "USTEC", "NDX", "^NDX")))
+_register(
+    AssetSpec(
+        "US500",
+        "index",
+        "index_cfd",
+        "America/New_York",
+        "us_equity",
+        aliases=("SP500", "SPX500", "SPX", "GSPC", "^GSPC"),
+    )
+)
+_register(
+    AssetSpec(
+        "NAS100", "index", "index_cfd", "America/New_York", "us_equity", aliases=("US100", "USTEC", "NDX", "^NDX")
+    )
+)
 _register(AssetSpec("US30", "index", "index_cfd", "America/New_York", "us_equity", aliases=("DJ30", "DJI", "^DJI")))
-_register(AssetSpec("GER40", "index", "index_cfd", "Europe/Berlin", "europe_equity", aliases=("DE40", "DAX40", "^GDAXI")))
+_register(
+    AssetSpec("GER40", "index", "index_cfd", "Europe/Berlin", "europe_equity", aliases=("DE40", "DAX40", "^GDAXI"))
+)
 _register(AssetSpec("UK100", "index", "index_cfd", "Europe/London", "uk_equity", aliases=("FTSE", "^FTSE")))
 _register(AssetSpec("JP225", "index", "index_cfd", "Asia/Tokyo", "japan_equity", aliases=("JPN225", "NIKKEI", "^N225")))
 _register(AssetSpec("FRA40", "index", "index_cfd", "Europe/Paris", "europe_equity", aliases=("CAC40", "^FCHI")))
 _register(AssetSpec("EU50", "index", "index_cfd", "Europe/Paris", "europe_equity", aliases=("STOXX50", "^STOXX50E")))
-_register(AssetSpec("AUS200", "index", "index_cfd", "Australia/Sydney", "australia_equity", aliases=("ASX200", "^AXJO")))
+_register(
+    AssetSpec("AUS200", "index", "index_cfd", "Australia/Sydney", "australia_equity", aliases=("ASX200", "^AXJO"))
+)
 _register(AssetSpec("HK50", "index", "index_cfd", "Asia/Hong_Kong", "hong_kong_equity", aliases=("HSI", "^HSI")))
 
 # Context-only macro instruments. A tradeable proxy must be configured before
 # they can become actionable.
-_register(AssetSpec("DXY", "macro", "currency_index", "UTC", "macro_analysis", False, False, True, aliases=("DX-Y.NYB",)))
-_register(AssetSpec("US10Y", "macro", "treasury_yield", "UTC", "macro_analysis", False, False, True, aliases=("TNX", "^TNX")))
-_register(AssetSpec("US02Y", "macro", "treasury_yield", "UTC", "macro_analysis", False, False, True, aliases=("IRX", "^IRX")))
-_register(AssetSpec("VIX", "volatility", "volatility_index", "America/New_York", "us_equity", False, False, True, aliases=("^VIX",)))
+_register(
+    AssetSpec("DXY", "macro", "currency_index", "UTC", "macro_analysis", False, False, True, aliases=("DX-Y.NYB",))
+)
+_register(
+    AssetSpec("US10Y", "macro", "treasury_yield", "UTC", "macro_analysis", False, False, True, aliases=("TNX", "^TNX"))
+)
+_register(
+    AssetSpec("US02Y", "macro", "treasury_yield", "UTC", "macro_analysis", False, False, True, aliases=("IRX", "^IRX"))
+)
+_register(
+    AssetSpec(
+        "VIX", "volatility", "volatility_index", "America/New_York", "us_equity", False, False, True, aliases=("^VIX",)
+    )
+)
 
 
 _FIAT = {
-    "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "IDR", "ARS",
-    "HKD", "SGD", "SEK", "NOK", "ZAR", "TRY", "MXN", "BRL",
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "CHF",
+    "AUD",
+    "CAD",
+    "NZD",
+    "IDR",
+    "ARS",
+    "HKD",
+    "SGD",
+    "SEK",
+    "NOK",
+    "ZAR",
+    "TRY",
+    "MXN",
+    "BRL",
 }
 _CRYPTO_BASES = {
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "DOT", "MATIC", "AVAX",
-    "LTC", "LINK", "ATOM", "TRX", "XLM", "UNI", "AAVE", "USDT", "USDC", "XAUT",
+    "BTC",
+    "ETH",
+    "BNB",
+    "SOL",
+    "XRP",
+    "ADA",
+    "DOGE",
+    "DOT",
+    "MATIC",
+    "AVAX",
+    "LTC",
+    "LINK",
+    "ATOM",
+    "TRX",
+    "XLM",
+    "UNI",
+    "AAVE",
+    "USDT",
+    "USDC",
+    "XAUT",
 }
 _STABLE_QUOTES = {"USDT", "USDC", "BUSD", "DAI", "BTC", "ETH"}
 

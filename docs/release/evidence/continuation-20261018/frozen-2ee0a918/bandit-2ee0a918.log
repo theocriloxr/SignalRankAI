@@ -1,0 +1,33 @@
+::group::security-bandit - Bandit security scan
+[main]	INFO	profile include tests: None
+[main]	INFO	profile exclude tests: None
+[main]	INFO	cli include tests: None
+[main]	INFO	cli exclude tests: None
+[main]	INFO	running on Python 3.11.0
+[tester]	WARNING	nosec encountered (B104), but no failed test on file web\app.py:1309
+[tester]	WARNING	nosec encountered (B104), but no failed test on file web\app.py:1309
+[tester]	WARNING	nosec encountered (B104), but no failed test on file web\app.py:1309
+Working... ---------------------------------------- 100% 0:00:10
+Run started:2026-10-18 08:35:46.771979+00:00
+
+Test results:
+	No issues identified.
+
+Code scanned:
+	Total lines of code: 107264
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 1
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 309
+		Medium: 13
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 13
+		Medium: 9
+		High: 300
+Files skipped (0):
+::endgroup::

@@ -5,6 +5,7 @@ notification paths in v1.3.6.8. It provides the production contract needed to
 migrate database-polling/global loops to replayable Redis Streams without
 silently changing current behaviour before staging certification passes.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -206,11 +207,13 @@ class DurableEventStream:
         messages: list[StreamMessage] = []
         for stream, entries in response or []:
             for message_id, fields in entries:
-                messages.append(StreamMessage(
-                    stream=str(stream),
-                    message_id=str(message_id),
-                    envelope=self._decode(fields),
-                ))
+                messages.append(
+                    StreamMessage(
+                        stream=str(stream),
+                        message_id=str(message_id),
+                        envelope=self._decode(fields),
+                    )
+                )
         return messages
 
     async def acknowledge(self, *, group: str, message: StreamMessage) -> int:
@@ -253,15 +256,17 @@ class DurableEventStream:
     ) -> str:
         client = await self._redis()
         fields = message.envelope.as_stream_fields()
-        fields.update({
-            "source_stream": message.stream,
-            "source_message_id": message.message_id,
-            "consumer_group": group,
-            "error_code": str(error_code)[:128],
-            "error": str(sanitized_error)[:1000],
-            "attempts": str(max(1, int(attempts))),
-            "dead_lettered_at": _utc_iso(),
-        })
+        fields.update(
+            {
+                "source_stream": message.stream,
+                "source_message_id": message.message_id,
+                "consumer_group": group,
+                "error_code": str(error_code)[:128],
+                "error": str(sanitized_error)[:1000],
+                "attempts": str(max(1, int(attempts))),
+                "dead_lettered_at": _utc_iso(),
+            }
+        )
         dlq_id = await client.xadd(
             self.dlq_name(message.envelope.partition_key),
             fields,

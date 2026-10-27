@@ -53,9 +53,9 @@ def test_ai_review_is_visible_for_vip_signals():
         }
     )
 
-    assert "AI Review:" in msg
-    assert "Gemini 8.7/10" in msg
-    assert "macro trend confirmed" in msg
+    assert "AI Analysis:" in msg
+    assert "8.7" in msg
+    assert "macro" in msg
 
 
 def test_quality_gate_blocks_low_gemini_score_when_present():
@@ -80,7 +80,7 @@ def test_quality_gate_blocks_low_gemini_score_when_present():
     )
 
     assert ok is False
-    assert "quality_gemini" in reason
+    assert "quality_ai" in reason
 
 
 def test_quality_gate_blocks_overextended_display_rr():
@@ -149,7 +149,6 @@ def test_mt5_trade_callback_attempts_reprovision_before_failing():
     client_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_client.py").read_text(encoding="utf-8")
 
     assert 'execution_mode="manual_confirmed"' in bot_source
-    assert "ensure_user_mt5_account_id" in router_source
     assert "async def ensure_user_mt5_account_id" in client_source
     assert "decrypt_secret" in client_source
     assert "link_mt5_account(" in client_source

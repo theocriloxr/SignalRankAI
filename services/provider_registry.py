@@ -5,6 +5,7 @@ construction time.  It persists health through an injected/optional async Redis
 client and never invents a fallback provider when every compatible provider is
 unavailable.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -55,11 +56,7 @@ class ProviderHealth:
 
     def is_available(self, now: datetime | None = None) -> bool:
         now = now or now_utc_naive()
-        return bool(
-            self.is_active
-            and self.is_healthy
-            and (self.cooldown_until is None or now >= self.cooldown_until)
-        )
+        return bool(self.is_active and self.is_healthy and (self.cooldown_until is None or now >= self.cooldown_until))
 
     def get_success_rate(self) -> float | None:
         total = self.success_count + self.fail_count

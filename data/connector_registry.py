@@ -9,6 +9,7 @@ Two helper apis are provided:
 This module prefers connector adapters under `data.connectors` when
 available and falls back to legacy functions in `data.providers`.
 """
+
 from typing import Callable, List, Tuple
 import asyncio
 import inspect
@@ -17,17 +18,25 @@ import os
 
 def _wrap_callable(fn: Callable, /) -> Callable:
     """Wrap various provider call signatures to a unified (symbol, tf, timeout) API."""
+
+    try:
+        signature = inspect.signature(fn)
+    except (ValueError, TypeError):
+        signature = None
+
     def _call(symbol: str, tf: str, timeout: int = 10):
         try:
-            return fn(symbol, tf)
-        except TypeError:
-            try:
-                return fn(symbol, tf, timeout=timeout)
-            except TypeError:
-                try:
-                    return fn(symbol, tf, limit=200)
-                except Exception:
-                    return []
+            kwargs = {}
+            if signature is not None:
+                accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values())
+                for name, value in (("timeout", timeout), ("limit", 200)):
+                    parameter = signature.parameters.get(name)
+                    if accepts_kwargs or (parameter is not None and parameter.kind != inspect.Parameter.POSITIONAL_ONLY):
+                        kwargs[name] = value
+                signature.bind(symbol, tf, **kwargs)
+            # Call once: a TypeError inside a provider must not trigger another
+            # external request or silently discard the caller's timeout.
+            return fn(symbol, tf, **kwargs)
         except Exception:
             return []
 
@@ -41,12 +50,51 @@ def _wrap_to_async(fn: Callable) -> Callable:
     - Otherwise run it in a thread via `asyncio.to_thread`.
     """
     if inspect.iscoroutinefunction(fn):
-        return fn
+        wrapped = _wrap_callable(fn)
+
+        async def _call_native_async(symbol: str, tf: str, timeout: int = 10):
+            result = wrapped(symbol, tf, timeout)
+            return await result if inspect.isawaitable(result) else result
+
+        return _call_native_async
 
     async def _call_async(symbol: str, tf: str, timeout: int = 10):
         return await asyncio.to_thread(_wrap_callable(fn), symbol, tf, timeout)
 
     return _call_async
+
+
+def provider_order_env_name(asset_type: str) -> str | None:
+    return {
+        "crypto": "CRYPTO_MARKET_DATA_PROVIDERS", "fx": "FX_MARKET_DATA_PROVIDERS",
+        "forex": "FX_MARKET_DATA_PROVIDERS", "stock": "STOCK_MARKET_DATA_PROVIDERS",
+        "equity": "STOCK_MARKET_DATA_PROVIDERS", "index": "INDEX_MARKET_DATA_PROVIDERS",
+        "commodity": "COMMODITY_MARKET_DATA_PROVIDERS",
+    }.get(str(asset_type or "").strip().lower())
+
+
+def _apply_configured_order(kind: str, providers: List[Tuple[str, Callable]]) -> List[Tuple[str, Callable]]:
+    env_name = provider_order_env_name(kind)
+    raw = os.getenv(env_name, "") if env_name else ""
+    if not raw.strip():
+        return providers
+    selected = []
+    seen = set()
+    for value in raw.split(","):
+        alias = value.strip().lower().removesuffix("_connector").removesuffix("_legacy")
+        if alias == "yahoo":
+            alias = "yfinance"
+        if not alias or alias in seen:
+            continue
+        seen.add(alias)
+        for name, fn in providers:
+            candidate = name.removesuffix("_connector").removesuffix("_legacy")
+            if ("yfinance" if candidate == "yahoo" else candidate) == alias:
+                selected.append((name, fn))
+                break
+    # An explicit allowlist must not fall through to unrelated legacy feeds.
+    # Missing credentials or unknown providers remain an empty, blocked chain.
+    return selected
 
 
 def _env_enabled(name: str, default: bool = True) -> bool:
@@ -56,14 +104,21 @@ def _env_enabled(name: str, default: bool = True) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-
 _PROVIDER_ENABLE_FLAGS: dict[str, tuple[str, bool]] = {
+    "alpaca_connector": ("ALPACA_MARKET_DATA_ENABLED", True),
+    "marketdata_connector": ("MARKETDATA_ENABLED", False),
+    "ccxt_connector": ("CCXT_MARKET_DATA_ENABLED", False),
+    "ibkr_connector": ("IBKR_MARKET_DATA_ENABLED", False),
+    "fcs_connector": ("FCS_ENABLED", True),
+    "yfinance_connector": ("YFINANCE_ENABLED", True),
     "fmp_connector": ("FMP_ENABLED", False),
     "alphavantage_connector": ("ALPHAVANTAGE_ENABLED", False),
     "oanda_connector": ("OANDA_ENABLED", False),
 }
 
 _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "marketdata_connector": ("MARKETDATA_TOKEN",),
+    "fcs_connector": ("FCS_API_KEY", "FCS_API_SECRET"),
     "twelvedata_connector": ("TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY"),
     "polygon_connector": ("MASSIVE_API_KEY", "POLYGON_API_KEY"),  # Massive (formerly Polygon.io) consolidated secret
     "tiingo_connector": ("TIINGO_API_KEY",),
@@ -78,6 +133,7 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "nasdaq_data_link_connector": ("NASDAQ_DATA_LINK_API_KEY",),
 }
 
+
 def _provider_configured(name: str) -> bool:
     canonical = str(name or "").lower()
     enable_contract = _PROVIDER_ENABLE_FLAGS.get(canonical)
@@ -85,6 +141,12 @@ def _provider_configured(name: str) -> bool:
         flag_name, default_enabled = enable_contract
         if not _env_enabled(flag_name, default_enabled):
             return False
+    if canonical == "ccxt_connector":
+        from market_data_sdk.worker import CCXT_VENUES
+        return os.getenv("CCXT_MARKET_DATA_EXCHANGE", "").strip().lower() in CCXT_VENUES
+    if canonical == "ibkr_connector":
+        return all(os.getenv(key, "").strip() for key in (
+            "IBKR_MARKET_DATA_HOST", "IBKR_MARKET_DATA_PORT", "IBKR_MARKET_DATA_CONTRACTS_JSON"))
     required = _PROVIDER_KEYS.get(canonical)
     if not required:
         return True
@@ -99,7 +161,8 @@ def _provider_configured(name: str) -> bool:
         )
     return any(str(os.getenv(key) or "").strip() for key in required)
 
-def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
+
+def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
     """Return production provider hierarchy by asset class.
 
     Binance is intentionally opt-in/demoted because Railway regions are often
@@ -145,36 +208,16 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
             derivative_providers.append(("binance_connector", getattr(c, "binance_get_candles", None)))
         return derivative_providers
 
-    if kind in {"crypto_perpetual", "crypto_futures", "crypto_options", "derivative", "future", "option"}:
-        derivative_providers: List[Tuple[str, Callable]] = [
-            ("deribit_connector", getattr(c, "deribit_get_candles", None)),
-            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
-            ("okx_connector", getattr(c, "okx_get_candles", None)),
-        ]
-        if binance_enabled and kind != "crypto_options":
-            derivative_providers.append(("binance_connector", getattr(c, "binance_get_candles", None)))
-        return derivative_providers
-
     if kind == "crypto":
-        configured = [
-            item.strip().lower().replace("_connector", "")
-            for item in (os.getenv("CRYPTO_MARKET_DATA_PROVIDERS") or "").split(",")
-            if item.strip()
-        ]
-        if configured:
-            by_alias = {
-                name.replace("_connector", ""): (name, fn)
-                for name, fn in crypto
-            }
-            selected = [by_alias[name] for name in configured if name in by_alias]
-            if selected:
-                crypto = selected
-        return crypto
+        return crypto + [("ccxt_connector", getattr(c, "ccxt_get_candles", None)),
+                         ("alpaca_connector", getattr(c, "alpaca_get_candles", None))]
     if kind in ("fx", "forex"):
         return [
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
+            ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("oanda_connector", getattr(c, "oanda_get_candles", None)),
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
             ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
@@ -184,6 +227,8 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         ]
     if kind == "commodity":
         return [
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
+            ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
@@ -192,6 +237,8 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         ]
     if kind == "index":
         return [
+            ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
+            ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("polygon_connector", getattr(c, "polygon_get_candles", None)),
@@ -200,8 +247,11 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         ]
     return [
         ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+        ("fcs_connector", getattr(c, "fcs_get_candles", None)),
         ("polygon_connector", getattr(c, "polygon_get_candles", None)),
         ("alpaca_connector", getattr(c, "alpaca_get_candles", None)),
+        ("marketdata_connector", getattr(c, "marketdata_get_candles", None)),
+        ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
         ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
         ("tradier_connector", getattr(c, "tradier_get_candles", None)),
         ("fmp_connector", getattr(c, "fmp_get_candles", None)),
@@ -211,11 +261,15 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     ]
 
 
+def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
+    return _apply_configured_order(kind, _default_provider_order(kind, c, async_mode=async_mode))
+
+
 def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """Return sync (name, callable) providers for `asset_type`.
 
     asset_type: 'crypto' | 'fx' | 'stock' | 'commodity'
-    
+
     IMPORTANT: Different asset types need different providers!
     - Crypto: binance, bybit, cryptocompare (ONLY crypto exchanges)
     - Stocks: twelvedata, polygon, yahoo (NOT crypto exchanges!)
@@ -224,7 +278,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """
     providers: List[Tuple[str, Callable]] = []
     kind = str(asset_type or "").lower().strip()
-    
+
     # CRITICAL: Keep commodity separate from stock!
     # This is the fix for "Ghost Price" errors
     # Previously commodities were being sent to crypto providers which returned wrong data
@@ -245,6 +299,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     # double-fetching the same public endpoint.
     try:
         from data import providers as legacy
+
         if kind == "crypto":
             existing = {name for name, _ in providers}
             if "coingecko_connector" not in existing:
@@ -269,7 +324,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     except Exception:
         pass
 
-    return providers
+    return _apply_configured_order(kind, providers)
 
 
 def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
@@ -295,6 +350,7 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     # Add legacy fallbacks for async callers.
     try:
         from data import providers as legacy
+
         if kind == "crypto":
             providers.extend(
                 [
@@ -321,4 +377,4 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     except Exception:
         pass
 
-    return providers
+    return _apply_configured_order(kind, providers)

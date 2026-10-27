@@ -1,0 +1,1 @@
+DEFECT_REPRODUCED: accepted receipt without environment, command, timestamp or scope

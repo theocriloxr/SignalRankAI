@@ -1,0 +1,45 @@
+{
+  "repository": "theocriloxr/SignalRankAI",
+  "primary_branch": "main",
+  "integration_branch": "fix/stage1-canonical-reconciliation-20261014",
+  "code_baseline": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+  "baseline_state": "STAGE1_CROSSCHAT_INTAKE_AND_ACCEPTANCE_PENDING",
+  "main_at_inspection": "98a5de18f92674c9e70ec61a802391bf984de8d6",
+  "recovery_base": "5c9df161a1c42f1d6db83539cbabe9feed18ef92",
+  "blueprint": "8e46ca7d61df16a9b2820090162479fc8b390983",
+  "legal_source": "34f8071cb7a3ac9f8f394378ea23907f0e76f092",
+  "schema_head": "0055_user_renewal_default",
+  "production_authorized": false,
+  "live_trading_authorized": false,
+  "tested_code_commit": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+  "local_evidence_index": "docs/release/evidence/continuation-20261018/correction-393f3d88/index.json",
+  "integration_base": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+  "current_stage": 1,
+  "stage_acceptance": "FAILED",
+  "stage0_forensics_checkpoint": "e01e7c41f49a3e35335b00edc2de97367aa2dade",
+  "stage0_evidence_index": "docs/release/evidence/continuation-20261022/index.json",
+  "stage0_status": "PASS_LOCAL_RAILWAY_BLOCKED_EXTERNAL",
+  "current_request": "docs/specs/20261016/recovery-request.md",
+  "current_code_checkpoint": "a23e088feafb63f00e22fb34232e44d803311aa4",
+  "current_source_index": "docs/release/crosschat_source_index.json",
+  "current_requirements_universe": "docs/release/requirements_universe.jsonl",
+  "current_intake_evidence": "docs/release/evidence/continuation-20261018/correction-393f3d88/index.json",
+  "verification_attempt_commit": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "verification_attempt_status": "LOCAL_CORRECTION_VERIFIED_RELEASE_NO_GO",
+  "latest_tested_code_commit": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+  "latest_full_suite": {
+    "passed": 4080,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "result": "PASS",
+    "scope": "Owned local tests only; external release gates remain open"
+  },
+  "followup_source_changes": {
+    "status": "VERIFIED_LOCAL",
+    "changes": [
+      "immutable local attempts and launch-failure receipts",
+      "HTML entity escaping for complete static parsing"
+    ]
+  }
+}

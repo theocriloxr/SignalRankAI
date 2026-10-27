@@ -5,6 +5,7 @@ The simulation deliberately disables real integrations and money movement. It
 starts the actual ``railway_main:app`` through uvicorn, verifies liveness and
 webhook ingress, captures logs, and terminates cleanly.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -104,7 +105,16 @@ def main() -> int:
         }
     )
 
-    command = [sys.executable, "-m", "uvicorn", "scripts.railway_simulation_entry:app", "--host", "127.0.0.1", "--port", str(args.port)]
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "scripts.railway_simulation_entry:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(args.port),
+    ]
     log_path = ROOT / ".pytest-tmp" / "railway-simulation.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Write child output continuously. Waiting to drain a PIPE until shutdown
@@ -142,9 +152,7 @@ def main() -> int:
             base + "/telegram/webhook",
             method="POST",
             payload={"update_id": 999001, "message": {"message_id": 1, "chat": {"id": 100001}, "text": "/start"}},
-            headers={
-                "X-Telegram-Bot-Api-Secret-Token": str(env.get("TELEGRAM_WEBHOOK_SECRET") or "")
-            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": str(env.get("TELEGRAM_WEBHOOK_SECRET") or "")},
         )
         if status != 200 or webhook.get("ok") is not True or webhook.get("queued") is not True:
             raise RuntimeError(f"webhook ingress contract failed: {status} {webhook}")

@@ -8,6 +8,7 @@ thesis window. It never deletes signals, deliveries, outcomes, or audit history.
 This script repairs rows created before v1.3.6.7. Normal runtime admission now
 uses PostgreSQL advisory locks plus semantic near-entry deduplication.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,9 +22,8 @@ from sqlalchemy import create_engine, text
 
 
 def _sync_url(raw: str) -> str:
-    return (
-        raw.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
-        .replace("postgres://", "postgresql+psycopg2://", 1)
+    return raw.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1).replace(
+        "postgres://", "postgresql+psycopg2://", 1
     )
 
 
@@ -192,20 +192,24 @@ def main() -> int:
         rows = [dict(row._mapping) for row in conn.execute(ACTIVE_SQL, {"cutoff": cutoff})]
         grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
-            grouped[(
-                str(row.get("asset") or "").upper(),
-                str(row.get("direction") or "").lower(),
-                str(row.get("strategy_name") or "unknown").lower(),
-            )].append(row)
+            grouped[
+                (
+                    str(row.get("asset") or "").upper(),
+                    str(row.get("direction") or "").lower(),
+                    str(row.get("strategy_name") or "unknown").lower(),
+                )
+            ].append(row)
 
         for (_asset, _direction, _strategy), candidates in grouped.items():
             canonicals: list[dict[str, Any]] = []
-            candidates.sort(key=lambda row: (
-                0 if int(row.get("confirmed_deliveries") or 0) > 0 else 1,
-                _proof_time(row),
-                row.get("created_at") or datetime.max,
-                str(row.get("signal_id")),
-            ))
+            candidates.sort(
+                key=lambda row: (
+                    0 if int(row.get("confirmed_deliveries") or 0) > 0 else 1,
+                    _proof_time(row),
+                    row.get("created_at") or datetime.max,
+                    str(row.get("signal_id")),
+                )
+            )
             for candidate in candidates:
                 canonical = next(
                     (item for item in canonicals if _is_near(item, candidate, tolerance=tolerance, window=window)),

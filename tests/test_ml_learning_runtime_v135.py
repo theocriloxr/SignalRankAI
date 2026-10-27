@@ -65,7 +65,8 @@ def test_session_defaults_zero_reserve_only_for_noninteractive_roles() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "db" / "session.py").read_text(encoding="utf-8")
     role_block = source[source.index("_dedicated_noninteractive_db_roles"):source.index("_default_foreground_reserve")]
-    assert '"analytics", "scheduler"' in role_block
+    assert '"analytics"' in role_block
+    assert '"scheduler"' in role_block
     assert "minimum=0" in source
     assert '"worker"' not in role_block
     assert '"delivery"' not in role_block
@@ -153,13 +154,15 @@ def test_adaptive_and_shadow_writes_are_durable_background_work() -> None:
     assert "ADAPTIVE_CANDLE_MAX_SNAPSHOTS_PER_TRANSACTION" in candle
     assert "ADAPTIVE_CANDLE_DB_LOCK_TIMEOUT_MS" in candle
     assert "ADAPTIVE_CANDLE_DB_STATEMENT_TIMEOUT_MS" in candle
+    assert "ADAPTIVE_CANDLE_TRANSACTION_BUDGET_SECONDS" in candle
+    assert "async with asyncio.timeout(transaction_budget)" in candle
     assert 'sql_text("SET TRANSACTION READ WRITE")' in candle
-    assert candle.index('SET TRANSACTION READ WRITE') < candle.index("SET LOCAL lock_timeout")
+    assert candle.index('SET TRANSACTION READ WRITE') < candle.index("set_config('lock_timeout', :value, true)")
     assert "dispose_engine_for_event_loop" in candle
     assert '"read-only transaction" in _error_text(exc).lower()' in candle
     assert "for read_write_attempt in range(2)" in candle
-    assert "SET LOCAL lock_timeout" in candle
-    assert "SET LOCAL statement_timeout" in candle
+    assert "set_config('lock_timeout', :value, true)" in candle
+    assert "set_config('statement_timeout', :value, true)" in candle
     assert "for item in batch:" in candle
     # Shadow outcome writes remain durable background work because their rows are
     # lifecycle evidence rather than an idempotent candle cache.
@@ -234,7 +237,7 @@ async def test_adaptive_candle_pressure_requeues_full_batch(monkeypatch) -> None
     calls = {"sessions": 0, "evictions": 0, "insert_attempts": 0}
 
     class FakeSession:
-        async def execute(self, statement):
+        async def execute(self, statement, params=None):
             text_value = str(statement)
             if text_value.lstrip().upper().startswith("INSERT"):
                 calls["insert_attempts"] += 1
@@ -322,7 +325,7 @@ async def test_adaptive_candle_batch_deduplicates_same_database_key(monkeypatch)
     statements: list[str] = []
 
     class FakeSession:
-        async def execute(self, statement):
+        async def execute(self, statement, params=None):
             text_value = str(statement)
             if text_value.lstrip().upper().startswith("INSERT"):
                 statements.append(text_value)

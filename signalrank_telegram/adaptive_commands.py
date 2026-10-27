@@ -12,6 +12,8 @@ from core.redis_state import state
 from db.session import get_session
 from engine.adaptive.promotion import evaluate_profile_promotion
 from engine.adaptive.repository import invalidate_profile_cache, publish_approved_profiles
+from engine.adaptive.lifecycle import lock_profile_lifecycle
+from engine.adaptive.research_ledger import research_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,25 @@ async def adaptive_status_command(update: Any, context: Any) -> None:
     await _reply(update, "\n".join(lines))
 
 
+async def research_command(update: Any, context: Any) -> None:
+    if not await _require_owner(update):
+        return
+    args = _args(context)
+    async with get_session(priority="interactive", label="research.command.status", timeout_seconds=4) as session:
+        snapshot = await research_snapshot(session, asset=args[0].upper() if args else None)
+    lines = ["Strategy research: immutable trial history", "Coverage: since ledger introduction; older trials remain unverified."]
+    for family in snapshot["families"][:8]:
+        lines.append(f"{family['trial_family']}: {family['raw_trial_count']} trials, {family['terminal_trial_count']} terminal results")
+    for experiment in snapshot["experiments"][:6]:
+        result = experiment.get("result") or {}
+        audit = result.get("integrity") or {}
+        lines.append(f"{str(experiment['experiment_id'])[:12]} {experiment['status'] or 'RUNNING'} "
+                     f"integrity={'PASS' if audit.get('passed') is True else 'UNVERIFIED/FAILED'}")
+    if not snapshot["experiments"]:
+        lines.append("No recorded experiments yet.")
+    await _reply(update, "\n".join(lines))
+
+
 async def adaptive_pause_command(update: Any, context: Any) -> None:
     if not await _require_owner(update):
         return
@@ -138,6 +159,7 @@ async def adaptive_promote_command(update: Any, context: Any) -> None:
     promoted = False
 
     async with get_session(priority="interactive", label="adaptive.command.promote", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         row = (
             await session.execute(
                 text(
@@ -157,6 +179,16 @@ async def adaptive_promote_command(update: Any, context: Any) -> None:
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
         wfo = metadata.get("walk_forward") or {}
+        research = {}
+        if metadata.get("research_experiment_id"):
+            stored = (await session.execute(text(
+                "SELECT e.dataset_version,e.feature_version,r.result FROM research_experiments e "
+                "JOIN research_experiment_results r USING(experiment_id) "
+                "WHERE e.experiment_id=:id AND r.status='COMPLETED'"
+            ), {"id": metadata["research_experiment_id"]})).mappings().first()
+            if stored and stored["dataset_version"] == metadata.get("dataset_version") and stored["feature_version"] == metadata.get("feature_version"):
+                research = stored["result"] or {}
+                wfo = research.get("walk_forward") or {}
         metrics = {
             "sample_size": wfo.get("sample_size") or metadata.get("sample_size") or 0,
             "positive_wfo_folds": wfo.get("positive_folds") or 0,
@@ -165,7 +197,22 @@ async def adaptive_promote_command(update: Any, context: Any) -> None:
             "max_drawdown_r": wfo.get("max_drawdown_r") if wfo.get("max_drawdown_r") is not None else 999,
             "brier_score": metadata.get("brier_score"),
             "leakage_checks_passed": wfo.get("leakage_checks_passed", False),
+            "fold_count": wfo.get("fold_count"),
+            "worst_fold_expectancy": wfo.get("worst_fold_expectancy"),
+            "integrity_audit_passed": (research.get("integrity") or {}).get("passed") is True,
+            "trial_history_verified": (research.get("trial_counts") or {}).get("pre_ledger_trial_history_verified") is True,
+            "selection_bias_passed": (research.get("multiple_testing") or {}).get("pass_fail") is True,
+            "execution_stress_passed": research.get("execution_stress_passed") is True,
+            "risk_survival_passed": research.get("risk_survival_passed") is True,
+            "portfolio_validation_passed": research.get("portfolio_validation_passed") is True,
+            "kill_conditions_approved": research.get("kill_conditions_approved") is True,
         }
+        from engine.adaptive.health_baselines import approved_baseline, baseline_valid
+        identity = (await session.execute(text("SELECT * FROM adaptive_asset_profiles WHERE profile_id=:id"),
+                                         {"id": profile_id})).mappings().one()
+        baseline = await approved_baseline(session, profile_id)
+        # Research JSON cannot self-authorize predeclared runtime kill limits.
+        metrics["kill_conditions_approved"] = baseline_valid(baseline, identity)
         gate = evaluate_profile_promotion(
             metrics,
             human_approved=True,
@@ -279,9 +326,10 @@ async def adaptive_suspend_command(update: Any, context: Any) -> None:
     actor = _actor_id(update)
     asset: str | None = None
     async with get_session(priority="interactive", label="adaptive.command.suspend", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         row = (
             await session.execute(
-                text("SELECT asset,state FROM adaptive_asset_profiles WHERE profile_id=:profile_id FOR UPDATE"),
+                text("SELECT asset,state,is_current FROM adaptive_asset_profiles WHERE profile_id=:profile_id FOR UPDATE"),
                 {"profile_id": profile_id},
             )
         ).mappings().first()
@@ -298,10 +346,12 @@ async def adaptive_suspend_command(update: Any, context: Any) -> None:
             text("INSERT INTO adaptive_promotion_events(profile_id,from_state,to_state,decision,reasons,metrics,actor_telegram_user_id,idempotency_key) VALUES(:profile_id,:from_state,'SUSPENDED','SUSPENDED',CAST(:reasons AS JSONB),'{}'::jsonb,:actor,:key) ON CONFLICT(idempotency_key) DO NOTHING"),
             {"profile_id": profile_id, "from_state": row["state"], "reasons": json.dumps([reason]), "actor": actor, "key": key},
         )
+        was_current = bool(row["is_current"])
+        if was_current:
+            invalidate_profile_cache(asset)
         await session.commit()
-    if asset:
-        invalidate_profile_cache(asset)
-    await _reply(update, f"🛑 {profile_id} suspended. Runtime falls back to the neutral baseline until rollback or a safe replacement.")
+    detail = "Runtime uses the neutral baseline until a replacement passes revalidation." if was_current else "The active profile was not changed."
+    await _reply(update, f"🛑 {profile_id} suspended. {detail}")
 
 
 async def adaptive_rollback_command(update: Any, context: Any) -> None:
@@ -316,6 +366,7 @@ async def adaptive_rollback_command(update: Any, context: Any) -> None:
     target_profile: str | None = None
     current_profile: str | None = None
     async with get_session(priority="interactive", label="adaptive.command.rollback", timeout_seconds=6) as session:
+        await lock_profile_lifecycle(session)
         current = (
             await session.execute(
                 text("SELECT profile_id,state,rollback_profile_id FROM adaptive_asset_profiles WHERE asset=:asset AND is_current=TRUE FOR UPDATE"),
@@ -334,22 +385,18 @@ async def adaptive_rollback_command(update: Any, context: Any) -> None:
                     {"asset": asset, "current": current_profile},
                 )
             ).scalar()
-        if not target_profile:
-            await _reply(update, "Rollback blocked: no previously approved runtime profile is available.")
-            return
         await session.execute(
             text("UPDATE adaptive_asset_profiles SET is_current=FALSE,state='ROLLED_BACK',updated_at=NOW() WHERE profile_id=:profile_id"),
             {"profile_id": current_profile},
         )
-        await session.execute(
-            text("UPDATE adaptive_asset_profiles SET is_current=TRUE,updated_at=NOW() WHERE profile_id=:profile_id AND state IN ('CANARY','LIMITED_LIVE','APPROVED')"),
-            {"profile_id": target_profile},
-        )
+        # A historic approval is not present-day evidence. Removing the current
+        # override restores the neutral baseline; an older profile must pass
+        # the same research gates before it can be activated again.
         key = hashlib.sha256(f"adaptive-rollback:{asset}:{current_profile}:{target_profile}:{actor}".encode()).hexdigest()
         await session.execute(
             text("INSERT INTO adaptive_promotion_events(profile_id,from_state,to_state,decision,reasons,metrics,actor_telegram_user_id,idempotency_key) VALUES(:profile_id,:from_state,'ROLLED_BACK','ROLLED_BACK',CAST(:reasons AS JSONB),'{}'::jsonb,:actor,:key) ON CONFLICT(idempotency_key) DO NOTHING"),
-            {"profile_id": current_profile, "from_state": current["state"], "reasons": json.dumps([f"restored:{target_profile}"]), "actor": actor, "key": key},
+            {"profile_id": current_profile, "from_state": current["state"], "reasons": json.dumps(["neutral_baseline_restored", f"previous_profile_requires_revalidation:{target_profile}"]), "actor": actor, "key": key},
         )
+        invalidate_profile_cache(asset)
         await session.commit()
-    await publish_approved_profiles()
-    await _reply(update, f"↩️ {asset} rolled back from {current_profile} to {target_profile}.")
+    await _reply(update, f"↩️ {asset} returned to the neutral baseline. Previous profile {target_profile or 'unavailable'} requires revalidation before activation.")

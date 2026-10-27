@@ -6,6 +6,7 @@ PostgreSQL database is at the repository's single Alembic head and that the
 critical unified-platform tables/columns exist before a worker, engine or web
 process is allowed to start.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,11 +15,15 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from db.profile_health_schema import PROFILE_HEALTH_INDEX_VALID_SQL, STRATEGY_HEALTH_SCHEMA_VALID_SQL
+from db.research_snapshot_schema import RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL
 
 EXIT_CONFIGURATION = 64
 EXIT_UNREACHABLE = 69
@@ -58,7 +63,7 @@ def check_schema() -> dict[str, Any]:
 
     import psycopg2
 
-    query = """
+    query = f"""
         SELECT
           (SELECT array_agg(version_num ORDER BY version_num) FROM alembic_version) AS deployed_revisions,
           to_regclass('public.subscription_products') IS NOT NULL AS subscription_products,
@@ -72,6 +77,26 @@ def check_schema() -> dict[str, Any]:
           to_regclass('public.broker_reconciliation_state') IS NOT NULL AS broker_reconciliation_state,
           to_regclass('public.trading_account_ledger_entries') IS NOT NULL AS trading_account_ledger_entries,
           to_regclass('public.broker_execution_decisions') IS NOT NULL AS broker_execution_decisions,
+          to_regclass('public.research_hypotheses') IS NOT NULL AS research_hypotheses,
+          to_regclass('public.research_experiments') IS NOT NULL AS research_experiments,
+          to_regclass('public.research_experiment_results') IS NOT NULL AS research_experiment_results,
+          (SELECT COUNT(*)=6 FROM pg_trigger AS guard
+            JOIN (VALUES
+              ('public.research_hypotheses','research_hypotheses_immutable'),
+              ('public.research_hypotheses','research_hypotheses_no_truncate'),
+              ('public.research_experiments','research_experiments_immutable'),
+              ('public.research_experiments','research_experiments_no_truncate'),
+              ('public.research_experiment_results','research_experiment_results_immutable'),
+              ('public.research_experiment_results','research_experiment_results_no_truncate')
+            ) AS required(table_name,trigger_name)
+              ON guard.tgrelid=to_regclass(required.table_name)
+             AND guard.tgname=required.trigger_name
+            WHERE NOT guard.tgisinternal
+              AND guard.tgfoid=to_regprocedure('public.reject_research_evidence_mutation()')
+              AND guard.tgenabled IN ('O','A')) AS research_append_only_triggers,
+          {PROFILE_HEALTH_INDEX_VALID_SQL} AS adaptive_profile_health_index,
+          {STRATEGY_HEALTH_SCHEMA_VALID_SQL} AS strategy_health_schema,
+          {RESEARCH_SNAPSHOT_SCHEMA_VALID_SQL} AS research_snapshot_schema,
           EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_schema = current_schema()
@@ -132,6 +157,48 @@ def check_schema() -> dict[str, Any]:
               AND table_name = 'users'
               AND column_name = 'public_user_id'
           ) AS users_public_user_id,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND column_name = 'accepted_terms'
+          ) AS users_accepted_terms,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND column_name = 'execution_mode'
+          ) AS users_execution_mode,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signals'
+              AND column_name = 'status'
+          ) AS signals_status,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signals'
+              AND column_name = 'trade_profile'
+          ) AS signals_trade_profile,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signal_deliveries'
+              AND column_name = 'sent_ok'
+          ) AS signal_deliveries_sent_ok,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'signal_deliveries'
+              AND column_name = 'generated_at_utc'
+          ) AS signal_deliveries_generated_at_utc,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'outcomes'
+              AND column_name = 'canonical_outcome'
+          ) AS outcomes_canonical_outcome,
           current_database() AS database_name,
           current_user AS database_user,
           inet_server_addr()::text AS server_address,
@@ -143,9 +210,11 @@ def check_schema() -> dict[str, Any]:
             cursor.execute("SET statement_timeout = '10000ms'")
             cursor.execute(query)
             row = cursor.fetchone()
-            columns = [getattr(item, "name", item[0]) for item in cursor.description]
+            if row is None or cursor.description is None:
+                raise RuntimeError("Schema query returned no result metadata")
+            columns = [str(getattr(item, "name", item[0])) for item in cursor.description]
 
-    record = dict(zip(columns, row, strict=True))
+    record: dict[str, Any] = dict(zip(columns, row, strict=True))
     revisions = list(record.pop("deployed_revisions") or [])
     deployed = str(revisions[0]) if len(revisions) == 1 else ""
     required = {
@@ -162,6 +231,13 @@ def check_schema() -> dict[str, Any]:
             "broker_reconciliation_state",
             "trading_account_ledger_entries",
             "broker_execution_decisions",
+            "research_hypotheses",
+            "research_experiments",
+            "research_experiment_results",
+            "research_append_only_triggers",
+            "adaptive_profile_health_index",
+            "strategy_health_schema",
+            "research_snapshot_schema",
             "broker_connections_credential_format",
             "broker_connections_credential_version",
             "broker_connections_credential_key_id",
@@ -172,6 +248,13 @@ def check_schema() -> dict[str, Any]:
             "mt5_executions_connection_id",
             "signals_ml_recovery_mode",
             "users_public_user_id",
+            "users_accepted_terms",
+            "users_execution_mode",
+            "signals_status",
+            "signals_trade_profile",
+            "signal_deliveries_sent_ok",
+            "signal_deliveries_generated_at_utc",
+            "outcomes_canonical_outcome",
         )
     }
     missing = sorted(name for name, present in required.items() if not present)
@@ -191,25 +274,35 @@ def check_schema() -> dict[str, Any]:
     }
 
 
+def wait_for_schema(wait_seconds: int = 0) -> tuple[dict[str, Any], int]:
+    """Wait for the migration role without modifying schema or bypassing admission."""
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            payload = check_schema()
+        except RuntimeError as exc:
+            return {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}, EXIT_CONFIGURATION
+        except Exception as exc:  # network failures may recover while the migrator starts
+            payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
+            code = EXIT_UNREACHABLE
+        else:
+            code = 0 if payload["ok"] else EXIT_SCHEMA_MISMATCH
+        remaining = deadline - time.monotonic()
+        if code == 0 or remaining <= 0:
+            return payload, code
+        print("[schema_gate] Waiting for the migration role; admission remains blocked.", flush=True)
+        time.sleep(min(5.0, remaining))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit one JSON object")
+    parser.add_argument("--wait-seconds", type=int, default=0,
+                        help="allow a bounded wait for the migration role (0 to 600 seconds)")
     args = parser.parse_args()
-
-    try:
-        payload = check_schema()
-    except RuntimeError as exc:
-        payload = {"status": "BLOCKED", "ok": False, "error": type(exc).__name__}
-        code = EXIT_CONFIGURATION
-    except Exception as exc:  # pragma: no cover - environment/network dependent
-        payload = {
-            "status": "BLOCKED",
-            "ok": False,
-            "error": type(exc).__name__,
-        }
-        code = EXIT_UNREACHABLE
-    else:
-        code = 0 if payload["ok"] else EXIT_SCHEMA_MISMATCH
+    if not 0 <= args.wait_seconds <= 600:
+        parser.error("--wait-seconds must be between 0 and 600")
+    payload, code = wait_for_schema(args.wait_seconds)
 
     if args.json:
         print(json.dumps(payload, sort_keys=True, default=str))

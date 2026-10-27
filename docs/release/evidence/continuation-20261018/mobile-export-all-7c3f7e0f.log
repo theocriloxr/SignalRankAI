@@ -1,0 +1,15 @@
+Starting Metro Bundler
+
+Android Bundled 8486ms node_modules\expo\AppEntry.js (579 modules)
+iOS Bundled 14778ms node_modules\expo\AppEntry.js (658 modules)
+
+› android bundles (1):
+_expo/static/js/android/AppEntry-25f9db6f5976f47add1df87211243b3a.hbc (1.7MB)
+
+› ios bundles (1):
+_expo/static/js/ios/AppEntry-3620d3f1df92846b9622b098e7da70b2.hbc (1.7MB)
+
+› Files (1):
+metadata.json (250B)
+
+Exported: ../artifacts/mobile-export-7c3f7e0f

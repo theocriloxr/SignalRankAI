@@ -43,6 +43,10 @@ class _FakeSession:
 
 
 def test_get_or_create_signal_blocks_when_asset_is_already_open(monkeypatch):
+    """Post-908f6cb: an active Redis trade for the same asset must raise
+    SignalDedupBlocked, never silently return the old signal row as identity."""
+    from db.pg_features import SignalDedupBlocked
+
     existing = Signal(
         signal_id="sig-open-1",
         asset="SOLUSDT",
@@ -77,24 +81,25 @@ def test_get_or_create_signal_blocks_when_asset_is_already_open(monkeypatch):
             }
         },
     )
-
-    result = run_sync(
-        get_or_create_signal(
-            session,
-            {
-                "asset": "SOLUSDT",
-                "timeframe": "15m",
-                "direction": "long",
-                "entry": 82.34,
-                "stop_loss": 81.2,
-                "take_profit": [83.5],
-                "strategy_group": "momentum",
-                "strategy_name": "breakout",
-            },
+    # With genuine active trade, SignalDedupBlocked must be raised.
+    # No caller may receive new candidate values through an old signal ID.
+    with pytest.raises(SignalDedupBlocked):
+        run_sync(
+            get_or_create_signal(
+                session,
+                {
+                    "asset": "SOLUSDT",
+                    "timeframe": "15m",
+                    "direction": "long",
+                    "entry": 82.34,
+                    "stop_loss": 81.2,
+                    "take_profit": [83.5],
+                    "strategy_group": "momentum",
+                    "strategy_name": "breakout",
+                },
+            )
         )
-    )
-
-    assert result.signal_id == "sig-open-1"
+    # No new signal should have been persisted.
     assert session.added == []
 
 

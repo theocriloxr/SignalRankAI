@@ -1,4 +1,5 @@
 """Signed, retryable and SSRF-hardened outbound webhook delivery."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,6 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Mapping
 from urllib.parse import urlparse
-from uuid import uuid4
 
 import httpx
 from sqlalchemy import text
@@ -97,7 +97,9 @@ async def validate_webhook_destination(url: str) -> str:
         raise ValueError("webhook_userinfo_forbidden")
     if parsed.port and parsed.port not in {80, 443, 8443}:
         raise ValueError("webhook_port_forbidden")
-    allowed_hosts = {value.strip().lower() for value in (os.getenv("WEBHOOK_ALLOWED_HOSTS") or "").split(",") if value.strip()}
+    allowed_hosts = {
+        value.strip().lower() for value in (os.getenv("WEBHOOK_ALLOWED_HOSTS") or "").split(",") if value.strip()
+    }
     if allowed_hosts and str(parsed.hostname).lower() not in allowed_hosts:
         raise ValueError("webhook_host_not_allowlisted")
     if not local_ok:
@@ -113,18 +115,22 @@ def webhook_signature(secret: str, timestamp: str, body: bytes) -> str:
 async def _claim_batch(limit: int) -> list[dict[str, Any]]:
     async with get_session(priority="background", label="webhook.claim") as session:
         rows = (
-            await session.execute(
-                text(
-                    "SELECT wd.webhook_delivery_id,wd.webhook_endpoint_id,wd.event_id,wd.event_type,wd.payload,"
-                    "wd.idempotency_key,wd.attempt_count,we.url,we.encrypted_secret "
-                    "FROM webhook_deliveries wd JOIN webhook_endpoints we ON we.webhook_endpoint_id=wd.webhook_endpoint_id "
-                    "WHERE we.active=TRUE AND wd.next_attempt_at<=NOW() "
-                    "AND (wd.status IN ('pending','retry') OR (wd.status='delivering' AND wd.updated_at<NOW()-INTERVAL '5 minutes')) "
-                    "ORDER BY wd.created_at FOR UPDATE OF wd SKIP LOCKED LIMIT :limit"
-                ),
-                {"limit": max(1, min(int(limit), 100))},
+            (
+                await session.execute(
+                    text(
+                        "SELECT wd.webhook_delivery_id,wd.webhook_endpoint_id,wd.event_id,wd.event_type,wd.payload,"
+                        "wd.idempotency_key,wd.attempt_count,we.url,we.encrypted_secret "
+                        "FROM webhook_deliveries wd JOIN webhook_endpoints we ON we.webhook_endpoint_id=wd.webhook_endpoint_id "
+                        "WHERE we.active=TRUE AND wd.next_attempt_at<=NOW() "
+                        "AND (wd.status IN ('pending','retry') OR (wd.status='delivering' AND wd.updated_at<NOW()-INTERVAL '5 minutes')) "
+                        "ORDER BY wd.created_at FOR UPDATE OF wd SKIP LOCKED LIMIT :limit"
+                    ),
+                    {"limit": max(1, min(int(limit), 100))},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         claimed: list[dict[str, Any]] = []
         for row in rows:
             await session.execute(
@@ -210,7 +216,13 @@ async def _deliver_one(client: httpx.AsyncClient, item: Mapping[str, Any]) -> bo
         response = await client.post(url, content=body, headers=headers)
         excerpt = response.text[:500] if response.text else None
         if 200 <= response.status_code < 300:
-            await _store_result(delivery_id, delivered=True, status_code=response.status_code, response_excerpt=excerpt, attempts=attempts)
+            await _store_result(
+                delivery_id,
+                delivered=True,
+                status_code=response.status_code,
+                response_excerpt=excerpt,
+                attempts=attempts,
+            )
             return True
         await _store_result(
             delivery_id,
@@ -233,9 +245,11 @@ async def deliver_webhook_batch(limit: int | None = None) -> dict[str, int]:
     concurrency = _env_int("WEBHOOK_CONCURRENCY", 5)
     semaphore = asyncio.Semaphore(concurrency)
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+
         async def run(item: Mapping[str, Any]) -> bool:
             async with semaphore:
                 return await _deliver_one(client, item)
+
         results = await asyncio.gather(*(run(item) for item in items), return_exceptions=False)
     delivered = sum(bool(value) for value in results)
     return {"claimed": len(items), "delivered": delivered, "failed_or_retried": len(items) - delivered}

@@ -1,0 +1,313 @@
+............................................F....................        [100%]
+================================== FAILURES ===================================
+_ test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records __
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001BDBF2A5850>
+dialect = <sqlalchemy.dialects.postgresql.asyncpg.PGDialect_asyncpg object at 0x000001BDBF295610>
+constructor = <bound method DefaultExecutionContext._init_compiled of <class 'sqlalchemy.dialects.postgresql.asyncpg.PGExecutionContext_asyncpg'>>
+statement = <sqlalchemy.dialects.postgresql.asyncpg.PGCompiler_asyncpg object at 0x000001BDBF2B5250>
+parameters = [{'stamp': datetime.datetime(2026, 10, 16, 12, 0)}]
+execution_options = immutabledict({'prebuffer_rows': True})
+args = (<sqlalchemy.dialects.postgresql.asyncpg.PGCompiler_asyncpg object at 0x000001BDBF2B5250>, [{'stamp': datetime.datetim...t 0x000001BDBF2B4890>, [BindParameter('stamp', None, type_=NullType()), BindParameter('true', None, type_=NullType())])
+kw = {'cache_hit': <CacheStats.CACHE_MISS: 1>, 'param_dict': None}
+
+    def _execute_context(
+        self,
+        dialect: Dialect,
+        constructor: Callable[..., ExecutionContext],
+        statement: Union[str, Compiled],
+        parameters: Optional[_AnyMultiExecuteParams],
+        execution_options: _ExecuteOptions,
+        *args: Any,
+        **kw: Any,
+    ) -> CursorResult[Unpack[TupleAny]]:
+        """Create an :class:`.ExecutionContext` and execute, returning
+        a :class:`_engine.CursorResult`."""
+    
+        if execution_options:
+            yp = execution_options.get("yield_per", None)
+            if yp:
+                execution_options = execution_options.union(
+                    {"stream_results": True, "max_row_buffer": yp}
+                )
+        try:
+            conn = self._dbapi_connection
+            if conn is None:
+                conn = self._revalidate_connection()
+    
+>           context = constructor(
+                dialect, self, conn, execution_options, *args, **kw
+            )
+
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:1791: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.audit-venv\Lib\site-packages\sqlalchemy\engine\default.py:1657: in _init_compiled
+    self.compiled_parameters = [
+.audit-venv\Lib\site-packages\sqlalchemy\engine\default.py:1658: in <listcomp>
+    compiled.construct_params(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.dialects.postgresql.asyncpg.PGCompiler_asyncpg object at 0x000001BDBF2B5250>
+params = {'stamp': datetime.datetime(2026, 10, 16, 12, 0)}
+extracted_parameters = [BindParameter('stamp', None, type_=NullType()), BindParameter('true', None, type_=NullType())]
+escape_names = False, _group_number = 0, _check = True, _no_postcompile = False
+_collected_params = None
+
+    def construct_params(
+        self,
+        params: Optional[_CoreSingleExecuteParams] = None,
+        extracted_parameters: Optional[Sequence[BindParameter[Any]]] = None,
+        escape_names: bool = True,
+        _group_number: Optional[int] = None,
+        _check: bool = True,
+        _no_postcompile: bool = False,
+        _collected_params: _CoreSingleExecuteParams | None = None,
+    ) -> _MutableCoreSingleExecuteParams:
+        """return a dictionary of bind parameter keys and values"""
+        if _collected_params is not None:
+            assert not self._collect_params
+        elif self._collect_params:
+            _collected_params = self._collected_params
+    
+        if _collected_params:
+            if not params:
+                params = _collected_params
+            else:
+                params = {**_collected_params, **params}
+    
+        if self._render_postcompile and not _no_postcompile:
+            assert self._post_compile_expanded_state is not None
+            if not params:
+                return dict(self._post_compile_expanded_state.parameters)
+            else:
+                raise exc.InvalidRequestError(
+                    "can't construct new parameters when render_postcompile "
+                    "is used; the statement is hard-linked to the original "
+                    "parameters.  Use construct_expanded_state to generate a "
+                    "new statement and parameters."
+                )
+    
+        has_escaped_names = escape_names and bool(self.escaped_bind_names)
+    
+        if extracted_parameters:
+            # related the bound parameters collected in the original cache key
+            # to those collected in the incoming cache key.  They will not have
+            # matching names but they will line up positionally in the same
+            # way.   The parameters present in self.bind_names may be clones of
+            # these original cache key params in the case of DML but the .key
+            # will be guaranteed to match.
+            if self.cache_key is None:
+                raise exc.CompileError(
+                    "This compiled object has no original cache key; "
+                    "can't pass extracted_parameters to construct_params"
+                )
+            else:
+                orig_extracted = self.cache_key[1]
+    
+            ckbm_tuple = self._cache_key_bind_match
+            assert ckbm_tuple is not None
+            ckbm, _ = ckbm_tuple
+            resolved_extracted = {
+                bind: extracted
+                for b, extracted in zip(orig_extracted, extracted_parameters)
+                for bind in ckbm[b]
+            }
+        else:
+            resolved_extracted = None
+    
+        if params:
+            pd = {}
+            for bindparam, name in self.bind_names.items():
+                escaped_name = (
+                    self.escaped_bind_names.get(name, name)
+                    if has_escaped_names
+                    else name
+                )
+    
+                if bindparam.key in params:
+                    pd[escaped_name] = params[bindparam.key]
+                elif name in params:
+                    pd[escaped_name] = params[name]
+    
+                elif _check and bindparam.required:
+                    if _group_number:
+                        raise exc.InvalidRequestError(
+                            "A value is required for bind parameter %r, "
+                            "in parameter group %d"
+                            % (bindparam.key, _group_number),
+                            code="cd3x",
+                        )
+                    else:
+>                       raise exc.InvalidRequestError(
+                            "A value is required for bind parameter %r"
+                            % bindparam.key,
+                            code="cd3x",
+                        )
+E                       sqlalchemy.exc.InvalidRequestError: A value is required for bind parameter 'true' (Background on this error at: https://sqlalche.me/e/21/cd3x)
+
+.audit-venv\Lib\site-packages\sqlalchemy\sql\compiler.py:2007: InvalidRequestError
+
+The above exception was the direct cause of the following exception:
+
+worker_database = async_sessionmaker(class_='AsyncSession', bind=<sqlalchemy.ext.asyncio.engine.AsyncEngine object at 0x000001BDBF297580>, autoflush=True, expire_on_commit=False)
+
+    @pytest.mark.asyncio
+    async def test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records(worker_database):
+        now = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
+        stamp = now.replace(tzinfo=None)
+        async with worker_database() as session:
+            await session.execute(text("""
+                INSERT INTO instruments(instrument_id,canonical_symbol,display_symbol,asset_class,
+                    instrument_type,active,tradable,discovery_status,last_verified_at)
+                VALUES ('focus-test','BTCUSDT','BTCUSDT','crypto','spot',TRUE,TRUE,'analysis_ready',:stamp)
+            """), {"stamp": stamp})
+            await session.execute(text("""
+                INSERT INTO provider_instruments(provider,venue,provider_symbol,canonical_instrument_id,
+                    market_status,data_enabled,historical_candles_supported,live_quotes_supported,last_successful_refresh_at)
+                VALUES ('synthetic-test','synthetic-test','BTCUSDT','focus-test','active',TRUE,TRUE,TRUE,:stamp)
+            """), {"stamp": stamp})
+            # A provider catalogue row alone cannot enter the focused scanner.
+            assert await load_database_universe(session, require_analysis_ready=True, now=now) == []
+            assert await load_database_universe(session) == ["BTCUSDT"]
+>           await session.execute(text("""
+                INSERT INTO instrument_certifications(instrument_id,readiness_state,evidence,certified_at)
+                VALUES ('focus-test','analysis_ready','{"synthetic_fixture":true}',:stamp)
+            """), {"stamp": stamp})
+
+tests\test_focused_universe_database_postgres.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.audit-venv\Lib\site-packages\sqlalchemy\ext\asyncio\session.py:651: in execute
+    result = await greenlet_spawn(
+.audit-venv\Lib\site-packages\sqlalchemy\util\concurrency.py:199: in greenlet_spawn
+    result = context.switch(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.audit-venv\Lib\site-packages\sqlalchemy\orm\session.py:2473: in execute
+    return self._execute_internal(
+.audit-venv\Lib\site-packages\sqlalchemy\orm\session.py:2373: in _execute_internal
+    result = conn.execute(
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:1448: in execute
+    return meth(
+.audit-venv\Lib\site-packages\sqlalchemy\sql\elements.py:533: in _execute_on_connection
+    return connection._execute_clauseelement(
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:1668: in _execute_clauseelement
+    ret = self._execute_context(
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:1797: in _execute_context
+    self._handle_dbapi_exception(
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:2332: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+.audit-venv\Lib\site-packages\sqlalchemy\engine\base.py:1791: in _execute_context
+    context = constructor(
+.audit-venv\Lib\site-packages\sqlalchemy\engine\default.py:1657: in _init_compiled
+    self.compiled_parameters = [
+.audit-venv\Lib\site-packages\sqlalchemy\engine\default.py:1658: in <listcomp>
+    compiled.construct_params(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <sqlalchemy.dialects.postgresql.asyncpg.PGCompiler_asyncpg object at 0x000001BDBF2B5250>
+params = {'stamp': datetime.datetime(2026, 10, 16, 12, 0)}
+extracted_parameters = [BindParameter('stamp', None, type_=NullType()), BindParameter('true', None, type_=NullType())]
+escape_names = False, _group_number = 0, _check = True, _no_postcompile = False
+_collected_params = None
+
+    def construct_params(
+        self,
+        params: Optional[_CoreSingleExecuteParams] = None,
+        extracted_parameters: Optional[Sequence[BindParameter[Any]]] = None,
+        escape_names: bool = True,
+        _group_number: Optional[int] = None,
+        _check: bool = True,
+        _no_postcompile: bool = False,
+        _collected_params: _CoreSingleExecuteParams | None = None,
+    ) -> _MutableCoreSingleExecuteParams:
+        """return a dictionary of bind parameter keys and values"""
+        if _collected_params is not None:
+            assert not self._collect_params
+        elif self._collect_params:
+            _collected_params = self._collected_params
+    
+        if _collected_params:
+            if not params:
+                params = _collected_params
+            else:
+                params = {**_collected_params, **params}
+    
+        if self._render_postcompile and not _no_postcompile:
+            assert self._post_compile_expanded_state is not None
+            if not params:
+                return dict(self._post_compile_expanded_state.parameters)
+            else:
+                raise exc.InvalidRequestError(
+                    "can't construct new parameters when render_postcompile "
+                    "is used; the statement is hard-linked to the original "
+                    "parameters.  Use construct_expanded_state to generate a "
+                    "new statement and parameters."
+                )
+    
+        has_escaped_names = escape_names and bool(self.escaped_bind_names)
+    
+        if extracted_parameters:
+            # related the bound parameters collected in the original cache key
+            # to those collected in the incoming cache key.  They will not have
+            # matching names but they will line up positionally in the same
+            # way.   The parameters present in self.bind_names may be clones of
+            # these original cache key params in the case of DML but the .key
+            # will be guaranteed to match.
+            if self.cache_key is None:
+                raise exc.CompileError(
+                    "This compiled object has no original cache key; "
+                    "can't pass extracted_parameters to construct_params"
+                )
+            else:
+                orig_extracted = self.cache_key[1]
+    
+            ckbm_tuple = self._cache_key_bind_match
+            assert ckbm_tuple is not None
+            ckbm, _ = ckbm_tuple
+            resolved_extracted = {
+                bind: extracted
+                for b, extracted in zip(orig_extracted, extracted_parameters)
+                for bind in ckbm[b]
+            }
+        else:
+            resolved_extracted = None
+    
+        if params:
+            pd = {}
+            for bindparam, name in self.bind_names.items():
+                escaped_name = (
+                    self.escaped_bind_names.get(name, name)
+                    if has_escaped_names
+                    else name
+                )
+    
+                if bindparam.key in params:
+                    pd[escaped_name] = params[bindparam.key]
+                elif name in params:
+                    pd[escaped_name] = params[name]
+    
+                elif _check and bindparam.required:
+                    if _group_number:
+                        raise exc.InvalidRequestError(
+                            "A value is required for bind parameter %r, "
+                            "in parameter group %d"
+                            % (bindparam.key, _group_number),
+                            code="cd3x",
+                        )
+                    else:
+>                       raise exc.InvalidRequestError(
+                            "A value is required for bind parameter %r"
+                            % bindparam.key,
+                            code="cd3x",
+                        )
+E                       sqlalchemy.exc.StatementError: (sqlalchemy.exc.InvalidRequestError) A value is required for bind parameter 'true'
+E                       [SQL: 
+E                                   INSERT INTO instrument_certifications(instrument_id,readiness_state,evidence,certified_at)
+E                                   VALUES ('focus-test','analysis_ready','{"synthetic_fixture"$1}',$2)
+E                               ]
+E                       [parameters: [{'stamp': datetime.datetime(2026, 10, 16, 12, 0)}]]
+E                       (Background on this error at: https://sqlalche.me/e/21/cd3x)
+
+.audit-venv\Lib\site-packages\sqlalchemy\sql\compiler.py:2007: StatementError
+=========================== short test summary info ===========================
+FAILED tests/test_focused_universe_database_postgres.py::test_focused_sql_rejects_incomplete_stale_future_and_misclassified_records
+1 failed, 64 passed in 8.51s

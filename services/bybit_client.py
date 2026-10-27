@@ -3,6 +3,7 @@
 The client treats an order-create acknowledgement as provisional and confirms
 it through the authenticated order endpoint before returning success.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -162,7 +163,11 @@ class BybitV5Client:
         elif isinstance(permissions, (list, tuple, set)):
             flattened.update(str(value).strip().lower() for value in permissions)
 
-        forbidden = {value for value in flattened if any(token in value for token in ("withdraw", "transfer", "submembertransfer"))}
+        forbidden = {
+            value
+            for value in flattened
+            if any(token in value for token in ("withdraw", "transfer", "submembertransfer"))
+        }
         has_trade = any(
             token in value
             for value in flattened
@@ -196,7 +201,8 @@ class BybitV5Client:
 
     async def get_instrument_rules(self, symbol: str, *, category: str = "linear") -> InstrumentRules:
         payload = await self._request(
-            "GET", "/v5/market/instruments-info",
+            "GET",
+            "/v5/market/instruments-info",
             params={"category": category, "symbol": symbol.upper()},
             authenticated=False,
         )
@@ -220,7 +226,8 @@ class BybitV5Client:
 
     async def get_ticker(self, symbol: str, *, category: str = "linear") -> dict[str, Any]:
         payload = await self._request(
-            "GET", "/v5/market/tickers",
+            "GET",
+            "/v5/market/tickers",
             params={"category": category, "symbol": symbol.upper()},
             authenticated=False,
         )
@@ -243,7 +250,8 @@ class BybitV5Client:
         order_link_id: str | None = None,
     ) -> dict[str, Any] | None:
         payload = await self._request(
-            "GET", "/v5/order/realtime",
+            "GET",
+            "/v5/order/realtime",
             params={
                 "category": category,
                 "symbol": symbol.upper(),
@@ -256,7 +264,8 @@ class BybitV5Client:
 
     async def get_positions(self, *, symbol: str, category: str = "linear") -> list[dict[str, Any]]:
         payload = await self._request(
-            "GET", "/v5/position/list",
+            "GET",
+            "/v5/position/list",
             params={"category": category, "symbol": symbol.upper()},
         )
         return [dict(item) for item in list((payload.get("result") or {}).get("list") or [])]
@@ -271,7 +280,8 @@ class BybitV5Client:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         payload = await self._request(
-            "GET", "/v5/position/closed-pnl",
+            "GET",
+            "/v5/position/closed-pnl",
             params={
                 "category": category,
                 "symbol": symbol.upper(),

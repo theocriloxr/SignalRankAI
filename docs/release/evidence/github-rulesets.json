@@ -1,0 +1,23 @@
+[
+  [
+    {
+      "id": 24410166,
+      "name": "SignalRankAI release governance",
+      "target": "branch",
+      "source_type": "Repository",
+      "source": "theocriloxr/SignalRankAI",
+      "enforcement": "active",
+      "node_id": "RRS_lACqUmVwb3NpdG9yec5DEiXTzgF0eDY",
+      "_links": {
+        "self": {
+          "href": "https://api.github.com/repos/theocriloxr/SignalRankAI/rulesets/24410166"
+        },
+        "html": {
+          "href": "https://github.com/theocriloxr/SignalRankAI/rules/24410166"
+        }
+      },
+      "created_at": "2026-10-03T08:17:09.506+01:00",
+      "updated_at": "2026-10-03T08:18:21.002+01:00"
+    }
+  ]
+]

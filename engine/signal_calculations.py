@@ -1,10 +1,11 @@
 """
 Enhanced signal calculations: profit/loss, risk-reward, position sizing, pips.
 """
+
 from utils.timeutils import now_utc_naive
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +79,7 @@ def calculate_expected_profit(signal: Dict) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     direction = _normalize_direction(signal.get("direction"))
-    targets = _parse_target_levels(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    targets = _parse_target_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
     if entry <= 0 or direction is None or not targets:
         return None
     tp1 = float(targets[0])
@@ -116,9 +115,7 @@ def calculate_rr_ladder(signal: Dict) -> Dict[str, Any]:
     except (TypeError, ValueError):
         return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
     direction = _normalize_direction(signal.get("direction"))
-    targets = _parse_target_levels(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    targets = _parse_target_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
     risk = abs(entry - stop)
     if entry <= 0 or stop <= 0 or risk <= 0 or direction is None:
         return {"target_rrs": [], "tp1_rr": None, "final_rr": None}
@@ -170,12 +167,12 @@ def calculate_risk_reward(signal: Dict) -> Optional[float]:
 def calculate_position_size(signal: Dict, account_balance: float = 10000, risk_pct: float = 1.0) -> Optional[float]:
     """
     Calculate suggested position size using 1% risk rule.
-    
+
     Args:
         signal: Signal dict with entry and stop_loss
         account_balance: Account balance (default 10000)
         risk_pct: Risk percentage per trade (default 1%)
-    
+
     Returns:
         Position size in asset units
     """
@@ -202,7 +199,7 @@ def calculate_position_size(signal: Dict, account_balance: float = 10000, risk_p
         risk_amount = balance * (risk_percent / 100.0)
         position_size = risk_amount / risk_per_unit
         return position_size if position_size > 0 else None
-    
+
     except Exception as e:
         logger.debug(f"Failed to calculate position size: {e}")
         return None
@@ -213,8 +210,23 @@ def calculate_pips(asset: str, entry: float, exit_price: float) -> Optional[floa
     try:
         symbol = str(asset or "").upper().replace("/", "").replace("-", "").replace("_", "")
         fiat = {
-            "USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD",
-            "SGD", "HKD", "NOK", "SEK", "DKK", "ZAR", "MXN", "TRY", "PLN",
+            "USD",
+            "EUR",
+            "GBP",
+            "JPY",
+            "CHF",
+            "CAD",
+            "AUD",
+            "NZD",
+            "SGD",
+            "HKD",
+            "NOK",
+            "SEK",
+            "DKK",
+            "ZAR",
+            "MXN",
+            "TRY",
+            "PLN",
         }
         if len(symbol) != 6 or symbol[:3] not in fiat or symbol[3:] not in fiat:
             return None
@@ -236,7 +248,7 @@ def calculate_signal_age_minutes(signal: Dict) -> Optional[int]:
         created_at = signal.get("created_at")
         if not created_at:
             return None
-        
+
         # Handle both datetime objects and string timestamps
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
@@ -245,7 +257,7 @@ def calculate_signal_age_minutes(signal: Dict) -> Optional[int]:
 
         age = now_utc_naive() - created_at
         return max(0, int(age.total_seconds() / 60))
-    
+
     except Exception as e:
         logger.debug(f"Failed to calculate signal age: {e}")
         return None
@@ -254,18 +266,18 @@ def calculate_signal_age_minutes(signal: Dict) -> Optional[int]:
 def get_price_status_indicator(signal: Dict) -> str:
     """
     Get colored indicator for price status.
-    
+
     Returns:
         Emoji indicator showing if conditions are favorable, cautious, or unfavorable
     """
     try:
-        current_price = signal.get('current_price')
-        entry = float(signal.get('entry', 0))
-        direction = signal.get('direction', 'long').lower()
-        
+        current_price = signal.get("current_price")
+        entry = float(signal.get("entry", 0))
+        direction = signal.get("direction", "long").lower()
+
         if current_price is None or entry <= 0:
             return "ℹ️"
-        
+
         current_price = float(current_price)
         normalized = _normalize_direction(direction)
         if normalized is None:
@@ -286,7 +298,7 @@ def get_price_status_indicator(signal: Dict) -> str:
                 return "❌"  # Unfavorable entry
             else:
                 return "⚠️"  # Near entry
-    
+
     except Exception as e:
         logger.debug(f"Failed to get price status indicator: {e}")
         return "ℹ️"
@@ -317,9 +329,7 @@ def format_enhanced_signal_data(signal: Dict) -> Dict:
         entry = float(signal.get("entry") or 0)
     except (TypeError, ValueError):
         entry = 0.0
-    targets = _parse_target_levels(
-        signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
-    )
+    targets = _parse_target_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
     if entry > 0 and targets:
         enhanced["pips_to_tp"] = calculate_pips(asset, entry, targets[0])
     try:
@@ -329,4 +339,3 @@ def format_enhanced_signal_data(signal: Dict) -> Dict:
     if entry > 0 and stop_loss > 0:
         enhanced["pips_to_sl"] = calculate_pips(asset, entry, stop_loss)
     return enhanced
-

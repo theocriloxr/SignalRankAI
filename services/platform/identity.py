@@ -5,6 +5,7 @@ plus SQLAlchemy. Passwords use scrypt with per-password salts. Access tokens are
 short-lived HMAC-signed JWT-compatible compact tokens; refresh tokens are
 opaque, single-use values stored only as SHA-256 hashes.
 """
+
 from __future__ import annotations
 
 import base64
@@ -99,7 +100,9 @@ def _sha256(value: str | bytes) -> str:
 
 def _auth_secret() -> bytes:
     secret = str(os.getenv("APP_AUTH_SECRET") or os.getenv("WEB_SECRET_KEY") or "").strip()
-    environment = str(os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local").lower()
+    from core.env import runtime_environment_name
+
+    environment = runtime_environment_name("local")
     if not secret:
         if environment in {"production", "staging"}:
             raise RuntimeError("APP_AUTH_SECRET is required in staging and production")
@@ -235,18 +238,53 @@ async def ensure_telegram_user(
     username: str | None = None,
     display_name: str | None = None,
 ) -> int:
+    telegram_id = int(telegram_user_id)
+    if telegram_id <= 0:
+        raise AuthenticationError("invalid_telegram_identity")
+    # Serialize first use of an identity across Telegram and app login paths.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:identity,0))"),
+        {"identity": "telegram:" + str(telegram_id)},
+    )
+    identity = (
+        await session.execute(
+            text("SELECT user_id,verified,disabled_at FROM auth_identities "
+                 "WHERE provider='telegram' AND provider_subject_id=:subject FOR UPDATE"),
+            {"subject": str(telegram_id)},
+        )
+    ).mappings().first()
+    if identity and (not identity.get("verified") or identity.get("disabled_at") is not None):
+        raise AuthenticationError("telegram_identity_unavailable")
     row = (
         await session.execute(
-            text("SELECT id FROM users WHERE telegram_user_id=:telegram_id"),
-            {"telegram_id": int(telegram_user_id)},
+            text("SELECT id FROM users WHERE telegram_user_id=:telegram_id FOR UPDATE"),
+            {"telegram_id": telegram_id},
         )
     ).first()
+    if identity:
+        canonical_id = int(identity["user_id"])
+        if row and int(row[0]) != canonical_id:
+            raise IdentityConflict("telegram_identity_owner_conflict")
+        owner = (
+            await session.execute(
+                text("SELECT id,telegram_user_id FROM users WHERE id=:uid FOR UPDATE"),
+                {"uid": canonical_id},
+            )
+        ).mappings().first()
+        if not owner or owner.get("telegram_user_id") not in (None, telegram_id):
+            raise IdentityConflict("telegram_primary_identity_conflict")
+        # Mirror the already verified binding on its existing owner. This never
+        # transfers an identity, merges users or changes account balances.
+        if owner.get("telegram_user_id") is None:
+            await session.execute(text("UPDATE users SET telegram_user_id=:telegram_id WHERE id=:uid"),
+                                  {"telegram_id": telegram_id, "uid": canonical_id})
+        row = (canonical_id,)
     if row:
         user_id = int(row[0])
         await session.execute(
             text(
                 "UPDATE users SET username=COALESCE(:username,username), "
-                "display_name=COALESCE(:display_name,display_name), "
+                "display_name=COALESCE(display_name,:display_name), "
                 "telegram_reachable=TRUE, telegram_unreachable_reason=NULL, "
                 "telegram_unreachable_at=NULL, notification_suppressed=FALSE, "
                 "last_active_at=NOW(), updated_at=NOW(), "
@@ -260,21 +298,30 @@ async def ensure_telegram_user(
             (
                 await session.execute(
                     text(
-                        "INSERT INTO users(telegram_user_id,username,tier,display_name,public_user_id,created_at,last_active_at,updated_at) "
-                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,NOW(),NOW(),NOW()) RETURNING id"
+                        "INSERT INTO users(telegram_user_id,username,tier,display_name,public_user_id,auto_renew,created_at,last_active_at,updated_at) "
+                        "VALUES(:telegram_id,:username,'free',:display_name,gen_random_uuid()::text,FALSE,NOW(),NOW(),NOW()) "
+                        "ON CONFLICT(telegram_user_id) DO UPDATE SET last_active_at=NOW() RETURNING id"
                     ),
                     {"telegram_id": int(telegram_user_id), "username": username, "display_name": display_name},
                 )
             ).scalar_one()
         )
-    await session.execute(
+    bound = await session.execute(
         text(
             "INSERT INTO auth_identities(identity_id,user_id,provider,provider_subject_id,verified,verified_at,metadata) "
             "VALUES(gen_random_uuid()::text,:uid,'telegram',:subject,TRUE,NOW(),CAST(:metadata AS JSONB)) "
-            "ON CONFLICT(provider,provider_subject_id) DO UPDATE SET last_used_at=NOW(), disabled_at=NULL"
+            "ON CONFLICT(provider,provider_subject_id) DO UPDATE SET last_used_at=NOW() "
+            "WHERE auth_identities.user_id=:uid AND auth_identities.verified IS TRUE "
+            "AND auth_identities.disabled_at IS NULL RETURNING user_id"
         ),
-        {"uid": user_id, "subject": str(int(telegram_user_id)), "metadata": json.dumps({"username": username}, separators=(",", ":"))},
+        {
+            "uid": user_id,
+            "subject": str(int(telegram_user_id)),
+            "metadata": json.dumps({"username": username}, separators=(",", ":")),
+        },
     )
+    if bound.scalar_one_or_none() != user_id:
+        raise IdentityConflict("telegram_identity_owner_conflict")
     return user_id
 
 
@@ -290,10 +337,10 @@ async def create_email_account(session: Any, *, email: str, password: str, displ
         (
             await session.execute(
                 text(
-                    "INSERT INTO users(telegram_user_id,username,tier,primary_email,display_name,public_user_id,account_status,onboarding_status,created_at,updated_at) "
-                    "VALUES(NULL,NULL,'free',:email,:display_name,gen_random_uuid()::text,'active','started',NOW(),NOW()) RETURNING id"
+                    "INSERT INTO users(telegram_user_id,username,tier,primary_email,display_name,public_user_id,account_status,onboarding_status,auto_renew,created_at,updated_at) "
+                    "VALUES(NULL,NULL,'free',:email,:display_name,gen_random_uuid()::text,'active','started',FALSE,NOW(),NOW()) RETURNING id"
                 ),
-                {"email": email_value, "display_name": (display_name or email_value.split('@')[0])[:160]},
+                {"email": email_value, "display_name": (display_name or email_value.split("@")[0])[:160]},
             )
         ).scalar_one()
     )
@@ -309,10 +356,14 @@ async def create_email_account(session: Any, *, email: str, password: str, displ
         {"uid": user_id, "password_hash": password_hash},
     )
     await session.execute(
-        text("INSERT INTO notification_preferences(user_id,telegram_enabled,email_enabled) VALUES(:uid,FALSE,FALSE) ON CONFLICT(user_id) DO NOTHING"),
+        text(
+            "INSERT INTO notification_preferences(user_id,telegram_enabled,email_enabled) VALUES(:uid,FALSE,FALSE) ON CONFLICT(user_id) DO NOTHING"
+        ),
         {"uid": user_id},
     )
-    await record_security_event(session, user_id=user_id, event_type="account.created", metadata={"method": "email_password"})
+    await record_security_event(
+        session, user_id=user_id, event_type="account.created", metadata={"method": "email_password"}
+    )
     return user_id
 
 
@@ -332,15 +383,19 @@ async def authenticate_email_password(session: Any, *, email: str, password: str
         raise AuthenticationError("invalid_credentials")
     if row[2] != "active":
         raise AuthenticationError("account_unavailable")
-    await session.execute(text("UPDATE users SET last_active_at=NOW(),updated_at=NOW() WHERE id=:uid"), {"uid": int(row[0])})
+    await session.execute(
+        text("UPDATE users SET last_active_at=NOW(),updated_at=NOW() WHERE id=:uid"), {"uid": int(row[0])}
+    )
     return int(row[0])
 
 
 async def _require_active_account(session: Any, user_id: int) -> None:
-    row = (await session.execute(
-        text("SELECT account_status FROM users WHERE id=:uid"),
-        {"uid": int(user_id)},
-    )).first()
+    row = (
+        await session.execute(
+            text("SELECT account_status FROM users WHERE id=:uid"),
+            {"uid": int(user_id)},
+        )
+    ).first()
     if not row or row[0] != "active":
         raise AuthenticationError("account_unavailable")
 
@@ -393,6 +448,20 @@ async def create_session_tokens(
     )
 
 
+async def _lock_refresh_owner(session: Any, token_hash: str) -> None:
+    # Take the stable account lock before any session-row lock. Refresh creates
+    # a successor row, so locking only the submitted token cannot serialize a
+    # logout with rotation of another token in the same device family.
+    row = (
+        await session.execute(
+            text("SELECT user_id FROM user_sessions WHERE refresh_token_hash=:token_hash"),
+            {"token_hash": token_hash},
+        )
+    ).first()
+    if row:
+        await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(row[0])})
+
+
 async def rotate_refresh_token(
     session: Any,
     *,
@@ -401,6 +470,7 @@ async def rotate_refresh_token(
     ip_address: str | None = None,
 ) -> SessionTokens:
     token_hash = _sha256(refresh_token)
+    await _lock_refresh_owner(session, token_hash)
     row = (
         await session.execute(
             text(
@@ -419,9 +489,9 @@ async def rotate_refresh_token(
             await session.execute(
                 text(
                     "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()), revoke_reason='refresh_reuse_detected', refresh_reuse_detected=TRUE "
-                    "WHERE session_family_id=:family"
+                    "WHERE user_id=:uid AND session_family_id=:family"
                 ),
-                {"family": family_id},
+                {"family": family_id, "uid": int(user_id)},
             )
             await record_security_event(
                 session,
@@ -477,17 +547,50 @@ async def rotate_refresh_token(
 
 
 async def revoke_session(session: Any, *, session_id: str, user_id: int, reason: str = "user_logout") -> bool:
-    result = await session.execute(
+    await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(user_id)})
+    row = (
+        await session.execute(
+            text("SELECT session_family_id FROM user_sessions WHERE session_id=:sid AND user_id=:uid"),
+            {"sid": str(session_id), "uid": int(user_id)},
+        )
+    ).first()
+    if not row:
+        return False
+    await session.execute(
         text(
             "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()),revoke_reason=:reason "
-            "WHERE session_id=:sid AND user_id=:uid"
+            "WHERE user_id=:uid AND (session_id=:sid OR session_family_id=:family) AND revoked_at IS NULL"
         ),
-        {"sid": str(session_id), "uid": int(user_id), "reason": str(reason)[:128]},
+        {"sid": str(session_id), "family": row[0], "uid": int(user_id), "reason": str(reason)[:128]},
     )
-    return bool(result.rowcount)
+    return True
+
+
+async def revoke_refresh_session_family(session: Any, *, refresh_token: str) -> bool:
+    """Revoke only the device family proven by this opaque refresh credential.
+
+    A rotated token still proves the same family for logout; it never grants
+    access or creates new tokens. Unknown tokens are an idempotent no-op.
+    """
+    token_hash = _sha256(refresh_token)
+    await _lock_refresh_owner(session, token_hash)
+    row = (
+        await session.execute(
+            text("SELECT session_id,user_id FROM user_sessions WHERE refresh_token_hash=:token_hash"),
+            {"token_hash": token_hash},
+        )
+    ).first()
+    if not row:
+        return False
+    await revoke_session(session, session_id=str(row[0]), user_id=int(row[1]))
+    await record_security_event(
+        session, user_id=int(row[1]), event_type="session.device_logout", session_id=str(row[0]),
+    )
+    return True
 
 
 async def revoke_all_sessions(session: Any, *, user_id: int, except_session_id: str | None = None) -> int:
+    await session.execute(text("SELECT id FROM users WHERE id=:uid FOR UPDATE"), {"uid": int(user_id)})
     result = await session.execute(
         text(
             "UPDATE user_sessions SET revoked_at=COALESCE(revoked_at,NOW()),revoke_reason='logout_all' "
@@ -532,7 +635,9 @@ async def create_telegram_activation(
             "code_hash": _sha256(code),
             "env": str(os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local")[:24],
             "expires": expires,
-            "metadata": json.dumps({"telegram_user_id": int(telegram_user_id), "username": username}, separators=(",", ":")),
+            "metadata": json.dumps(
+                {"telegram_user_id": int(telegram_user_id), "username": username}, separators=(",", ":")
+            ),
         },
     )
     await record_security_event(session, user_id=user_id, event_type="telegram.app_activation_created")
@@ -581,9 +686,7 @@ async def complete_telegram_activation(
         raise IdentityConflict("email_belongs_to_another_account")
 
     await session.execute(
-        text(
-            "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:cid"
-        ),
+        text("UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:cid"),
         {"cid": challenge_id, "ip": _fingerprint(ip_address)},
     )
     await session.execute(
@@ -616,7 +719,6 @@ async def complete_telegram_activation(
     return int(user_id)
 
 
-
 async def create_telegram_link_request(session: Any, *, user_id: int) -> TelegramLinkRequest:
     """Create a single-use code for linking an app account from Telegram."""
     row = (
@@ -627,6 +729,13 @@ async def create_telegram_link_request(session: Any, *, user_id: int) -> Telegra
     ).first()
     if not row or str(row[1] or "active") != "active":
         raise AuthenticationError("account_unavailable")
+    # Re-read canonical state while holding the account lock. An API snapshot
+    # may precede a successful Telegram callback, and callers may be non-HTTP.
+    snapshot = await user_snapshot(session, int(user_id))
+    if snapshot and snapshot.get("telegram_link_status") == "linked":
+        raise IdentityConflict("telegram_already_linked")
+    if snapshot and snapshot.get("telegram_link_status") == "merge_review":
+        raise IdentityConflict("telegram_verified_merge_pending")
     token = "srl_" + secrets.token_urlsafe(40)
     code = secrets.token_hex(5).upper()
     expires = now_utc_naive() + timedelta(minutes=max(2, int(os.getenv("APP_LINK_TTL_MINUTES", "10"))))
@@ -773,7 +882,9 @@ async def complete_telegram_link_request(
             {
                 "link_id": link_id,
                 "subject": telegram_subject,
-                "metadata": json.dumps({"existing_user_id": existing_user_id, "merge_id": merge_id}, separators=(",", ":")),
+                "metadata": json.dumps(
+                    {"existing_user_id": existing_user_id, "merge_id": merge_id}, separators=(",", ":")
+                ),
             },
         )
         await record_security_event(
@@ -839,7 +950,10 @@ async def complete_telegram_link_request(
     )
     return TelegramLinkResult(status="linked", user_id=int(target_user_id))
 
-def validate_telegram_login_payload(payload: Mapping[str, Any], bot_token: str, *, max_age_seconds: int = 600) -> dict[str, Any]:
+
+def validate_telegram_login_payload(
+    payload: Mapping[str, Any], bot_token: str, *, max_age_seconds: int = 600
+) -> dict[str, Any]:
     """Validate Telegram Login Widget authorization data."""
     data = {str(k): v for k, v in payload.items() if k not in {"hash", "signature"} and v is not None}
     supplied_hash = str(payload.get("hash") or "")
@@ -854,7 +968,9 @@ def validate_telegram_login_payload(payload: Mapping[str, Any], bot_token: str, 
     return data
 
 
-def validate_telegram_mini_app_init_data(init_data: str, bot_token: str, *, max_age_seconds: int = 600) -> dict[str, Any]:
+def validate_telegram_mini_app_init_data(
+    init_data: str, bot_token: str, *, max_age_seconds: int = 600
+) -> dict[str, Any]:
     """Validate Telegram Mini App ``initData`` using Telegram's WebAppData key."""
     values = dict(parse_qsl(str(init_data), keep_blank_values=True))
     supplied_hash = values.pop("hash", "")
@@ -874,14 +990,18 @@ def validate_telegram_mini_app_init_data(init_data: str, bot_token: str, *, max_
 
 async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
     row = (
-        await session.execute(
-            text(
-                "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,email_verified_at,display_name,country,timezone,timezone_auto_update,timezone_updated_at,locale,preferred_currency,account_status,onboarding_status,premium_until,max_risk_percentage,max_daily_drawdown_pct,risk_profile,marketing_consent,terms_version,terms_accepted_at,created_at,last_active_at "
-                "FROM users WHERE id=:uid"
-            ),
-            {"uid": int(user_id)},
+        (
+            await session.execute(
+                text(
+                    "SELECT id,public_user_id,telegram_user_id,username,tier,primary_email,email_verified_at,display_name,country,timezone,timezone_auto_update,timezone_updated_at,locale,preferred_currency,account_status,onboarding_status,premium_until,max_risk_percentage,max_daily_drawdown_pct,risk_profile,marketing_consent,terms_version,terms_accepted_at,created_at,last_active_at "
+                    "FROM users WHERE id=:uid"
+                ),
+                {"uid": int(user_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not row:
         return None
 
@@ -891,37 +1011,58 @@ async def user_snapshot(session: Any, user_id: int) -> dict[str, Any] | None:
     telegram_linked_user_id = None
 
     if telegram_status != "linked":
-        merge = (
+        verified_identity = (
             await session.execute(
                 text(
-                    "SELECT merge_id,merged_user_id,status FROM account_merge_records "
-                    "WHERE canonical_user_id=:uid AND status='pending_review' "
-                    "ORDER BY created_at DESC LIMIT 1"
+                    "SELECT 1 FROM auth_identities WHERE user_id=:uid "
+                    "AND provider='telegram' AND verified IS TRUE "
+                    "AND disabled_at IS NULL LIMIT 1"
                 ),
                 {"uid": int(user_id)},
             )
-        ).mappings().first()
+        ).first()
+        if verified_identity:
+            telegram_status = "linked"
+
+    if telegram_status != "linked":
+        merge = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT merge_id,merged_user_id,status FROM account_merge_records "
+                        "WHERE canonical_user_id=:uid AND status='pending_review' "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"uid": int(user_id)},
+                )
+            )
+            .mappings()
+            .first()
+        )
         if merge:
             telegram_status = "merge_review"
             telegram_merge_id = str(merge.get("merge_id") or "") or None
             telegram_linked_user_id = int(merge["merged_user_id"]) if merge.get("merged_user_id") is not None else None
         else:
             link = (
-                await session.execute(
-                    text(
-                        "SELECT status,expires_at FROM account_link_requests "
-                        "WHERE requesting_user_id=:uid AND provider='telegram' "
-                        "ORDER BY created_at DESC LIMIT 1"
-                    ),
-                    {"uid": int(user_id)},
+                (
+                    await session.execute(
+                        text(
+                            "SELECT status,expires_at FROM account_link_requests "
+                            "WHERE requesting_user_id=:uid AND provider='telegram' "
+                            "AND status='pending' AND expires_at>:now_utc "
+                            "ORDER BY created_at DESC LIMIT 1"
+                        ),
+                        {"uid": int(user_id), "now_utc": now_utc_naive()},
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if link:
                 link_status = str(link.get("status") or "").strip().lower()
                 expires_at = link.get("expires_at")
-                if link_status == "merge_review":
-                    telegram_status = "merge_review"
-                elif link_status == "pending" and expires_at is not None and expires_at > now_utc_naive():
+                if link_status == "pending" and expires_at is not None and expires_at > now_utc_naive():
                     telegram_status = "link_pending"
 
     snapshot["telegram_link_status"] = telegram_status
@@ -954,7 +1095,7 @@ def _totp_code(secret: str, *, at_time: int | None = None, step_seconds: int = 3
     counter = int((at_time or int(time.time())) // step_seconds)
     digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
     offset = digest[-1] & 0x0F
-    value = (int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF) % (10 ** digits)
+    value = (int.from_bytes(digest[offset : offset + 4], "big") & 0x7FFFFFFF) % (10**digits)
     return str(value).zfill(digits), counter
 
 
@@ -1008,14 +1149,18 @@ async def _consume_account_challenge(
     consume: bool = True,
 ) -> tuple[int | None, dict[str, Any]]:
     row = (
-        await session.execute(
-            text(
-                "SELECT challenge_id,user_id,expires_at,consumed_at,attempts,max_attempts,metadata "
-                "FROM login_challenges WHERE token_hash=:token_hash AND purpose=:purpose FOR UPDATE"
-            ),
-            {"token_hash": _sha256(str(token)), "purpose": str(purpose)},
+        (
+            await session.execute(
+                text(
+                    "SELECT challenge_id,user_id,expires_at,consumed_at,attempts,max_attempts,metadata "
+                    "FROM login_challenges WHERE token_hash=:token_hash AND purpose=:purpose FOR UPDATE"
+                ),
+                {"token_hash": _sha256(str(token)), "purpose": str(purpose)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not row:
         raise AuthenticationError("invalid_or_expired_challenge")
     if row["consumed_at"] is not None:
@@ -1026,25 +1171,31 @@ async def _consume_account_challenge(
         raise AuthenticationError("challenge_attempt_limit")
     if consume:
         await session.execute(
-            text(
-                "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:challenge_id"
-            ),
+            text("UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE challenge_id=:challenge_id"),
             {"challenge_id": row["challenge_id"], "ip": _fingerprint(ip_address)},
         )
     return (int(row["user_id"]) if row["user_id"] is not None else None, dict(row["metadata"] or {}))
 
 
 async def request_email_verification(session: Any, *, user_id: int, base_url: str) -> AccountChallenge:
-    row = (await session.execute(text("SELECT primary_email,email_verified_at FROM users WHERE id=:uid"), {"uid": int(user_id)})).first()
+    row = (
+        await session.execute(
+            text("SELECT primary_email,email_verified_at FROM users WHERE id=:uid"), {"uid": int(user_id)}
+        )
+    ).first()
     if not row or not row[0]:
         raise AuthenticationError("email_required")
     if row[1] is not None:
         raise AuthenticationError("email_already_verified")
     challenge = await _create_account_challenge(session, purpose="verify_email", user_id=int(user_id), ttl_minutes=30)
     from services.platform.email_delivery import queue_account_email
+
     link = f"{str(base_url).rstrip('/')}/app?verify_email={quote(challenge.token)}"
     await queue_account_email(
-        session, recipient=str(row[0]), template="verify_email", user_id=int(user_id),
+        session,
+        recipient=str(row[0]),
+        template="verify_email",
+        user_id=int(user_id),
         context={"link": link, "expires_minutes": 30},
         idempotency_key=f"verify-email:{user_id}:{_sha256(challenge.token)[:16]}",
     )
@@ -1072,15 +1223,23 @@ async def verify_email_challenge(session: Any, *, token: str, ip_address: str | 
 
 async def request_magic_login(session: Any, *, email: str, base_url: str) -> AccountChallenge | None:
     value = canonical_email(email)
-    row = (await session.execute(text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value})).first()
+    row = (
+        await session.execute(
+            text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value}
+        )
+    ).first()
     if not row:
         return None
     user_id = int(row[0])
     challenge = await _create_account_challenge(session, purpose="magic_login", user_id=user_id, ttl_minutes=15)
     from services.platform.email_delivery import queue_account_email
+
     link = f"{str(base_url).rstrip('/')}/app?magic_login={quote(challenge.token)}"
     await queue_account_email(
-        session, recipient=value, template="magic_login", user_id=user_id,
+        session,
+        recipient=value,
+        template="magic_login",
+        user_id=user_id,
         context={"link": link, "expires_minutes": 15},
         idempotency_key=f"magic-login:{user_id}:{_sha256(challenge.token)[:16]}",
     )
@@ -1097,15 +1256,23 @@ async def consume_magic_login(session: Any, *, token: str, ip_address: str | Non
 
 async def request_password_reset(session: Any, *, email: str, base_url: str) -> AccountChallenge | None:
     value = canonical_email(email)
-    row = (await session.execute(text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value})).first()
+    row = (
+        await session.execute(
+            text("SELECT id FROM users WHERE LOWER(primary_email)=:email AND account_status='active'"), {"email": value}
+        )
+    ).first()
     if not row:
         return None
     user_id = int(row[0])
     challenge = await _create_account_challenge(session, purpose="password_reset", user_id=user_id, ttl_minutes=20)
     from services.platform.email_delivery import queue_account_email
+
     link = f"{str(base_url).rstrip('/')}/app?password_reset={quote(challenge.token)}"
     await queue_account_email(
-        session, recipient=value, template="password_reset", user_id=user_id,
+        session,
+        recipient=value,
+        template="password_reset",
+        user_id=user_id,
         context={"link": link, "expires_minutes": 20},
         idempotency_key=f"password-reset:{user_id}:{_sha256(challenge.token)[:16]}",
     )
@@ -1113,9 +1280,7 @@ async def request_password_reset(session: Any, *, email: str, base_url: str) -> 
     return challenge
 
 
-async def complete_password_reset(
-    session: Any, *, token: str, new_password: str, ip_address: str | None = None
-) -> int:
+async def complete_password_reset(session: Any, *, token: str, new_password: str, ip_address: str | None = None) -> int:
     user_id, _ = await _consume_account_challenge(session, token=token, purpose="password_reset", ip_address=ip_address)
     if user_id is None:
         raise AuthenticationError("invalid_or_expired_challenge")
@@ -1130,13 +1295,26 @@ async def complete_password_reset(
         {"uid": int(user_id), "password_hash": password_hash},
     )
     await revoke_all_sessions(session, user_id=int(user_id))
-    await record_security_event(session, user_id=int(user_id), event_type="password.reset_completed", severity="warning", ip_address=ip_address)
+    await record_security_event(
+        session, user_id=int(user_id), event_type="password.reset_completed", severity="warning", ip_address=ip_address
+    )
     return int(user_id)
 
 
 async def mfa_status(session: Any, *, user_id: int) -> dict[str, Any]:
-    row = (await session.execute(text("SELECT enabled,verified_at FROM user_mfa_totp WHERE user_id=:uid"), {"uid": int(user_id)})).first()
-    unused = int((await session.execute(text("SELECT COUNT(*) FROM account_recovery_codes WHERE user_id=:uid AND used_at IS NULL"), {"uid": int(user_id)})).scalar_one())
+    row = (
+        await session.execute(
+            text("SELECT enabled,verified_at FROM user_mfa_totp WHERE user_id=:uid"), {"uid": int(user_id)}
+        )
+    ).first()
+    unused = int(
+        (
+            await session.execute(
+                text("SELECT COUNT(*) FROM account_recovery_codes WHERE user_id=:uid AND used_at IS NULL"),
+                {"uid": int(user_id)},
+            )
+        ).scalar_one()
+    )
     return {"enabled": bool(row and row[0]), "verified_at": row[1] if row else None, "unused_recovery_codes": unused}
 
 
@@ -1166,7 +1344,14 @@ async def begin_totp_setup(session: Any, *, user_id: int, account_label: str) ->
 
 
 async def enable_totp(session: Any, *, user_id: int, code: str) -> list[str]:
-    row = (await session.execute(text("SELECT encrypted_secret,last_used_step FROM user_mfa_totp WHERE user_id=:uid AND enabled=FALSE AND created_at>NOW()-INTERVAL '10 minutes' FOR UPDATE"), {"uid": int(user_id)})).first()
+    row = (
+        await session.execute(
+            text(
+                "SELECT encrypted_secret,last_used_step FROM user_mfa_totp WHERE user_id=:uid AND enabled=FALSE AND created_at>NOW()-INTERVAL '10 minutes' FOR UPDATE"
+            ),
+            {"uid": int(user_id)},
+        )
+    ).first()
     if not row:
         raise AuthenticationError("mfa_setup_not_started")
     secret = decrypt_secret(str(row[0]))
@@ -1177,11 +1362,15 @@ async def enable_totp(session: Any, *, user_id: int, code: str) -> list[str]:
     await session.execute(text("DELETE FROM account_recovery_codes WHERE user_id=:uid"), {"uid": int(user_id)})
     for recovery in recovery_codes:
         await session.execute(
-            text("INSERT INTO account_recovery_codes(recovery_code_id,user_id,code_hash) VALUES(gen_random_uuid()::text,:uid,:code_hash)"),
+            text(
+                "INSERT INTO account_recovery_codes(recovery_code_id,user_id,code_hash) VALUES(gen_random_uuid()::text,:uid,:code_hash)"
+            ),
             {"uid": int(user_id), "code_hash": _sha256(recovery)},
         )
     await session.execute(
-        text("UPDATE user_mfa_totp SET enabled=TRUE,verified_at=NOW(),last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"),
+        text(
+            "UPDATE user_mfa_totp SET enabled=TRUE,verified_at=NOW(),last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"
+        ),
         {"uid": int(user_id), "step": step},
     )
     await record_security_event(session, user_id=int(user_id), event_type="mfa.enabled", severity="warning")
@@ -1189,18 +1378,35 @@ async def enable_totp(session: Any, *, user_id: int, code: str) -> list[str]:
 
 
 async def verify_user_mfa(session: Any, *, user_id: int, code: str) -> str:
-    row = (await session.execute(text("SELECT encrypted_secret,last_used_step,enabled FROM user_mfa_totp WHERE user_id=:uid FOR UPDATE"), {"uid": int(user_id)})).first()
+    row = (
+        await session.execute(
+            text("SELECT encrypted_secret,last_used_step,enabled FROM user_mfa_totp WHERE user_id=:uid FOR UPDATE"),
+            {"uid": int(user_id)},
+        )
+    ).first()
     supplied = re.sub(r"[^A-Za-z0-9]", "", str(code or "")).upper()
     if row and bool(row[2]) and re.fullmatch(r"\d{6}", supplied):
         secret = decrypt_secret(str(row[0]))
         if not secret:
             raise AuthenticationError("mfa_secret_unavailable")
         step = verify_totp(secret, supplied, last_used_step=row[1])
-        await session.execute(text("UPDATE user_mfa_totp SET last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"), {"uid": int(user_id), "step": step})
+        await session.execute(
+            text("UPDATE user_mfa_totp SET last_used_step=:step,updated_at=NOW() WHERE user_id=:uid"),
+            {"uid": int(user_id), "step": step},
+        )
         return "totp"
-    recovery = (await session.execute(text("SELECT recovery_code_id FROM account_recovery_codes WHERE user_id=:uid AND code_hash=:code_hash AND used_at IS NULL FOR UPDATE"), {"uid": int(user_id), "code_hash": _sha256(supplied)})).first()
+    recovery = (
+        await session.execute(
+            text(
+                "SELECT recovery_code_id FROM account_recovery_codes WHERE user_id=:uid AND code_hash=:code_hash AND used_at IS NULL FOR UPDATE"
+            ),
+            {"uid": int(user_id), "code_hash": _sha256(supplied)},
+        )
+    ).first()
     if recovery:
-        await session.execute(text("UPDATE account_recovery_codes SET used_at=NOW() WHERE recovery_code_id=:id"), {"id": recovery[0]})
+        await session.execute(
+            text("UPDATE account_recovery_codes SET used_at=NOW() WHERE recovery_code_id=:id"), {"id": recovery[0]}
+        )
         return "recovery_code"
     raise AuthenticationError("invalid_mfa_code")
 
@@ -1208,7 +1414,12 @@ async def verify_user_mfa(session: Any, *, user_id: int, code: str) -> str:
 async def disable_totp(session: Any, *, user_id: int, code: str) -> None:
     await verify_user_mfa(session, user_id=int(user_id), code=code)
     await session.execute(text("DELETE FROM account_recovery_codes WHERE user_id=:uid"), {"uid": int(user_id)})
-    await session.execute(text("UPDATE user_mfa_totp SET enabled=FALSE,verified_at=NULL,last_used_step=NULL,updated_at=NOW() WHERE user_id=:uid"), {"uid": int(user_id)})
+    await session.execute(
+        text(
+            "UPDATE user_mfa_totp SET enabled=FALSE,verified_at=NULL,last_used_step=NULL,updated_at=NOW() WHERE user_id=:uid"
+        ),
+        {"uid": int(user_id)},
+    )
     await record_security_event(session, user_id=int(user_id), event_type="mfa.disabled", severity="critical")
 
 
@@ -1221,7 +1432,11 @@ async def complete_mfa_login(session: Any, *, token: str, code: str, ip_address:
     # attempt; only a valid code consumes the challenge itself. The HTTP caller
     # commits AuthenticationError outcomes so failures cannot reset the budget.
     user_id, _ = await _consume_account_challenge(
-        session, token=token, purpose="mfa_login", ip_address=ip_address, consume=False,
+        session,
+        token=token,
+        purpose="mfa_login",
+        ip_address=ip_address,
+        consume=False,
     )
     if user_id is None:
         raise AuthenticationError("invalid_mfa_challenge")
@@ -1232,10 +1447,18 @@ async def complete_mfa_login(session: Any, *, token: str, code: str, ip_address:
     )
     method = await verify_user_mfa(session, user_id=int(user_id), code=code)
     await session.execute(
-        text("UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE token_hash=:token_hash AND purpose='mfa_login'"),
+        text(
+            "UPDATE login_challenges SET consumed_at=NOW(),consumed_ip_hash=:ip WHERE token_hash=:token_hash AND purpose='mfa_login'"
+        ),
         {"token_hash": _sha256(token), "ip": _fingerprint(ip_address)},
     )
-    await record_security_event(session, user_id=int(user_id), event_type="mfa.login_completed", metadata={"method": method}, ip_address=ip_address)
+    await record_security_event(
+        session,
+        user_id=int(user_id),
+        event_type="mfa.login_completed",
+        metadata={"method": method},
+        ip_address=ip_address,
+    )
     return int(user_id)
 
 
@@ -1261,6 +1484,7 @@ __all__ = [
     "record_security_event",
     "revoke_all_sessions",
     "revoke_session",
+    "revoke_refresh_session_family",
     "rotate_refresh_token",
     "user_snapshot",
     "validate_password",

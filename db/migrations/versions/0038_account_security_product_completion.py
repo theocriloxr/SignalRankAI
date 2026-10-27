@@ -3,6 +3,7 @@
 Revision ID: 0038_account_security_product
 Revises: 0037_unified_product_workspaces
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -44,7 +45,9 @@ def upgrade() -> None:
             updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_email_outbox_idempotency ON email_outbox(idempotency_key) WHERE idempotency_key IS NOT NULL")
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_email_outbox_idempotency ON email_outbox(idempotency_key) WHERE idempotency_key IS NOT NULL"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS ix_email_outbox_pending ON email_outbox(status,next_attempt_at)")
 
     op.execute("""
@@ -82,8 +85,12 @@ def upgrade() -> None:
             created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_notification_events_user_time ON notification_events(user_id,created_at DESC)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_notification_events_unread ON notification_events(user_id,read_at) WHERE read_at IS NULL")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_notification_events_user_time ON notification_events(user_id,created_at DESC)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_notification_events_unread ON notification_events(user_id,read_at) WHERE read_at IS NULL"
+    )
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS organization_audit_events (
@@ -96,7 +103,9 @@ def upgrade() -> None:
             created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_org_audit_time ON organization_audit_events(organization_id,created_at DESC)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_org_audit_time ON organization_audit_events(organization_id,created_at DESC)"
+    )
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS user_alerts (

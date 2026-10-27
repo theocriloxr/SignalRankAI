@@ -3,6 +3,7 @@
 Revision ID: 0039_web_signup_acquisition
 Revises: 0038_account_security_product
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -33,9 +34,15 @@ def upgrade() -> None:
             updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_user_acquisition_channel ON user_acquisition(signup_channel,created_at DESC)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_user_acquisition_referral ON user_acquisition(referral_code) WHERE referral_code IS NOT NULL")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_user_acquisition_utm_campaign ON user_acquisition(utm_campaign) WHERE utm_campaign IS NOT NULL")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_user_acquisition_channel ON user_acquisition(signup_channel,created_at DESC)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_user_acquisition_referral ON user_acquisition(referral_code) WHERE referral_code IS NOT NULL"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_user_acquisition_utm_campaign ON user_acquisition(utm_campaign) WHERE utm_campaign IS NOT NULL"
+    )
 
 
 def downgrade() -> None:

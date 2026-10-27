@@ -9,6 +9,7 @@ Revision ID: 0014_add_outcome_pnl_pct
 Revises: 0013_proxy_nodes
 Create Date: 2026-05-01
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -24,16 +25,8 @@ depends_on = None
 def upgrade() -> None:
     # pnl_pct stores the percentage profit/loss for a closed trade outcome.
     # Nullable to allow existing rows without a computed value.
-    op.execute(
-        sa.text(
-            "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS pnl_pct FLOAT"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS pnl_pct FLOAT"))
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text(
-            "ALTER TABLE outcomes DROP COLUMN IF EXISTS pnl_pct"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE outcomes DROP COLUMN IF EXISTS pnl_pct"))

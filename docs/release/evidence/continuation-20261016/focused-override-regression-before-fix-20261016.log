@@ -1,0 +1,154 @@
+...F....FF.F.F                                                           [100%]
+================================== FAILURES ===================================
+_______ test_invalid_runtime_config_fails_closed[duplicate_alias-False] _______
+
+tmp_path = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-focused-override-regression-before-fix-20261016/test_invalid_runtime_config_fa3')
+malformation = 'duplicate_alias', through_file = False
+
+    @pytest.mark.parametrize("through_file", [True, False])
+    @pytest.mark.parametrize("malformation", ["oversized_class", "duplicate_alias", "unknown_class", "remove_mode", "boolean_version", "non_string", "whitespace"])
+    def test_invalid_runtime_config_fails_closed(tmp_path: Path, malformation: str, through_file: bool):
+        config = deepcopy(load_focused_config())
+        if malformation == "oversized_class":
+            config["asset_classes"]["crypto"]["optional"].append("NOTALLOW")
+        elif malformation == "duplicate_alias":
+            config["asset_classes"]["crypto"]["optional"][0] = "BTCUSD"
+        elif malformation == "unknown_class":
+            config["asset_classes"]["other"] = {"core": [], "optional": []}
+        elif malformation == "boolean_version":
+            config["schema_version"] = True
+        elif malformation == "non_string":
+            config["asset_classes"]["crypto"]["optional"][0] = 123
+        elif malformation == "whitespace":
+            config["asset_classes"]["crypto"]["optional"][0] = " BTCUSDT "
+        else:
+            config.pop("mode")
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_focused_universe_policy_20261016.py:86: Failed
+_______ test_invalid_runtime_config_fails_closed[boolean_version-True] ________
+
+tmp_path = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-focused-override-regression-before-fix-20261016/test_invalid_runtime_config_fa8')
+malformation = 'boolean_version', through_file = True
+
+    @pytest.mark.parametrize("through_file", [True, False])
+    @pytest.mark.parametrize("malformation", ["oversized_class", "duplicate_alias", "unknown_class", "remove_mode", "boolean_version", "non_string", "whitespace"])
+    def test_invalid_runtime_config_fails_closed(tmp_path: Path, malformation: str, through_file: bool):
+        config = deepcopy(load_focused_config())
+        if malformation == "oversized_class":
+            config["asset_classes"]["crypto"]["optional"].append("NOTALLOW")
+        elif malformation == "duplicate_alias":
+            config["asset_classes"]["crypto"]["optional"][0] = "BTCUSD"
+        elif malformation == "unknown_class":
+            config["asset_classes"]["other"] = {"core": [], "optional": []}
+        elif malformation == "boolean_version":
+            config["schema_version"] = True
+        elif malformation == "non_string":
+            config["asset_classes"]["crypto"]["optional"][0] = 123
+        elif malformation == "whitespace":
+            config["asset_classes"]["crypto"]["optional"][0] = " BTCUSDT "
+        else:
+            config.pop("mode")
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_focused_universe_policy_20261016.py:86: Failed
+_______ test_invalid_runtime_config_fails_closed[boolean_version-False] _______
+
+tmp_path = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-focused-override-regression-before-fix-20261016/test_invalid_runtime_config_fa9')
+malformation = 'boolean_version', through_file = False
+
+    @pytest.mark.parametrize("through_file", [True, False])
+    @pytest.mark.parametrize("malformation", ["oversized_class", "duplicate_alias", "unknown_class", "remove_mode", "boolean_version", "non_string", "whitespace"])
+    def test_invalid_runtime_config_fails_closed(tmp_path: Path, malformation: str, through_file: bool):
+        config = deepcopy(load_focused_config())
+        if malformation == "oversized_class":
+            config["asset_classes"]["crypto"]["optional"].append("NOTALLOW")
+        elif malformation == "duplicate_alias":
+            config["asset_classes"]["crypto"]["optional"][0] = "BTCUSD"
+        elif malformation == "unknown_class":
+            config["asset_classes"]["other"] = {"core": [], "optional": []}
+        elif malformation == "boolean_version":
+            config["schema_version"] = True
+        elif malformation == "non_string":
+            config["asset_classes"]["crypto"]["optional"][0] = 123
+        elif malformation == "whitespace":
+            config["asset_classes"]["crypto"]["optional"][0] = " BTCUSDT "
+        else:
+            config.pop("mode")
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_focused_universe_policy_20261016.py:86: Failed
+_________ test_invalid_runtime_config_fails_closed[non_string-False] __________
+
+tmp_path = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-focused-override-regression-before-fix-20261016/test_invalid_runtime_config_fa11')
+malformation = 'non_string', through_file = False
+
+    @pytest.mark.parametrize("through_file", [True, False])
+    @pytest.mark.parametrize("malformation", ["oversized_class", "duplicate_alias", "unknown_class", "remove_mode", "boolean_version", "non_string", "whitespace"])
+    def test_invalid_runtime_config_fails_closed(tmp_path: Path, malformation: str, through_file: bool):
+        config = deepcopy(load_focused_config())
+        if malformation == "oversized_class":
+            config["asset_classes"]["crypto"]["optional"].append("NOTALLOW")
+        elif malformation == "duplicate_alias":
+            config["asset_classes"]["crypto"]["optional"][0] = "BTCUSD"
+        elif malformation == "unknown_class":
+            config["asset_classes"]["other"] = {"core": [], "optional": []}
+        elif malformation == "boolean_version":
+            config["schema_version"] = True
+        elif malformation == "non_string":
+            config["asset_classes"]["crypto"]["optional"][0] = 123
+        elif malformation == "whitespace":
+            config["asset_classes"]["crypto"]["optional"][0] = " BTCUSDT "
+        else:
+            config.pop("mode")
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_focused_universe_policy_20261016.py:86: Failed
+_________ test_invalid_runtime_config_fails_closed[whitespace-False] __________
+
+tmp_path = WindowsPath('C:/Users/sammm/Desktop/a folder of everything/SignalRankAI/.pytest-tmp/stage1-pytest-focused-override-regression-before-fix-20261016/test_invalid_runtime_config_fa13')
+malformation = 'whitespace', through_file = False
+
+    @pytest.mark.parametrize("through_file", [True, False])
+    @pytest.mark.parametrize("malformation", ["oversized_class", "duplicate_alias", "unknown_class", "remove_mode", "boolean_version", "non_string", "whitespace"])
+    def test_invalid_runtime_config_fails_closed(tmp_path: Path, malformation: str, through_file: bool):
+        config = deepcopy(load_focused_config())
+        if malformation == "oversized_class":
+            config["asset_classes"]["crypto"]["optional"].append("NOTALLOW")
+        elif malformation == "duplicate_alias":
+            config["asset_classes"]["crypto"]["optional"][0] = "BTCUSD"
+        elif malformation == "unknown_class":
+            config["asset_classes"]["other"] = {"core": [], "optional": []}
+        elif malformation == "boolean_version":
+            config["schema_version"] = True
+        elif malformation == "non_string":
+            config["asset_classes"]["crypto"]["optional"][0] = 123
+        elif malformation == "whitespace":
+            config["asset_classes"]["crypto"]["optional"][0] = " BTCUSDT "
+        else:
+            config.pop("mode")
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(config), encoding="utf-8")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_focused_universe_policy_20261016.py:86: Failed
+=========================== short test summary info ===========================
+FAILED tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed[duplicate_alias-False]
+FAILED tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed[boolean_version-True]
+FAILED tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed[boolean_version-False]
+FAILED tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed[non_string-False]
+FAILED tests/test_focused_universe_policy_20261016.py::test_invalid_runtime_config_fails_closed[whitespace-False]
+5 failed, 9 passed, 9 deselected in 0.41s

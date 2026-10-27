@@ -1,0 +1,6 @@
+SignalRankAI governance-sync certification trigger r31
+branch=implementation-of-master-blueprint
+head_before_trigger=a6f46580c59a4b0785a2008518b4722d23ff058f
+backend_cleanroom=required
+governance_registry_sync=required
+live_execution_authorized=false

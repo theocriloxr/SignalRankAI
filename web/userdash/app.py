@@ -4,10 +4,11 @@ The previous implementation accepted an arbitrary integer user ID as a login.
 That is an IDOR/account-takeover vulnerability and is intentionally removed.
 All users must authenticate through the unified FastAPI platform application.
 """
+
 from __future__ import annotations
 
 import os
-from flask import Flask, abort, redirect
+from flask import Flask, redirect
 
 app = Flask(__name__)
 

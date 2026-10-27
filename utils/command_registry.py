@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ TIER_NAMES = {
 @dataclass
 class CommandDefinition:
     """Command definition with metadata."""
+
     name: str
     description: str
     handler: str
@@ -387,16 +388,16 @@ CATEGORY_GROUPS = {
 def get_command_definition(command: str) -> Optional[CommandDefinition]:
     """Get command definition by name or alias."""
     cmd_lower = command.lower().strip().lstrip("/")
-    
+
     # Check direct name in registry
     if cmd_lower in COMMAND_REGISTRY:
         return COMMAND_REGISTRY[cmd_lower]
-    
+
     # Check aliases
     for defn in COMMAND_REGISTRY.values():
         if cmd_lower in defn.aliases:
             return defn
-    
+
     return None
 
 
@@ -410,7 +411,7 @@ def is_command_allowed(command: str, user_tier: str) -> bool:
     defn = get_command_definition(command)
     if not defn:
         return False
-    
+
     return tier_rank(user_tier) >= tier_rank(defn.tier)
 
 
@@ -421,29 +422,29 @@ def get_commands_for_tier(
 ) -> List[CommandDefinition]:
     """
     Get all commands available to a user tier.
-    
+
     Args:
         user_tier: User's tier (free, premium, vip, owner, admin)
         include_hidden: Include hidden admin commands
         category: Filter by category
-        
+
     Returns:
         List of command definitions
     """
     user_rank = tier_rank(user_tier)
     results = []
-    
+
     commands = CATEGORY_GROUPS.get(category, COMMAND_REGISTRY) if category else COMMAND_REGISTRY
-    
+
     for name, defn in commands.items():
         # Skip hidden unless explicitly requested
         if defn.hidden and not include_hidden:
             continue
-        
+
         # Check tier access
         if user_rank >= tier_rank(defn.tier):
             results.append(defn)
-    
+
     return results
 
 
@@ -454,49 +455,49 @@ def generate_help_text(
 ) -> str:
     """
     Generate help text for user tier.
-    
+
     Args:
         user_tier: User's tier
         include_hidden: Include hidden commands
         format: Output format (text, markdown, html)
-        
+
     Returns:
         Formatted help string
     """
     lines = []
     user_rank = tier_rank(user_tier)
     tier_name = TIER_NAMES.get(user_tier, "Free")
-    
+
     # Header
-    lines.append(f"📡 <b>SignalRankAI Commands</b>")
-    lines.append(f"━━━━━━━━━━━━━━━━")
+    lines.append("📡 <b>SignalRankAI Commands</b>")
+    lines.append("━━━━━━━━━━━━━━━━")
     lines.append(f"📊 Your Tier: <b>{tier_name}</b>")
     lines.append("")
-    
+
     # Group by category
     for category, commands in CATEGORY_GROUPS.items():
         category_lines = []
-        
+
         for name, defn in commands.items():
             # Skip hidden unless requested
             if defn.hidden and not include_hidden:
                 continue
-            
+
             # Check tier access
             if user_rank < tier_rank(defn.tier):
                 continue
-            
+
             # Format aliases
             alias_text = ""
             if defn.aliases:
                 aliases_str = ", ".join(a for a in defn.aliases if a != f"/{name}")
                 if aliases_str:
                     alias_text = f" ({aliases_str})"
-            
+
             # Build command line
             cmd_line = f"<code>/{name}</code>{alias_text} - {defn.description}"
             category_lines.append(cmd_line)
-        
+
         if category_lines:
             # Category header
             cat_emoji = {
@@ -508,16 +509,16 @@ def generate_help_text(
                 "upgrade": "⬆️",
                 "admin": "🔧",
             }.get(category, "📋")
-            
+
             lines.append(f"{cat_emoji} <b>{category.upper()}</b>")
             lines.extend(category_lines)
             lines.append("")
-    
+
     # Footer
     lines.append("━━━━━━━━━━━━━━━━")
     lines.append("<i>Use /help [command] for detailed help.</i>")
     lines.append("<i>Upgrade with /upgrade for more features.</i>")
-    
+
     return "\n".join(lines)
 
 
@@ -527,15 +528,15 @@ def generate_menu_keyboard(
 ) -> List[List[Dict[str, str]]]:
     """
     Generate inline keyboard menu for user tier.
-    
+
     Returns:
         List of button rows
     """
     from telegram import InlineKeyboardButton
-    
+
     buttons = []
     user_rank = tier_rank(user_tier)
-    
+
     # Main menu buttons
     main_buttons = [
         ("📡 Signals", "/signal"),
@@ -543,12 +544,12 @@ def generate_menu_keyboard(
         ("💼 MT5", "/mt5"),
         ("⚙️ Settings", "/settings"),
     ]
-    
+
     for label, cmd in main_buttons:
         defn = get_command_definition(cmd)
         if defn and user_rank >= tier_rank(defn.tier):
             buttons.append([InlineKeyboardButton(label, callback_data=cmd)])
-    
+
     # Premium menu (if eligible)
     if user_rank >= tier_rank("premium"):
         premium_buttons = [
@@ -556,15 +557,15 @@ def generate_menu_keyboard(
             ("🏆 Leaderboard", "/leaderboard"),
             ("💰 Upgrade", "/upgrade"),
         ]
-        
+
         for label, cmd in premium_buttons:
             defn = get_command_definition(cmd)
             if defn and user_rank >= tier_rank(defn.tier):
                 buttons.append([InlineKeyboardButton(label, callback_data=cmd)])
-    
+
     # Back to main button
     buttons.append([InlineKeyboardButton("🔙 Back to Main", callback_data="menu_main")])
-    
+
     return buttons
 
 

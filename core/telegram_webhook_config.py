@@ -5,8 +5,7 @@ from __future__ import annotations
 import os
 
 _DEFAULT_ALLOWED_UPDATES = (
-    "message,edited_message,callback_query,my_chat_member,chat_member,"
-    "pre_checkout_query,shipping_query"
+    "message,edited_message,callback_query,my_chat_member,chat_member,pre_checkout_query,shipping_query"
 )
 
 
@@ -37,9 +36,7 @@ def telegram_webhook_registration_kwargs() -> dict[str, object]:
         max_connections = 20
     kwargs: dict[str, object] = {
         "allowed_updates": telegram_allowed_updates(),
-        "drop_pending_updates": _env_bool(
-            "TELEGRAM_DROP_PENDING_UPDATES_ON_STARTUP", False
-        ),
+        "drop_pending_updates": _env_bool("TELEGRAM_DROP_PENDING_UPDATES_ON_STARTUP", False),
         "max_connections": max(1, min(100, max_connections)),
     }
     if secret:

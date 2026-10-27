@@ -82,7 +82,6 @@ def detect_feature_drift(
     }
 
 
-
 def detect_prediction_starvation(
     samples: list[dict[str, Any]],
     *,
@@ -129,9 +128,7 @@ def detect_prediction_starvation(
     raw_mean = sum(raws) / len(raws)
     threshold_mean = sum(thresholds) / len(thresholds)
     starvation = bool(
-        actionable
-        and pass_rate <= max(0.0, min(1.0, float(minimum_pass_rate)))
-        and max(raws) < min(thresholds)
+        actionable and pass_rate <= max(0.0, min(1.0, float(minimum_pass_rate))) and max(raws) < min(thresholds)
     )
     return {
         "actionable": actionable,

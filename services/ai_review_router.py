@@ -57,9 +57,21 @@ def _fingerprint(signal: Mapping[str, Any]) -> str:
     safe = {
         key: signal.get(key)
         for key in (
-            "asset", "asset_class", "timeframe", "direction", "strategy_name",
-            "entry", "stop_loss", "take_profit", "targets", "score",
-            "confidence", "rr_ratio", "ml_probability", "regime", "session",
+            "asset",
+            "asset_class",
+            "timeframe",
+            "direction",
+            "strategy_name",
+            "entry",
+            "stop_loss",
+            "take_profit",
+            "targets",
+            "score",
+            "confidence",
+            "rr_ratio",
+            "ml_probability",
+            "regime",
+            "session",
         )
         if signal.get(key) is not None
     }
@@ -198,9 +210,7 @@ def _consensus_result(results: list[dict[str, Any]]) -> dict[str, Any]:
         and disagreement <= max_disagreement
         and average_confidence >= min_confidence
     )
-    summary = " | ".join(
-        f"{row['provider']}:{row['score']:.1f}/10 {row['summary']}" for row in results
-    )[:900]
+    summary = " | ".join(f"{row['provider']}:{row['score']:.1f}/10 {row['summary']}" for row in results)[:900]
     return {
         "ok": True,
         "provider": "consensus",
@@ -209,16 +219,14 @@ def _consensus_result(results: list[dict[str, Any]]) -> dict[str, Any]:
             "approved": approved,
             "score": round(average_score, 3),
             "confidence": round(average_confidence, 4),
-            "risk_level": "high" if decision_disagreement or disagreement > max_disagreement else max(
+            "risk_level": "high"
+            if decision_disagreement or disagreement > max_disagreement
+            else max(
                 (str(row.get("risk_level") or "unknown") for row in results),
                 key=lambda value: {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(value, 0),
             ),
             "summary": summary,
-            "veto_reasons": [
-                reason
-                for row in results
-                for reason in list(row.get("veto_reasons") or [])
-            ][:12],
+            "veto_reasons": [reason for row in results for reason in list(row.get("veto_reasons") or [])][:12],
             "provider_disagreement": round(disagreement, 4),
             "decision_disagreement": decision_disagreement,
         },
@@ -362,11 +370,13 @@ async def _call_direction_provider(
 ) -> dict[str, Any]:
     if provider == "openai":
         from services.openai_ai import choose_direction, openai_available
+
         if not openai_available():
             return {"ok": False, "provider": "openai", "error": "not_available"}
         return dict(await choose_direction(asset, timeframe, long_candidates, short_candidates))
     if provider == "gemini":
         from services.gemini_ml import choose_direction_structured, gemini_available
+
         if not gemini_available():
             return {"ok": False, "provider": "gemini", "error": "not_available"}
         return dict(
@@ -447,10 +457,7 @@ async def choose_direction(
             for normalized in [_normalize_direction_result(item)]
             if normalized is not None
         ]
-        decisive = [
-            row for row in rows
-            if row["winner"] in {"long", "short"} and row["confidence"] >= min_confidence
-        ]
+        decisive = [row for row in rows if row["winner"] in {"long", "short"} and row["confidence"] >= min_confidence]
         if len(decisive) >= 2:
             winners = {row["winner"] for row in decisive}
             if len(winners) == 1:

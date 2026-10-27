@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Outcome, Signal, SignalDelivery, User
@@ -22,6 +22,10 @@ TERMINAL_OUTCOMES = {
     "invalidated",
     "expired",
     "time_stop",
+    "missed",
+    "missed_entry",
+    "entry_missed",
+    "not_triggered",
     "cancel",
     "cancelled",
 }
@@ -36,9 +40,11 @@ POSITION_STATES = {
     "TP3",
     "STOPPED",
     "EXPIRED",
+    "CLOSED_TIME_STOP",
     "CANCELLED",
     "SUPERSEDED",
 }
+TERMINAL_POSITION_STATES = {"NONE", "STOPPED", "TP3", "EXPIRED", "CLOSED_TIME_STOP", "CANCELLED", "SUPERSEDED"}
 
 
 @dataclass(slots=True)
@@ -60,7 +66,7 @@ class AssetPositionState:
     def is_locked(self) -> bool:
         if self.locked is not None:
             return bool(self.locked)
-        return self.state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
+        return self.state not in TERMINAL_POSITION_STATES
 
 
 def _utcnow() -> datetime:
@@ -84,7 +90,9 @@ def _state_from_status(status: str | None) -> str:
         return "TP3"
     if s in {"sl", "loss", "stop_loss"}:
         return "STOPPED"
-    if s in {"expired", "time_stop"}:
+    if s == "time_stop":
+        return "CLOSED_TIME_STOP"
+    if s in {"expired", "missed", "missed_entry", "entry_missed", "not_triggered"}:
         return "EXPIRED"
     if s in {"cancel", "cancelled", "invalid", "invalidated"}:
         return "CANCELLED"
@@ -106,17 +114,21 @@ async def get_user_asset_position_state(
 ) -> AssetPositionState:
     symbol = str(asset or "").upper().strip()
     user = (
-        await session.execute(
-            select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-        )
+        await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1))
     ).scalar_one_or_none()
     if user is None or not symbol:
         return AssetPositionState(0, int(telegram_user_id), symbol, "NONE", reason="no_user_or_asset")
 
-    cooldown_h = max(0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 4.0)))
+    cooldown_h = max(
+        0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 4.0))
+    )
     unresolved_h = max(
         cooldown_h,
-        float(unresolved_block_hours if unresolved_block_hours is not None else _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0)),
+        float(
+            unresolved_block_hours
+            if unresolved_block_hours is not None
+            else _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0)
+        ),
     )
     cutoff = _utcnow() - timedelta(hours=max(cooldown_h, unresolved_h))
 
@@ -157,7 +169,11 @@ async def get_user_asset_position_state(
     signal_id, delivered_at, direction, timeframe, sent_ok, delivery_state, status, canonical = row
     outcome_status = _normalize_status(canonical or status)
     delivery_state_norm = _normalize_status(delivery_state)
-    state = "CANDIDATE" if not bool(sent_ok) and delivery_state_norm in {"reserved", "sending"} else _state_from_status(outcome_status)
+    state = (
+        "CANDIDATE"
+        if not bool(sent_ok) and delivery_state_norm in {"reserved", "sending"}
+        else _state_from_status(outcome_status)
+    )
     age_hours = None
     if delivered_at is not None:
         try:
@@ -165,14 +181,18 @@ async def get_user_asset_position_state(
         except Exception:
             age_hours = None
 
-    locked = state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
+    locked = state not in TERMINAL_POSITION_STATES
     if state == "CANDIDATE":
         locked = True
         reason = "delivery_reservation_active"
-    elif state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
+    elif state in TERMINAL_POSITION_STATES and (
+        age_hours is None or age_hours < cooldown_h
+    ):
         locked = True
         reason = "terminal_but_cooldown_active"
-    elif state not in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < unresolved_h):
+    elif state not in TERMINAL_POSITION_STATES and (
+        age_hours is None or age_hours < unresolved_h
+    ):
         locked = True
         reason = "unresolved_position_active"
     else:

@@ -1,0 +1,11 @@
+Starting Metro Bundler
+
+Android Bundled 12921ms node_modules\expo\AppEntry.js (658 modules)
+
+› android bundles (1):
+_expo/static/js/android/AppEntry-25f9db6f5976f47add1df87211243b3a.hbc (1.7MB)
+
+› Files (1):
+metadata.json (153B)
+
+Exported: dist-android

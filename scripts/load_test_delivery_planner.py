@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic 100k-recipient fanout-planning benchmark (no network sends)."""
+
 from __future__ import annotations
 
 import argparse

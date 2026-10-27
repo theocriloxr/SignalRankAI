@@ -1,0 +1,138 @@
+# October 5 integration audit
+
+The five user directives in this directory are preserved without modification.
+`source-manifest.json` records their attachment IDs, SHA-256 hashes and all 560
+numbered sections. Empty evidence arrays indicate that no completion claim has
+been made for that section. This inventory is not a completed acceptance ledger.
+
+## Account identity and client recovery
+
+The canonical account snapshot now recognizes an active, verified Telegram
+authentication identity when the legacy user Telegram ID is absent. Disabled or
+unverified identities do not satisfy that check. Pending account-history review
+remains distinct from an ordinary linked account. Ownership is not transferred
+and no legacy histories are automatically merged by this change.
+
+Link-code creation rechecks canonical state under the user row lock, including
+non-HTTP callers. Already verified accounts receive a conflict rather than a new
+code. Only active, unexpired pending requests determine pending status; expiry
+uses an explicit UTC timestamp, independent of the database session timezone.
+
+Web and native clients recognize the canonical linked state and refresh on return
+from Telegram. The browser preserves unsaved profile edits and user navigation
+during delayed startup. Mobile exposes structured API errors and retains the
+current account during transient refresh failures. The offline shell generation
+was advanced together with its asset references.
+
+Local validation on October 5:
+
+- 116 backend regression tests passed, including real isolated PostgreSQL identity,
+  disabled/unverified identity, expiry, legacy-link and reviewed-merge cases.
+- 11 mobile Node contract tests passed; TypeScript passed without errors.
+- Critical Python typing passed with zero errors and warnings.
+- Six real local HTTP/PostgreSQL Chromium journey checks passed across desktop and
+  mobile viewports. These used synthetic local identities and did not send
+  Telegram commands or broker orders. Native-device and external Telegram proof
+  have not been established by these checks.
+
+## Release transport
+
+A credential-free Railway API probe reproduced HTTP 403 with Python's default
+user agent and HTTP 200 with `SignalRankAI-ReleasePreflight/1.0`. Release API
+requests now identify the application. Hosted credential validity and scope must
+still be established by the exact-commit preflight; the transport probe alone
+does not prove that the supplied production token is valid.
+
+## Fresh findings still being worked
+
+- The Next.js public landing page is no longer the default starter. Its
+  authenticated overview and catch-all pages still describe capabilities without
+  fetching and presenting their canonical backend state. Those pages are not a
+  completed replacement for the serving legacy application.
+- Provider fallback, request caches and live indicator inputs now reject stale,
+  future and structurally invalid candle windows before accepting a provider.
+  Historical validation remains separate and accepts an explicit observation
+  time. Both async and sync paths use the registered asset-class chain, honor
+  explicit provider allowlists and exclude unconfigured or disabled feeds.
+  These changes passed 125 focused regressions including the FCS v4 contract.
+- The FCS candle adapter used an undocumented guessed endpoint and response
+  format. It now uses the documented v4 history endpoint, preserves source
+  timestamps, sends credentials in the POST body and redacts provider errors.
+  A read-only production-key probe at 21:21 UTC on October 5 returned 200 valid
+  fresh EURUSD candles. XAUUSD returned valid stale candles, and AAPL/NAS100
+  returned provider code 213 with no candles. This proves FX access only; it
+  does not certify broker execution or all market classes. Contract reference:
+  https://fcsapi.com/document/forex-api
+- The configured equity feed rejected a current-day AAPL aggregate request with
+  HTTP 403 / `NOT_AUTHORIZED`; crypto passed the open-session certification, but
+  the other required asset classes did not.
+- The existing long-running production observation retains failed samples and
+  covers the older deployed release. It cannot certify a changed candidate.
+- Multi-account routing, aggregate risk, research evidence, all customer routes
+  and native flows require verification against the directives; file existence
+  and old implementation labels are insufficient proof.
+
+## Research input access
+
+The referenced Google document could not be retrieved through its mobilebasic,
+text-export, preview or edit URLs during this audit. Its contents have not been
+reviewed, and no extraction or document-specific implementation is claimed.
+
+No real-money readiness, subsystem score, completed soak, external broker fill,
+production promotion or overall completion is claimed by this audit.
+
+Hosted CI for commit 99d67ae8 passed the Railway credential preflight and static
+security checks. Backend gates identified a stale generated file inventory,
+which is regenerated with this change. Frontend and mobile audit gates still
+reported five and sixteen high dependency findings respectively. Failed gates
+are retained; no production approval or audit waiver has been issued.
+
+Further identity and mobile corrections:
+
+- Telegram authentication and first-use repository lookup now reuse the owner
+  of an existing verified Telegram identity. They mirror that existing binding
+  into its own legacy Telegram column, preserving tier and preferred name.
+  Conflicting owners, disabled identities and unverified bindings fail closed;
+  no account is automatically transferred or merged. Six additional flows
+  passed on isolated real PostgreSQL; the combined identity suite passed 125.
+- Native session refresh now coalesces concurrent token rotations, serializes
+  secure-store writes and rejects responses from a previous account generation.
+  Logout invalidates pending refresh/login responses. Transient refresh outages
+  retain credentials, while invalid refresh tokens and partial secure-store
+  writes fail closed. TypeScript and concurrency/error contracts are checked;
+  actual native-device behavior remains unverified.
+
+Further session-revocation correction:
+
+- Mobile sign-out previously removed only local tokens. It now sends explicit
+  refresh proof to a dedicated family-revocation endpoint after immediately
+  invalidating pending client responses and removing device credentials.
+  Rotated proof can revoke its own successors; it cannot issue access, select
+  another user or revoke another device family. Existing web/device revocation
+  also covers the selected rotation family. User-row locks serialize rotation
+  with logout before either session-row mutation.
+- Both PostgreSQL race orderings passed on independent local connections:
+  refresh first creates a successor that logout subsequently revokes; logout
+  first prevents a successor from being created. Other device sessions remain
+  active. Local HTTP identity/auth tests and 29 mobile contract tests passed;
+  mobile TypeScript and the critical Python typing gate passed. Offline or
+  failed secure-store deletion is surfaced explicitly, and a later login is
+  never erased by an earlier pending logout. These are local results, not
+  production deployment or native-device certification.
+
+- The replacement Next.js API client previously omitted cookie credentials and
+  CSRF proof. Its transport now preserves cancellation/body/headers, includes
+  cookie credentials and sends the exact `sr_csrf` proof for mutations without
+  exposing HttpOnly tokens. Seven transport contracts, frontend lint,
+  TypeScript and the production build passed locally. The canonical release
+  manifest includes the transport contracts as a required gate. This is API
+  plumbing; the descriptive authenticated pages are still incomplete.
+
+- Mobile login and refresh also emitted browser session cookies, while native
+  mutations had no cookie CSRF proof. Mobile requests now explicitly omit
+  cookies; mobile session issuance/refresh returns explicit tokens without
+  setting browser cookies, and mobile refresh cannot borrow a browser cookie.
+  Browser/PWA cookies and CSRF middleware remain enforced. HTTP contracts cover
+  all three client types and ambient-cookie rejection, and native request
+  contracts assert credential omission. This removes the server/client
+  inconsistency; native cookie handling still requires device acceptance.

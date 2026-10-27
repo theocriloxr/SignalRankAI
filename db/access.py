@@ -1,9 +1,6 @@
 from __future__ import annotations
 from utils.timeutils import now_utc_naive
 
-import os
-from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +11,14 @@ from db.session import get_session, is_db_configured
 
 def owner_id() -> int:
     from config import config
+
     return int(getattr(config, "OWNER_TELEGRAM_ID", 0) or 0)
 
 
 def owner_ids() -> set[int]:
     try:
         from config import OWNER_IDS
+
         return {int(value) for value in (OWNER_IDS or set()) if int(value) > 0}
     except Exception:
         oid = owner_id()
@@ -90,7 +89,6 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
 
     Falls back to OWNER or FREE when Postgres is not configured.
     """
-
 
     if not is_db_configured():
         return "owner" if is_owner(telegram_user_id) else "free"

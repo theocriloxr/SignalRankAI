@@ -4,6 +4,7 @@ Ingress stores the signed provider payload before acknowledging it. Processing
 is idempotent and recoverable after a process crash because pending/failed
 records are retried by the worker.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +32,10 @@ class PaystackInboxError(RuntimeError):
 def paystack_recovery_configuration() -> tuple[bool, str]:
     """Validate that recovery has a complete key pair in one Paystack mode."""
     enabled = str(os.getenv("PAYMENTS_ENABLED", "0") or "0").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
     if not enabled:
         return False, "payments_disabled"
@@ -115,9 +119,7 @@ async def process_stored_paystack_event(event_id: str) -> dict[str, Any]:
             )
             await session.commit()
             return {"processed": False, "reason": "stored_payload_missing"}
-        await update_webhook_event_status(
-            session, event_id=event_id, status="processing", increment_attempt=True
-        )
+        await update_webhook_event_status(session, event_id=event_id, status="processing", increment_attempt=True)
         await session.commit()
 
     try:

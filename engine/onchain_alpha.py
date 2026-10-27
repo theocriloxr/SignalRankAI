@@ -10,7 +10,7 @@ giving signals more time to react than pure technical analysis.
 
 Usage:
     from engine.onchain_alpha import OnChainAlpha
-    
+
     alpha = OnChainAlpha()
     should_veto, reason = await alpha.check_veto(asset, direction)
 """
@@ -34,13 +34,13 @@ MIN_NET_FLOW = float(os.getenv("ONCHAIN_MIN_NET_FLOW", "0.0"))
 class OnChainAlpha:
     """
     On-chain data analyzer for whale detection.
-    
+
     Uses configured providers in data.alternative_providers.
     """
-    
+
     def __init__(self):
         self.supported_assets = SUPPORTED_ASSETS
-    
+
     async def check_veto(
         self,
         asset: str,
@@ -48,31 +48,31 @@ class OnChainAlpha:
     ) -> Tuple[bool, str]:
         """
         Check if on-chain data warrants vetoing the trade.
-        
+
         Args:
             asset: Trading symbol (e.g., 'BTCUSDT')
             direction: 'long' or 'short'
-            
+
         Returns:
             Tuple of (should_veto: bool, reason: str)
         """
         if not ONCHAIN_ALPHA_ENABLED:
             return False, "onchain_disabled"
-        
+
         # Extract base asset
         base = asset.replace("USDT", "").replace("BUSD", "").strip()
-        
+
         if base not in self.supported_assets:
             return False, "unsupported_asset"
-        
+
         try:
             return await self._check_exchange_inflows(base, direction)
-            
+
         except Exception as e:
             logger.debug(f"[onchain] Check failed: {e}")
             # Fail open - allow trade if check fails
             return False, f"onchain_error_{str(e)[:20]}"
-    
+
     async def _check_exchange_inflows(self, asset: str, direction: str = "long") -> Tuple[bool, str]:
         """Check configured on-chain context for exchange-flow vetoes."""
         try:
@@ -105,11 +105,11 @@ class OnChainAlpha:
                     )
 
             return False, f"no_spike_detected source={source}"
-            
+
         except Exception as e:
             logger.debug(f"[onchain] Inflow check failed: {e}")
             return False, f"api_error_{str(e)[:20]}"
-    
+
     async def check_whale_alert(
         self,
         asset: str,
@@ -117,22 +117,22 @@ class OnChainAlpha:
     ) -> Tuple[bool, str]:
         """
         Check for large whale transactions.
-        
+
         Args:
             asset: Trading symbol
             min_amount_usd: Minimum USD value to flag
-            
+
         Returns:
             Tuple of (whale_detected: bool, details: str)
         """
         if not ONCHAIN_ALPHA_ENABLED:
             return False, "disabled"
-        
+
         base = asset.replace("USDT", "").replace("BUSD", "").strip()
-        
+
         if base not in self.supported_assets:
             return False, "unsupported"
-        
+
         should_veto, reason = await self._check_exchange_inflows(base, "long")
         return should_veto, reason
 

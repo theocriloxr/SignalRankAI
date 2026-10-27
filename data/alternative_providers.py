@@ -40,7 +40,9 @@ def _numeric_from_payload(payload: Any, *keys: str, default: float = 0.0) -> flo
     return float(default)
 
 
-async def _fetch_json(url: str, *, headers: Dict[str, str] | None = None, params: Dict[str, Any] | None = None, timeout: float = 3.0) -> Dict[str, Any]:
+async def _fetch_json(
+    url: str, *, headers: Dict[str, str] | None = None, params: Dict[str, Any] | None = None, timeout: float = 3.0
+) -> Dict[str, Any]:
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, headers=headers, params=params)
         response.raise_for_status()
@@ -49,14 +51,22 @@ async def _fetch_json(url: str, *, headers: Dict[str, str] | None = None, params
 
 
 def _context_from_payload(payload: Dict[str, Any], source: str) -> Dict[str, float | str]:
-    exchange_net_flow = _numeric_from_payload(payload, "exchange_net_flow", "exchangeNetFlow", "netflow", "net_flow", "net_flow_btc", default=0.0)
-    liquidation_heatmap_score = _numeric_from_payload(payload, "liquidation_heatmap_score", "heatmap_score", "score", default=0.0)
-    liquidation_heatmap_density = _numeric_from_payload(payload, "liquidation_heatmap_density", "heatmap_density", "density", default=0.0)
+    exchange_net_flow = _numeric_from_payload(
+        payload, "exchange_net_flow", "exchangeNetFlow", "netflow", "net_flow", "net_flow_btc", default=0.0
+    )
+    liquidation_heatmap_score = _numeric_from_payload(
+        payload, "liquidation_heatmap_score", "heatmap_score", "score", default=0.0
+    )
+    liquidation_heatmap_density = _numeric_from_payload(
+        payload, "liquidation_heatmap_density", "heatmap_density", "density", default=0.0
+    )
     exchange_inflow = _numeric_from_payload(payload, "exchange_inflow", "inflow", "exchangeInflow", default=0.0)
     exchange_outflow = _numeric_from_payload(payload, "exchange_outflow", "outflow", "exchangeOutflow", default=0.0)
     return {
         "onchain_source": source,
-        "exchange_net_flow": float(exchange_net_flow if exchange_net_flow != 0.0 else exchange_inflow - exchange_outflow),
+        "exchange_net_flow": float(
+            exchange_net_flow if exchange_net_flow != 0.0 else exchange_inflow - exchange_outflow
+        ),
         "exchange_inflow": float(exchange_inflow),
         "exchange_outflow": float(exchange_outflow),
         "liquidation_heatmap_score": float(liquidation_heatmap_score),
@@ -66,10 +76,24 @@ def _context_from_payload(payload: Dict[str, Any], source: str) -> Dict[str, flo
 
 async def fetch_glassnode_context(symbol: str) -> Dict[str, float | str]:
     if not _env_bool("GLASSNODE_ENABLED", True):
-        return {"onchain_source": "glassnode", "exchange_net_flow": 0.0, "exchange_inflow": 0.0, "exchange_outflow": 0.0, "liquidation_heatmap_score": 0.0, "liquidation_heatmap_density": 0.0}
+        return {
+            "onchain_source": "glassnode",
+            "exchange_net_flow": 0.0,
+            "exchange_inflow": 0.0,
+            "exchange_outflow": 0.0,
+            "liquidation_heatmap_score": 0.0,
+            "liquidation_heatmap_density": 0.0,
+        }
     endpoint = _env_str("GLASSNODE_ONCHAIN_ENDPOINT")
     if not endpoint:
-        return {"onchain_source": "glassnode", "exchange_net_flow": 0.0, "exchange_inflow": 0.0, "exchange_outflow": 0.0, "liquidation_heatmap_score": 0.0, "liquidation_heatmap_density": 0.0}
+        return {
+            "onchain_source": "glassnode",
+            "exchange_net_flow": 0.0,
+            "exchange_inflow": 0.0,
+            "exchange_outflow": 0.0,
+            "liquidation_heatmap_score": 0.0,
+            "liquidation_heatmap_density": 0.0,
+        }
     headers = {}
     api_key = _env_str("GLASSNODE_API_KEY")
     if api_key:
@@ -80,10 +104,24 @@ async def fetch_glassnode_context(symbol: str) -> Dict[str, float | str]:
 
 async def fetch_cryptoquant_context(symbol: str) -> Dict[str, float | str]:
     if not _env_bool("CRYPTOQUANT_ENABLED", True):
-        return {"onchain_source": "cryptoquant", "exchange_net_flow": 0.0, "exchange_inflow": 0.0, "exchange_outflow": 0.0, "liquidation_heatmap_score": 0.0, "liquidation_heatmap_density": 0.0}
+        return {
+            "onchain_source": "cryptoquant",
+            "exchange_net_flow": 0.0,
+            "exchange_inflow": 0.0,
+            "exchange_outflow": 0.0,
+            "liquidation_heatmap_score": 0.0,
+            "liquidation_heatmap_density": 0.0,
+        }
     endpoint = _env_str("CRYPTOQUANT_ONCHAIN_ENDPOINT")
     if not endpoint:
-        return {"onchain_source": "cryptoquant", "exchange_net_flow": 0.0, "exchange_inflow": 0.0, "exchange_outflow": 0.0, "liquidation_heatmap_score": 0.0, "liquidation_heatmap_density": 0.0}
+        return {
+            "onchain_source": "cryptoquant",
+            "exchange_net_flow": 0.0,
+            "exchange_inflow": 0.0,
+            "exchange_outflow": 0.0,
+            "liquidation_heatmap_score": 0.0,
+            "liquidation_heatmap_density": 0.0,
+        }
     headers = {}
     api_key = _env_str("CRYPTOQUANT_API_KEY")
     if api_key:

@@ -10,7 +10,8 @@ def _safe_float(value: Any) -> Optional[float]:
     try:
         if value is None:
             return None
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     except Exception:
         return None
 
@@ -19,14 +20,14 @@ def _clamp_ratio(value: Any) -> Optional[float]:
     raw = _safe_float(value)
     if raw is None:
         return None
-    if raw < 0:
+    if raw < 0 or raw > 100:
         return None
     if raw <= 1.0:
         return max(0.0, min(raw, 1.0))
     # Accept percent-style values (0-100) and normalize to ratio.
     if raw <= 100.0:
         return max(0.0, min(raw / 100.0, 1.0))
-    return max(0.0, min(raw / 100.0, 1.0))
+    return None
 
 
 def resolve_confidence_ratio(signal: Mapping[str, Any]) -> Optional[float]:
@@ -136,6 +137,15 @@ def resolve_confluence_total(signal: Mapping[str, Any]) -> Optional[int]:
     return None
 
 
+def resolve_calibrated_probability(signal: Mapping[str, Any]) -> Optional[float]:
+    """Return only a qualified persisted probability, without score fallbacks."""
+    from core.production_integrity import calibration_evidence_valid
+    if not calibration_evidence_valid(signal):
+        return None
+    value = signal.get("ml_probability_calibrated")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
     """Resolve the best available model probability as a 0..1 ratio.
 
@@ -152,17 +162,6 @@ def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
         if val is not None:
             return val
 
-    components: list[float] = []
-    conf = resolve_confidence_ratio(signal)
-    if conf is not None:
-        components.append(conf)
-    score = _clamp_ratio(signal.get("score"))
-    if score is not None:
-        components.append(score)
-    confluence = resolve_confluence_percent(signal)
-    if confluence is not None:
-        components.append(max(0.0, min(confluence / 100.0, 1.0)))
-
-    if components:
-        return sum(components) / len(components)
+    # Technical confidence/confluence are not model predictions. An absent
+    # model output must stay absent instead of becoming an invented probability.
     return None

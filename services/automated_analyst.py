@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
-from utils.async_runner import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +32,7 @@ async def run_automated_audit(cycle_no: int, strict_candidates_count: int, final
         # Call the robust pipeline that collects DB aggregates and runs the Gemini review.
         try:
             from services import gemini_ml
+
             res = await gemini_ml.run_gemini_review_pipeline(trigger=f"automated_cycle_{cycle_no}", scope="weekly")
             logger.info("[automated_analyst] AI audit completed for cycle %s", cycle_no)
             return dict(res or {})

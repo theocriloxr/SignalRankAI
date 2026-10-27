@@ -444,7 +444,7 @@ def test_shadow_candidate_exposes_recovery_governance_from_forward_admission():
         source.index("_CANDIDATE_FORWARD_SEEN")
     ]
     assert 'training_meta.get("candidate_forward_gate")' in scorer
-    assert 'recovery_veto_eligible=bool(forward_gate.get("required"))' in scorer
+    assert 'recovery_veto_eligible = bool(forward_gate.get("required"))' in scorer
     assert '"recovery_veto_eligible": recovery_veto_eligible' in scorer
     assert '"candidate_forward_required": bool(forward_gate.get("required"))' in scorer
 
@@ -503,7 +503,7 @@ def test_engine_recovery_can_use_shared_analytics_starvation_health() -> None:
         core.index("def _ml_starvation_recovery_decision")
     ]
     assert 'state.get_sync("signalrankai:ml:starvation:summary")' in block
-    assert '"source"]="analytics_shared_redis"' in block
+    assert 'result["source"] = "analytics_shared_redis"' in block
     assert "int(shared.get(\"samples\") or 0) >= minimum_samples" in block
 
 

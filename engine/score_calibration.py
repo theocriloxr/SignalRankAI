@@ -67,7 +67,8 @@ def _fit_bins(observations: Sequence[ScoreObservation], *, bins: int, prior_stre
     for index in range(bins):
         low, high = edges[index], edges[index + 1]
         selected = [
-            item for item in observations
+            item
+            for item in observations
             if low <= min(100.0, max(0.0, item.score)) < high or (index == bins - 1 and item.score >= high)
         ]
         weight = sum(max(0.0, item.weight) for item in selected)
@@ -75,29 +76,39 @@ def _fit_bins(observations: Sequence[ScoreObservation], *, bins: int, prior_stre
         probability = (wins + prior_strength * prior_mean) / (weight + prior_strength)
         raw_probabilities.append(probability)
         pava_weights.append(weight + prior_strength)
-        rows.append({
-            "lower": round(low, 4),
-            "upper": round(high, 4),
-            "observations": len(selected),
-            "weighted_observations": round(weight, 4),
-            "weighted_wins": round(wins, 4),
-        })
+        rows.append(
+            {
+                "lower": round(low, 4),
+                "upper": round(high, 4),
+                "observations": len(selected),
+                "weighted_observations": round(weight, 4),
+                "weighted_wins": round(wins, 4),
+            }
+        )
     for row, probability in zip(rows, _pava(raw_probabilities, pava_weights)):
         row["probability"] = round(probability, 6)
     return rows
 
 
 def _segment_candidates(context: Mapping[str, Any] | None) -> list[str]:
-    values = {key: str((context or {}).get(key) or "unknown").strip().lower() for key in (
-        "asset_class", "timeframe", "strategy", "regime",
-    )}
+    values = {
+        key: str((context or {}).get(key) or "unknown").strip().lower()
+        for key in (
+            "asset_class",
+            "timeframe",
+            "strategy",
+            "regime",
+        )
+    }
     strategy = values["strategy"]
     if strategy == "unknown":
         strategy = str((context or {}).get("strategy_name") or "unknown").strip().lower()
     candidates = [
         f"asset_class={values['asset_class']}|timeframe={values['timeframe']}",
-        f"strategy={strategy}", f"regime={values['regime']}",
-        f"asset_class={values['asset_class']}", f"timeframe={values['timeframe']}",
+        f"strategy={strategy}",
+        f"regime={values['regime']}",
+        f"asset_class={values['asset_class']}",
+        f"timeframe={values['timeframe']}",
     ]
     return [key for key in candidates if "=unknown" not in key]
 
@@ -147,7 +158,7 @@ def _metrics(observations: Sequence[ScoreObservation], buckets: Sequence[Mapping
         weight = max(0.0, item.weight)
         actual = float(item.won)
         raw = min(1.0, max(0.0, item.score / 100.0))
-        calibrated = (_finite(calibrate_score(item.score, profile), 50.0) / 100.0)
+        calibrated = _finite(calibrate_score(item.score, profile), 50.0) / 100.0
         raw_loss += weight * (raw - actual) ** 2
         calibrated_loss += weight * (calibrated - actual) ** 2
         raw_ece += weight * abs(raw - actual)
@@ -171,8 +182,7 @@ def build_calibration_profile(
 ) -> dict[str, Any]:
     """Fit a monotonic profile and validate it on the newest chronological 20%."""
     clean = [
-        item for item in observations
-        if 0.0 <= _finite(item.score, -1.0) <= 100.0 and 0.0 < _finite(item.weight) <= 1.0
+        item for item in observations if 0.0 <= _finite(item.score, -1.0) <= 100.0 and 0.0 < _finite(item.weight) <= 1.0
     ]
     clean.sort(key=lambda item: str(item.observed_at or ""))
     source_counts: dict[str, int] = {}
@@ -208,8 +218,10 @@ def build_calibration_profile(
         groups: dict[str, list[ScoreObservation]] = {}
         for item in clean:
             fields = {
-                "asset_class": item.asset_class, "timeframe": item.timeframe,
-                "strategy": item.strategy, "regime": item.regime,
+                "asset_class": item.asset_class,
+                "timeframe": item.timeframe,
+                "strategy": item.strategy,
+                "regime": item.regime,
             }
             keys = [
                 f"asset_class={fields['asset_class'].lower()}|timeframe={fields['timeframe'].lower()}",
@@ -221,11 +233,15 @@ def build_calibration_profile(
         ranked = sorted(groups.items(), key=lambda pair: (-len(pair[1]), pair[0]))[:50]
         result["segment_profiles"] = {
             key: build_calibration_profile(
-                items, bins=bins, minimum_observations=segment_minimum,
-                minimum_holdout=segment_holdout, prior_strength=prior_strength,
+                items,
+                bins=bins,
+                minimum_observations=segment_minimum,
+                minimum_holdout=segment_holdout,
+                prior_strength=prior_strength,
                 _include_segments=False,
             )
-            for key, items in ranked if len(items) >= segment_holdout + 1
+            for key, items in ranked
+            if len(items) >= segment_holdout + 1
         }
     return result
 
@@ -243,6 +259,10 @@ def load_shadow_profile() -> dict[str, Any] | None:
 
 
 __all__ = [
-    "PROFILE_STATE_KEY", "ScoreObservation", "build_calibration_profile",
-    "calibrate_score", "load_shadow_profile", "select_calibration_profile",
+    "PROFILE_STATE_KEY",
+    "ScoreObservation",
+    "build_calibration_profile",
+    "calibrate_score",
+    "load_shadow_profile",
+    "select_calibration_profile",
 ]

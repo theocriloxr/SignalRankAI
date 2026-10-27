@@ -1,0 +1,721 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/pytest_hard_exit.py -q 'tests\test_v20_provider_layer.py' 'tests\test_v20_risk_authority.py' 'tests\test_v20_slo_registry.py' 'tests\test_v21_multi_asset_expansion.py' 'tests\test_v22_provider_expansion.py' 'tests\test_v7_governance_contract.py' 'tests\test_v81_connected_staging_contract.py' 'tests\test_volume_delta.py' 'tests\test_web_api_tokens.py' 'tests\test_web_app_regression_guard.py' 'tests\test_web_command_parity_redesign_20260928.py' 'tests\test_web_first_signup_contract.py' 'tests\test_web_platform_runtime_contract.py' 'tests\test_web_rate_limit_middleware.py' 'tests\test_web_workstation_parity_20260928.py' 'tests\test_webhook_latency_semantics.py' 'tests\test_webhook_lifecycle_receipts.py' 'tests\test_wfo_train.py' 'tests\test_yfinance_integration.py'
+
+ATTEMPT 1/2
+
+........................................................................ [ 37%]
+.............................................F.......................... [ 74%]
+..................................................                       [100%]
+================================== FAILURES ===================================
+___________________ test_generated_v7_governance_is_current ___________________
+
+    def test_generated_v7_governance_is_current():
+        result = subprocess.run(
+            [sys.executable, "scripts/build_v7_governance.py", "--check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: {
+E           "callback_count": 28,
+E           "command_count": 192,
+E           "commit": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+E           "environment_variable_count": 1381,
+E           "generated": [
+E             "blockers.yaml",
+E             "build_blueprint_traceability.py",
+E             "callback_registry.yaml",
+E             "command_registry.yaml",
+E             "conflicts.yaml",
+E             "decisions.yaml",
+E             "environment_registry.yaml",
+E             "evidence_catalogue.yaml",
+E             "external_activation_requirements.yaml",
+E             "feature_flags.yaml",
+E             "incidents.yaml",
+E             "legacy_disposition.json",
+E             "provider_capability_program.yaml",
+E             "provider_registry.yaml",
+E             "release_gates.yaml",
+E             "requirements.yaml",
+E             "scale_profiles.yaml"
+E           ]
+E         }
+E         V7_GOVERNANCE_DIFF_BEGIN legacy_disposition.json
+E         --- requirements/legacy_disposition.json
+E         +++ requirements/legacy_disposition.json
+E         @@ -1,5 +1,5 @@
+E          {
+E         -  "file_count": 2339,
+E         +  "file_count": 2367,
+E            "files": [
+E              {
+E                "disposition": "PRESERVE_BEHAVIOUR",
+E         @@ -7467,6 +7467,30 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 6,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c-cleanup.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "7b5aca250ccdcf15c19fc1427801e9406e7ea5ee62851f202934ee5ff349cdbd",
+E         +      "size_bytes": 162
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 38,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c07589c6d07a06e5f9a253c06aacb4308961a005b378fc267500447c2d27608a",
+E         +      "size_bytes": 1488
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "5754a80f87c2cfbce088b8af82ac3d2108d263f9e325fbb285a5fbb315aeab0f",
+E         +      "size_bytes": 2781
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E                "line_count": 38,
+E                "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.json",
+E                "reason": "documentation/specification/evidence",
+E         @@ -7499,6 +7523,54 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "2c8bdd1400a30192557d942349578a95af5fab76d3955f3998450ff4adc2c576",
+E         +      "size_bytes": 1210
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "cf682d5bf5cd7d8b9cb43e2ad85d204e2133c904bbf67a41ea7c31f010555fc9",
+E         +      "size_bytes": 364
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "68bac7807b514a9152ffa8b4e1106709303d7c525dc39e967f0d4b4ba724cfdf",
+E         +      "size_bytes": 1177
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+E         +      "size_bytes": 0
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 40,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "9b139e93ac60b41aacb366a6cc6058997fc6493ee87150092a2729322afa6d67",
+E         +      "size_bytes": 1456
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "28fc4f8790e89e6f5e370737d537a8075b7c76017fe5b9a632cd567071f9fb20",
+E         +      "size_bytes": 16424
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E                "line_count": 34,
+E                "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.json",
+E                "reason": "documentation/specification/evidence",
+E         @@ -7515,11 +7587,163 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         -      "line_count": 150,
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/full-system-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "618e26f288daa017083aa51b715f878917736eb983a4e5ed8371bffc99fcebb5",
+E         +      "size_bytes": 1034
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 175,
+E                "path": "docs/release/evidence/continuation-20261017/index.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "247f6c951809e16a697ac7778b819d6b7d69c5e82f9fc17496452ce753e1fe9d",
+E         -      "size_bytes": 6212
+E         +      "sha256": "816a962ea5378779f8e675910e3a72b6fcafea574b2d32b9968c7c92c8fee746",
+E         +      "size_bytes": 7284
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 218,
+E         +      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c-progress.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "f63013302d76058ce8c47e9d6962483fc9acdfb6c4dd11c26cdfc86b359c7fd6",
+E         +      "size_bytes": 7326
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 8,
+E         +      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "591b213a4e41965253ad81673bf02479b2b769a2bc1dfa2545155f810f7fb4d1",
+E         +      "size_bytes": 542
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c8f767ef7ff11002cdac8b9381011e772896b2f060eed8ebbeacde300c1a1abd",
+E         +      "size_bytes": 1204
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "ef7d1d70eed6027eabd9691e1b1fb7f3ca161021d6fe145c9cb132faa4cfc946",
+E         +      "size_bytes": 2552
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 37,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "208973ab0f740e3f78d4736afb50a72afb957de6e7bf5caac4d18bb276428439",
+E         +      "size_bytes": 1261
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "fb7aad56853fcd7ed2ace04e8d217a62a4b7c68450ea670c8a25b230cf8fa28e",
+E         +      "size_bytes": 257
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "7712463bb492d6566e9ccf0b3339fac8716636e3f25871cfbce262bbc70984a6",
+E         +      "size_bytes": 1162
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e02093314856ed8277f17d297814c79207ea1de32c662f12856b3e24743a970a",
+E         +      "size_bytes": 10867
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "5b46ce2db0c0b96d29c7d819e1029a20d498d26c72e5ee71876d553df18e6237",
+E         +      "size_bytes": 1185
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+E         +      "size_bytes": 0
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 8,
+E         +      "path": "docs/release/evidence/continuation-20261017/node-forge-advisory-observation.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "b7bafd6a30975efb81f900773f0e49fe1b8e2853611be119482e0ca664f5b04c",
+E         +      "size_bytes": 322
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 1,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-before-fix.txt",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "dd5a9e529de6e94f4f3955620ca492b01e4cc6751bddc7cd53f6a1159699bee5",
+E         +      "size_bytes": 85
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "601cd1e42aa303bf7d77cd8a6e8cd75c823760b34a30fd12e173f5a88adcab84",
+E         +      "size_bytes": 1312
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c44638c0103f94e1c3ae9810272344b8a8e5ce255c9a94d3490ec24f357b8599",
+E         +      "size_bytes": 101
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 42,
+E         +      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "1461dffcf2699b7b262cefbb1a3565dc24cb2d20622e8a907c3e792428557fc7",
+E         +      "size_bytes": 1459
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "4a24dd8491e09c6c5e5e3b12ba39aaa466eac324a96773d49c7700653a521911",
+E         +      "size_bytes": 974
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 36,
+E         +      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "a8cee8c6549c117d0c5ddc0d2192b50f991168d1b124503d4848ea8e2a742d64",
+E         +      "size_bytes": 1350
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "47677a667f85f547199c804103e6fc4be2d0e7fba7749e80ce7a7ab4b743c04e",
+E         +      "size_bytes": 1567
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         @@ -8315,11 +8539,11 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         -      "line_count": 525220,
+E         +      "line_count": 525222,
+E                "path": "docs/release/requirements.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "ffd2973549fb82cd56dae48b6b7ef3711e1a1dc792d3a54dbfcf8ac42c63f31c",
+E         -      "size_bytes": 24412518
+E         +      "sha256": "56e39430b873750dc675f622017cb113bef2cf7c1d816e08066a8f1176b42361",
+E         +      "size_bytes": 24412658
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         @@ -8342,7 +8566,7 @@
+E                "line_count": 67,
+E                "path": "docs/release/source_coverage.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "43b0df36c3e35f792d2d990fcf926f0e4972a4b6b1874ba1a79d4cc1c166cd37",
+E         +      "sha256": "91794686d51942222d5f92fe7f0e748b29e15bb70421cc674014d2a0c80b8e47",
+E                "size_bytes": 2983
+E              },
+E              {
+E         @@ -18726,7 +18950,7 @@
+E            },
+E            "summary": {
+E              "DELETE_GENERATED_ONLY": 1,
+E         -    "DOCUMENTATION_ONLY": 637,
+E         +    "DOCUMENTATION_ONLY": 665,
+E              "PRESERVE_BEHAVIOUR": 1312,
+E              "TEST_ONLY": 389
+E            }
+E         
+E         V7_GOVERNANCE_DIFF_END legacy_disposition.json
+E         V7 governance artefacts were stale; regenerate and commit them.
+E         V7_GOVERNANCE_STALE_FILES ["legacy_disposition.json"]
+E         V7_GOVERNANCE_DIFF_DIR C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\artifacts\signalrank-governance-diffs
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.... C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\artifacts\\signalrank-governance-diffs\n', stderr='').returncode
+
+tests\test_v7_governance_contract.py:117: AssertionError
+============================== warnings summary ===============================
+.audit-venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_v7_governance_contract.py::test_generated_v7_governance_is_current
+1 failed, 193 passed, 1 warning in 25.77s
+
+RETRYING_IN_FRESH_PROCESS
+
+ATTEMPT 2/2
+
+........................................................................ [ 37%]
+.............................................F.......................... [ 74%]
+..................................................                       [100%]
+================================== FAILURES ===================================
+___________________ test_generated_v7_governance_is_current ___________________
+
+    def test_generated_v7_governance_is_current():
+        result = subprocess.run(
+            [sys.executable, "scripts/build_v7_governance.py", "--check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: {
+E           "callback_count": 28,
+E           "command_count": 192,
+E           "commit": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+E           "environment_variable_count": 1381,
+E           "generated": [
+E             "blockers.yaml",
+E             "build_blueprint_traceability.py",
+E             "callback_registry.yaml",
+E             "command_registry.yaml",
+E             "conflicts.yaml",
+E             "decisions.yaml",
+E             "environment_registry.yaml",
+E             "evidence_catalogue.yaml",
+E             "external_activation_requirements.yaml",
+E             "feature_flags.yaml",
+E             "incidents.yaml",
+E             "legacy_disposition.json",
+E             "provider_capability_program.yaml",
+E             "provider_registry.yaml",
+E             "release_gates.yaml",
+E             "requirements.yaml",
+E             "scale_profiles.yaml"
+E           ]
+E         }
+E         V7_GOVERNANCE_DIFF_BEGIN legacy_disposition.json
+E         --- requirements/legacy_disposition.json
+E         +++ requirements/legacy_disposition.json
+E         @@ -1,5 +1,5 @@
+E          {
+E         -  "file_count": 2339,
+E         +  "file_count": 2367,
+E            "files": [
+E              {
+E                "disposition": "PRESERVE_BEHAVIOUR",
+E         @@ -7467,6 +7467,30 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 6,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c-cleanup.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "7b5aca250ccdcf15c19fc1427801e9406e7ea5ee62851f202934ee5ff349cdbd",
+E         +      "size_bytes": 162
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 38,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c07589c6d07a06e5f9a253c06aacb4308961a005b378fc267500447c2d27608a",
+E         +      "size_bytes": 1488
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/browser-next-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "5754a80f87c2cfbce088b8af82ac3d2108d263f9e325fbb285a5fbb315aeab0f",
+E         +      "size_bytes": 2781
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E                "line_count": 38,
+E                "path": "docs/release/evidence/continuation-20261017/crosschat-intake-diagnostic-20261017.json",
+E                "reason": "documentation/specification/evidence",
+E         @@ -7499,6 +7523,54 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "2c8bdd1400a30192557d942349578a95af5fab76d3955f3998450ff4adc2c576",
+E         +      "size_bytes": 1210
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-audit-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "cf682d5bf5cd7d8b9cb43e2ad85d204e2133c904bbf67a41ea7c31f010555fc9",
+E         +      "size_bytes": 364
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "68bac7807b514a9152ffa8b4e1106709303d7c525dc39e967f0d4b4ba724cfdf",
+E         +      "size_bytes": 1177
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-lint-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+E         +      "size_bytes": 0
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 40,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "9b139e93ac60b41aacb366a6cc6058997fc6493ee87150092a2729322afa6d67",
+E         +      "size_bytes": 1456
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/frontend-tests-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "28fc4f8790e89e6f5e370737d537a8075b7c76017fe5b9a632cd567071f9fb20",
+E         +      "size_bytes": 16424
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E                "line_count": 34,
+E                "path": "docs/release/evidence/continuation-20261017/frozen-local-manifest-a23e088f.json",
+E                "reason": "documentation/specification/evidence",
+E         @@ -7515,11 +7587,163 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         -      "line_count": 150,
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/full-system-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "618e26f288daa017083aa51b715f878917736eb983a4e5ed8371bffc99fcebb5",
+E         +      "size_bytes": 1034
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 175,
+E                "path": "docs/release/evidence/continuation-20261017/index.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "247f6c951809e16a697ac7778b819d6b7d69c5e82f9fc17496452ce753e1fe9d",
+E         -      "size_bytes": 6212
+E         +      "sha256": "816a962ea5378779f8e675910e3a72b6fcafea574b2d32b9968c7c92c8fee746",
+E         +      "size_bytes": 7284
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 218,
+E         +      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c-progress.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "f63013302d76058ce8c47e9d6962483fc9acdfb6c4dd11c26cdfc86b359c7fd6",
+E         +      "size_bytes": 7326
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 8,
+E         +      "path": "docs/release/evidence/continuation-20261017/interrupted-system-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "591b213a4e41965253ad81673bf02479b2b769a2bc1dfa2545155f810f7fb4d1",
+E         +      "size_bytes": 542
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c8f767ef7ff11002cdac8b9381011e772896b2f060eed8ebbeacde300c1a1abd",
+E         +      "size_bytes": 1204
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-audit-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "ef7d1d70eed6027eabd9691e1b1fb7f3ca161021d6fe145c9cb132faa4cfc946",
+E         +      "size_bytes": 2552
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 37,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "208973ab0f740e3f78d4736afb50a72afb957de6e7bf5caac4d18bb276428439",
+E         +      "size_bytes": 1261
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-export-android-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "fb7aad56853fcd7ed2ace04e8d217a62a4b7c68450ea670c8a25b230cf8fa28e",
+E         +      "size_bytes": 257
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "7712463bb492d6566e9ccf0b3339fac8716636e3f25871cfbce262bbc70984a6",
+E         +      "size_bytes": 1162
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-tests-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e02093314856ed8277f17d297814c79207ea1de32c662f12856b3e24743a970a",
+E         +      "size_bytes": 10867
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 33,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "5b46ce2db0c0b96d29c7d819e1029a20d498d26c72e5ee71876d553df18e6237",
+E         +      "size_bytes": 1185
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/mobile-typecheck-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+E         +      "size_bytes": 0
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 8,
+E         +      "path": "docs/release/evidence/continuation-20261017/node-forge-advisory-observation.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "b7bafd6a30975efb81f900773f0e49fe1b8e2853611be119482e0ca664f5b04c",
+E         +      "size_bytes": 322
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 1,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-before-fix.txt",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "dd5a9e529de6e94f4f3955620ca492b01e4cc6751bddc7cd53f6a1159699bee5",
+E         +      "size_bytes": 85
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 35,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "601cd1e42aa303bf7d77cd8a6e8cd75c823760b34a30fd12e173f5a88adcab84",
+E         +      "size_bytes": 1312
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/receipt-metadata-regression-20261017.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "c44638c0103f94e1c3ae9810272344b8a8e5ce255c9a94d3490ec24f357b8599",
+E         +      "size_bytes": 101
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 42,
+E         +      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "1461dffcf2699b7b262cefbb1a3565dc24cb2d20622e8a907c3e792428557fc7",
+E         +      "size_bytes": 1459
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/runtime-manifest-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "4a24dd8491e09c6c5e5e3b12ba39aaa466eac324a96773d49c7700653a521911",
+E         +      "size_bytes": 974
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": 36,
+E         +      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.json",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "a8cee8c6549c117d0c5ddc0d2192b50f991168d1b124503d4848ea8e2a742d64",
+E         +      "size_bytes": 1350
+E         +    },
+E         +    {
+E         +      "disposition": "DOCUMENTATION_ONLY",
+E         +      "line_count": null,
+E         +      "path": "docs/release/evidence/continuation-20261017/sdk-manifest-5f7ae60c.log",
+E         +      "reason": "documentation/specification/evidence",
+E         +      "sha256": "47677a667f85f547199c804103e6fc4be2d0e7fba7749e80ce7a7ab4b743c04e",
+E         +      "size_bytes": 1567
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         @@ -8315,11 +8539,11 @@
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         -      "line_count": 525220,
+E         +      "line_count": 525222,
+E                "path": "docs/release/requirements.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "ffd2973549fb82cd56dae48b6b7ef3711e1a1dc792d3a54dbfcf8ac42c63f31c",
+E         -      "size_bytes": 24412518
+E         +      "sha256": "56e39430b873750dc675f622017cb113bef2cf7c1d816e08066a8f1176b42361",
+E         +      "size_bytes": 24412658
+E              },
+E              {
+E                "disposition": "DOCUMENTATION_ONLY",
+E         @@ -8342,7 +8566,7 @@
+E                "line_count": 67,
+E                "path": "docs/release/source_coverage.json",
+E                "reason": "documentation/specification/evidence",
+E         -      "sha256": "43b0df36c3e35f792d2d990fcf926f0e4972a4b6b1874ba1a79d4cc1c166cd37",
+E         +      "sha256": "91794686d51942222d5f92fe7f0e748b29e15bb70421cc674014d2a0c80b8e47",
+E                "size_bytes": 2983
+E              },
+E              {
+E         @@ -18726,7 +18950,7 @@
+E            },
+E            "summary": {
+E              "DELETE_GENERATED_ONLY": 1,
+E         -    "DOCUMENTATION_ONLY": 637,
+E         +    "DOCUMENTATION_ONLY": 665,
+E              "PRESERVE_BEHAVIOUR": 1312,
+E              "TEST_ONLY": 389
+E            }
+E         
+E         V7_GOVERNANCE_DIFF_END legacy_disposition.json
+E         V7 governance artefacts were stale; regenerate and commit them.
+E         V7_GOVERNANCE_STALE_FILES ["legacy_disposition.json"]
+E         V7_GOVERNANCE_DIFF_DIR C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\artifacts\signalrank-governance-diffs
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.... C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\artifacts\\signalrank-governance-diffs\n', stderr='').returncode
+
+tests\test_v7_governance_contract.py:117: AssertionError
+============================== warnings summary ===============================
+.audit-venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_v7_governance_contract.py::test_generated_v7_governance_is_current
+1 failed, 193 passed, 1 warning in 24.49s

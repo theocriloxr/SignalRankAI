@@ -4,6 +4,7 @@ Account flows write to PostgreSQL first.  A worker may call
 ``deliver_email_outbox_batch``; missing SMTP credentials leave messages queued
 instead of losing them or blocking registration/login requests.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,20 +72,18 @@ def render_account_email(template: str, context: Mapping[str, Any]) -> tuple[str
         ),
         "payment_receipt": (
             f"Your {app_name} payment receipt {context.get('receipt_number') or ''}".strip(),
-            str(context.get("message") or (
-                f"Payment confirmed for {context.get('plan') or 'subscription'}.\n"
-                f"Amount: {context.get('currency') or 'NGN'} {context.get('amount') or 0}\n"
-                f"Reference: {context.get('payment_reference') or 'N/A'}"
-            )),
+            str(
+                context.get("message")
+                or (
+                    f"Payment confirmed for {context.get('plan') or 'subscription'}.\n"
+                    f"Amount: {context.get('currency') or 'NGN'} {context.get('amount') or 0}\n"
+                    f"Reference: {context.get('payment_reference') or 'N/A'}"
+                )
+            ),
         ),
     }
     subject, body = templates.get(str(template), (f"{app_name} notification", str(context.get("message") or "")))
-    escaped = (
-        body.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\n", "<br>")
-    )
+    escaped = body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
     html = f"<div style='font-family:system-ui,sans-serif;max-width:620px;margin:auto'><h2>{app_name}</h2><p>{escaped}</p><hr><small>Never share passwords, recovery codes, API keys, or trading credentials.</small></div>"
     return subject, body, html
 
@@ -163,17 +162,21 @@ async def deliver_email_outbox_batch(limit: int = 25) -> dict[str, int]:
 
     async with get_session() as session:
         rows = (
-            await session.execute(
-                text(
-                    "WITH claimed AS (SELECT email_id FROM email_outbox WHERE status IN ('pending','retry') "
-                    "AND next_attempt_at<=NOW() ORDER BY created_at LIMIT :limit FOR UPDATE SKIP LOCKED) "
-                    "UPDATE email_outbox e SET status='sending',attempt_count=attempt_count+1,updated_at=NOW() "
-                    "FROM claimed WHERE e.email_id=claimed.email_id "
-                    "RETURNING e.email_id,e.recipient,e.subject,e.plain_body,e.html_body,e.attempt_count"
-                ),
-                {"limit": max(1, min(int(limit), 100))},
+            (
+                await session.execute(
+                    text(
+                        "WITH claimed AS (SELECT email_id FROM email_outbox WHERE status IN ('pending','retry') "
+                        "AND next_attempt_at<=NOW() ORDER BY created_at LIMIT :limit FOR UPDATE SKIP LOCKED) "
+                        "UPDATE email_outbox e SET status='sending',attempt_count=attempt_count+1,updated_at=NOW() "
+                        "FROM claimed WHERE e.email_id=claimed.email_id "
+                        "RETURNING e.email_id,e.recipient,e.subject,e.plain_body,e.html_body,e.attempt_count"
+                    ),
+                    {"limit": max(1, min(int(limit), 100))},
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         await session.commit()
 
     sent = failed = 0

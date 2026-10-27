@@ -1,0 +1,38 @@
+{
+  "name": "focused-boundary-diagnostic-r2-20261016",
+  "sha": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-16T20:33:44.960619+00:00",
+  "finished_at": "2026-10-16T20:34:04.378887+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_focused_universe_policy_20261016.py",
+    "tests/test_focused_universe_database_postgres.py",
+    "tests/test_stage1_universe_paging.py",
+    "tests/test_current_scope_handoff_20261016.py",
+    "tests/test_stage1_local_check_identity.py"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": false,
+  "worktree_before": {
+    "sha": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+    "dirty": true
+  },
+  "worktree_after": {
+    "sha": "51d2f59ed2c1553841fc24dda98689ffb26a0b7a",
+    "dirty": true
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/focused-boundary-diagnostic-r2-20261016.log",
+  "log_sha256": "4523022909b1dfb8f4695890415a8c516667882e3b2ac0434bae8bb9498f67a8",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "4e3a33b038caa405b96d1051dec6e923412841270fd0770eb1ff08d9c9b9f810",
+  "source_fingerprint_after": "4e3a33b038caa405b96d1051dec6e923412841270fd0770eb1ff08d9c9b9f810",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

@@ -1,8 +1,13 @@
 import os
+import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from signalrank_telegram.access import resolve_user_tier
+from core.redis_state import state
+from core.command_limits import START_COMMAND_RATE_LIMIT
 from signalrank_telegram.utils import _effective_tier, _public_guard, tier_rank, _build_dynamic_menu
+logger = logging.getLogger(__name__)
+
 from signalrank_telegram.ux_copy import (
     about_message,
     faq_message,
@@ -10,6 +15,13 @@ from signalrank_telegram.ux_copy import (
     start_message,
     support_message,
 )
+
+async def _compose_status_message(user_id: int):
+    # Lazy bridge avoids a module-import cycle while the monolithic command
+    # surface remains the canonical implementation for this release.
+    from signalrank_telegram.commands import _compose_status_message as canonical
+    return await canonical(user_id)
+
 
 async def start_command(update, context):
     # Diagnostic entry log

@@ -30,36 +30,51 @@ logger = logging.getLogger(__name__)
 
 # ─── Regime constants ─────────────────────────────────────────────────────────
 
+
 class Regime:
-    TRENDING  = "TRENDING"
-    RANGING   = "RANGING"
-    VOLATILE  = "VOLATILE"
-    NEWS      = "NEWS"
-    UNKNOWN   = "UNKNOWN"
+    TRENDING = "TRENDING"
+    RANGING = "RANGING"
+    VOLATILE = "VOLATILE"
+    NEWS = "NEWS"
+    UNKNOWN = "UNKNOWN"
 
     ALL = {TRENDING, RANGING, VOLATILE, NEWS, UNKNOWN}
 
     # Which signal strategies are compatible with each regime
     STRATEGY_WHITELIST: Dict[str, list[str]] = {
         TRENDING: [
-            "ema_crossover", "supertrend", "macd_trend",
-            "bollinger_breakout", "momentum", "channel_breakout",
-            "ichimoku_cloud", "adx_trend",
+            "ema_crossover",
+            "supertrend",
+            "macd_trend",
+            "bollinger_breakout",
+            "momentum",
+            "channel_breakout",
+            "ichimoku_cloud",
+            "adx_trend",
         ],
         RANGING: [
-            "rsi_mean_reversion", "bollinger_revert", "stoch_reversal",
-            "support_resistance", "dca_range", "grid",
-            "macd_divergence", "cci_reversal",
+            "rsi_mean_reversion",
+            "bollinger_revert",
+            "stoch_reversal",
+            "support_resistance",
+            "dca_range",
+            "grid",
+            "macd_divergence",
+            "cci_reversal",
         ],
         VOLATILE: [
             # Minimal strategies, only highest-conviction setups
-            "supertrend", "momentum",
+            "supertrend",
+            "momentum",
         ],
         NEWS: [],  # No strategies during news
         UNKNOWN: [
             # Everything allowed in unknown state (startup / no data)
-            "ema_crossover", "rsi_mean_reversion", "supertrend",
-            "bollinger_breakout", "support_resistance",
+            "ema_crossover",
+            "rsi_mean_reversion",
+            "supertrend",
+            "bollinger_breakout",
+            "support_resistance",
         ],
     }
 
@@ -74,6 +89,7 @@ class Regime:
 
 # ─── ADX calculation (without TA-Lib) ─────────────────────────────────────────
 
+
 def _calc_adx(highs: list, lows: list, closes: list, period: int = 14) -> Optional[float]:
     """Calculate ADX from OHLC data. Returns None if insufficient data."""
     n = len(closes)
@@ -81,8 +97,6 @@ def _calc_adx(highs: list, lows: list, closes: list, period: int = 14) -> Option
         return None
 
     try:
-        import statistics
-
         # Calculate True Range
         def true_range(i: int) -> float:
             return max(
@@ -110,9 +124,9 @@ def _calc_adx(highs: list, lows: list, closes: list, period: int = 14) -> Option
                 result.append(result[-1] - result[-1] / p + val)
             return result
 
-        atr_s  = smooth(trs, period)
-        pdm_s  = smooth(plus_dm, period)
-        mdm_s  = smooth(minus_dm, period)
+        atr_s = smooth(trs, period)
+        pdm_s = smooth(plus_dm, period)
+        mdm_s = smooth(minus_dm, period)
 
         adx_list = []
         for i in range(len(atr_s)):
@@ -120,7 +134,7 @@ def _calc_adx(highs: list, lows: list, closes: list, period: int = 14) -> Option
                 continue
             pdi = (pdm_s[i] / atr_s[i]) * 100
             mdi = (mdm_s[i] / atr_s[i]) * 100
-            dx  = (abs(pdi - mdi) / (pdi + mdi)) * 100 if (pdi + mdi) > 0 else 0
+            dx = (abs(pdi - mdi) / (pdi + mdi)) * 100 if (pdi + mdi) > 0 else 0
             adx_list.append(dx)
 
         if not adx_list:
@@ -181,6 +195,7 @@ def _calc_bollinger_width(closes: list, period: int = 20) -> Optional[float]:
 
 # ─── Regime detector ──────────────────────────────────────────────────────────
 
+
 class RegimeDetector:
     """
     Market regime detector using ADX, ATR, and Bollinger Width.
@@ -234,8 +249,8 @@ class RegimeDetector:
 
         # Extract OHLCV arrays
         try:
-            highs  = [float(c.get("high",  c.get("High",  0)) or 0) for c in candles]
-            lows   = [float(c.get("low",   c.get("Low",   0)) or 0) for c in candles]
+            highs = [float(c.get("high", c.get("High", 0)) or 0) for c in candles]
+            lows = [float(c.get("low", c.get("Low", 0)) or 0) for c in candles]
             closes = [float(c.get("close", c.get("Close", 0)) or 0) for c in candles]
 
             if not any(c > 0 for c in closes):
@@ -260,10 +275,10 @@ class RegimeDetector:
         bb_width = _calc_bollinger_width(closes, period=20)
 
         # ── Regime classification ─────────────────────────────────────────────
-        adx_trend_threshold   = float(os.getenv("REGIME_ADX_TREND",    "25") or 25)
-        adx_ranging_threshold = float(os.getenv("REGIME_ADX_RANGING",  "20") or 20)
-        atr_volatile_ratio    = float(os.getenv("REGIME_ATR_VOLATILE",  "2.0") or 2.0)
-        bb_ranging_threshold  = float(os.getenv("REGIME_BB_RANGING",   "4.0") or 4.0)
+        adx_trend_threshold = float(os.getenv("REGIME_ADX_TREND", "25") or 25)
+        adx_ranging_threshold = float(os.getenv("REGIME_ADX_RANGING", "20") or 20)
+        atr_volatile_ratio = float(os.getenv("REGIME_ATR_VOLATILE", "2.0") or 2.0)
+        bb_ranging_threshold = float(os.getenv("REGIME_BB_RANGING", "4.0") or 4.0)
 
         regime = Regime.UNKNOWN
 
@@ -283,8 +298,12 @@ class RegimeDetector:
 
         logger.debug(
             "[regime] %s %s → %s (ADX=%.1f BB_W=%.2f ATR_R=%.2f)",
-            asset, timeframe, regime,
-            adx or 0, bb_width or 0, atr_ratio or 0,
+            asset,
+            timeframe,
+            regime,
+            adx or 0,
+            bb_width or 0,
+            atr_ratio or 0,
         )
 
         self._update_cache(cache_key, regime)
@@ -303,8 +322,8 @@ class RegimeDetector:
             # For now, check known high-impact fixed windows
             now_utc = datetime.now(timezone.utc)
             weekday = now_utc.weekday()  # 0=Mon, 4=Fri
-            hour    = now_utc.hour
-            minute  = now_utc.minute
+            hour = now_utc.hour
+            minute = now_utc.minute
 
             # US Non-Farm Payrolls: first Friday of each month at 13:30 UTC
             if weekday == 4 and hour == 13 and 25 <= minute <= 45:
@@ -318,6 +337,7 @@ class RegimeDetector:
             # Check via Redis flag if available
             try:
                 from core.redis_state import state
+
                 news_flag = state.get_sync(f"news_suppression:{asset.upper()}")
                 if news_flag:
                     return True

@@ -5,6 +5,7 @@ public copy marketplace. It only validates whether the required external
 evidence is complete enough to move a traceability item out of
 BLOCKED_EXTERNAL for a later, separately authorized change.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,9 +63,7 @@ def provider_preflight(
     spec = dict(providers[key] or {})
     blockers: list[str] = []
 
-    gate_names = [str(spec.get("gate") or "")] + [
-        str(name) for name in (spec.get("gate_aliases") or [])
-    ]
+    gate_names = [str(spec.get("gate") or "")] + [str(name) for name in (spec.get("gate_aliases") or [])]
     gate_names = [name for name in gate_names if name]
     if any(_truthy(env.get(name)) for name in gate_names):
         blockers.append("provider_gate_must_remain_off_during_preflight")
@@ -152,15 +151,11 @@ def marketplace_preflight(
     spec = dict(reqs.get("marketplace_activation") or {})
     blockers: list[str] = []
 
-    missing_external = _required_true(
-        evidence, [str(name) for name in (spec.get("evidence") or [])]
-    )
+    missing_external = _required_true(evidence, [str(name) for name in (spec.get("evidence") or [])])
     if missing_external:
         blockers.append("marketplace_external_evidence_missing:" + ",".join(sorted(missing_external)))
 
-    missing_runtime = _required_true(
-        evidence, [str(name) for name in (spec.get("runtime_evidence") or [])]
-    )
+    missing_runtime = _required_true(evidence, [str(name) for name in (spec.get("runtime_evidence") or [])])
     if missing_runtime:
         blockers.append("marketplace_runtime_evidence_missing:" + ",".join(sorted(missing_runtime)))
 

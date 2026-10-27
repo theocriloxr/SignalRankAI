@@ -258,9 +258,13 @@ async def test_admin_pulse_uses_db_evidence_when_global_stats_are_zero(monkeypat
 
     stats = await pulse.compute_engine_health(window_hours=1)
 
-    assert stats["scanned"] == 4
+    assert stats["scanned"] == 3
     assert stats["delivered"] == 2
     assert stats["rejected_by"] == {"rejected": 2, "issued": 1}
+    assert stats["accounted"] == 3
+    assert stats["unaccounted"] == 0
+    assert stats["sources"]["accounting_source"] == "decision_log"
+    assert stats["sources"]["accounting_delta"] == 0
     assert stats["sources"]["global_total"] == 0
 
 
@@ -331,6 +335,71 @@ async def test_admin_pulse_uses_latest_cycle_when_db_window_is_empty(monkeypatch
     assert stats["unaccounted"] == 0
     assert stats["sources"]["cycle_attempted"] == 20
     assert stats["latest_cycle"]["cycle"] == 482
+
+
+@pytest.mark.asyncio
+async def test_admin_pulse_does_not_count_deliveries_as_decision_rows(monkeypatch):
+    import engine.admin_pulse as pulse
+
+    class _Stats:
+        def get_stats(self):
+            return {
+                "scanned": 0,
+                "delivered": 0,
+                "vetoed_regime": 0,
+                "vetoed_squeeze": 0,
+                "vetoed_microstructure": 0,
+                "vetoed_score": 0,
+                "vetoed_ml": 0,
+                "vetoed_other": 0,
+            }
+
+    monkeypatch.setitem(sys.modules, "engine.stats_manager", types.SimpleNamespace(stats=_Stats()))
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def first(self):
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            return list(self._rows)
+
+    class _Session:
+        async def execute(self, stmt, params=None):
+            sql = str(stmt)
+            if "SELECT COUNT(*) FROM decision_log" in sql:
+                return _Result([(5,)])
+            if "SELECT decision, COUNT(*) FROM decision_log" in sql:
+                return _Result([("rejected", 3), ("accepted", 2)])
+            if "SELECT reason, decision, COUNT(*) FROM decision_log" in sql:
+                return _Result([("validation", "rejected", 3)])
+            if "FROM signal_deliveries" in sql:
+                return _Result([(0,)])
+            if "FROM signals" in sql:
+                return _Result([(0,)])
+            return _Result([(0,)])
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _Session()
+
+    monkeypatch.setitem(sys.modules, "db.session", types.SimpleNamespace(get_session=_fake_get_session))
+
+    class _State:
+        def get_sync(self, key):
+            return 0
+
+    monkeypatch.setitem(sys.modules, "core.redis_state", types.SimpleNamespace(state=_State()))
+
+    stats = await pulse.compute_engine_health(window_hours=1)
+    assert stats["scanned"] == 5
+    assert stats["delivered"] == 0
+    assert stats["rejected_by"] == {"validation": 3}
+    assert stats["accounted"] == 5
+    assert stats["unaccounted"] == 0
+    assert stats["sources"]["accounting_source"] == "decision_log"
 
 
 def test_engine_counts_scan_attempts_before_market_data_gate():

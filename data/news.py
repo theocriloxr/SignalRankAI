@@ -25,11 +25,12 @@ def _safe_text(value) -> str:
         return str(value)
     return str(value)
 
+
 def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[str, str, int]]:
     """
     Fetch news headlines from multiple sources.
     Returns list of (title, published_at, sentiment_score).
-    
+
     Sources tried in order:
     1. NewsAPI.org (NEWSAPI_KEY env var)
     2. X recent search (X_BEARER_TOKEN env var)
@@ -40,9 +41,9 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
     cached = _NEWS_CACHE.get(cache_key)
     if cached and (time.time() - cached["ts"]) < _NEWS_CACHE_TTL:
         return cached["data"]
-    
+
     headlines = []
-    
+
     # 1. Try NewsAPI
     newsapi_key = (os.getenv("NEWSAPI_KEY") or os.getenv("NEWS_API_KEY") or "").strip()
     if newsapi_key:
@@ -79,7 +80,7 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
                 headlines.extend(_fetch_x_headlines(asset, lookback_minutes, x_bearer_token))
             except Exception as e:
                 logger.warning(f"X news fetch failed: {e}")
-    
+
     # 3. CryptoCompare News (free, good for crypto)
     if not headlines and _is_crypto_asset(asset):
         try:
@@ -103,7 +104,7 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
                     headlines.append((title, pub, score))
         except Exception as e:
             logger.warning(f"CryptoCompare news failed: {e}")
-    
+
     _NEWS_CACHE[cache_key] = {"ts": time.time(), "data": headlines}
     return headlines
 
@@ -163,6 +164,7 @@ def _fetch_x_headlines(asset: str, lookback_minutes: int, bearer_token: str) -> 
         out.append((text[:240], created_at, score))
     return out
 
+
 def _asset_to_news_query(asset: str) -> str:
     """Convert asset symbol to news search query."""
     a = asset.upper().strip()
@@ -181,24 +183,69 @@ def _asset_to_news_query(asset: str) -> str:
     }
     return mapping.get(a, a)
 
+
 def _is_crypto_asset(asset: str) -> bool:
     a = (asset or "").upper()
     return a.endswith("USDT") or a.endswith("USD") or a.endswith("BUSD") or a.endswith("USDC")
+
 
 def simple_sentiment_score(text: str) -> int:
     """Enhanced sentiment scoring with more keywords."""
     text = text.lower()
     positive = [
-        'surge', 'rally', 'gain', 'rise', 'bull', 'record', 'beat', 'soar',
-        'breakout', 'upgrade', 'strong', 'momentum', 'outperform', 'growth',
-        'recovery', 'rebound', 'highs', 'buy', 'accumulate', 'bullish',
-        'optimism', 'upside', 'profit', 'boost', 'support'
+        "surge",
+        "rally",
+        "gain",
+        "rise",
+        "bull",
+        "record",
+        "beat",
+        "soar",
+        "breakout",
+        "upgrade",
+        "strong",
+        "momentum",
+        "outperform",
+        "growth",
+        "recovery",
+        "rebound",
+        "highs",
+        "buy",
+        "accumulate",
+        "bullish",
+        "optimism",
+        "upside",
+        "profit",
+        "boost",
+        "support",
     ]
     negative = [
-        'fall', 'drop', 'loss', 'bear', 'miss', 'crash', 'plunge', 'decline',
-        'sell', 'warning', 'risk', 'fear', 'dump', 'collapse', 'downgrade',
-        'weak', 'correction', 'selloff', 'panic', 'bearish', 'concern',
-        'uncertainty', 'recession', 'inflation', 'crisis', 'fraud'
+        "fall",
+        "drop",
+        "loss",
+        "bear",
+        "miss",
+        "crash",
+        "plunge",
+        "decline",
+        "sell",
+        "warning",
+        "risk",
+        "fear",
+        "dump",
+        "collapse",
+        "downgrade",
+        "weak",
+        "correction",
+        "selloff",
+        "panic",
+        "bearish",
+        "concern",
+        "uncertainty",
+        "recession",
+        "inflation",
+        "crisis",
+        "fraud",
     ]
     score = 0
     for word in positive:
@@ -209,6 +256,7 @@ def simple_sentiment_score(text: str) -> int:
             score -= 1
     return max(-3, min(3, score))
 
+
 def get_news_sentiment(asset: str, lookback_minutes: int = 120) -> float:
     """Aggregate sentiment for recent news headlines."""
     headlines = fetch_news_headlines(asset, lookback_minutes)
@@ -216,4 +264,3 @@ def get_news_sentiment(asset: str, lookback_minutes: int = 120) -> float:
         return 0.0
     total = sum(s for _, _, s in headlines)
     return total / max(1, len(headlines))
-

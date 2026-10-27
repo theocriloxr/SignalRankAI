@@ -22,10 +22,7 @@ class TierCapabilities:
     execution_eligible: bool = False
 
 
-TIER_ALLOWED_ASSETS = {
-    tier.value.lower(): get_entitlements(tier).allowed_asset_classes
-    for tier in TIER_ORDER
-}
+TIER_ALLOWED_ASSETS = {tier.value.lower(): get_entitlements(tier).allowed_asset_classes for tier in TIER_ORDER}
 
 
 def get_tier_capabilities(tier: str | None) -> TierCapabilities:

@@ -1,4 +1,5 @@
 """Durable, idempotent payment receipts for all SignalRankAI channels."""
+
 from __future__ import annotations
 
 import hashlib
@@ -48,7 +49,9 @@ def _render_receipt(
     ]
     plain = "\n".join(lines)
     body = "<br>".join(html.escape(line) for line in lines)
-    rich = f"<div style='font-family:system-ui,sans-serif;max-width:680px;margin:auto'><h2>SignalRankAI</h2>{body}</div>"
+    rich = (
+        f"<div style='font-family:system-ui,sans-serif;max-width:680px;margin:auto'><h2>SignalRankAI</h2>{body}</div>"
+    )
     return plain, rich
 
 

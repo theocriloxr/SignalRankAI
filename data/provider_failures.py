@@ -5,6 +5,7 @@ strings so routing, circuit breakers, retry policy and operator tooling can
 classify outcomes deterministically. This module is the single taxonomy used
 across adapters; it deliberately matches the V2.0 programme section 8 list.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -46,35 +47,39 @@ class ProviderFailureReason(str, Enum):
 
 
 #: Failures that must never be retried automatically.
-PERMANENT_REASONS: frozenset[ProviderFailureReason] = frozenset({
-    ProviderFailureReason.UNSUPPORTED_CAPABILITY,
-    ProviderFailureReason.PERMISSION_FAILURE,
-    ProviderFailureReason.INVALID_INSTRUMENT,
-    ProviderFailureReason.UNSUPPORTED_SYMBOL,
-    ProviderFailureReason.INVALID_SYMBOL_MAPPING,
-    ProviderFailureReason.MALFORMED_PAYLOAD,
-    ProviderFailureReason.INVALID_PAYLOAD,
-    ProviderFailureReason.MINIMUM_SIZE_VIOLATION,
-    ProviderFailureReason.PRECISION_VIOLATION,
-    ProviderFailureReason.ORDER_REJECTED,
-    ProviderFailureReason.RECONCILIATION_REQUIRED,
-    ProviderFailureReason.LICENSING_RESTRICTED,
-    ProviderFailureReason.MISSING_CREDENTIALS,
-    ProviderFailureReason.HTTP_403,
-    ProviderFailureReason.HTTP_404,
-})
+PERMANENT_REASONS: frozenset[ProviderFailureReason] = frozenset(
+    {
+        ProviderFailureReason.UNSUPPORTED_CAPABILITY,
+        ProviderFailureReason.PERMISSION_FAILURE,
+        ProviderFailureReason.INVALID_INSTRUMENT,
+        ProviderFailureReason.UNSUPPORTED_SYMBOL,
+        ProviderFailureReason.INVALID_SYMBOL_MAPPING,
+        ProviderFailureReason.MALFORMED_PAYLOAD,
+        ProviderFailureReason.INVALID_PAYLOAD,
+        ProviderFailureReason.MINIMUM_SIZE_VIOLATION,
+        ProviderFailureReason.PRECISION_VIOLATION,
+        ProviderFailureReason.ORDER_REJECTED,
+        ProviderFailureReason.RECONCILIATION_REQUIRED,
+        ProviderFailureReason.LICENSING_RESTRICTED,
+        ProviderFailureReason.MISSING_CREDENTIALS,
+        ProviderFailureReason.HTTP_403,
+        ProviderFailureReason.HTTP_404,
+    }
+)
 
 #: Failures that are safe and valuable to retry with backoff.
-RETRYABLE_REASONS: frozenset[ProviderFailureReason] = frozenset({
-    ProviderFailureReason.RATE_LIMITED,
-    ProviderFailureReason.PROVIDER_UNAVAILABLE,
-    ProviderFailureReason.PROVIDER_MAINTENANCE,
-    ProviderFailureReason.TIMEOUT,
-    ProviderFailureReason.PROVIDER_OUTAGE,
-    ProviderFailureReason.STALE_DATA,
-    ProviderFailureReason.SEQUENCE_GAP,
-    ProviderFailureReason.HTTP_429,
-})
+RETRYABLE_REASONS: frozenset[ProviderFailureReason] = frozenset(
+    {
+        ProviderFailureReason.RATE_LIMITED,
+        ProviderFailureReason.PROVIDER_UNAVAILABLE,
+        ProviderFailureReason.PROVIDER_MAINTENANCE,
+        ProviderFailureReason.TIMEOUT,
+        ProviderFailureReason.PROVIDER_OUTAGE,
+        ProviderFailureReason.STALE_DATA,
+        ProviderFailureReason.SEQUENCE_GAP,
+        ProviderFailureReason.HTTP_429,
+    }
+)
 
 #: HTTP status -> primary failure classification.
 HTTP_STATUS_REASONS: Mapping[int, ProviderFailureReason] = {

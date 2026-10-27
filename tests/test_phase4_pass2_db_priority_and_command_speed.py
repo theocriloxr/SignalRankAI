@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import threading
 import time
 from types import SimpleNamespace
@@ -149,53 +148,50 @@ def test_cancelled_admission_wait_does_not_leak_active_capacity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_admission_cancellation_releases_any_late_acquire(monkeypatch) -> None:
-    from db.priority import DBPriority
+async def test_async_admission_cancellation_removes_waiter_without_leaking_lane(monkeypatch) -> None:
+    from db.priority import DBAdmissionController, DBPriority
     from db import session
 
-    started = threading.Event()
-    finish = threading.Event()
-    released: list[DBPriority] = []
-
-    class SlowAdmission:
-        def acquire(self, priority, **kwargs) -> bool:
-            started.set()
-            finish.wait(timeout=1.0)
-            return True
-
-        def release(self, priority, **kwargs) -> None:
-            released.append(priority)
-
-    controller = SlowAdmission()
+    controller = DBAdmissionController(1)
     monkeypatch.setattr(session, "_priority_admission", controller)
-
-    async def real_to_thread(func, /, *args, **kwargs):
-        loop = asyncio.get_running_loop()
-        call = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(None, call)
-
-    # The repository test harness intentionally replaces asyncio.to_thread
-    # with an inline helper. Restore real offloading for this cancellation test.
-    monkeypatch.setattr(asyncio, "to_thread", real_to_thread)
-
-    waiter = asyncio.create_task(
-        session._acquire_priority_cancellation_safe(
-            DBPriority.INTERACTIVE,
-            timeout_s=2.0,
-            nonblocking=False,
-        )
-    )
-    deadline = time.monotonic() + 0.5
-    while time.monotonic() < deadline and not started.is_set():
-        await asyncio.sleep(0.005)
-    assert started.is_set()
-    assert waiter.cancel()
+    assert controller.acquire(DBPriority.INTERACTIVE, timeout_s=0)
+    waiter = asyncio.create_task(session._acquire_priority_cancellation_safe(
+        DBPriority.INTERACTIVE, timeout_s=2, nonblocking=False))
+    await asyncio.sleep(0.02)
+    assert controller.snapshot()["waiting_total"] == 1
+    waiter.cancel()
     with pytest.raises(asyncio.CancelledError):
         await waiter
-    finish.set()
-    await asyncio.sleep(0.075)
+    assert controller.snapshot()["waiting_total"] == 0
+    assert controller.snapshot()["active_total"] == 1
+    controller.release(DBPriority.INTERACTIVE)
+    assert controller.snapshot()["active_total"] == 0
 
-    assert released == [DBPriority.INTERACTIVE]
+
+@pytest.mark.asyncio
+async def test_async_admission_waiters_preserve_fifo_and_leave_executor_available():
+    from concurrent.futures import ThreadPoolExecutor
+    from db.priority import DBAdmissionController, DBPriority
+
+    controller = DBAdmissionController(1)
+    assert controller.acquire(DBPriority.CRITICAL, timeout_s=0)
+    order = []
+    async def waiter(index):
+        assert await controller.acquire_async(DBPriority.CRITICAL, timeout_s=2)
+        order.append(index)
+        controller.release(DBPriority.CRITICAL)
+    tasks = []
+    for index in range(16):
+        tasks.append(asyncio.create_task(waiter(index)))
+        await asyncio.sleep(0)
+    assert controller.snapshot()["waiting_total"] == 16
+    # A one-thread executor remains available even while many DB requests wait.
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        assert await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(executor, lambda: 42), 0.5) == 42
+    controller.release(DBPriority.CRITICAL)
+    await asyncio.gather(*tasks)
+    assert order == list(range(16))
+    assert controller.snapshot()["active_total"] == 0
 
 
 def test_priority_api_rejects_ambiguous_legacy_combinations() -> None:

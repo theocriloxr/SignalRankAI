@@ -258,13 +258,9 @@ def validate_trade_geometry(
     targets = result.targets
     if len(targets) > 1:
         if result.direction == "long":
-            ok = all(
-                targets[i] >= targets[i - 1] for i in range(1, len(targets))
-            )
+            ok = all(targets[i] >= targets[i - 1] for i in range(1, len(targets)))
         else:
-            ok = all(
-                targets[i] <= targets[i - 1] for i in range(1, len(targets))
-            )
+            ok = all(targets[i] <= targets[i - 1] for i in range(1, len(targets)))
         if not ok:
             return False, "invalid_geometry:non_monotonic_targets"
     return True, ""

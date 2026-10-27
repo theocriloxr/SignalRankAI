@@ -1,0 +1,5 @@
+SignalRankAI master blueprint certification trigger
+branch=implementation-of-master-blueprint
+head_before_trigger=8e90ee2b4ba854e8259179c3831068ac2f753b76
+purpose=run cleanroom on consolidated release-candidate state
+live_execution_authorized=false

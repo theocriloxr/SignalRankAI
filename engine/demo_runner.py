@@ -1,4 +1,5 @@
 """Simple demo runner to exercise a strategy with market state."""
+
 from engine.strategies.commodity import CommodityStrategy
 from engine.strategies.runner import run_strategy_with_marketstate
 

@@ -101,7 +101,9 @@ def _get_signal_status_display(signal_row, outcome_status: str = None) -> str:
             return "STOP LOSS"
         if status in {"INVALID", "INVALIDATED"}:
             return "INVALIDATED"
-        if status in {"MISSED", "TIME_STOP"}:
+        if status == "TIME_STOP":
+            return "TRADE CLOSED AT TIME LIMIT"
+        if status in {"MISSED", "MISSED_ENTRY"}:
             return "MISSED"
         return status
     if getattr(signal_row, "expired", False):
@@ -324,7 +326,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if update.message is not None and total_active > 0:
         await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
     
-    from .formatter import format_signal
     for s in filtered_signals:
         try:
             formatted = format_signal(s, user_tier=tier)

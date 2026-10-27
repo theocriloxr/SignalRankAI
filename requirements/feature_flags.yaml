@@ -1,5 +1,5 @@
 {
-  "count": 146,
+  "count": 161,
   "flags": [
     {
       "dangerous": false,
@@ -67,6 +67,14 @@
     },
     {
       "dangerous": false,
+      "name": "AI_REVIEW_FALLBACK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ALLOW_ASSET_COOLDOWN_REDUCTION",
       "production_example_default": null,
       "required_safe_default": null,
@@ -107,7 +115,7 @@
     },
     {
       "dangerous": false,
-      "name": "ALPHAVANTAGE_ENABLED",
+      "name": "ALPACA_MARKET_DATA_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -204,6 +212,14 @@
     {
       "dangerous": false,
       "name": "CALLBACK_FAST_ACK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "CCXT_MARKET_DATA_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -308,6 +324,14 @@
     {
       "dangerous": false,
       "name": "DECISION_LOG_WRITE_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "DECOMPOSED_TOPOLOGY_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -435,6 +459,22 @@
     },
     {
       "dangerous": false,
+      "name": "EVENT_BUS_DB_OUTBOX_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "EVENT_BUS_MEMORY_FALLBACK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "EXECUTION_ELIGIBILITY_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -459,8 +499,24 @@
     },
     {
       "dangerous": false,
+      "name": "FCS_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "FINAL_SEND_LIVE_PRICE_CHECK_ENABLED",
       "production_example_default": "1",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "FOCUSED_UNIVERSE_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null
@@ -523,6 +579,14 @@
     },
     {
       "dangerous": false,
+      "name": "IBKR_MARKET_DATA_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "IMP_FX_SESSION_FILTER_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -571,6 +635,14 @@
     },
     {
       "dangerous": false,
+      "name": "MARKETDATA_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "MARKET_ALTERNATIVE_SIGNALS_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -611,6 +683,14 @@
     },
     {
       "dangerous": false,
+      "name": "ML_CANDIDATE_FORWARD_AUTO_PROMOTION_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "ML_DRIFT_MONITOR_ENABLED",
       "production_example_default": "0",
       "required_safe_default": null,
@@ -629,6 +709,14 @@
       "dangerous": false,
       "name": "ML_OFFLINE_BOOTSTRAP_ENABLED",
       "production_example_default": "0",
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "ML_STARVATION_RECOVERY_ENABLED",
+      "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
       "safe_default_satisfied": null
@@ -707,7 +795,31 @@
     },
     {
       "dangerous": false,
+      "name": "OPENAI_AI_CIRCUIT_BREAKER_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OPENAI_AI_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "OPENAI_CODEX_REVIEW_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "OPENAI_SIGNAL_REVIEW_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
@@ -1099,6 +1211,14 @@
     },
     {
       "dangerous": false,
+      "name": "TRADINGVIEW_OHLCV_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
       "name": "TRADING_LEDGER_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
@@ -1177,6 +1297,6 @@
   "schema_version": 1,
   "source_prompt": {
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
-    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+    "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   }
 }

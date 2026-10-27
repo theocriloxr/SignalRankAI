@@ -4,6 +4,7 @@ Crypto runs continuously; FX, commodities, indices, and stocks do not. During
 closed sessions the engine should avoid hammering providers and logging stale
 candle warnings for closed markets.
 """
+
 from __future__ import annotations
 
 import os
@@ -44,7 +45,9 @@ def off_market_decision(open_assets: Iterable[str], closed_notes: Iterable[tuple
     open_list = [str(a or "").upper() for a in open_assets]
     closed_list = list(closed_notes or [])
     has_open_crypto = any(a.endswith(("USDT", "USDC", "BUSD", "BTC", "ETH")) for a in open_list)
-    has_open_noncrypto = bool(open_list) and not all(a.endswith(("USDT", "USDC", "BUSD", "BTC", "ETH")) for a in open_list)
+    has_open_noncrypto = bool(open_list) and not all(
+        a.endswith(("USDT", "USDC", "BUSD", "BTC", "ETH")) for a in open_list
+    )
     if has_open_crypto or has_open_noncrypto:
         return OffMarketDecision(False, 0, "open_assets_available")
     if closed_list:

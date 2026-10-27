@@ -4,6 +4,7 @@ The inference path records numeric model features in memory and periodically
 publishes a small aggregate sample to Redis. No user identifiers, prices,
 credentials, or raw signal payloads are persisted here.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -106,12 +107,14 @@ def record_live_prediction(
         return
     try:
         with _LOCK:
-            _PREDICTIONS.append({
-                "raw_probability": raw,
-                "calibrated_probability": calibrated,
-                "threshold": cutoff,
-                "passed": 1.0 if raw >= cutoff else 0.0,
-            })
+            _PREDICTIONS.append(
+                {
+                    "raw_probability": raw,
+                    "calibrated_probability": calibrated,
+                    "threshold": cutoff,
+                    "passed": 1.0 if raw >= cutoff else 0.0,
+                }
+            )
             _PREDICTION_COUNT += 1
             count = _PREDICTION_COUNT
             last_publish = _LAST_PREDICTION_PUBLISH_MONO
@@ -148,12 +151,14 @@ def load_live_prediction_samples() -> list[dict[str, float]]:
         passed = _finite(item.get("passed"))
         if None in {raw_prob, calibrated, threshold, passed}:
             continue
-        result.append({
-            "raw_probability": float(raw_prob),
-            "calibrated_probability": float(calibrated),
-            "threshold": float(threshold),
-            "passed": float(passed),
-        })
+        result.append(
+            {
+                "raw_probability": float(raw_prob),
+                "calibrated_probability": float(calibrated),
+                "threshold": float(threshold),
+                "passed": float(passed),
+            }
+        )
     return result
 
 

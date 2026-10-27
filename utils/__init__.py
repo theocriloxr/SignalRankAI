@@ -1,1 +1,1 @@
-""" This module provides utility functions for asynchronous execution. """
+"""This module provides utility functions for asynchronous execution."""

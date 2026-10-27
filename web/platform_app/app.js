@@ -3,6 +3,9 @@ const $=(s)=>document.querySelector(s);const $$=(s)=>[...document.querySelectorA
 const state={user:null,entitlements:null,dashboard:null,signals:[],paper:null,portfolio:null,performance:null,quality:null,shadow:null,broker:null,tradingProfile:null,watchlists:[],alerts:[],notifications:[],commandCatalog:null,operator:null,operatorDiagnostics:null,operatorMaintenance:null,operatorBusiness:null,pendingBillingReference:null};
 const SECURE_LINK_PENDING_KEY='signalrank.secure_link.pending';
 let sessionRefreshPromise=null;
+let telegramStatusRefreshPromise=null;
+let telegramStatusRefreshAt=0;
+let workspaceNavigationVersion=0;
 let secureLinkVerifyTimer=null;
 let bootstrapRetryTimer=null;
 const THEME_KEY='signalrank.theme';
@@ -11,9 +14,9 @@ let navCollapsedMemory=null;
 const desktopNavMedia=window.matchMedia?.('(min-width: 1320px)');
 const themeMedia=window.matchMedia?.('(prefers-color-scheme: light)');
 function resolvedTheme(){const explicit=document.documentElement.dataset.theme;if(explicit==='light'||explicit==='dark')return explicit;return themeMedia?.matches?'light':'dark'}
-function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#050907':'#f3f8f5'}
+function syncThemeUi(){const theme=resolvedTheme();const icon=$('#themeIcon');const label=$('#themeLabel');const toggle=$('#themeToggle');if(icon)icon.textContent=theme==='dark'?'☀':'☾';if(label)label.textContent=theme==='dark'?'Light':'Dark';if(toggle){toggle.setAttribute('aria-label',`Switch to ${theme==='dark'?'light':'dark'} mode`);toggle.title=`Switch to ${theme==='dark'?'light':'dark'} mode`}const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==='dark'?'#08120f':'#f1f5f3';const select=$('#themeSelect');if(select)select.value=['dark','light'].includes(document.documentElement.dataset.theme)?document.documentElement.dataset.theme:'system'}
 function setTheme(theme,{persist=true}={}){if(theme==='light'||theme==='dark'){document.documentElement.dataset.theme=theme;if(persist){try{localStorage.setItem(THEME_KEY,theme)}catch{}}}else{delete document.documentElement.dataset.theme;if(persist){try{localStorage.removeItem(THEME_KEY)}catch{}}}syncThemeUi()}
-function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}catch{}if(saved==='light'||saved==='dark')document.documentElement.dataset.theme=saved;syncThemeUi();themeMedia?.addEventListener?.('change',()=>{let explicit='';try{explicit=localStorage.getItem(THEME_KEY)||''}catch{}if(!explicit)syncThemeUi()});$('#themeToggle')?.addEventListener('click',()=>setTheme(resolvedTheme()==='dark'?'light':'dark'))}
+function initTheme(){let saved='';try{saved=localStorage.getItem(THEME_KEY)||''}catch{}if(saved==='light'||saved==='dark')document.documentElement.dataset.theme=saved;syncThemeUi();themeMedia?.addEventListener?.('change',()=>{let explicit='';try{explicit=localStorage.getItem(THEME_KEY)||''}catch{}if(!explicit){delete document.documentElement.dataset.theme;syncThemeUi()}});$('#themeSelect')?.addEventListener('change',e=>setTheme(e.target.value));$('#themeToggle')?.addEventListener('click',()=>setTheme(resolvedTheme()==='dark'?'light':'dark'))}
 function navPreference(){if(navCollapsedMemory!==null)return navCollapsedMemory;try{navCollapsedMemory=localStorage.getItem(NAV_COLLAPSE_KEY)==='1'}catch{navCollapsedMemory=false}return navCollapsedMemory}
 function syncNavUi(){
   const collapsed=Boolean(desktopNavMedia?.matches&&navPreference());
@@ -53,7 +56,7 @@ async function refreshBrowserSession(){
     const headers={'Content-Type':'application/json'};
     const csrf=decodeURIComponent(cookie('sr_csrf'));if(csrf)headers['X-CSRF-Token']=csrf;
     const response=await fetch(API+'/auth/refresh',{method:'POST',credentials:'include',headers,body:JSON.stringify({client_type:'web'})});
-    if(!response.ok)return false;
+    if(!response.ok){await response.body?.cancel().catch(()=>{});return false;}
     try{const data=await response.json();if(data?.user)state.user=data.user}catch{}
     return true
   })().finally(()=>{sessionRefreshPromise=null});
@@ -71,12 +74,13 @@ async function request(path,options={},allowSessionRefresh=true,transientAttempt
     const error=new Error('SignalRank connection was interrupted. Your session is safe; please retry.');error.status=0;error.cause=fetchError;throw error
   }
   if(safeRead&&[502,503,504].includes(response.status)&&transientAttempt<2){
+    await response.body?.cancel().catch(()=>{});
     await wait(350*(transientAttempt+1));
     return request(path,options,allowSessionRefresh,transientAttempt+1)
   }
   let data={};try{data=await response.json()}catch{}
   const authBootstrapPath=['/auth/login','/auth/register','/auth/refresh','/auth/magic-link/complete','/auth/telegram/complete','/auth/mfa/complete'].some(prefix=>String(path).startsWith(prefix));
-  if(response.status===401&&allowSessionRefresh&&!authBootstrapPath){
+  if(response.status===401&&safeRead&&allowSessionRefresh&&!authBootstrapPath){
     const refreshed=await refreshBrowserSession().catch(()=>false);
     if(refreshed)return request(path,options,false)
   }
@@ -158,17 +162,36 @@ function applyAccountExperience(){
     :(tier==='vip'||tier==='premium')?'Premium signal intelligence · delivery-proven setups, evidence and performance.'
     :'Your signals, paper portfolio and market intelligence in one place.';
 }
-function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate')}
+function setAuthTab(name){const forms={login:$('#loginForm'),register:$('#registerForm'),activate:$('#activateForm')};Object.entries(forms).forEach(([key,el])=>el.hidden=key!==name);$('#mfaForm').hidden=true;$('#passwordResetForm').hidden=true;$('#loginTab').classList.toggle('active',name==='login');$('#registerTab').classList.toggle('active',name==='register');$('#activateTab').classList.toggle('active',name==='activate');for(const [key,id] of Object.entries({login:'loginTab',register:'registerTab',activate:'activateTab'}))$('#'+id).setAttribute('aria-selected',String(key===name))}
 $('#loginTab').onclick=()=>setAuthTab('login');$('#registerTab').onclick=()=>setAuthTab('register');$('#activateTab').onclick=()=>setAuthTab('activate');
 async function completeAuth(data){if(data.mfa_required){$('#loginForm').hidden=true;$('#registerForm').hidden=true;$('#activateForm').hidden=true;$('#mfaForm').hidden=false;$('#mfaForm [name="token"]').value=data.mfa_token;toast('Enter your authenticator or recovery code');return}await boot();toast('Signed in successfully')}
 $('#loginForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/login',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}))}catch(err){toast(err.message,true)}};
 function signupContext(){const qs=new URLSearchParams(location.search);return{referral_code:qs.get('ref')||qs.get('referral')||qs.get('referral_code')||null,signup_source:'web',landing_path:location.pathname+location.search,http_referrer:document.referrer||null,utm_source:qs.get('utm_source'),utm_medium:qs.get('utm_medium'),utm_campaign:qs.get('utm_campaign'),utm_content:qs.get('utm_content'),utm_term:qs.get('utm_term')}}
-$('#registerForm').onsubmit=async e=>{e.preventDefault();try{const data=await request('/auth/register',{method:'POST',body:JSON.stringify({...formData(e.target),...signupContext(),client_type:'web'})});await completeAuth(data);toast('Account created. Check your email to verify it. You can connect Telegram later from Account.')}catch(err){toast(err.message,true)}};
-$('#activateForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/telegram/complete',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}));history.replaceState({},'',location.pathname);toast('Telegram account activated')}catch(err){toast(err.message,true)}};
+$('#registerForm').onsubmit=async e=>{e.preventDefault();try{const raw=formData(e.target);const payload={...raw,...signupContext(),client_type:'web',platform_terms_accepted:Boolean(e.target.elements.platform_terms_accepted?.checked),privacy_acknowledged:Boolean(e.target.elements.privacy_acknowledged?.checked),age_eligibility_confirmed:Boolean(e.target.elements.age_eligibility_confirmed?.checked),marketing_consent:Boolean(e.target.elements.marketing_consent?.checked)};const data=await request('/auth/register',{method:'POST',body:JSON.stringify(payload)});await completeAuth(data);toast('Account created. Check your email to verify it. Execution-risk acceptance remains separate from account creation.')}catch(err){toast(err.message,true)}};
+$('#activateForm').onsubmit=async e=>{e.preventDefault();try{const raw=formData(e.target);const payload={...raw,client_type:'web',platform_terms_accepted:Boolean(e.target.elements.platform_terms_accepted?.checked),privacy_acknowledged:Boolean(e.target.elements.privacy_acknowledged?.checked),age_eligibility_confirmed:Boolean(e.target.elements.age_eligibility_confirmed?.checked),marketing_consent:Boolean(e.target.elements.marketing_consent?.checked)};await completeAuth(await request('/auth/telegram/complete',{method:'POST',body:JSON.stringify(payload)}));history.replaceState({},'',location.pathname);toast('Telegram account activated. Broker execution remains separately controlled.')}catch(err){toast(err.message,true)}};
 $('#mfaForm').onsubmit=async e=>{e.preventDefault();try{await completeAuth(await request('/auth/mfa/complete',{method:'POST',body:JSON.stringify({...formData(e.target),client_type:'web'})}))}catch(err){toast(err.message,true)}};
 $('#passwordResetForm').onsubmit=async e=>{e.preventDefault();try{await request('/auth/password-reset/complete',{method:'POST',body:JSON.stringify(formData(e.target))});history.replaceState({},'',location.pathname);setAuthTab('login');toast('Password reset. Sign in again.')}catch(err){toast(err.message,true)}};
 $('#magicLinkButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/magic-link/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, a sign-in link was queued.')}catch(err){toast(err.message,true)}};
 $('#forgotPasswordButton').onclick=async()=>{const email=prompt('Enter your account email');if(!email)return;try{await request('/auth/password-reset/request',{method:'POST',body:JSON.stringify({email})});toast('If the account exists, reset instructions were queued.')}catch(err){toast(err.message,true)}};
+function renderAdaptiveHealthEvidence(health){
+  const counts=health.delivery_evidence_counts||{};
+  const statuses=['UNAVAILABLE','INSUFFICIENT','OBSERVED','INVALID'];
+  const validCount=value=>Number.isInteger(value)&&value>=0;
+  const coverageKnown=validCount(health.evaluated_profile_count)&&statuses.every(key=>validCount(counts[key]))&&statuses.reduce((sum,key)=>sum+counts[key],0)===health.evaluated_profile_count;
+  const labels={UNAVAILABLE:'Unavailable',INSUFFICIENT:'Insufficient',OBSERVED:'Observed',INVALID:'Invalid'};
+  const baselineLabels={UNAVAILABLE:'Unavailable',INSUFFICIENT:'Forward sample incomplete',INVALID:'Invalid approval or evidence',BREACHED:'Approved limit breached',WITHIN_LIMITS:'Within approved delivery limits'};
+  const rows=Array.isArray(health.profile_diagnostics)?health.profile_diagnostics.slice(0,20):[];
+  const current=health.fresh===true&&health.status==='COMPLETED';
+  const coverage=coverageKnown?`${health.evaluated_profile_count} active profiles checked`:'Profile coverage unavailable';
+  const metric=value=>typeof value==='number'&&Number.isFinite(value)?fmt(value,3):'—';
+  return `<section id="adaptiveHealthEvidence" class="signal-funnel-panel"><div class="panel-heading"><div><p class="eyebrow">STRATEGY MONITORING</p><h3>Adaptive profile evidence</h3></div><span class="status-pill ${current?'':'warning'}">${esc(current?'Monitor current':`Monitor ${health.status||'UNAVAILABLE'}`)}</span></div>
+    <p class="muted">A completed monitor run does not certify strategy health. Approved comparisons use signal-delivery outcomes and matching profile versions. Broker fills remain unverified.</p>
+    <p>${esc(coverage)}${!current?' · Last reported evidence may be stale.':''}</p>
+    <div class="mini-metrics">${statuses.map(key=>`<div><small>${esc(labels[key])}</small><strong class="${key==='OBSERVED'?'':'warning'}">${esc(coverageKnown?counts[key]:'—')}</strong></div>`).join('')}</div>
+    ${rows.length?`<div class="table-wrap adaptive-health-table-wrap"><table class="adaptive-health-table"><thead><tr><th>Profile / asset</th><th>State at check</th><th>Samples</th><th>Delivery evidence</th><th>Expectancy R</th><th>Drawdown R</th><th>Brier loss</th><th>Approved baseline</th></tr></thead><tbody>${rows.map(row=>`<tr><td data-label="Profile / asset">${esc(row.asset||'Unknown asset')}<br><small>${esc(row.profile_id||'Unknown profile')}</small></td><td data-label="State at check">${esc(row.profile_state||'Unknown')}</td><td data-label="Samples">${esc(validCount(row.sample_size)?row.sample_size:'—')}</td><td data-label="Delivery evidence">${esc(labels[row.delivery_evidence_status]||'Unavailable')}${row.coverage_reason?`<br><small>${esc(String(row.coverage_reason).replaceAll('_',' '))}</small>`:''}${Array.isArray(row.reasons)&&row.reasons.length?`<br><small class="warning">${esc(row.reasons.join(' · '))}</small>`:''}</td><td data-label="Expectancy R">${esc(metric(row.expectancy_r))}</td><td data-label="Drawdown R">${esc(metric(row.max_drawdown_r))}</td><td data-label="Brier loss">${esc(metric(row.brier_score))}</td><td data-label="Approved baseline"><span class="baseline-comparison-status">${esc(baselineLabels[row.approved_baseline_comparison]||'Unavailable')}</span>${validCount(row.baseline_sample_size)?`<br><small>${esc(row.baseline_sample_size)} forward observations</small>`:''}${Array.isArray(row.baseline_reasons)&&row.baseline_reasons.length?`<br><small>${esc(row.baseline_reasons.join(' · '))}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No profile details reported.</p>'}
+    ${health.diagnostics_truncated===true?`<p class="muted">Showing ${esc(rows.length)} profiles. Coverage counts and suspension checks include every queried active profile.</p>`:''}
+  </section>`;
+}
 function renderOperatorDiagnostics(){
   const target=$('#operatorDiagnostics');if(!target)return;
   const d=state.operatorDiagnostics||{};const providers=d.providers||{};const performance=d.performance||{};const outcomes=d.outcomes||{};const payments=d.payments||{};const engine=d.engine||{};
@@ -177,6 +200,7 @@ function renderOperatorDiagnostics(){
     ['Redis',d.redis?.configured?'CONNECTED':'UNAVAILABLE',d.redis?.configured?'positive':'negative'],
     ['Performance ledger',performance.ok?'PASS':'BLOCKED',performance.ok?'positive':'negative'],
     ['Outcome projections',outcomes.ok?'PASS':'BLOCKED',outcomes.ok?'positive':'negative'],
+    ['Adaptive health check',d.adaptive_health?.status||'UNAVAILABLE',d.adaptive_health?.fresh&&d.adaptive_health?.status==='COMPLETED'?'positive':'warning'],
     ['Provider circuits',Object.values(providers.circuits||{}).some(x=>x?.open)?'OPEN':'CLEAR',Object.values(providers.circuits||{}).some(x=>x?.open)?'warning':'positive'],
     ['Payment receipt gap',payments.receipt_gap??'—',Number(payments.receipt_gap||0)>0?'warning':'positive']
   ];
@@ -194,6 +218,7 @@ function renderOperatorDiagnostics(){
   const rejectionRows=Object.entries(rejectionGroups).flatMap(([stage,rows])=>(rows||[]).map(row=>({stage,...row}))).slice(0,12);
   const mlLine=`ML raw max ${engine.ml_raw_probability_max==null?'—':Number(engine.ml_raw_probability_max).toFixed(3)} · threshold ${engine.ml_threshold_raw==null?'—':Number(engine.ml_threshold_raw).toFixed(3)} · calibrated max ${engine.ml_calibrated_probability_max==null?'—':Number(engine.ml_calibrated_probability_max).toFixed(3)}`;
   target.innerHTML=`<div class="diagnostic-grid">${cards.map(([k,v,cls])=>`<div class="diagnostic-card"><small>${esc(k)}</small><strong class="${cls}">${esc(v)}</strong></div>`).join('')}</div>
+    ${renderAdaptiveHealthEvidence(d.adaptive_health||{})}
     <section class="signal-funnel-panel"><div class="panel-heading"><div><p class="eyebrow">LATEST ENGINE CYCLE</p><h3>Signal admission funnel</h3></div><span class="status-pill">${esc(String(engine.status||'unknown').toUpperCase())}</span></div>
       <div class="signal-funnel-grid">${funnel.map(([k,v])=>`<div><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('')}</div>
       <p class="muted signal-funnel-ml">${esc(mlLine)}</p>
@@ -318,10 +343,16 @@ $('#operatorForceSignalForm')?.addEventListener('submit',async e=>{
 async function loadOperator(){
   if(!state.commandCatalog)await loadCommandCatalog();
   const overview=await request('/operator/overview');state.operator=overview;
-  const jobs=[request('/operator/diagnostics'),request('/operator/maintenance')];
-  if(String(overview.authority||'')==='OWNER')jobs.push(request('/operator/business'));
-  const results=await Promise.all(jobs);
-  state.operatorDiagnostics=results[0];state.operatorMaintenance=results[1];state.operatorBusiness=results[2]||null;
+  const isOwner=String(overview.authority||'')==='OWNER';
+  const maintenancePanel=$('.operator-maintenance-panel');if(maintenancePanel)maintenancePanel.hidden=!isOwner;
+  for(const id of ['operatorKillSwitchOn','operatorKillSwitchOff']){const button=$('#'+id);if(button)button.hidden=!isOwner}
+  loadOperatorResearch().catch(()=>{});
+  const results=await Promise.allSettled([request('/operator/diagnostics'),
+    isOwner?request('/operator/maintenance'):Promise.resolve(null),
+    isOwner?request('/operator/business'):Promise.resolve(null)]);
+  state.operatorDiagnostics=results[0].status==='fulfilled'?results[0].value:null;
+  state.operatorMaintenance=results[1].status==='fulfilled'?results[1].value:null;
+  state.operatorBusiness=results[2].status==='fulfilled'?results[2].value:null;
   const op=state.operator||{};const release=op.release||{};const ai=op.ai||{};const ex=op.execution||{};
   const badge=$('#operatorAuthorityBadge');if(badge)badge.textContent=String(op.authority||'OPERATOR');
   const overrideRow=$('#operatorOverrideQualityRow');if(overrideRow)overrideRow.hidden=String(op.authority||'')!=='OWNER';
@@ -344,11 +375,57 @@ async function loadOperator(){
     ['Signal model',ai.signal_model||ai.fast_model||'—'],['Deep model',ai.deep_model||'—'],
     ['Circuit',ai.circuit?.open?'Open':'Healthy'],['Provider order',(ai.provider_order||[]).join(' → ')||'—']
   ].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
-  renderOperatorDiagnostics();
-  renderOperatorMaintenance();
+  if(state.operatorDiagnostics)renderOperatorDiagnostics();else{const target=$('#operatorDiagnostics');if(target)target.textContent='Diagnostics unavailable. Use Run diagnostics to retry.'}
+  if(state.operatorMaintenance)renderOperatorMaintenance();else if(isOwner){const target=$('#operatorMaintenance');if(target)target.textContent='Maintenance status unavailable. Refresh the control room to retry.'}
   renderOperatorBusiness();
   renderCommandCatalog($('#commandSearch')?.value||'')
 }
+
+let researchRequestVersion=0;
+function researchNumber(value,digits=2){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(digits):'Unverified'}
+function renderOperatorResearch(snapshot){
+  const target=$('#operatorResearch');if(!target)return;
+  const experiments=Array.isArray(snapshot?.experiments)?snapshot.experiments:[];
+  const families=Array.isArray(snapshot?.families)?snapshot.families:[];
+  const familyRows=families.map(family=>`<div class="research-family"><strong>${esc(family.trial_family)}</strong><span>${esc(family.raw_trial_count)} trials · ${esc(family.terminal_trial_count)} terminal results</span></div>`).join('');
+  const rows=experiments.map(experiment=>{
+    const result=experiment.result||{};const definition=experiment.specification||{};const hypothesis=experiment.hypothesis||{};
+    const integrity=result.integrity||{};const wfo=result.walk_forward||{};const returns=result.return_diagnostics||{};
+    const checks=Array.isArray(integrity.checks)?integrity.checks:[];
+    const blockers=checks.filter(check=>check.blocking!==false&&!['PASS','NOT_APPLICABLE'].includes(check.status));
+    const statistical=result.multiple_testing||{};const survival=result.survival||{};
+    const scopes=Array.isArray(definition.asset_scope)?definition.asset_scope.join(', '):'Scope unverified';
+    const terminal=['COMPLETED','FAILED','REJECTED'].includes(experiment.status)?experiment.status:'PENDING RESULT';
+    const checkRows=checks.map(check=>`<li><strong>${esc(check.check_id)}</strong><span>${esc(check.status||'UNVERIFIED')}</span><p>${esc(check.reason||'Evidence not supplied')}</p></li>`).join('');
+    const fields=[['Dataset',experiment.dataset_version],['Features',experiment.feature_version],['Code commit',definition.code_commit],
+      ['Hypothesis version',experiment.hypothesis_version],['Parent hypothesis',experiment.parent_hypothesis_id||'Root hypothesis'],
+      ['Evidence class',result.evidence_category||definition.evidence_category||'Unverified'],['Execution model',definition.execution_model_version],
+      ['Result hash',experiment.evidence_hash||'Awaiting terminal result']];
+    return `<details class="research-experiment"><summary><div><strong>${esc(experiment.strategy_id)} · ${esc(scopes)}</strong><small>${esc(String(experiment.experiment_id||'').slice(0,12))} · ${esc(terminal)}</small></div><span class="status-pill">${result.promotion_eligible===true?'Eligibility requires operator review':'Promotion not certified'}</span></summary>
+      <p>${esc(hypothesis.description||'No hypothesis description recorded.')}</p><p class="muted">Mechanism: ${esc(hypothesis.mechanism_status||'Unverified')} · ${esc(blockers.length)} blocking integrity checks</p>
+      <dl class="research-metrics">${[['Out-of-sample observations',wfo.sample_size??'Unverified'],['Positive WFO folds',typeof wfo.positive_folds==='number'&&typeof wfo.fold_count==='number'?`${wfo.positive_folds} / ${wfo.fold_count}`:'Unverified'],['Worst fold expectancy (R)',researchNumber(wfo.worst_fold_expectancy)],['Expected R',researchNumber(returns.expectancy_r)],['Maximum drawdown (R)',researchNumber(returns.max_drawdown_r)],['Longest drawdown (observations)',returns.max_drawdown_duration_observations??'Unverified'],['Selection-bias qualification',statistical.pass_fail===true?'Passed recorded policy':'Unverified / failed'],['Bootstrap ruin probability (0–1)',researchNumber(survival.risk_of_ruin,4)]].map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>
+      <p class="small">Bootstrap survival is conditional on observed returns and the recorded risk fraction; it does not certify broker fills or prop-account compliance.</p>
+      <h4>Integrity evidence</h4>${checkRows?`<ul class="research-checks">${checkRows}</ul>`:'<p class="muted">No integrity report recorded.</p>'}
+      <h4>Lineage and reproducibility</h4><dl class="research-lineage">${fields.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value??'Unverified')}</dd></div>`).join('')}</dl>
+    </details>`
+  }).join('');
+  target.innerHTML=`<p class="research-coverage">History begins when the ledger was introduced. Earlier trial counts remain unverified. Lineage totals cover all assets; the experiment list shows the latest 50 matching trials.</p>${familyRows?`<div class="research-families">${familyRows}</div>`:''}${rows||'<div class="empty-state"><h4>No recorded experiments</h4><p>Eligible resolved outcomes and registered research searches add experiments to this history. Refresh after a research run completes.</p></div>'}`
+}
+async function loadOperatorResearch(){
+  const target=$('#operatorResearch');if(!target)return;
+  const version=++researchRequestVersion;const button=$('#refreshOperatorResearch');
+  const asset=String($('#operatorResearchAsset')?.value||'').trim().toUpperCase();
+  target.setAttribute('aria-busy','true');if(button)button.disabled=true;
+  try{
+    const snapshot=await request('/operator/research'+(asset?'?asset='+encodeURIComponent(asset):''));
+    if(version===researchRequestVersion)renderOperatorResearch(snapshot);
+    return snapshot
+  }catch(error){
+    if(version===researchRequestVersion)target.innerHTML=`<div class="empty-state"><h4>Research evidence unavailable</h4><p>${esc(error.message||'The research service could not be reached.')} Use Refresh research to retry.</p></div>`;
+    throw error
+  }finally{if(version===researchRequestVersion){target.setAttribute('aria-busy','false');if(button)button.disabled=false}}
+}
+$('#operatorResearchForm')?.addEventListener('submit',event=>{event.preventDefault();loadOperatorResearch().catch(()=>{})});
 $('#refreshOperatorOverview')?.addEventListener('click',()=>loadOperator().catch(err=>toast(err.message,true)));
 $('#refreshOperatorDiagnostics')?.addEventListener('click',()=>loadOperatorDiagnostics().catch(err=>toast(err.message,true)));
 $('#operatorAiTest')?.addEventListener('click',async e=>{const button=e.currentTarget;button.disabled=true;const original=button.textContent;button.textContent='Testing…';try{const result=await request('/operator/ai-test',{method:'POST',body:'{}'});toast(result.test?.connected||result.test?.ok?'OpenAI connection verified':'OpenAI probe completed');await loadOperator()}catch(err){toast(err.message,true)}finally{button.disabled=false;button.textContent=original}});
@@ -363,7 +440,7 @@ async function updateOperatorKillSwitch(action){
 $('#operatorKillSwitchOn')?.addEventListener('click',()=>updateOperatorKillSwitch('on').catch(err=>toast(err.message,true)));
 $('#operatorKillSwitchOff')?.addEventListener('click',()=>updateOperatorKillSwitch('off').catch(err=>toast(err.message,true)));
 
-function showView(name){const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount,ops:loadOperator};loaders[name]?.().catch(err=>toast(err.message,true))}
+function showView(name){workspaceNavigationVersion+=1;const trigger=$(`[data-view="${name}"]`);if(trigger?.dataset.feature&&!hasFeature(trigger.dataset.feature)){toast('This workspace is not included in your current entitlements. Review Plans and billing or contact support. Plan access never enables broker execution by itself.',true);const switcher=$('#viewSwitcher');if(switcher)switcher.value=$('[data-view].active')?.dataset.view||'overview';return}$$('.view').forEach(el=>el.hidden=true);const target=$(`#${name}View`);if(target)target.hidden=false;$$('[data-view]').forEach(b=>{b.classList.toggle('active',b.dataset.view===name);if(b.closest('#sessionNav')){if(b.dataset.view===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}});const switcher=$('#viewSwitcher');if(switcher)switcher.value=name;const loaders={overview:loadOverview,signals:loadSignals,evidence:loadEvidence,markets:searchMarkets,tools:loadTools,paper:loadPaper,portfolio:loadPortfolio,performance:loadPerformance,journal:loadJournal,support:loadSupport,account:loadAccount,ops:loadOperator};Promise.resolve().then(()=>loaders[name]?.()).catch(err=>toast(err.message,true))}
 $$('[data-view]').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 $('#viewSwitcher')?.addEventListener('change',e=>showView(e.target.value));
 function workspaceCandidates(){return Array.from(document.querySelectorAll('[data-view]')).filter(el=>!el.hidden).map(el=>({view:el.dataset.view,label:(el.textContent||'').trim()})).filter(x=>x.view)}
@@ -382,6 +459,7 @@ async function confirmPendingBillingReturn(){
   return true
 }
 async function boot(){
+  const navigationAtStart=workspaceNavigationVersion;
   try{
     if(bootstrapRetryTimer){clearTimeout(bootstrapRetryTimer);bootstrapRetryTimer=null}
     const me=await requestWithRetry('/me',{}, {attempts:6,baseDelay:450});
@@ -398,7 +476,7 @@ async function boot(){
     if(landing==='overview')initial.push(loadOverview());
     if(hasFeature('paper_trading'))initial.push(loadPaper());
     await Promise.allSettled(initial);
-    showView(landing);
+    if(workspaceNavigationVersion===navigationAtStart)showView(landing);
     const invite=new URLSearchParams(location.search).get('organization_invite');
     if(invite){await request('/organizations/invitations/accept',{method:'POST',body:JSON.stringify({token:invite})});history.replaceState({},'',location.pathname);toast('Workspace invitation accepted')}
     await reconcilePendingSecureLink({notify:false});
@@ -408,10 +486,16 @@ async function boot(){
     if(Number(err?.status)===401)setLoggedIn(false);else showBootstrapError(status>=500?'SignalRank is online, but your account session endpoint is still warming up. Retrying automatically…':err?.message);
   }
 }
-async function loadOverview(){state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};$('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;applyAccountExperience();const cards=[['Delivered signals',s.delivered_signals],['Open positions',s.open_positions],['Paper cash',`$${fmt(s.paper_cash)}`],['Unrealized P/L',`$${fmt(s.unrealized_pnl)}`]];$('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v??0)}</strong></div>`).join('');renderOverviewLists()}
+async function loadOverview(){
+  state.dashboard=await request('/dashboard');const s=state.dashboard.summary||{};
+  $('#welcomeTitle').textContent=`Welcome${state.user?.display_name?`, ${state.user.display_name.split(' ')[0]}`:''}`;applyAccountExperience();
+  const display=(value,money=false)=>value==null||!Number.isFinite(Number(value))?'\u2014':`${money?'$':''}${fmt(value,money?2:0)}`;
+  const cards=[['Delivered signals',display(s.delivered_signals)],['Open paper positions',display(s.open_positions)],['Paper cash',display(s.paper_cash,true)],['Unrealized paper P/L',display(s.unrealized_pnl,true)]];
+  $('#summaryCards').innerHTML=cards.map(([k,v])=>`<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('');renderOverviewLists()
+}
 async function loadSignals(){const asset=$('#signalAssetFilter')?.value?.trim()||'';const assetClass=$('#signalClassFilter')?.value||'';const timeframe=$('#signalTimeframeFilter')?.value||'';const strategy=$('#signalStrategyFilter')?.value?.trim()||'';const status=$('#signalStatusFilter')?.value||'';const qs=new URLSearchParams({limit:'50'});if(asset)qs.set('asset',asset);if(assetClass)qs.set('asset_class',assetClass);if(timeframe)qs.set('timeframe',timeframe);if(strategy)qs.set('strategy',strategy);if(status)qs.set('status',status);state.signals=(await request('/signals?'+qs)).signals||[];renderSignals();renderOverviewLists()}
 function loadEvidence(){const signal=state.signals[0];$('#evidenceAsset').textContent=signal?String(signal.asset||'LATEST SIGNAL').replace(/([A-Z]{3,4})(USD|USDT)$/,'$1 / $2'):'LATEST SIGNAL';$('#evidenceTimeframe').textContent=signal?.timeframe||'—';$('#evidenceFreshness').textContent=signal?.delivered_at?`Delivered ${time(signal.delivered_at)}`:'No delivery-proven signal selected';const rows=[['01','Rejection','Wick geometry is measured as evidence, never a reversal guarantee.','OBSERVED'],['02','Close location','The close shows who controlled the end of the completed period.','OBSERVED'],['03','Key-level context','Support and resistance use only candles known at assessment time.','CONTEXT'],['04','Relative volume','Participation is compared with a prior-period median.','CONTEXT'],['05','Next candle','No conclusion is recorded until the following candle is final.','PENDING']];$('#evidenceLedger').innerHTML=rows.map(([n,event,detail,status])=>`<div class="ledger-row"><b>${n}</b><strong>${esc(event)}</strong><p>${esc(detail)}</p><span class="${status==='PENDING'?'pending-text':'cyan'}">${status}</span></div>`).join('')}
-function renderOverviewLists(){const recent=state.signals.slice(0,5);$('#latestSignals').innerHTML=recent.length?recent.map(s=>`<div class="list-row"><div><strong>${esc(s.asset)} ${esc(String(s.direction).toUpperCase())}</strong><small>${esc(s.timeframe)} · ${esc(s.strategy_name||'Strategy')}</small></div><div class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||'Pending')}</div></div>`).join(''):'<p>No confirmed signals yet.</p>';const positions=(state.paper?.positions||[]).filter(p=>p.status==='open').slice(0,5);$('#overviewPositions').innerHTML=positions.length?positions.map(p=>`<div class="list-row"><div><strong>${esc(p.asset)} ${esc(String(p.direction).toUpperCase())}</strong><small>Entry ${fmt(p.fill_entry,6)}</small></div><div class="${Number(p.unrealized_pnl)>=0?'positive':'negative'}">$${fmt(p.unrealized_pnl)}</div></div>`).join(''):'<p>No open paper positions.</p>'}
+function renderOverviewLists(){const recent=state.signals.slice(0,5);$('#latestSignals').innerHTML=recent.length?recent.map(s=>`<div class="list-row"><div><strong>${esc(s.asset)} ${esc(String(s.direction).toUpperCase())}</strong><small>${esc(s.timeframe)} · ${esc(s.strategy_name||'Strategy')}</small></div><div class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||'Pending')}</div></div>`).join(''):'<div class="empty-state"><span aria-hidden="true">&#9636;</span><h3>No delivered signals yet</h3><p>Qualified setups appear here with their delivery receipts and evidence. An empty feed can be the correct result.</p></div>';const positions=(state.paper?.positions||[]).filter(p=>p.status==='open').slice(0,5);$('#overviewPositions').innerHTML=positions.length?positions.map(p=>`<div class="list-row"><div><strong>${esc(p.asset)} ${esc(String(p.direction).toUpperCase())}</strong><small>Entry ${fmt(p.fill_entry,6)}</small></div><div class="${Number(p.unrealized_pnl)>=0?'positive':'negative'}">$${fmt(p.unrealized_pnl)}</div></div>`).join(''):'<div class="empty-state"><span aria-hidden="true">&#9671;</span><h3>Your paper desk is ready</h3><p>Open the paper desk to review your account and simulated positions.</p></div>'}
 function renderSignals(){const rows=state.signals;$('#signalsTable').innerHTML=rows.length?`<table><thead><tr><th>Asset</th><th>Market</th><th>Direction</th><th>Timeframe</th><th>Entry</th><th>Stop</th><th>Score</th><th>ML</th><th>Strategy</th><th>Outcome</th><th>Delivered</th><th></th></tr></thead><tbody>${rows.map(s=>`<tr><td><strong>${esc(s.asset)}</strong><br><small>${esc(s.display_id||String(s.signal_id).slice(0,8))}</small></td><td><span class="market-badge">${esc(String(s.asset_class||'unknown').toUpperCase())}</span></td><td>${esc(String(s.direction).toUpperCase())}</td><td>${esc(s.timeframe)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.entry,6)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.stop_loss,6)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':fmt(s.score,1)}</td><td>${s.exact_levels_locked?'<span class="muted">Premium only</span>':(s.ml_probability_calibrated==null?'—':fmt(Number(s.ml_probability_calibrated)*100,1)+'%')}</td><td>${esc(s.strategy_name||'—')}</td><td class="${statusClass(s.outcome_status)}">${esc(s.outcome_status||s.status||'Pending')}</td><td>${time(s.delivered_at)}</td><td><button class="ghost signal-detail" data-id="${esc(s.signal_id)}" type="button">View</button></td></tr>`).join('')}</tbody></table>`:'<div class="panel">No delivery-proven signals match this view.</div>';$$('.signal-detail').forEach(button=>button.onclick=()=>loadSignalDetail(button.dataset.id).catch(e=>toast(e.message,true)))}
 $('#refreshSignals').onclick=loadSignals;['#signalAssetFilter','#signalClassFilter','#signalTimeframeFilter','#signalStrategyFilter','#signalStatusFilter'].forEach(selector=>{const el=$(selector);if(!el)return;el.onchange=loadSignals;if(el.tagName==='INPUT')el.onkeydown=e=>{if(e.key==='Enter')loadSignals()}});
 async function loadSignalDetail(signalId){const data=await request('/signals/'+encodeURIComponent(signalId));const x=data.signal||{};const events=data.events||[];const panel=$('#signalDetailPanel');$('#signalDetailTitle').textContent=`${x.asset||'Signal'} · ${String(x.direction||'').toUpperCase()} · ${x.timeframe||''}`;const targets=Array.isArray(x.take_profit)?x.take_profit:[];const targetsText=targets.map(t=>typeof t==='object'?(t.price??t.tp??t.target??''):t).filter(v=>v!==''&&v!=null).map(v=>fmt(v,6)).join(' · ')||'—';const proof=data.proof||{};const locked=Boolean(x.exact_levels_locked);const gated=(value,digits=6)=>locked?'Premium only':fmt(value,digits);$('#signalDetailBody').innerHTML=`<div class="mini-metrics signal-proof-grid"><div><small>Entry</small><strong>${esc(gated(x.entry,6))}</strong></div><div><small>Stop</small><strong>${esc(gated(x.stop_loss,6))}</strong></div><div><small>Targets</small><strong>${esc(targetsText)}</strong></div><div><small>R/R</small><strong>${esc(gated(x.rr_estimate,2))}</strong></div><div><small>Score</small><strong>${esc(gated(x.score,1))}</strong></div><div><small>ML confidence</small><strong>${locked?'Premium only':(x.ml_probability_calibrated==null?'—':fmt(Number(x.ml_probability_calibrated)*100,1)+'%')}</strong></div><div><small>Lifecycle</small><strong>${esc(x.lifecycle_state||x.outcome_status||x.status||'Pending')}</strong></div><div><small>Outcome</small><strong class="${statusClass(x.outcome_status)}">${esc(x.outcome_status||'Pending')}</strong></div></div><div class="proof-strip ${proof.access_proven?'positive':'negative'}"><b>${proof.access_proven?'Signal receipt confirmed':'Signal receipt incomplete'}</b><span>${esc(proof.delivery_channel||'unknown')} · ${esc(proof.delivery_state||'unknown')} · ${time(proof.delivery_confirmed_at||x.delivered_at)} · age ${esc(proof.signal_age_at_delivery_seconds??'—')}s</span><small>Telegram proof: ${proof.delivery_proven?'yes':'no'} · Web receipt: ${proof.web_delivery_proven?'yes':'no'}</small></div>${x.ml_recovery_mode?'<div class="proof-strip warning"><b>Model-health recovery signal</b><span>Strict deterministic quality gates passed while the serving model is starved. Live broker execution is disabled; use paper trading for validation.</span></div>':''}<div class="two-column"><div><h3>Trade state</h3><div class="detail-list">${[['Strategy',x.strategy_name],['Regime',x.regime],['Last price',x.last_price==null?'—':fmt(x.last_price,6)],['MFE',x.mfe_r==null?'—':fmt(x.mfe_r,2)+'R'],['MAE',x.mae_r==null?'—':fmt(x.mae_r,2)+'R'],['Highest TP',x.highest_tp_hit??0],['Terminal event',x.terminal_event_type||'—'],['Terminal price',x.terminal_price==null?'—':fmt(x.terminal_price,6)]].map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')}</div></div><div><h3>Lifecycle timeline</h3><div class="timeline">${events.length?events.map(e=>`<div class="timeline-event"><span></span><div><strong>${esc(String(e.event_type||'event').replaceAll('_',' '))}</strong><small>${time(e.event_time)}${e.price==null?'':` · ${fmt(e.price,6)}`}${e.r_multiple==null?'':` · ${fmt(e.r_multiple,2)}R`}</small></div></div>`).join(''):'<p class="muted">No lifecycle events recorded yet.</p>'}</div></div></div>`;if(hasFeature('broker_connection')&&!x.ml_recovery_mode){
@@ -486,16 +570,16 @@ async function loadSupport(){const rows=(await request('/support/tickets')).tick
 $('#supportForm').onsubmit=async e=>{e.preventDefault();try{await request('/support/tickets',{method:'POST',body:JSON.stringify(formData(e.target))});e.target.reset();await loadSupport();toast('Support ticket created')}catch(err){toast(err.message,true)}};
 function telegramLinkState(){
   const u=state.user||{};
-  if(u.telegram_user_id)return{status:'linked',label:'LINKED',text:'Telegram is connected to this SignalRank account.',connected:true};
   const status=String(u.telegram_link_status||'not_linked').toLowerCase();
+  if(u.telegram_user_id||status==='linked')return{status:'linked',label:'LINKED',text:'Telegram is connected to this SignalRank account.',connected:true};
   if(status==='merge_review')return{status,label:'VERIFIED',text:'Telegram ownership is verified. Account history reconciliation is pending; you do not need to reconnect.',connected:true};
   if(status==='link_pending')return{status,label:'PENDING',text:'A Telegram link code is active. Complete it in the bot or create a new code after it expires.',connected:false};
   return{status:'not_linked',label:'NOT LINKED',text:'Connect Telegram once to share identity, preferences and delivery state across channels.',connected:false};
 }
-function renderProfile(){
+function renderProfile({preserveForm=false}={}){
   const u=state.user||{};
   const tg=telegramLinkState();
-  const telegramDisplay=tg.status==='merge_review'?'Verified · reconciliation pending':tg.status==='link_pending'?'Link pending':u.telegram_user_id?'Linked':'Not linked';
+  const telegramDisplay=tg.status==='merge_review'?'Verified · reconciliation pending':tg.status==='link_pending'?'Link pending':tg.connected?'Linked':'Not linked';
   const entries=[['Public ID',u.public_user_id],['Email',u.primary_email||'Not set'],['Email verified',u.email_verified_at?'Yes':'No'],['Telegram',telegramDisplay],['Tier',String(u.tier||'free').toUpperCase()],['Timezone',u.timezone||'UTC'],['Travel mode',u.timezone_auto_update?'On':'Off'],['Account status',u.account_status]];
   $('#profileDetails').innerHTML=entries.map(([k,v])=>`<div class="detail-row"><span>${esc(k)}</span><strong>${esc(v||'—')}</strong></div>`).join('');
   const badge=$('#telegramStatusBadge');if(badge){badge.textContent=tg.label;badge.dataset.state=tg.status}
@@ -513,7 +597,22 @@ function renderProfile(){
     result.hidden=true;result.innerHTML='';
   }
   const form=$('#profileForm');
-  if(form){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}
+  if(form&&!preserveForm){['display_name','country','timezone','locale','preferred_currency','max_risk_percentage','max_daily_drawdown_pct'].forEach(name=>{if(form.elements[name])form.elements[name].value=u[name]??''});if(form.elements.timezone_auto_update)form.elements.timezone_auto_update.checked=Boolean(u.timezone_auto_update)}
+}
+async function refreshTelegramStatus({force=false}={}){
+  if(!state.user)return false;
+  if(telegramStatusRefreshPromise)return telegramStatusRefreshPromise;
+  if(!force&&Date.now()-telegramStatusRefreshAt<5000)return telegramLinkState().connected;
+  const userId=state.user.id;
+  telegramStatusRefreshAt=Date.now();
+  telegramStatusRefreshPromise=(async()=>{
+    const me=await request('/me');
+    if(!state.user||state.user.id!==userId||me.user?.id!==userId)return false;
+    state.user=me.user;
+    renderProfile({preserveForm:true});
+    return telegramLinkState().connected;
+  })();
+  try{return await telegramStatusRefreshPromise}finally{telegramStatusRefreshPromise=null}
 }
 $('#profileForm').onsubmit=async e=>{e.preventDefault();const raw=formData(e.target);const payload={timezone_auto_update:Boolean(e.target.elements.timezone_auto_update?.checked)};for(const [k,v] of Object.entries(raw)){if(k==='timezone_auto_update')continue;if(v!=='')payload[k]=['max_risk_percentage','max_daily_drawdown_pct'].includes(k)?Number(v):v}try{state.user=(await request('/profile',{method:'PATCH',body:JSON.stringify(payload)})).user;renderProfile();toast('Profile updated')}catch(err){toast(err.message,true)}};
 function csvValues(value,{upper=false}={}){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean).map(x=>upper?x.toUpperCase():x.toLowerCase())}
@@ -529,12 +628,60 @@ $('#createApiKeyButton').onclick=async()=>{const name=prompt('Name this API key'
 $('#cancelAutoRenewButton')?.addEventListener('click',async()=>{if(!confirm('Turn off subscription auto-renew? Your current paid access remains active until its expiry, and this does not issue a refund.'))return;try{const result=await request('/billing/cancel-auto-renew',{method:'POST',body:JSON.stringify({confirm:true})});toast(result.provider_follow_up_required?'Auto-renew is off in SignalRankAI, but Paystack needs manual follow-up. A billing review is recommended.':'Auto-renew cancelled. Current access remains until expiry.');await loadAccount()}catch(err){toast(err.message,true)}});
 $('#refundReviewForm')?.addEventListener('submit',async e=>{e.preventDefault();const raw=formData(e.target);try{const result=await request('/billing/refund-request',{method:'POST',body:JSON.stringify(raw)});e.target.reset();toast(`Refund review ticket created: ${result.ticket_id}`);await loadSupport()}catch(err){toast(err.message,true)}});
 
-async function loadBillingProducts(){
-  const data=await request('/billing/products');const products=data.products||[];const current=String(state.user?.tier||'free').toLowerCase();
-  $('#billingProducts').innerHTML=products.length?products.map(p=>{const active=String(p.tier||'').toLowerCase()===current;return `<article class="metric-card plan-card ${active?'current-plan':''}"><div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div><strong>${esc(p.display_name)}</strong><p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p><button class="primary billing-checkout" data-product="${esc(p.product_id)}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button></article>`}).join(''):'<p>No public checkout products are available right now.</p>';
-  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Opening secure checkout…';try{const checkout=await request('/billing/checkout',{method:'POST',body:JSON.stringify({product_id:button.dataset.product,currency:'NGN'})});if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');location.assign(checkout.authorization_url)}catch(err){button.disabled=false;button.textContent=original;if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');toast(err.message,true)}})
+async function createPrivacyRightsTicket(kind){
+  const deletion=kind==='deletion';
+  const subject=deletion?'Account deletion review':'Personal data access / export request';
+  const message=deletion
+    ?'I am requesting review of account deletion and erasure where legally available. Please preserve only records that must be retained for security, payment, tax, dispute, fraud-prevention, regulatory or immutable trading-evidence obligations, and tell me what cannot be deleted and why. Do not abandon any active broker position.'
+    :'I am requesting access to and an export of personal information associated with my authenticated SignalRankAI account, subject to identity/security verification and lawful exclusions.';
+  const result=await request('/support/tickets',{method:'POST',body:JSON.stringify({subject,category:'privacy',message})});
+  toast(`Privacy request created: ${result.ticket_id}`);
+  await loadSupport();
 }
-async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile();const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile()}
+$('#requestDataExportButton')?.addEventListener('click',async()=>{try{await createPrivacyRightsTicket('export')}catch(err){toast(err.message,true)}});
+$('#requestAccountDeletionButton')?.addEventListener('click',async()=>{if(!window.confirm('Request account deletion review? Active broker positions, paid-period state and legally required records must be handled safely before any erasure.'))return;try{await createPrivacyRightsTicket('deletion')}catch(err){toast(err.message,true)}});
+
+async function loadBillingProducts(){
+  const data=await request('/billing/products');
+  const products=data.products||[];
+  const current=String(state.user?.tier||'free').toLowerCase();
+  $('#billingProducts').innerHTML=products.length?products.map(p=>{
+    const active=String(p.tier||'').toLowerCase()===current;
+    const renewal=p.recurring
+      ?'<small class="warning">Renews automatically until cancelled</small>'
+      :'<small class="muted">One-off paid period · no automatic renewal</small>';
+    return `<article class="metric-card plan-card ${active?'current-plan':''}">
+      <div class="plan-card-head"><small>${esc(String(p.tier).toUpperCase())}</small>${active?'<span class="plan-current-badge">CURRENT</span>':''}</div>
+      <strong>${esc(p.display_name)}</strong>
+      <p>${esc(p.currency)} ${fmt(p.price_ngn,0)} · ${esc(p.duration_days)} days</p>
+      ${renewal}
+      <p class="muted"><a href="/billing-policy" target="_blank" rel="noopener">Billing, cancellation & refund policy</a></p>
+      <button class="primary billing-checkout" data-product="${esc(p.product_id)}" data-recurring="${p.recurring?'1':'0'}" ${active?'disabled':''}>${active?'Current plan':'Choose plan'}</button>
+    </article>`;
+  }).join(''):'<p>No public checkout products are available right now.</p>';
+  document.querySelectorAll('.billing-checkout').forEach(button=>button.onclick=async()=>{
+    if(button.disabled)return;
+    const recurring=button.dataset.recurring==='1';
+    if(recurring&&!window.confirm('This plan renews automatically until you cancel auto-renew from Account. Current paid access continues through the paid period after cancellation. Continue to Paystack?'))return;
+    button.disabled=true;
+    const original=button.textContent;
+    button.textContent='Opening secure checkout…';
+    try{
+      const checkout=await request('/billing/checkout',{
+        method:'POST',
+        body:JSON.stringify({product_id:button.dataset.product,currency:'NGN',recurring_acknowledged:recurring})
+      });
+      if(!checkout.authorization_url)throw new Error('Checkout URL unavailable');
+      location.assign(checkout.authorization_url);
+    }catch(err){
+      button.disabled=false;
+      button.textContent=original;
+      if(err.status===409&&String(err.message).toLowerCase().includes('verify'))showView('account');
+      toast(err.message,true);
+    }
+  });
+}
+async function loadAccount(){const me=await request('/me');state.user=me.user;renderProfile({preserveForm:true});const [devices,prefs,mfa,billing,referrals,tradingProfile]=await Promise.all([request('/devices'),request('/notifications/preferences'),request('/security/mfa'),request('/billing'),request('/referrals'),request('/trading-profile')]);renderTradingProfile(tradingProfile);await Promise.all([loadDeveloperAccess(),loadBillingProducts(),loadBroker()]);$('#sessionList').innerHTML=(devices.sessions||[]).map(s=>`<div class="list-row"><div><strong>${s.session_id===devices.current_session_id?'Current session':'Signed-in session'}</strong><small>${time(s.last_used_at)} · expires ${time(s.expires_at)}</small></div>${s.session_id===devices.current_session_id?'<span>Current</span>':`<button class="danger revoke-session" data-id="${esc(s.session_id)}">Revoke</button>`}</div>`).join('')||'<p>No sessions.</p>';$$('.revoke-session').forEach(b=>b.onclick=async()=>{await request('/devices/'+encodeURIComponent(b.dataset.id),{method:'DELETE'});loadAccount()});const p=prefs.preferences||{};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.checked=Boolean(p[name])});['quiet_hours_start','quiet_hours_end','timezone'].forEach(name=>{const input=$(`#notificationForm [name="${name}"]`);if(input)input.value=p[name]??''});$('#emailVerificationPanel').innerHTML=state.user.email_verified_at?'<p class="positive">Email verified</p>':'<button id="verifyEmailButton" class="ghost">Send verification email</button>';$('#verifyEmailButton')?.addEventListener('click',async()=>{await request('/auth/email-verification/request',{method:'POST',body:'{}'});toast('Verification email queued')});$('#mfaPanel').innerHTML=mfa.enabled?`<div class="detail-row"><span>Authenticator MFA</span><strong>Enabled</strong></div><button id="disableMfaButton" class="danger">Disable MFA</button>`:`<div class="detail-row"><span>Authenticator MFA</span><strong>Disabled</strong></div><button id="setupMfaButton" class="primary">Set up MFA</button>`;$('#setupMfaButton')?.addEventListener('click',setupMfa);$('#disableMfaButton')?.addEventListener('click',disableMfa);$('#billingHistory').innerHTML=(billing.receipts||[]).map(r=>`<div class="list-row"><div><strong>${esc(r.plan)}</strong><small>${esc(r.receipt_number)} · ${time(r.payment_date)}</small></div><span>${esc(r.currency)} ${fmt(r.amount)}</span></div>`).join('')||'<p>No payment receipts.</p>';const activeSub=(billing.subscriptions||[]).find(s=>['active','grace_period'].includes(String(s.status||'').toLowerCase()));$('#renewalPanel').innerHTML=activeSub?`<div class="detail-row"><span>Auto-renew</span><strong>${billing.auto_renew?'On':'Off'}</strong></div><div class="detail-row"><span>Current paid period</span><strong>${esc(String(activeSub.tier||'').toUpperCase())} · until ${time(activeSub.expires_at)}</strong></div>`:'<p class="muted">No active paid subscription.</p>';const cancelButton=$('#cancelAutoRenewButton');if(cancelButton)cancelButton.hidden=!(activeSub&&billing.auto_renew);const referral=$('#referralPanel');if(referral){referral.innerHTML=`<div class="detail-row"><span>Your code</span><strong><code>${esc(referrals.code)}</code></strong></div><div class="detail-row"><span>Valid referrals</span><strong>${esc(referrals.total_referrals)}</strong></div><div class="detail-row"><span>Premium days earned</span><strong>${esc(referrals.premium_days_earned)}</strong></div><div class="detail-row"><span>Next reward</span><strong>${esc(referrals.needed_for_next)} more → +${esc(referrals.reward_days)} days</strong></div><p><a class="primary link-button" href="${esc(referrals.web_url)}" target="_blank" rel="noopener">Open web referral link</a></p>${referrals.telegram_url?`<p><a class="ghost link-button" href="${esc(referrals.telegram_url)}" target="_blank" rel="noopener">Open Telegram referral link</a></p>`:''}<button id="copyReferralButton" class="ghost" type="button">Copy web referral link</button>`;$('#copyReferralButton')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(referrals.web_url);toast('Referral link copied')}catch{toast(referrals.web_url)}})}await Promise.all([loadReferralLeaderboard(),loadExecutionWebhook()]);renderProfile({preserveForm:true})}
 function brokerPolicyPct(value){const n=Number(value);return Number.isFinite(n)?n*100:''}
 function brokerPolicyFraction(value){const n=Number(value);return Number.isFinite(n)?n/100:0}
 function brokerPolicyCsv(value){return String(value||'').split(',').map(x=>x.trim()).filter(Boolean)}
@@ -1098,13 +1245,31 @@ async function reconcilePendingSecureLink({notify=false}={}){
     return false
   }
 }
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reconcilePendingSecureLink({notify:false})});
-window.addEventListener('focus',()=>reconcilePendingSecureLink({notify:false}));
+function refreshReturnedConnections(){
+  reconcilePendingSecureLink({notify:false});
+  refreshTelegramStatus().catch(()=>{});
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshReturnedConnections()});
+window.addEventListener('focus',refreshReturnedConnections);
+setInterval(()=>{if(document.visibilityState==='visible'&&telegramLinkState().status==='link_pending')refreshTelegramStatus().catch(()=>{})},15000);
 async function acceptExecutionTerms(){if(!confirm('I understand that live broker execution can lose money and that SignalRankAI safety checks do not guarantee outcomes. Accept execution-risk terms?'))return;try{await request('/execution-terms/accept',{method:'POST',body:JSON.stringify({confirm:true})});await loadBroker();toast('Execution-risk terms accepted')}catch(err){toast(err.message,true)}}
 async function setupMfa(){try{const setup=await request('/security/mfa/setup',{method:'POST',body:'{}'});const code=prompt(`Add this secret to your authenticator:\n${setup.secret}\n\nThen enter the 6-digit code.`);if(!code)return;const result=await request('/security/mfa/enable',{method:'POST',body:JSON.stringify({code})});alert('Store these recovery codes offline:\n\n'+result.recovery_codes.join('\n'));await loadAccount();toast('MFA enabled')}catch(err){toast(err.message,true)}}
 async function disableMfa(){const code=prompt('Enter an authenticator or recovery code to disable MFA');if(!code)return;try{await request('/security/mfa/disable',{method:'POST',body:JSON.stringify({code})});await loadAccount();toast('MFA disabled')}catch(err){toast(err.message,true)}}
-$('#connectTelegramButton').onclick=async()=>{const tg=telegramLinkState();if(tg.connected){toast('Telegram is already verified for this account');return}try{const data=await request('/account/telegram-link',{method:'POST',body:'{}'});const result=$('#telegramLinkResult');result.hidden=false;result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}<p class="muted">After sending the command, return here and press Refresh status. Do not create another account.</p>`;state.user.telegram_link_status='link_pending';renderProfile();toast('Telegram link code created')}catch(err){toast(err.message,true)}};
-$('#refreshTelegramButton')?.addEventListener('click',async()=>{try{const me=await request('/me');state.user=me.user;renderProfile();const tg=telegramLinkState();toast(tg.connected?'Telegram connection recognized':'Telegram status refreshed')}catch(err){toast(err.message,true)}});
+$('#connectTelegramButton').onclick=async()=>{
+  if(telegramLinkState().connected){toast('Telegram is already verified for this account');return}
+  const button=$('#connectTelegramButton');if(button.disabled)return;button.disabled=true;
+  try{
+    const data=await request('/account/telegram-link',{method:'POST',body:'{}'});
+    const result=$('#telegramLinkResult');result.hidden=false;
+    result.innerHTML=`<div class="detail-row"><span>One-time code</span><strong>${esc(data.code)}</strong></div><p>Send <code>/link ${esc(data.code)}</code> to the bot before ${time(data.expires_at)}.</p>${data.telegram_deep_link?`<p><a class="primary link-button" href="${esc(data.telegram_deep_link)}" target="_blank" rel="noopener">Open Telegram</a></p>`:''}<p class="muted">Send the command, then return here. Your connection status refreshes automatically.</p>`;
+    state.user.telegram_link_status='link_pending';renderProfile({preserveForm:true});toast('Telegram link code created');
+  }catch(err){
+    if(err.status===409&&['telegram_already_linked','telegram_verified_merge_pending'].includes(err.detail?.code)){
+      try{await refreshTelegramStatus({force:true});toast('Telegram connection recognized')}catch(refreshError){toast(refreshError.message,true)}
+    }else toast(err.message,true);
+  }finally{button.disabled=false}
+};
+$('#refreshTelegramButton')?.addEventListener('click',async()=>{try{const connected=await refreshTelegramStatus({force:true});toast(connected?'Telegram connection recognized':'Telegram status refreshed')}catch(err){toast(err.message,true)}});
 $('#notificationForm').onsubmit=async e=>{e.preventDefault();const payload={};['telegram_enabled','web_enabled','email_enabled','push_enabled'].forEach(name=>payload[name]=e.target.elements[name].checked);for(const name of ['quiet_hours_start','quiet_hours_end','timezone']){const value=e.target.elements[name]?.value?.trim();payload[name]=value||null}try{await request('/notifications/preferences',{method:'PUT',body:JSON.stringify(payload)});toast('Notification preferences saved across your account')}catch(err){toast(err.message,true)}};
 async function logout(){try{await request('/auth/logout',{method:'POST',body:'{}'})}finally{state.user=null;setLoggedIn(false);location.reload()}}
 $('#logoutButton').onclick=logout;$('#logoutAllButton').onclick=async()=>{if(!confirm('Sign out every device?'))return;try{await request('/auth/logout-all',{method:'POST',body:'{}'});location.reload()}catch(err){toast(err.message,true)}};

@@ -7,6 +7,7 @@ Projection reconciliation may repair Outcome rows only from already-persisted
 SignalLifecycle evidence. Shadow outcome tracking belongs to the ML/counterfactual
 evidence domain and must never mutate canonical delivered-signal lifecycle state.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -56,9 +57,7 @@ class OutcomeOwnership:
 def resolve_outcome_ownership(values: Mapping[str, str]) -> OutcomeOwnership:
     # WORKER_OUTCOME_TRACKER_ENABLED and REALTIME_OUTCOME_TRACKER_ENABLED are
     # compatibility aliases for the same worker-owned RealtimeOutcomeTracker.
-    live_writer_requested = _truthy(values, WORKER_OWNER_FLAG, True) or _truthy(
-        values, REALTIME_OWNER_ALIAS, False
-    )
+    live_writer_requested = _truthy(values, WORKER_OWNER_FLAG, True) or _truthy(values, REALTIME_OWNER_ALIAS, False)
     return OutcomeOwnership(
         live_writer_requested=live_writer_requested,
         projection_reconciliation_enabled=_truthy(values, RECONCILIATION_FLAG, True),

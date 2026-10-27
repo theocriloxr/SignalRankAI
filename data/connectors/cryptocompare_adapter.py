@@ -1,4 +1,5 @@
 """Async CryptoCompare connector adapter using httpx AsyncClient."""
+
 from __future__ import annotations
 
 import os
@@ -53,7 +54,7 @@ async def _fetch_for_quote(client, base_raw: str, tsym: str, endpoint: str, aggr
     payload = data or {}
     if str(payload.get("Response") or "").lower() != "success":
         return []
-    items = (((payload.get("Data") or {}) or {}).get("Data") or [])
+    items = ((payload.get("Data") or {}) or {}).get("Data") or []
     if not isinstance(items, list) or not items:
         return []
 
@@ -61,14 +62,16 @@ async def _fetch_for_quote(client, base_raw: str, tsym: str, endpoint: str, aggr
     for row in items:
         try:
             ts_ms = int(row.get("time")) * 1000
-            out.append({
-                "timestamp": ts_ms,
-                "open": float(row.get("open")),
-                "high": float(row.get("high")),
-                "low": float(row.get("low")),
-                "close": float(row.get("close")),
-                "volume": float(row.get("volumefrom") or 0.0),
-            })
+            out.append(
+                {
+                    "timestamp": ts_ms,
+                    "open": float(row.get("open")),
+                    "high": float(row.get("high")),
+                    "low": float(row.get("low")),
+                    "close": float(row.get("close")),
+                    "volume": float(row.get("volumefrom") or 0.0),
+                }
+            )
         except Exception:
             continue
     return out
@@ -117,20 +120,22 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
                 payload = resp.json() or {}
                 if str(payload.get("Response") or "").lower() != "success":
                     continue
-                data = (((payload.get("Data") or {}) or {}).get("Data") or [])
+                data = ((payload.get("Data") or {}) or {}).get("Data") or []
                 if data:
-                    return await asyncio.to_thread(lambda: [
-                        {
-                            "timestamp": int(row.get("time")) * 1000,
-                            "open": float(row.get("open")),
-                            "high": float(row.get("high")),
-                            "low": float(row.get("low")),
-                            "close": float(row.get("close")),
-                            "volume": float(row.get("volumefrom") or 0.0),
-                        }
-                        for row in data
-                        if row
-                    ])
+                    return await asyncio.to_thread(
+                        lambda: [
+                            {
+                                "timestamp": int(row.get("time")) * 1000,
+                                "open": float(row.get("open")),
+                                "high": float(row.get("high")),
+                                "low": float(row.get("low")),
+                                "close": float(row.get("close")),
+                                "volume": float(row.get("volumefrom") or 0.0),
+                            }
+                            for row in data
+                            if row
+                        ]
+                    )
                 continue
             else:
                 out = await _fetch_for_quote(

@@ -275,9 +275,27 @@ def test_web_delivery_priority_matches_authoritative_telegram_receipts():
     assert 'label="platform.web_signal_fanout.snapshot"' in fanout
     assert 'label="platform.web_signal_fanout.persist"' in fanout
 
-def test_web_health_probe_counts_rows_instead_of_returning_signal_id() -> None:
+def test_web_liveness_is_process_only_and_readiness_checks_dependencies() -> None:
     app = (ROOT / "web/app.py").read_text(encoding="utf-8")
-    assert "select(func.count()).select_from(Signal)" in app
-    assert "active_signals = int(result.scalar_one() or 0)" in app
-    assert "select(Signal.signal_id)" not in app[app.index("async def health()"):app.index('@app.get("/metrics"')]
+    health = app[app.index('@app.get("/health"'):app.index('@app.get("/ready"')]
+    ready = app[app.index('@app.get("/ready"'):app.index('@app.get("/version"')]
+    assert "get_session(" not in health
+    assert "cache_stats(" not in health
+    assert 'label="web.readiness"' in ready
+    assert "select(1)" in ready
+    assert "state.ping()" in ready
+    assert "status_code=503" in ready
+
+
+def test_web_signal_fanout_materializes_orm_rows_before_session_rollback() -> None:
+    fanout = (ROOT / "services/platform/signal_delivery.py").read_text(encoding="utf-8")
+    snapshot = fanout[
+        fanout.index("async def _snapshot_candidates"):
+        fanout.index("async def deliver_recent_web_signals")
+    ]
+    materialize = snapshot.index("signal_payloads = [_signal_payload(signal) for signal in signal_rows]")
+    rollback = snapshot.index("await session.rollback()")
+    returned = snapshot.index("return signal_payloads, users")
+    assert materialize < rollback < returned
+    assert "return [_signal_payload(signal) for signal in signal_rows]" not in snapshot
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,4 +72,4 @@ def test_transactional_email_defaults_to_crilox_hello_identity() -> None:
 
 def test_new_shell_assets_force_cache_refresh() -> None:
     sw = source("web/platform_app/service-worker.js")
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38

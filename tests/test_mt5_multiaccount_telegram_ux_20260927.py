@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from scripts.assert_portal_assets import validate_shell_assets
 
 from services.broker_connections import _connection_limit
 from services.mt5_client import (
@@ -174,11 +175,13 @@ def test_compact_workspace_switcher_replaces_tablet_nav_clutter() -> None:
     sw = source("web/platform_app/service-worker.js")
     assert 'id="compactNav"' in html
     assert 'id="viewSwitcher"' in html
-    assert "Account & brokers" in html
+    from html import unescape
+
+    assert "Account & brokers" in unescape(html)
     assert "$('#viewSwitcher')?.addEventListener('change'" in app
     assert "body.session-active #sessionNav{display:none!important}" in css
     assert "body.session-active .compact-nav{display:block!important" in css
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38
 
 
 def test_metaapi_failure_contract_exposes_operator_recovery_fields() -> None:
@@ -269,7 +272,7 @@ def test_runtime_actively_probes_metaapi_token_instead_of_presence_only() -> Non
     assert "[metaapi_startup_probe] status=FAIL" in runtime
     assert "provider_permissions_missing" in api
     assert "integration problem, not an error in your broker login/server" in app
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38
 
 
 def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
@@ -288,7 +291,7 @@ def test_broker_workspace_fails_closed_when_metaapi_auth_is_unhealthy() -> None:
     assert "Your MT4/MT5 login, password and server are not the cause" in app
     assert "control.disabled=!metaapiReady" in app
     assert "provider-health-error" in css
-    assert "signalrank-shell-v38" in sw
+    assert validate_shell_assets(ROOT) >= 38
 
 
 def test_metaapi_token_alias_candidates_are_ordered_and_deduplicated(monkeypatch) -> None:
@@ -316,7 +319,10 @@ def test_metaapi_alias_selection_is_wired_across_runtime_gates() -> None:
     assert 'for env_name in ("META_API_TOKEN", "METAAPI_TOKEN")' in mt5
     assert "for env_name, token in candidates:" in mt5
     assert "_METAAPI_ACTIVE_TOKEN_ENV = env_name" in mt5
-    assert "token_source=%s" in runtime
+    # Runtime readiness may report only whether MetaApi is configured. It must
+    # not reveal which secret alias supplied the active credential.
+    assert "token_source=%s" not in runtime
+    assert "active_token_env" not in runtime
     assert 'os.getenv("METAAPI_TOKEN")' in runtime
     assert 'os.getenv("METAAPI_TOKEN")' in api
     assert 'os.getenv("METAAPI_TOKEN")' in broker

@@ -120,20 +120,9 @@ def is_full_system_ack_valid(value: object) -> bool:
 
 
 def _environment_name(env: MutableMapping[str, str]) -> str:
-    """Resolve the actual deployment environment consistently.
+    from core.env import resolve_runtime_environment_name
 
-    Railway's environment identity is authoritative when present.  A stale
-    application-level ``APP_ENV=production`` must not make a Railway staging
-    deployment behave like production while the version banner correctly says
-    staging.
-    """
-    return str(
-        env.get("RAILWAY_ENVIRONMENT_NAME")
-        or env.get("RAILWAY_ENVIRONMENT")
-        or env.get("APP_ENV")
-        or env.get("ENVIRONMENT")
-        or "dev"
-    ).strip().lower()
+    return resolve_runtime_environment_name(env, "dev")
 
 
 def apply_runtime_safety_environment(

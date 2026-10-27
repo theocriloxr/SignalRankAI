@@ -40,4 +40,4 @@ def test_tracked_compile_scope_falls_back_without_git(monkeypatch):
     files = compiler.tracked_python_files()
     assert files
     assert all(path.suffix == ".py" for path in files)
-    assert all(not any(part in compiler.SKIP_PARTS for part in path.parts) for path in files)
+    assert all(not any(part in compiler.SKIP_PARTS for part in path.relative_to(compiler.ROOT).parts) for path in files)

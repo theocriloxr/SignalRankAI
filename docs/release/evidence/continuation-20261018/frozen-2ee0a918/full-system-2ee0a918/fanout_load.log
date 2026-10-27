@@ -1,0 +1,5 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/load_test_delivery_planner.py --users 100000 --shards 32 --batch-size 100 --max-seconds 10
+
+ATTEMPT 1/1
+
+{"batch_size": 100, "batches": 1015, "duplicates": 0, "elapsed_seconds": 0.4183, "missing": 0, "network_delivery_simulated": false, "peak_memory_mb": 9.02, "shards": 32, "users": 100000}

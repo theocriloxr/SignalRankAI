@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#050907" />
+  <meta name="theme-color" content="#08120f" />
   <meta name="color-scheme" content="dark light" />
   <meta name="description" content="SignalRankAI multi-asset trading intelligence workstation for evidence, signals, portfolio analysis and controlled execution workflows" />
   <script>
@@ -14,19 +14,20 @@
       } catch (_) {}
     })();
   </script>
-  <link rel="manifest" href="/app/manifest.webmanifest?v=38" />
-  <link rel="icon" href="/app-assets/icon.svg?v=38" type="image/svg+xml" />
-  <link rel="shortcut icon" href="/app-assets/icon.svg?v=38" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=38" />
-  <meta name="msapplication-TileColor" content="#050907" />
-  <link rel="stylesheet" href="/app-assets/styles.css?v=38" />
+  <link rel="manifest" href="/app/manifest.webmanifest?v=47" />
+  <link rel="icon" href="/app-assets/icon.svg?v=47" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/app-assets/icon.svg?v=47" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/app-assets/icon.svg?v=47" />
+  <meta name="msapplication-TileColor" content="#08120f" />
+  <link rel="stylesheet" href="/app-assets/styles.css?v=47" />
   <title>SignalRankAI · Trading Intelligence</title>
 </head>
 <body class="session-booting">
+  <a class="skip-link" href="#mainContent">Skip to workspace</a>
   <div id="toast" role="status" aria-live="polite"></div>
   <header class="topbar">
     <a class="brand" href="/app" aria-label="Signal Rank AI home">
-      <span class="brand-logo"><img src="/app-assets/icon.svg?v=38" alt="" width="42" height="42" /></span>
+      <span class="brand-logo"><img src="/app-assets/icon.svg?v=47" alt="" width="42" height="42" /></span>
       <span class="brand-copy"><strong>SignalRankAI</strong><small>Trading Intelligence</small></span>
     </a>
     <button id="navToggle" class="nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" aria-controls="sessionNav" title="Collapse navigation">
@@ -46,7 +47,7 @@
         <option value="performance" data-feature="performance_analytics">Performance</option>
         <option value="journal">Journal</option>
         <option value="support">Support</option>
-        <option value="account">Account & brokers</option>
+        <option value="account">Account &amp; brokers</option>
       </select>
     </label>
     <nav id="sessionNav" class="workspace-nav" hidden>
@@ -66,19 +67,20 @@
         <span class="nav-group-label">Workspace</span>
         <button data-view="tools"><span class="nav-icon">⌘</span><span>Command center</span></button>
         <button data-view="paper" data-feature="paper_trading"><span class="nav-icon">◫</span><span>Paper desk</span></button>
-        <button data-view="portfolio" data-feature="portfolio_analytics"><span class="nav-icon">◇</span><span>Portfolio</span></button>
-        <button data-view="performance" data-feature="performance_analytics"><span class="nav-icon">∿</span><span>Performance</span></button>
+        <button data-view="portfolio" data-feature="portfolio_analytics" data-entitlement-display="lock"><span class="nav-icon">◇</span><span>Portfolio</span></button>
+        <button data-view="performance" data-feature="performance_analytics" data-entitlement-display="lock"><span class="nav-icon">∿</span><span>Performance</span></button>
         <button data-view="journal"><span class="nav-icon">≡</span><span>Journal</span></button>
       </div>
       <div class="nav-group">
         <span class="nav-group-label">System</span>
         <button data-view="support"><span class="nav-icon">?</span><span>Support</span></button>
-        <button data-view="account"><span class="nav-icon">⚙</span><span>Account & brokers</span></button>
+        <button data-view="account"><span class="nav-icon">⚙</span><span>Account &amp; brokers</span></button>
         <button id="opsNavButton" data-view="ops" hidden><span class="nav-icon">◉</span><span>Operations</span></button>
       </div>
       <div class="nav-spacer"></div>
       <button id="logoutButton" class="ghost nav-logout"><span class="nav-icon">⇥</span><span>Log out</span></button>
     </nav>
+    <label class="appearance-control">Appearance<select id="themeSelect" aria-label="Color theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
     <button id="themeToggle" class="theme-toggle ghost" type="button" aria-label="Switch color theme" title="Switch color theme">
       <span id="themeIcon" aria-hidden="true">◐</span>
       <span id="themeLabel">Theme</span>
@@ -88,9 +90,9 @@
     <span aria-hidden="true">☰</span><span class="nav-reopen-label">Menu</span>
   </button>
 
-  <main>
+  <main id="mainContent" tabindex="-1">
     <section id="bootstrapShell" class="bootstrap-shell" aria-live="polite">
-      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=38" alt="" width="54" height="54" /></div>
+      <div class="bootstrap-mark"><img src="/app-assets/icon.svg?v=47" alt="" width="54" height="54" /></div>
       <div>
         <p class="eyebrow">SIGNALRANKAI · TRADING INTELLIGENCE</p>
         <h1 id="bootstrapTitle">Restoring your secure session…</h1>
@@ -102,7 +104,7 @@
 
     <section id="authShell" class="auth-shell" hidden>
       <div class="hero-card">
-        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=38" alt="SignalRankAI" /></div>
+        <div class="auth-brand-lockup"><img src="/app-assets/logo.svg?v=47" alt="SignalRankAI" /></div>
         <p class="eyebrow">ONE ACCOUNT. EVERY CHANNEL.</p>
         <h1>Your SignalRankAI data follows you.</h1>
         <p>Use the same account across Telegram, web, mobile, paper trading, subscriptions, watchlists and supported connected-account workflows.</p>
@@ -115,10 +117,10 @@
       </div>
 
       <div class="auth-card">
-        <div class="tabs" role="tablist">
-          <button id="loginTab" class="active" role="tab">Log in</button>
-          <button id="registerTab" role="tab">Create account</button>
-          <button id="activateTab" role="tab">Activate from Telegram</button>
+        <div class="tabs" role="tablist" aria-label="Sign-in method">
+          <button id="loginTab" class="active" role="tab" aria-selected="true" aria-controls="loginForm">Log in</button>
+          <button id="registerTab" role="tab" aria-selected="false" aria-controls="registerForm">Create account</button>
+          <button id="activateTab" role="tab" aria-selected="false" aria-controls="activateForm">Activate from Telegram</button>
         </div>
 
         <form id="loginForm" class="stack">
@@ -134,6 +136,17 @@
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
           <small>Use at least 10 characters and three character types.</small>
+          <fieldset class="consent-group">
+            <legend>Required agreements <span>3 items</span></legend>
+            <p class="consent-intro">Review each item before creating your account. These choices are recorded separately.</p>
+            <label class="consent-row consent-required"><input name="platform_terms_accepted" type="checkbox" required /><span><b>Terms &amp; trading risk</b><small>Required</small>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>. Account terms do not enable broker execution.</span></label>
+            <label class="consent-row consent-required"><input name="privacy_acknowledged" type="checkbox" required /><span><b>Privacy Notice</b><small>Required</small>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+            <label class="consent-row consent-required"><input name="age_eligibility_confirmed" type="checkbox" required /><span><b>Age &amp; legal eligibility</b><small>Required</small>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
+          </fieldset>
+          <fieldset class="consent-group consent-optional-group">
+            <legend>Optional communication</legend>
+            <label class="consent-row consent-optional"><input name="marketing_consent" type="checkbox" /><span><b>Product updates</b><small>Optional</small>Send me product news and marketing updates. I can withdraw this later without affecting service or security messages.</span></label>
+          </fieldset>
           <button type="submit" class="primary">Create account</button>
         </form>
 
@@ -143,10 +156,22 @@
           <label>One-time token or code<input id="activationCredential" name="token_or_code" autocomplete="one-time-code" required /></label>
           <label>Email<input name="email" type="email" autocomplete="email" required /></label>
           <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="10" required /></label>
+          <fieldset class="consent-group">
+            <legend>Required agreements <span>3 items</span></legend>
+            <p class="consent-intro">Telegram activation uses the same legal and privacy choices as a new web account.</p>
+            <label class="consent-row consent-required"><input name="platform_terms_accepted" type="checkbox" required /><span><b>Terms &amp; trading risk</b><small>Required</small>I agree to the <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge the <a href="/risk-disclosure" target="_blank" rel="noopener">trading risk disclosure</a>.</span></label>
+            <label class="consent-row consent-required"><input name="privacy_acknowledged" type="checkbox" required /><span><b>Privacy Notice</b><small>Required</small>I have read the <a href="/privacy" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+            <label class="consent-row consent-required"><input name="age_eligibility_confirmed" type="checkbox" required /><span><b>Age &amp; legal eligibility</b><small>Required</small>I confirm I am at least 18 and legally able to enter into these terms in my jurisdiction.</span></label>
+          </fieldset>
+          <fieldset class="consent-group consent-optional-group">
+            <legend>Optional communication</legend>
+            <label class="consent-row consent-optional"><input name="marketing_consent" type="checkbox" /><span><b>Product updates</b><small>Optional</small>Send me product news and marketing updates.</span></label>
+          </fieldset>
           <button type="submit" class="primary">Activate app access</button>
         </form>
 
         <div class="auth-links"><button id="magicLinkButton" class="link-button" type="button">Email me a sign-in link</button><button id="forgotPasswordButton" class="link-button" type="button">Reset password</button></div>
+        <nav class="auth-legal-links" aria-label="Legal and accessibility information"><a href="/privacy" target="_blank" rel="noopener">Privacy</a><a href="/terms" target="_blank" rel="noopener">Terms</a><a href="/risk-disclosure" target="_blank" rel="noopener">Trading risk</a><a href="/accessibility" target="_blank" rel="noopener">Accessibility</a></nav>
         <form id="mfaForm" class="stack" hidden><h2>Two-factor authentication</h2><p>Enter your authenticator code or a recovery code.</p><input type="hidden" name="token" /><label>Security code<input name="code" autocomplete="one-time-code" required /></label><button class="primary">Complete sign in</button></form>
         <form id="passwordResetForm" class="stack" hidden><h2>Choose a new password</h2><input type="hidden" name="token" /><label>New password<input name="new_password" type="password" minlength="10" autocomplete="new-password" required /></label><button class="primary">Reset password</button></form>
       </div>
@@ -155,31 +180,18 @@
     <section id="appShell" hidden>
       <div class="dashboard-header">
         <div>
-          <p class="eyebrow">SIGNALRANKAI COMMAND CENTRE</p>
+          <p class="eyebrow">YOUR TRADING WORKSPACE</p>
           <h1 id="welcomeTitle">Dashboard</h1>
           <p id="accountSubtitle"></p>
         </div>
         <span id="tierBadge" class="tier-badge">FREE</span>
       </div>
 
-      <aside class="trust-rail" aria-label="SignalRank operating safeguards">
-        <div class="trust-rail-lead">
-          <span class="trust-pulse" aria-hidden="true"></span>
-          <div><small>OPERATING STANDARD</small><strong>Evidence before execution</strong></div>
-        </div>
-        <div class="trust-rail-item"><small>Coverage</small><strong>Multi-asset</strong></div>
-        <div class="trust-rail-item"><small>Signal state</small><strong>Delivery-proven</strong></div>
-        <div class="trust-rail-item"><small>Risk posture</small><strong>Fail-closed</strong></div>
-        <div class="trust-rail-item trust-rail-emphasis"><small>Live execution</small><strong>Requires certification</strong></div>
+      <aside class="execution-notice" aria-label="Execution requirements">
+        <span aria-hidden="true">&#9651;</span>
+        <div><strong>Execution requires certification</strong><p>Live and funded accounts need verified rules, fresh market data and account approval. Your plan does not grant execution permission.</p></div>
       </aside>
-
       <section id="overviewView" class="view">
-        <div class="regime-strip" aria-label="Market operating state">
-          <div><small>Operating mode</small><strong>PAPER</strong></div>
-          <div><small>Decision standard</small><strong>EVIDENCE FIRST</strong></div>
-          <div><small>Confirmation</small><strong>COMPLETED CANDLES</strong></div>
-          <div><small>Execution</small><strong class="cyan">DISABLED</strong></div>
-        </div>
         <div id="summaryCards" class="card-grid"></div>
         <div class="two-column">
           <article class="panel">
@@ -191,14 +203,23 @@
             <div id="overviewPositions" class="data-list"></div>
           </article>
         </div>
+        <section class="getting-started" aria-label="Workspace next steps">
+          <h2>Make this workspace yours</h2>
+          <p class="muted">Set your preferences, link your channels and explore the markets in your plan.</p>
+          <div class="next-step-actions">
+            <button data-view="account" type="button"><strong>Review your profile</strong><span>Trading style, risk and connected accounts <span aria-hidden="true">&#8599;</span></span></button>
+            <button data-view="tools" type="button"><strong>Explore your tools</strong><span>Find the commands available to your account <span aria-hidden="true">&#8599;</span></span></button>
+            <button data-view="markets" type="button"><strong>Explore markets</strong><span>Search supported symbols and providers <span aria-hidden="true">&#8599;</span></span></button>
+          </div>
+        </section>
       </section>
 
       <section id="signalsView" class="view" hidden>
         <div class="panel-heading"><div><p class="eyebrow">DELIVERY-PROVEN</p><h2>Your signals</h2></div><button id="refreshSignals" class="ghost">Refresh</button></div>
-        <div class="filters signal-filters"><input id="signalAssetFilter" placeholder="Asset e.g. EURUSD" /><select id="signalClassFilter"><option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="stock">Stocks / equities</option><option value="index">Indices</option><option value="commodity">Commodities</option></select><select id="signalTimeframeFilter"><option value="">All timeframes</option><option>1m</option><option>3m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><input id="signalStrategyFilter" placeholder="Strategy" /><select id="signalStatusFilter"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
+        <div class="filters signal-filters"><input id="signalAssetFilter" placeholder="Asset e.g. EURUSD" /><select id="signalClassFilter" aria-label="Filter signals by market"><option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="stock">Stocks / equities</option><option value="index">Indices</option><option value="commodity">Commodities</option></select><select id="signalTimeframeFilter" aria-label="Filter signals by timeframe"><option value="">All timeframes</option><option>1m</option><option>3m</option><option>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><input id="signalStrategyFilter" placeholder="Strategy" /><select id="signalStatusFilter" aria-label="Filter signals by outcome"><option value="">All outcomes</option><option value="pending">Pending</option><option value="tp1">TP1</option><option value="tp2">TP2</option><option value="tp3">TP3</option><option value="sl">Stop loss</option></select></div>
         <div id="signalsTable" class="table-wrap"></div>
         <article id="signalDetailPanel" class="panel signal-detail-panel" hidden>
-          <div class="panel-heading"><div><p class="eyebrow">DELIVERY PROOF & LIFECYCLE</p><h2 id="signalDetailTitle">Signal detail</h2></div><button id="closeSignalDetail" class="ghost" type="button">Close</button></div>
+          <div class="panel-heading"><div><p class="eyebrow">DELIVERY PROOF &amp; LIFECYCLE</p><h2 id="signalDetailTitle">Signal detail</h2></div><button id="closeSignalDetail" class="ghost" type="button">Close</button></div>
           <div id="signalDetailBody"></div>
         </article>
       </section>
@@ -280,7 +301,7 @@
           </article>
           <article class="panel tool-card tool-wide">
             <div class="tool-heading"><div><p class="eyebrow">PREMIUM ANALYSIS</p><h3>AI-assisted market analysis</h3><p>Deterministic strategy evidence first; OpenAI explains the setup when available. This never bypasses the delivery or risk gates.</p></div><span class="tier-chip">PREMIUM+</span></div>
-            <form id="aiAnalyzeForm" class="analysis-form"><input name="asset" placeholder="Asset e.g. EURUSD" maxlength="32" required /><select name="timeframe"><option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option></select><button class="primary">Analyze market</button></form>
+            <form id="aiAnalyzeForm" class="analysis-form"><input name="asset" placeholder="Asset e.g. EURUSD" maxlength="32" required /><select name="timeframe" aria-label="Timeframe"><option>5m</option><option>15m</option><option selected>1h</option><option>4h</option><option>1d</option></select><button class="primary">Analyze market</button></form>
             <div id="aiAnalysisResult" class="tool-result muted">No analysis requested yet.</div>
           </article>
           <article class="panel tool-card">
@@ -382,7 +403,7 @@
       </section>
 
       <section id="supportView" class="view" hidden>
-        <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
+        <div class="split-grid"><article class="panel"><h2>Contact support</h2><form id="supportForm" class="stack-form"><label>Subject<input name="subject" maxlength="180" required /></label><label>Category<select name="category"><option value="general">General</option><option value="billing">Billing</option><option value="technical">Technical</option><option value="signals">Signals</option><option value="security">Security</option><option value="privacy">Privacy / data rights</option></select></label><label>Message<textarea name="message" rows="7" maxlength="20000" required></textarea></label><button class="primary">Create ticket</button></form></article><article class="panel"><h2>Your tickets</h2><div id="supportTickets" class="data-list"></div></article></div>
       </section>
 
       <section id="opsView" class="view" hidden>
@@ -391,9 +412,17 @@
           <span id="operatorAuthorityBadge" class="status-pill">OPERATOR</span>
         </div>
         <div id="operatorSummary" class="card-grid"></div>
+        <article class="panel research-review-panel">
+          <div class="panel-heading"><div><p class="eyebrow">STRATEGY RESEARCH</p><h3>Experiment history</h3><p>Review tested ideas, failed trials and the evidence required before a strategy can advance.</p></div></div>
+          <form id="operatorResearchForm" class="filters">
+            <label for="operatorResearchAsset">Asset<input id="operatorResearchAsset" name="asset" maxlength="32" placeholder="All assets" autocomplete="off" /></label>
+            <button id="refreshOperatorResearch" class="ghost" type="submit">Refresh research</button>
+          </form>
+          <div id="operatorResearch" aria-live="polite" aria-busy="false"><p class="muted">Research history loads when the control room opens.</p></div>
+        </article>
         <div class="two-column">
           <article class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">RELEASE & SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">RELEASE &amp; SAFETY</p><h3>Runtime identity</h3></div><button id="refreshOperatorOverview" class="ghost" type="button">Refresh</button></div>
             <div id="operatorRuntime" class="detail-list"><p class="muted">Loading operator status…</p></div>
             <div class="operator-actions">
               <button id="operatorKillSwitchOn" class="danger" type="button">Enable kill switch</button>
@@ -411,7 +440,7 @@
         </article>
         <article id="operatorBusinessPanel" class="panel" hidden>
           <div class="panel-heading">
-            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions & verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
+            <div><p class="eyebrow">OWNER BUSINESS INTELLIGENCE</p><h3>Users, subscriptions &amp; verified revenue</h3><p>Server-derived totals from canonical users, active subscriptions and recorded payment events.</p></div>
             <button id="refreshOperatorBusiness" class="ghost" type="button">Refresh</button>
           </div>
           <div id="operatorBusiness" class="operator-business-grid"><p class="muted">Owner business metrics load here.</p></div>
@@ -430,7 +459,7 @@
           </div>
           <form id="operatorForceSignalForm" class="operator-force-form">
             <label>Asset (optional)<input name="asset" placeholder="BTCUSDT, EURUSD, XAUUSD…" maxlength="32" /></label>
-            <label>Timeframe (optional)<select name="timeframe"><option value="">Best of 15m / 1h / 4h</option><option>5m</option><option>15m</option><option>1h</option><option>4h</option><option>1d</option></select></label>
+            <label>Timeframe (optional)<select name="timeframe" aria-label="Timeframe"><option value="">Best of 15m / 1h / 4h</option><option>5m</option><option>15m</option><option>1h</option><option>4h</option><option>1d</option></select></label>
             <label id="operatorOverrideQualityRow" class="switch-row"><input name="override_quality" type="checkbox" /> <span>Owner-only: override strict diagnostic quality gates</span></label>
             <label id="operatorOverridePhraseRow" hidden>Override confirmation<input name="override_confirmation" placeholder="OVERRIDE QUALITY GATES" autocomplete="off" /></label>
             <button class="primary" type="submit">Generate operator-only signal</button>
@@ -439,7 +468,7 @@
         </article>
         <article class="panel operator-maintenance-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds & queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
+            <div><p class="eyebrow">OWNER RECOVERY CONTROLS</p><h3>Audits, rebuilds &amp; queues</h3><p>These are the web equivalents of the owner reconciliation commands. Apply/replay actions require an additional confirmation.</p></div>
             <button id="refreshOperatorMaintenance" class="ghost" type="button">Refresh</button>
           </div>
           <div id="operatorMaintenance" class="operator-maintenance-summary"><p class="muted">Loading maintenance state…</p></div>
@@ -453,7 +482,7 @@
               </div>
             </section>
             <section class="operator-control-card">
-              <p class="eyebrow">OUTCOMES</p><h4>Projection & outbox repair</h4><p>Rebuild canonical outcomes first, then independently repair notification outbox state.</p>
+              <p class="eyebrow">OUTCOMES</p><h4>Projection &amp; outbox repair</h4><p>Rebuild canonical outcomes first, then independently repair notification outbox state.</p>
               <div class="operator-control-actions">
                 <button data-owner-action="outcome-status" class="ghost" type="button">Status</button>
                 <button data-owner-action="outcome-dry" class="ghost" type="button">Dry run</button>
@@ -482,15 +511,16 @@
           </details>
         </article>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin & owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">OPERATOR CAPABILITIES</p><h3>Admin &amp; owner command surface</h3><p>The same privileged capability catalogue exposed in Telegram, grouped here so operational controls never disappear into chat history.</p></div></div>
           <div id="operatorCommandCatalog" class="command-catalog"><p class="muted">Loading operator commands…</p></div>
         </article>
       </section>
 
       <section id="accountView" class="view" hidden>
+        <nav class="account-jump-nav" aria-label="Account sections"><a href="#profileDetails">Profile &amp; security</a><a href="#tradingProfileForm">Trading preferences</a><a href="#brokerPanel">Connected accounts</a><a href="#notificationForm">Notifications</a><a href="#billingProducts">Plans &amp; billing</a></nav>
         <div class="two-column">
           <article class="panel account-profile-panel">
-            <div class="panel-heading"><div><p class="eyebrow">IDENTITY & CHANNELS</p><h2>Account</h2><p>One SignalRank identity across web, Telegram and mobile.</p></div><span id="telegramStatusBadge" class="status-pill">CHECKING</span></div>
+            <div class="panel-heading"><div><p class="eyebrow">IDENTITY &amp; CHANNELS</p><h2>Account</h2><p>One SignalRank identity across web, Telegram and mobile.</p></div><span id="telegramStatusBadge" class="status-pill">CHECKING</span></div>
             <div id="profileDetails" class="detail-list"></div>
             <form id="profileForm" class="stack-form">
               <label>Display name<input name="display_name" maxlength="160" /></label>
@@ -539,7 +569,7 @@
             <div>
               <p class="eyebrow">TRADING CONNECTIONS</p>
               <h2>Multi-platform broker hub</h2>
-              <p>Connect demo or live trading accounts without automatically granting execution. MetaTrader 4/5 are execution-ready through MetaApi; other adapters appear with their current integration state.</p>
+              <p>Connect demo or live trading accounts without automatically granting execution. MetaTrader 4/5 use the MetaApi adapter; provider readiness and execution permission are checked separately for every account.</p>
             </div>
             <span id="brokerReadinessBadge" class="status-pill">CHECKING</span>
           </div>
@@ -733,12 +763,13 @@
         <article class="panel"><h2>Notification preferences</h2><p>These channel and quiet-hour settings follow your account across Telegram, web and mobile.</p><form id="notificationForm" class="preference-grid"><label><input type="checkbox" name="telegram_enabled" /> Telegram</label><label><input type="checkbox" name="web_enabled" /> Web</label><label><input type="checkbox" name="email_enabled" /> Email</label><label><input type="checkbox" name="push_enabled" /> Mobile push</label><label>Quiet from<input type="time" name="quiet_hours_start" /></label><label>Quiet until<input type="time" name="quiet_hours_end" /></label><label>Notification timezone<input name="timezone" maxlength="64" placeholder="Africa/Lagos" /></label><button class="primary" type="submit">Save preferences</button></form></article>
         <article class="panel"><h2>Plans and billing</h2><p>Prices are resolved securely by the server. Plans change access and limits; they do not enable broker execution or guarantee returns. Professional and Institutional plans use contact sales.</p><div id="billingProducts" class="card-grid"></div><div id="renewalPanel" class="detail-list"></div><button id="cancelAutoRenewButton" class="danger" type="button" hidden>Cancel auto-renew</button><h3>Billing history</h3><div id="billingHistory" class="data-list"></div><h3>Request a refund review</h3><p class="muted">Refunds are never automatic. SignalRankAI verifies that the payment reference belongs to your account, then opens a support review.</p><form id="refundReviewForm" class="stack-form"><label>Payment reference<input name="payment_reference" maxlength="128" required /></label><label>Reason<textarea name="reason" rows="4" maxlength="4000" required></textarea></label><button class="ghost" type="submit">Submit refund review</button></form></article>
         <article id="executionWebhookPanel" class="panel" hidden><div class="panel-heading"><div><p class="eyebrow">ADVANCED EXECUTION</p><h2>Execution webhook</h2><p>Optional eligible third-party execution destination. Tier eligibility is not execution permission and never bypasses SignalRankAI account policy, provider, reconciliation, evidence, risk, or kill-switch controls.</p></div></div><form id="executionWebhookForm" class="stack-form"><label>HTTPS endpoint<input name="url" type="url" maxlength="2048" placeholder="https://your-endpoint.example/hook" required /></label><div class="row-actions"><button class="primary" type="submit">Save execution webhook</button><button id="disableExecutionWebhook" class="danger" type="button">Disable</button></div></form><div id="executionWebhookStatus" class="detail-list"></div></article>
+        <article class="panel"><h2>Privacy &amp; data rights</h2><p>Use these authenticated requests for access/export or account-deletion review. Deletion is reviewed safely because payment, security, tax, dispute and immutable trading evidence may require retention, and active broker positions must never be silently abandoned.</p><div class="row-actions"><button id="requestDataExportButton" class="ghost" type="button">Request my data export</button><button id="requestAccountDeletionButton" class="danger" type="button">Request account deletion review</button></div><p class="muted"><a href="/privacy" target="_blank" rel="noopener">Read the Privacy Notice</a></p></article>
         <article id="developerPanel" class="panel" hidden><h2>Professional developer access</h2><p>Create scoped API keys for the REST API. Keys are shown once and must be stored in a secret manager.</p><button id="createApiKeyButton" class="primary">Create signals read key</button><div id="apiKeyResult" class="detail-list"></div><div id="apiKeyList" class="data-list"></div></article>
       </section>
     </section>
   </main>
 
-  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><a href="/healthz">System status</a></footer>
-  <script src="/app-assets/app.js?v=38" defer></script>
+  <footer><span>SignalRankAI provides algorithmic market analysis for educational purposes. Trading involves risk.</span><span class="sr-legacy-powered">Powered by <a href="https://www.criloxsolutions.com" target="_blank" rel="noopener noreferrer" aria-label="CRILOX Solutions — opens in a new tab">CRILOX Solutions ↗</a></span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/cookies">Cookies</a> · <a href="/billing-policy">Billing</a> · <a href="/risk-disclosure">Risk</a> · <a href="/accessibility">Accessibility</a> · <a href="/healthz">System status</a></footer>
+  <script src="/app-assets/app.js?v=47" defer></script>
 </body>
 </html>

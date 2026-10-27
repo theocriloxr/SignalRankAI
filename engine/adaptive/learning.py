@@ -1,32 +1,38 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import logging
+import math
 import os
+from dataclasses import asdict
+from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import timedelta
-from typing import Any
+from datetime import timedelta, timezone
+from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from sqlalchemy import text
 
+from core.production_integrity import calibration_evidence_valid
+from ml.metrics import brier_score
 from db.session import get_session
 from core.redis_state import state
 from utils.timeutils import now_utc_naive
 
 from .components import DEFAULT_COMPONENTS
 from .dataset import AdaptiveDatasetRow, build_dataset
+from .dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
+from .market_input import audit_captured_inputs
+from .statistics import profit_factor as _profit_factor
 from .repository import publish_approved_profiles
 from .walk_forward import walk_forward_evaluate
+from .integrity import audit_adaptive_dataset
+from .research_ledger import register_hypothesis, start_experiment, complete_experiment, trial_counts
+from .statistics import return_diagnostics, block_bootstrap_survival
 
 logger = logging.getLogger(__name__)
-
-
-def _profit_factor(values: list[float]) -> float:
-    wins = sum(value for value in values if value > 0)
-    loss = abs(sum(value for value in values if value < 0))
-    return wins / loss if loss else (999.0 if wins else 0.0)
 
 
 def _max_drawdown(values: list[float]) -> float:
@@ -62,6 +68,7 @@ def _profile_fingerprint(
     feature_version: str,
     family_weights: dict[str, float],
     regime_weights: dict[str, float],
+    evidence_category: str = "unknown",
 ) -> str:
     payload = {
         "asset": asset,
@@ -69,11 +76,14 @@ def _profile_fingerprint(
         "feature_version": feature_version,
         "family_weights": family_weights,
         "regime_weights": regime_weights,
+        "evidence_category": evidence_category,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _derive_weights(rows: list[AdaptiveDatasetRow], minimum_samples: int) -> tuple[dict[str, float], dict[str, float], dict[str, Any]]:
+def _derive_weights(
+    rows: list[AdaptiveDatasetRow], minimum_samples: int
+) -> tuple[dict[str, float], dict[str, float], dict[str, Any]]:
     by_family: dict[str, list[float]] = defaultdict(list)
     by_regime: dict[str, list[float]] = defaultdict(list)
     for row in rows:
@@ -84,17 +94,25 @@ def _derive_weights(rows: list[AdaptiveDatasetRow], minimum_samples: int) -> tup
         expectancy = sum(values) / len(values)
         reliability = min(1.0, len(values) / max(minimum_samples * 3, 1))
         weight = 1.0 + max(-0.15, min(0.15, expectancy * 0.08)) * reliability
-        if _profit_factor(values) < 1.0 or _max_drawdown(values) > float(os.getenv("ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R", "12") or 12):
+        pf = _profit_factor(values)
+        if (pf is not None and pf < 1.0) or _max_drawdown(values) > float(
+            os.getenv("ADAPTIVE_SEGMENT_MAX_DRAWDOWN_R", "12") or 12
+        ):
             weight = min(weight, 0.90)
         return round(max(0.80, min(1.15, weight)), 4)
 
-    family_weights = {family: bounded_weight(values) for family, values in by_family.items() if len(values) >= minimum_samples}
-    regime_weights = {regime: bounded_weight(values) for regime, values in by_regime.items() if len(values) >= minimum_samples}
+    family_weights = {
+        family: bounded_weight(values) for family, values in by_family.items() if len(values) >= minimum_samples
+    }
+    regime_weights = {
+        regime: bounded_weight(values) for regime, values in by_regime.items() if len(values) >= minimum_samples
+    }
     all_returns = [row.r_multiple for row in rows]
     summary = {
         "sample_size": len(rows),
         "mean_expectancy_r": sum(all_returns) / len(all_returns) if all_returns else 0.0,
-        "profit_factor": _profit_factor(all_returns),
+        "profit_factor": _profit_factor(all_returns) if all_returns else None,
+        "profit_factor_reason": "no_observed_losses" if all_returns and not any(value < 0 for value in all_returns) else "no_observations" if not all_returns else None,
         "max_drawdown_r": _max_drawdown(all_returns),
         "family_segments": {key: len(value) for key, value in by_family.items()},
         "regime_segments": {key: len(value) for key, value in by_regime.items()},
@@ -105,67 +123,85 @@ def _derive_weights(rows: list[AdaptiveDatasetRow], minimum_samples: int) -> tup
 async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
     """Suspend degraded runtime profiles using confirmed live-delivery evidence only."""
     minimum_live = max(20, int(os.getenv("ADAPTIVE_DRIFT_MIN_LIVE_SAMPLES", "30") or 30))
-    drawdown_limit = max(1.0, float(os.getenv("ADAPTIVE_DRIFT_MAX_DRAWDOWN_R", "10") or 10))
-    brier_limit = max(0.05, min(1.0, float(os.getenv("ADAPTIVE_DRIFT_MAX_BRIER", "0.35") or 0.35)))
+    drawdown_limit = float(os.getenv("ADAPTIVE_DRIFT_MAX_DRAWDOWN_R", "10") or 10)
+    brier_limit = float(os.getenv("ADAPTIVE_DRIFT_MAX_BRIER", "0.35") or 0.35)
     expectancy_floor = float(os.getenv("ADAPTIVE_DRIFT_MIN_EXPECTANCY_R", "-0.10") or -0.10)
+    if minimum_live > 250 or not all(math.isfinite(v) for v in (drawdown_limit, brier_limit, expectancy_floor)) or drawdown_limit < 1 or not 0.05 <= brier_limit <= 1:
+        raise ValueError("invalid_adaptive_health_thresholds")
     rows = (
-        await session.execute(
-            text(
-                """
+        (
+            await session.execute(
+                text(
+                    """
                 SELECT p.profile_id,p.asset,p.state,p.rollback_profile_id,
-                       MAX(ev.confidence) AS confidence,o.r_multiple,s.created_at,s.signal_id
+                       to_jsonb(p) AS profile_identity,to_jsonb(b) AS approved_health_baseline,h.*
                 FROM adaptive_asset_profiles p
-                JOIN adaptive_signal_evidence ev ON ev.profile_id=p.profile_id
-                JOIN signals s ON s.signal_id=ev.signal_id
-                JOIN outcomes o ON o.signal_id=s.signal_id
-                WHERE p.is_current=TRUE
-                  AND p.state IN ('CANARY','LIMITED_LIVE','APPROVED')
-                  AND o.r_multiple IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1 FROM signal_deliveries sd
-                      WHERE sd.signal_id=s.signal_id
-                        AND sd.sent_ok=TRUE
-                        AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED'
-                  )
-                  AND s.created_at >= NOW() - INTERVAL '120 days'
-                GROUP BY p.profile_id,p.asset,p.state,p.rollback_profile_id,o.r_multiple,s.created_at,s.signal_id
-                ORDER BY p.profile_id,s.created_at DESC
+                LEFT JOIN strategy_health_baselines b ON b.profile_id=p.profile_id
+                LEFT JOIN LATERAL (
+                    SELECT o.r_multiple,o.closed_at,s.created_at,s.signal_id,
+                           s.ml_probability_calibrated,s.ml_calibration_version,
+                           s.ml_calibration_validated,s.ml_calibration_validation_rows,
+                           s.ml_calibration_brier,s.ml_calibration_ece
+                    FROM signals s JOIN outcomes o ON o.signal_id=s.signal_id
+                    WHERE o.r_multiple IS NOT NULL
+                      AND UPPER(s.asset)=UPPER(p.asset) AND s.asset_class=p.asset_class
+                      AND o.performance_inclusion_status='eligible'
+                      AND o.closed_at IS NOT NULL AND o.closed_at <= NOW()
+                      AND s.created_at <= o.closed_at
+                      AND s.created_at >= NOW() - INTERVAL '120 days'
+                      AND EXISTS (SELECT 1 FROM adaptive_signal_evidence ev
+                                  WHERE ev.profile_id=p.profile_id AND ev.profile_version=p.version
+                                    AND UPPER(ev.asset)=UPPER(p.asset) AND ev.signal_id=s.signal_id)
+                      AND EXISTS (SELECT 1 FROM signal_deliveries sd
+                                  WHERE sd.signal_id=s.signal_id AND sd.sent_ok=TRUE
+                                    AND UPPER(COALESCE(sd.delivery_state,''))='CONFIRMED')
+                    ORDER BY o.closed_at DESC,s.signal_id LIMIT 250
+                ) h ON TRUE
+                WHERE p.is_current=TRUE AND p.state IN ('CANARY','LIMITED_LIVE','APPROVED')
+                ORDER BY p.profile_id,h.closed_at DESC,h.signal_id
                 """
+                )
             )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     profile_meta: dict[str, dict[str, Any]] = {}
     for row in rows:
         profile_id = str(row["profile_id"])
-        if len(grouped[profile_id]) < 250:
-            grouped[profile_id].append(dict(row))
+        evidence = grouped[profile_id]
+        # A LEFT JOIN placeholder is a profile with no eligible outcomes, not
+        # an invalid observed return. Keep it in coverage without inventing R.
+        if row["signal_id"] is not None and len(evidence) < 250:
+            evidence.append(dict(row))
         profile_meta[profile_id] = dict(row)
 
     suspended: list[str] = []
     restored: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
+    coverage = {status: 0 for status in ("UNAVAILABLE", "INSUFFICIENT", "OBSERVED", "INVALID")}
+    from .health_baselines import compare_health_baseline, record_health_event
+    baseline_coverage: dict[str, int] = defaultdict(int)
     for profile_id, evidence_rows in grouped.items():
-        if len(evidence_rows) < minimum_live:
-            continue
-        returns = [float(row["r_multiple"]) for row in reversed(evidence_rows)]
-        expectancy = sum(returns) / len(returns)
-        drawdown = _max_drawdown(returns)
-        brier = sum(
-            (max(0.0, min(1.0, float(row.get("confidence") or 0.0))) - (1.0 if float(row["r_multiple"]) > 0 else 0.0)) ** 2
-            for row in evidence_rows
-        ) / len(evidence_rows)
-        reasons: list[str] = []
-        if expectancy < expectancy_floor:
-            reasons.append("live_expectancy_below_floor")
-        if drawdown > drawdown_limit:
-            reasons.append("live_drawdown_above_limit")
-        if brier > brier_limit:
-            reasons.append("live_calibration_drift")
+        metrics = _runtime_health_metrics(evidence_rows, minimum_live=minimum_live,
+            drawdown_limit=drawdown_limit, brier_limit=brier_limit, expectancy_floor=expectancy_floor)
+        coverage[metrics["delivery_evidence_status"]] += 1
+        meta = profile_meta[profile_id]
+        comparison = compare_health_baseline(meta.get("approved_health_baseline"), meta.get("profile_identity") or {}, evidence_rows)
+        metrics.update(comparison)
+        baseline_coverage[comparison["approved_baseline_comparison"]] += 1
+        if comparison["approved_baseline_comparison"] in {"BREACHED", "INVALID"}:
+            metrics["reasons"].extend(comparison["baseline_reasons"])
+        await record_health_event(session, profile_id=profile_id, report=metrics)
+        if len(diagnostics) < 20:
+            diagnostics.append({"profile_id": profile_id, "asset": str(meta["asset"]),
+                "profile_state": str(meta["state"]),
+                **{k: v for k, v in metrics.items() if k != "calibration_versions"}})
+        reasons = metrics["reasons"]
         if not reasons:
             continue
-        meta = profile_meta[profile_id]
         asset = str(meta["asset"])
-        rollback_profile_id = meta.get("rollback_profile_id")
         await session.execute(
             text(
                 """
@@ -178,7 +214,7 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             ),
             {
                 "profile_id": profile_id,
-                "details": json.dumps({"reasons": reasons, "sample_size": len(evidence_rows), "expectancy_r": expectancy, "max_drawdown_r": drawdown, "brier_score": brier}),
+                "details": json.dumps(metrics, allow_nan=False),
             },
         )
         await session.execute(
@@ -191,43 +227,147 @@ async def _monitor_runtime_profiles(session: Any) -> dict[str, Any]:
             {
                 "asset": asset,
                 "profile_id": profile_id,
-                "metrics": json.dumps({"reasons": reasons, "sample_size": len(evidence_rows), "expectancy_r": expectancy, "max_drawdown_r": drawdown, "brier_score": brier}),
-                "resolution": "rollback" if rollback_profile_id else "neutral_fallback",
+                "metrics": json.dumps(metrics, allow_nan=False),
+                "resolution": "neutral_fallback_requires_revalidation",
             },
         )
         suspended.append(asset)
-        if rollback_profile_id:
-            restored_count = (
-                await session.execute(
-                    text(
-                        """
-                        UPDATE adaptive_asset_profiles
-                        SET is_current=TRUE,updated_at=NOW()
-                        WHERE profile_id=:rollback_profile_id
-                          AND state IN ('CANARY','LIMITED_LIVE','APPROVED')
-                        RETURNING profile_id
-                        """
-                    ),
-                    {"rollback_profile_id": rollback_profile_id},
-                )
-            ).scalar()
-            if restored_count:
-                restored.append(str(restored_count))
-    return {"suspended_assets": suspended, "restored_profiles": restored}
+    return {"suspended_assets": suspended, "restored_profiles": restored,
+            "evaluated_profile_count": len(grouped), "profile_diagnostics": diagnostics,
+            "delivery_evidence_counts": coverage,
+            "baseline_comparison_counts": dict(baseline_coverage),
+            "diagnostics_truncated": len(grouped) > len(diagnostics)}
+
+
+def _runtime_health_metrics(rows: list[dict[str, Any]], *, minimum_live: int,
+                            drawdown_limit: float, brier_limit: float, expectancy_floor: float) -> dict[str, Any]:
+    """Delivery outcome diagnostics; component confidence is never a probability."""
+    result: dict[str, Any] = {"reasons": [], "sample_size": len(rows), "expectancy_r": None,
+        "max_drawdown_r": None, "brier_score": None, "calibrated_sample_size": 0,
+        "delivery_evidence_status": "UNAVAILABLE" if not rows else "INSUFFICIENT",
+        "coverage_reason": "no_eligible_delivery_outcomes" if not rows else "minimum_delivery_sample_not_met",
+        "calibration_status": "UNAVAILABLE", "calibration_versions": {},
+        "qualified_calibration_version_count": 0, "brier_aggregation": "worst_qualified_version",
+        "broker_fills_certified": False, "approved_baseline_comparison": "UNVERIFIED"}
+    if len(rows) > 250:
+        raise ValueError("delivery_health_window_must_be_0_to_250")
+    if not rows:
+        return result
+    if any(isinstance(row.get("r_multiple"), bool) or not isinstance(row.get("r_multiple"), (int, float))
+           or not math.isfinite(row["r_multiple"]) for row in rows):
+        result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
+        return result
+    versions: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    for row in rows:
+        if row.get("ml_calibration_validated") is not True:
+            continue
+        if not calibration_evidence_valid(row):
+            result["reasons"].append("invalid_calibrated_health_observations")
+            result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_calibrated_health_observations")
+            return result
+        versions[row["ml_calibration_version"]].append((int(row["r_multiple"] > 0), float(row["ml_probability_calibrated"])))
+    result["calibrated_sample_size"] = sum(len(observations) for observations in versions.values())
+    scores: list[float] = []
+    for version, observations in sorted(versions.items()):
+        score = brier_score([label for label, _ in observations], [probability for _, probability in observations]) if len(observations) >= minimum_live else None
+        result["calibration_versions"][version] = {"sample_size": len(observations), "brier_score": score}
+        if score is not None:
+            scores.append(score)
+    result["qualified_calibration_version_count"] = len(scores)
+    result["brier_score"] = max(scores) if scores else None
+    result["calibration_status"] = "OBSERVED" if scores else "INSUFFICIENT" if versions else "UNAVAILABLE"
+    if len(rows) < minimum_live:
+        return result
+    returns = [float(row["r_multiple"]) for row in reversed(rows)]
+    try:
+        expectancy, drawdown = math.fsum(returns) / len(returns), _max_drawdown(returns)
+        if not math.isfinite(expectancy) or not math.isfinite(drawdown):
+            raise ValueError("delivery_metric_overflow")
+    except (OverflowError, ValueError):
+        result["reasons"].append("invalid_delivery_health_observations")
+        result.update(delivery_evidence_status="INVALID", coverage_reason="invalid_delivery_health_observations")
+        return result
+    result.update(expectancy_r=expectancy, max_drawdown_r=drawdown,
+                  delivery_evidence_status="OBSERVED", coverage_reason=None)
+    if expectancy < expectancy_floor:
+        result["reasons"].append("live_expectancy_below_floor")
+    if drawdown > drawdown_limit:
+        result["reasons"].append("live_drawdown_above_limit")
+    if scores and max(scores) > brier_limit:
+        result["reasons"].append("live_calibration_drift")
+    return result
+
+
+async def monitor_profile_health() -> dict[str, Any]:
+    """Commit health decisions independently from research; invalidate under lock."""
+    from .lifecycle import lock_profile_lifecycle
+    from .repository import invalidate_profile_cache
+
+    async with get_session(priority="critical", label="adaptive.monitor", timeout_seconds=4) as session:
+        await lock_profile_lifecycle(session)
+        drift = await _monitor_runtime_profiles(session)
+        for asset in drift.get("suspended_assets", []):
+            invalidate_profile_cache(asset)
+        await session.commit()
+    published = await publish_approved_profiles()
+    return {**drift, "published": published}
+
+
+@asynccontextmanager
+async def _record_evaluation_failure(session: Any, experiment_id: str, run_id: str) -> AsyncIterator[None]:
+    """Preserve a handled failure after rolling back an aborted evaluation transaction."""
+    try:
+        yield
+    except Exception as exc:
+        failure = {"reason": "adaptive_candidate_evaluation_failed", "error_type": type(exc).__name__[:128],
+                   "stage": "walk_forward_and_candidate_persistence", "promotion_eligible": False}
+        try:
+            async with asyncio.timeout(8):
+                await session.rollback()
+        except Exception as rollback_error:
+            logger.warning("[adaptive_learning] failed_transaction_rollback_error error_type=%s", type(rollback_error).__name__)
+        try:
+            async with asyncio.timeout(8), get_session(priority="critical", label="adaptive.record_failure", timeout_seconds=8) as failed_session:
+                await failed_session.execute(text("SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_learning'))"))
+                # A concurrent worker may have closed the same idempotent trial
+                # after our rollback. Preserve its immutable terminal evidence.
+                terminal = (await failed_session.execute(text(
+                    "SELECT status FROM research_experiment_results WHERE experiment_id=:id"), {"id": experiment_id})).scalar_one_or_none()
+                if terminal is None:
+                    await complete_experiment(failed_session, experiment_id, failure, status="FAILED")
+                await failed_session.execute(text(
+                    "UPDATE adaptive_optimisation_runs SET status='FAILED',completed_at=NOW(),"
+                    "summary=CAST(:summary AS JSONB) WHERE run_id=:run_id"),
+                    {"run_id": run_id, "summary": json.dumps({**failure, "experiment_id": experiment_id,
+                                                              "preserved_terminal_status": terminal})})
+                await failed_session.commit()
+        except Exception as recording_error:
+            logger.error("[adaptive_learning] failure_recording_failed run=%s experiment=%s error_type=%s; retained definition remains visible",
+                         run_id, experiment_id, type(recording_error).__name__)
+        raise
 
 
 class AdaptiveLearningWorker:
     async def run_once(self) -> dict[str, Any]:
-        published = await publish_approved_profiles()
-        paused = str(state.get_sync("adaptive:optimisation:paused") or "0").strip().lower() in {"1", "true", "yes", "on"}
+        # Pausing research never pauses the independent health loop.
+        drift_result = await monitor_profile_health()
+        published = int(drift_result["published"])
+        paused = str(state.get_sync("adaptive:optimisation:paused") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if paused:
-            return {"published": published, "candidates": 0, "paused": True}
+            return {"published": published, "candidates": 0, "paused": True, "drift": drift_result}
         if str(os.getenv("ADAPTIVE_OPTIMISATION_ENABLED", "1")).lower() not in {"1", "true", "yes", "on"}:
-            return {"published": published, "candidates": 0, "disabled": True}
+            return {"published": published, "candidates": 0, "disabled": True, "drift": drift_result}
 
         minimum_samples = max(20, int(os.getenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "40") or 40))
         lookback_days = max(30, int(os.getenv("ADAPTIVE_LOOKBACK_DAYS", "365") or 365))
-        cutoff = now_utc_naive() - timedelta(days=lookback_days)
+        snapshot_at = now_utc_naive()
+        cutoff = snapshot_at - timedelta(days=lookback_days)
         feature_version, feature_hash, component_versions = _feature_version()
         run_id = str(uuid4())
 
@@ -247,9 +387,10 @@ class AdaptiveLearningWorker:
                 return {"published": published, "candidates": 0, "skipped": "distributed_lock_busy"}
 
             raw_rows = (
-                await session.execute(
-                    text(
-                        """
+                (
+                    await session.execute(
+                        text(
+                            """
                         SELECT
                             s.signal_id,
                             s.created_at AS decision_time,
@@ -261,21 +402,30 @@ class AdaptiveLearningWorker:
                             s.direction,
                             s.status,
                             o.r_multiple,
+                            GREATEST(o.closed_at,o.corrected_at) AS outcome_known_at,
+                            CASE WHEN LOWER(o.provenance) IN ('paper','shadow','backtest','walk_forward','forward_test','canary')
+                                 THEN LOWER(o.provenance) ELSE 'stored' END AS evidence_category,
                             EXISTS (
                                 SELECT 1 FROM signal_deliveries sd
                                 WHERE sd.signal_id = s.signal_id
                                   AND sd.sent_ok = TRUE
                                   AND UPPER(COALESCE(sd.delivery_state, '')) = 'CONFIRMED'
                             ) AS delivered,
-                            EXISTS (
-                                SELECT 1 FROM trades t
-                                WHERE t.signal_id = s.signal_id
-                            ) AS executed,
+                            FALSE AS executed,
                             COALESCE((
                                 SELECT ARRAY_AGG(DISTINCT seq.sequence_hash ORDER BY seq.sequence_hash)
                                 FROM adaptive_signal_sequences seq
                                 WHERE seq.signal_id = s.signal_id
                             ), ARRAY[]::VARCHAR[]) AS sequence_hashes,
+                            COALESCE((
+                                SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
+                                    'asset', seq.asset, 'timeframe', seq.timeframe,
+                                    'sequence_hash', seq.sequence_hash, 'candle_count', seq.candle_count,
+                                    'start_time_ms', seq.start_time_ms, 'end_time_ms', seq.end_time_ms,
+                                    'provider', seq.provider, 'evidence_stage', seq.evidence_stage,
+                                    'summary', seq.summary) ORDER BY seq.timeframe, seq.sequence_hash)
+                                FROM adaptive_signal_sequences seq WHERE seq.signal_id = s.signal_id
+                            ), '[]'::JSONB) AS sequence_provenance,
                             COALESCE((
                                 SELECT MAX(
                                     CASE
@@ -297,15 +447,24 @@ class AdaptiveLearningWorker:
                         FROM signals s
                         JOIN outcomes o ON o.signal_id = s.signal_id
                         WHERE s.created_at >= :cutoff
+                          AND s.created_at <= :snapshot_at
                           AND o.r_multiple IS NOT NULL
+                          AND o.closed_at IS NOT NULL
+                          AND GREATEST(o.closed_at,o.corrected_at) <= :snapshot_at
+                          AND o.performance_inclusion_status='eligible'
                         ORDER BY s.created_at, s.signal_id
+                        LIMIT 100001
                         """
-                    ),
-                    {"cutoff": cutoff},
+                        ),
+                        {"cutoff": cutoff, "snapshot_at": snapshot_at},
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
-            dataset_rows, manifest = build_dataset(raw_rows)
+            dataset_rows, manifest = build_dataset([dict(row) for row in raw_rows],
+                as_of=snapshot_at.replace(tzinfo=timezone.utc))
             await session.execute(
                 text(
                     """
@@ -322,14 +481,18 @@ class AdaptiveLearningWorker:
                     "version": manifest.dataset_version,
                     "content_hash": manifest.content_hash,
                     "row_count": manifest.row_count,
-                    "first_at": manifest.first_decision_time,
-                    "last_at": manifest.last_decision_time,
+                    "first_at": manifest.first_decision_time.replace(tzinfo=None) if manifest.first_decision_time else None,
+                    "last_at": manifest.last_decision_time.replace(tzinfo=None) if manifest.last_decision_time else None,
                     "categories": json.dumps(list(manifest.evidence_categories)),
                     "assets": json.dumps(list(manifest.assets)),
                     "coverage": manifest.sequence_coverage,
                     "manifest": json.dumps(manifest.to_dict()),
                 },
             )
+            await persist_dataset_snapshot(session, dataset_rows, manifest,
+                observation_cutoff=snapshot_at.replace(tzinfo=timezone.utc))
+            # Research consumes the saved rows, never a later reread of outcomes.
+            dataset_rows, manifest = await load_dataset_snapshot(session, manifest.dataset_version)
             await session.execute(
                 text(
                     """
@@ -342,7 +505,9 @@ class AdaptiveLearningWorker:
                     "version": feature_version,
                     "content_hash": feature_hash,
                     "components": json.dumps(component_versions),
-                    "schema": json.dumps({"market_context": "v1", "strategy_evidence": "v1", "sequence_reference": "v1"}),
+                    "schema": json.dumps(
+                        {"market_context": "v1", "strategy_evidence": "v1", "sequence_reference": "v1"}
+                    ),
                 },
             )
             await session.execute(
@@ -371,143 +536,204 @@ class AdaptiveLearningWorker:
                 },
             )
 
-            drift_result = await _monitor_runtime_profiles(session)
-
-            by_asset: dict[tuple[str, str], list[AdaptiveDatasetRow]] = defaultdict(list)
+            code_commit = str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GITHUB_SHA") or "unknown")
+            hypothesis_id = await register_hypothesis(
+                session, trial_family="adaptive_outcome_family_regime_weighting",
+                spec={"strategy_family": "adaptive_profile_weighting", "mechanism_status": "mechanism_unproven",
+                      "economic_mechanism": None, "reason_edge_should_exist": None,
+                      "known_failure_modes": ["selection_bias", "overlapping_outcomes", "cost_proxy", "regime_shift"],
+                      "description": "Bounded family/regime participation learned from earlier resolved outcomes"},
+                code_commit=code_commit, created_by="adaptive_learning_worker",
+            )
+            by_asset: dict[tuple[str, str, str], list[AdaptiveDatasetRow]] = defaultdict(list)
             for row in dataset_rows:
-                by_asset[(row.asset, row.asset_class)].append(row)
+                by_asset[(row.asset, row.asset_class, row.evidence_category)].append(row)
 
             created = 0
             duplicates = 0
+            terminal_trials_skipped = 0
+            failed_trials_skipped = 0
             wfo_runs = 0
-            for (asset, asset_class), asset_rows in by_asset.items():
+            for (asset, asset_class, evidence_category), asset_rows in by_asset.items():
                 if len(asset_rows) < minimum_samples:
                     continue
                 family_weights, regime_weights, evidence_summary = _derive_weights(asset_rows, minimum_samples)
                 if not family_weights:
                     continue
-                wfo = walk_forward_evaluate(
-                    asset_rows,
-                    family_weights=family_weights,
-                    regime_weights=regime_weights,
-                    minimum_train=max(60, int(os.getenv("ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS", "80") or 80)),
-                    validation_size=max(20, int(os.getenv("ADAPTIVE_WFO_VALIDATION_ROWS", "30") or 30)),
-                    embargo_seconds=max(0, int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)),
-                    cost_r=max(0.0, float(os.getenv("ADAPTIVE_WFO_COST_R", "0.01") or 0.01)),
+                experiment_id = await start_experiment(
+                    session, hypothesis_id=hypothesis_id, strategy_id="adaptive_profile_weighting", strategy_version="v2",
+                    specification={"parameter_set": {"family_weights": family_weights, "regime_weights": regime_weights,
+                                                     "minimum_segment_samples": minimum_samples,
+                                                     "minimum_train": max(60, int(os.getenv("ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS", "80") or 80)),
+                                                     "validation_size": max(20, int(os.getenv("ADAPTIVE_WFO_VALIDATION_ROWS", "30") or 30)),
+                                                     "embargo_seconds": max(0, int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)),
+                                                     "cost_r": max(0.0, float(os.getenv("ADAPTIVE_WFO_COST_R", "0.01") or 0.01))},
+                                   "dataset_version": manifest.dataset_version, "feature_version": feature_version,
+                                   "label_version": "resolved_R_with_correction_availability_v2",
+                                   "execution_model_version": "outcome_weighting_proxy_v2",
+                                   "risk_model_version": "bounded_participation_v1", "code_commit": code_commit,
+                                   "random_seed": 0, "asset_scope": [asset],
+                                   "timeframe_scope": sorted({row.timeframe for row in asset_rows}),
+                                   "regime_scope": sorted({row.regime for row in asset_rows}),
+                                   "evidence_category": evidence_category},
                 )
-                fingerprint = _profile_fingerprint(
-                    asset=asset,
-                    dataset_version=manifest.dataset_version,
-                    feature_version=feature_version,
-                    family_weights=family_weights,
-                    regime_weights=regime_weights,
-                )
-                exists = bool(
-                    (
-                        await session.execute(
-                            text(
-                                """
-                                SELECT 1 FROM adaptive_asset_profiles
-                                WHERE asset=:asset
-                                  AND metadata->>'profile_fingerprint'=:fingerprint
-                                LIMIT 1
-                                """
-                            ),
-                            {"asset": asset, "fingerprint": fingerprint},
-                        )
-                    ).scalar()
-                )
-                if exists:
-                    duplicates += 1
+                # A crash must not erase an attempted trial. Commit the definition
+                # before evaluation, then reacquire the worker transaction lock.
+                await session.commit()
+                await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('signalrankai_adaptive_learning'))"))
+                terminal = (await session.execute(text(
+                    "SELECT status FROM research_experiment_results WHERE experiment_id=:id"), {"id": experiment_id})).scalar_one_or_none()
+                if terminal is not None:
+                    terminal_trials_skipped += 1
+                    if terminal == "FAILED":
+                        failed_trials_skipped += 1
+                    else:
+                        duplicates += 1
                     continue
+                async with _record_evaluation_failure(session, experiment_id, run_id):
+                    wfo = walk_forward_evaluate(
+                        asset_rows,
+                        family_weights=family_weights,
+                        regime_weights=regime_weights,
+                        minimum_train=max(60, int(os.getenv("ADAPTIVE_WFO_MINIMUM_TRAIN_ROWS", "80") or 80)),
+                        validation_size=max(20, int(os.getenv("ADAPTIVE_WFO_VALIDATION_ROWS", "30") or 30)),
+                        embargo_seconds=max(0, int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)),
+                        cost_r=max(0.0, float(os.getenv("ADAPTIVE_WFO_COST_R", "0.01") or 0.01)),
+                    )
+                    fingerprint = _profile_fingerprint(
+                        asset=asset,
+                        dataset_version=manifest.dataset_version,
+                        feature_version=feature_version,
+                        family_weights=family_weights,
+                        regime_weights=regime_weights,
+                        evidence_category=evidence_category,
+                    )
+                    exists = bool(
+                        (
+                            await session.execute(
+                                text(
+                                    """
+                                    SELECT 1 FROM adaptive_asset_profiles
+                                    WHERE asset=:asset
+                                      AND metadata->>'profile_fingerprint'=:fingerprint
+                                    LIMIT 1
+                                    """
+                                ),
+                                {"asset": asset, "fingerprint": fingerprint},
+                            )
+                        ).scalar()
+                    )
+                    if exists:
+                        await complete_experiment(session, experiment_id,
+                            {"reason": "existing_profile_fingerprint", "promotion_eligible": False,
+                             "profile_fingerprint": fingerprint, "walk_forward": wfo.to_dict()}, status="REJECTED")
+                        duplicates += 1
+                        continue
 
-                version = int(
-                    (
-                        await session.execute(
-                            text("SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"),
-                            {"asset": asset},
-                        )
-                    ).scalar()
-                    or 1
-                )
-                profile_id = f"{asset}:adaptive:{fingerprint[:12]}"
-                metadata = {
-                    **evidence_summary,
-                    "evidence_source": "chronological_outcomes_and_sequence_references",
-                    "dataset_version": manifest.dataset_version,
-                    "feature_version": feature_version,
-                    "sequence_coverage": manifest.sequence_coverage,
-                    "profile_fingerprint": fingerprint,
-                    "walk_forward": wfo.to_dict(),
-                    "requires_sequence_wfo": not bool(wfo.fold_count),
-                    "automatic_live_promotion": False,
-                    "human_approval_required": True,
-                    "brier_score": None,
-                }
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO adaptive_asset_profiles(
-                            profile_id, asset, asset_class, version, state, source_scope, is_current,
-                            family_weights, regime_weights, minimum_confidence, minimum_reward_risk,
-                            maximum_score_multiplier, minimum_score_multiplier, data_sufficiency_score,
-                            sample_size, metadata, created_at, updated_at
-                        ) VALUES(
-                            :profile_id, :asset, :asset_class, :version, 'SHADOW', 'asset', FALSE,
-                            CAST(:family_weights AS JSONB), CAST(:regime_weights AS JSONB), 0.70, 1.5,
-                            1.15, 0.85, :sufficiency, :sample_size, CAST(:metadata AS JSONB), NOW(), NOW()
-                        ) ON CONFLICT(profile_id) DO NOTHING
-                        """
-                    ),
-                    {
-                        "profile_id": profile_id,
-                        "asset": asset,
-                        "asset_class": asset_class,
-                        "version": version,
-                        "family_weights": json.dumps(family_weights),
-                        "regime_weights": json.dumps(regime_weights),
-                        "sufficiency": min(1.0, len(asset_rows) / max(minimum_samples * 4, 1)),
-                        "sample_size": len(asset_rows),
-                        "metadata": json.dumps(metadata),
-                    },
-                )
-                wfo_run_id = str(uuid4())
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO adaptive_walk_forward_runs(
-                            run_id, profile_id, dataset_version, feature_version, status,
-                            started_at, completed_at, config, metrics, folds
-                        ) VALUES(
-                            :run_id, :profile_id, :dataset_version, :feature_version, 'COMPLETED',
-                            NOW(), NOW(), CAST(:config AS JSONB), CAST(:metrics AS JSONB), CAST(:folds AS JSONB)
-                        )
-                        """
-                    ),
-                    {
-                        "run_id": wfo_run_id,
-                        "profile_id": profile_id,
+                    version = int(
+                        (
+                            await session.execute(
+                                text(
+                                    "SELECT COALESCE(MAX(version), 0) + 1 FROM adaptive_asset_profiles WHERE asset=:asset"
+                                ),
+                                {"asset": asset},
+                            )
+                        ).scalar()
+                        or 1
+                    )
+                    profile_id = f"{asset}:adaptive:{fingerprint[:12]}"
+                    metadata = {
+                        **evidence_summary,
+                        "evidence_source": "chronological_outcomes_and_sequence_references",
                         "dataset_version": manifest.dataset_version,
                         "feature_version": feature_version,
-                        "config": json.dumps({"chronological": True, "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0)}),
-                        "metrics": json.dumps({key: value for key, value in wfo.to_dict().items() if key != "folds"}),
-                        "folds": json.dumps([fold.__dict__ if hasattr(fold, "__dict__") else {
-                            "fold": fold.fold,
-                            "train_count": fold.train_count,
-                            "validation_count": fold.validation_count,
-                            "train_end": fold.train_end,
-                            "validation_start": fold.validation_start,
-                            "validation_end": fold.validation_end,
-                            "baseline_expectancy_r": fold.baseline_expectancy_r,
-                            "candidate_expectancy_r": fold.candidate_expectancy_r,
-                            "candidate_profit_factor": fold.candidate_profit_factor,
-                            "candidate_max_drawdown_r": fold.candidate_max_drawdown_r,
-                            "positive": fold.positive,
-                        } for fold in wfo.folds]),
-                    },
-                )
-                created += 1
-                wfo_runs += 1
+                        "sequence_coverage": manifest.sequence_coverage,
+                        "profile_fingerprint": fingerprint,
+                        "walk_forward": wfo.to_dict(),
+                        "requires_sequence_wfo": not bool(wfo.fold_count),
+                        "automatic_live_promotion": False,
+                        "human_approval_required": True,
+                        "brier_score": None,
+                        "research_experiment_id": experiment_id,
+                        "evidence_category": evidence_category,
+                    }
+                    counts = await trial_counts(session, hypothesis_id)
+                    input_replay = await audit_captured_inputs(session, asset_rows)
+                    research_evidence = {
+                        "hypothesis_id": hypothesis_id, "experiment_id": experiment_id,
+                        "dataset_version": manifest.dataset_version, "feature_version": feature_version,
+                        "code_commit": code_commit, "trial_counts": counts,
+                        "integrity": audit_adaptive_dataset(asset_rows, wfo, input_replay=input_replay),
+                        "captured_input_replay": input_replay,
+                        "return_diagnostics": return_diagnostics([row.r_multiple for row in asset_rows]),
+                        "multiple_testing": {"status": "UNVERIFIED", "deflated_sharpe_probability": None,
+                                             "reason": "irregular_trade_R_and_incomplete_historical_trial_coverage"},
+                        "survival": block_bootstrap_survival([row.r_multiple for row in asset_rows], risk_fraction=0.005,
+                                                            block_size=min(10, len(asset_rows)), horizon=100, runs=100, seed=0),
+                        "promotion_eligible": False,
+                        "walk_forward": wfo.to_dict(), "evidence_category": evidence_category,
+                    }
+                    await complete_experiment(session, experiment_id, research_evidence)
+                    metadata["research_validation"] = research_evidence
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO adaptive_asset_profiles(
+                                profile_id, asset, asset_class, version, state, source_scope, is_current,
+                                family_weights, regime_weights, minimum_confidence, minimum_reward_risk,
+                                maximum_score_multiplier, minimum_score_multiplier, data_sufficiency_score,
+                                sample_size, metadata, created_at, updated_at
+                            ) VALUES(
+                                :profile_id, :asset, :asset_class, :version, 'SHADOW', 'asset', FALSE,
+                                CAST(:family_weights AS JSONB), CAST(:regime_weights AS JSONB), 0.70, 1.5,
+                                1.15, 0.85, :sufficiency, :sample_size, CAST(:metadata AS JSONB), NOW(), NOW()
+                            ) ON CONFLICT(profile_id) DO NOTHING
+                            """
+                        ),
+                        {
+                            "profile_id": profile_id,
+                            "asset": asset,
+                            "asset_class": asset_class,
+                            "version": version,
+                            "family_weights": json.dumps(family_weights),
+                            "regime_weights": json.dumps(regime_weights),
+                            "sufficiency": min(1.0, len(asset_rows) / max(minimum_samples * 4, 1)),
+                            "sample_size": len(asset_rows),
+                            "metadata": json.dumps(metadata),
+                        },
+                    )
+                    wfo_run_id = str(uuid4())
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO adaptive_walk_forward_runs(
+                                run_id, profile_id, dataset_version, feature_version, status,
+                                started_at, completed_at, config, metrics, folds
+                            ) VALUES(
+                                :run_id, :profile_id, :dataset_version, :feature_version, 'COMPLETED',
+                                NOW(), NOW(), CAST(:config AS JSONB), CAST(:metrics AS JSONB), CAST(:folds AS JSONB)
+                            )
+                            """
+                        ),
+                        {
+                            "run_id": wfo_run_id,
+                            "profile_id": profile_id,
+                            "dataset_version": manifest.dataset_version,
+                            "feature_version": feature_version,
+                            "config": json.dumps(
+                                {
+                                    "chronological": True,
+                                    "embargo_seconds": int(os.getenv("ADAPTIVE_WFO_EMBARGO_SECONDS", "0") or 0),
+                                }
+                            ),
+                            "metrics": json.dumps({key: value for key, value in wfo.to_dict().items() if key != "folds"}),
+                            "folds": json.dumps(
+                                [asdict(fold) for fold in wfo.folds]
+                            ),
+                        },
+                    )
+                    created += 1
+                    wfo_runs += 1
 
             await session.execute(
                 text(
@@ -525,6 +751,8 @@ class AdaptiveLearningWorker:
                             "assets": len(by_asset),
                             "candidates": created,
                             "duplicates_skipped": duplicates,
+                            "terminal_trials_skipped": terminal_trials_skipped,
+                            "failed_trials_skipped": failed_trials_skipped,
                             "walk_forward_runs": wfo_runs,
                             "dataset_version": manifest.dataset_version,
                             "feature_version": feature_version,
@@ -535,12 +763,6 @@ class AdaptiveLearningWorker:
                 },
             )
             await session.commit()
-
-        if drift_result.get("suspended_assets"):
-            for suspended_asset in drift_result["suspended_assets"]:
-                from .repository import invalidate_profile_cache
-                invalidate_profile_cache(suspended_asset)
-            published = await publish_approved_profiles()
 
         logger.info(
             "[adaptive_learning] run=%s rows=%s candidates=%s duplicates=%s wfo=%s dataset=%s",
@@ -555,6 +777,8 @@ class AdaptiveLearningWorker:
             "published": published,
             "candidates": created,
             "duplicates_skipped": duplicates,
+            "terminal_trials_skipped": terminal_trials_skipped,
+            "failed_trials_skipped": failed_trials_skipped,
             "walk_forward_runs": wfo_runs,
             "rows": len(dataset_rows),
             "run_id": run_id,

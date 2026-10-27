@@ -8,6 +8,7 @@ This forward-only hardening migration protects environments that were stamped,
 manually repaired, or upgraded with an older copy of revision 0015.  It keeps
 all historical rows and changes only duplicate ``active`` statuses.
 """
+
 from __future__ import annotations
 
 import logging
@@ -122,11 +123,7 @@ RETURNING s.signal_id
 def upgrade() -> None:
     bind = op.get_bind()
     if str(bind.dialect.name or "").lower() == "postgresql":
-        bind.execute(
-            sa.text(
-                "SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"
-            )
-        )
+        bind.execute(sa.text("SELECT pg_advisory_xact_lock(hashtext('signalrank:active_signal_guard'))"))
         result = bind.execute(sa.text(_RECONCILE_SQL))
         rows = result.fetchall() if getattr(result, "returns_rows", False) else []
         if rows:

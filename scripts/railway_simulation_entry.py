@@ -4,6 +4,7 @@ Production imports ``railway_main:app`` directly. The simulator may install the
 same pytest-only optional dependency stubs when the execution environment is
 offline and cannot install declared runtime dependencies.
 """
+
 from __future__ import annotations
 
 import os

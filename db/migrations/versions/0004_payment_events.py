@@ -31,7 +31,9 @@ def upgrade() -> None:
         sa.Column("currency", sa.String(length=8), nullable=True),
         sa.Column("paystack_reference", sa.String(length=128), nullable=False, unique=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.Column("meta", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column(
+            "meta", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")
+        ),
     )
     op.create_index("ix_payment_events_user_id", "payment_events", ["user_id"], unique=False)
     op.create_index("ix_payment_events_kind", "payment_events", ["kind"], unique=False)

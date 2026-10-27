@@ -58,12 +58,12 @@ def build_subs(symbols: Iterable[str]) -> list[str]:
 async def iter_events(*, symbols: list[str]) -> AsyncIterator[dict[str, Any]]:
     """Yield normalized events from CryptoCompare WS.
 
-    Events:
-+    - {"type": "tick", "symbol": "BTCUSDT", "price": 123.4, "event_time_ms": 1700000000000}
-+    - {"type": "trade", "symbol": "BTCUSDT", "price": 123.4, "volume": 0.01, "event_time_ms": ...}
+        Events:
+    +    - {"type": "tick", "symbol": "BTCUSDT", "price": 123.4, "event_time_ms": 1700000000000}
+    +    - {"type": "trade", "symbol": "BTCUSDT", "price": 123.4, "volume": 0.01, "event_time_ms": ...}
 
-    CryptoCompare payload formats vary by subscription TYPE; we parse the common
-    fields defensively.
+        CryptoCompare payload formats vary by subscription TYPE; we parse the common
+        fields defensively.
     """
 
     api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()

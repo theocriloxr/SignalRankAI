@@ -23,7 +23,7 @@ def sortino_ratio(returns: list[float], target_return: float = 0.0) -> float:
     n = len(returns)
     mean_r = sum(returns) / n
     downside = [min(0.0, r - target_return) for r in returns]
-    downside_var = sum(d ** 2 for d in downside) / max(1, n - 1)
+    downside_var = sum(d**2 for d in downside) / max(1, n - 1)
     downside_dev = math.sqrt(max(downside_var, 0.0))
     if downside_dev <= 0:
         return 0.0

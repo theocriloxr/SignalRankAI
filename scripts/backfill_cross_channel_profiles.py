@@ -4,6 +4,7 @@
 Dry-run is the default. Pass --apply to write only missing canonical records.
 Existing canonical records are never overwritten.
 """
+
 from __future__ import annotations
 
 import argparse

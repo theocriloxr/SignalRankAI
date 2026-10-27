@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from web.app import app, verify_api_key
 
@@ -101,10 +101,12 @@ def test_exchange_link_requires_encryption_key() -> None:
 
 def test_exchange_link_stores_masked_encrypted_credentials() -> None:
     session = _Session()
+    register = AsyncMock(return_value={"connection_id": "demo-test-connection"})
     app.dependency_overrides[verify_api_key] = lambda: 123
     try:
         with (
             patch("web.app.get_session", return_value=session),
+            patch("services.broker_connections.register_exchange_connection", register),
             patch("services.security.is_encryption_available", return_value=True),
             patch("services.security.encrypt_secret", side_effect=lambda value: f"enc:{value}"),
             patch("services.bybit_client.BybitV5Client.verify_trade_only_key", return_value={
@@ -134,6 +136,9 @@ def test_exchange_link_stores_masked_encrypted_credentials() -> None:
     assert body["ok"] is True
     assert body["provider"] == "bybit"
     assert body["masked_key"] == "abcd...efgh"
+    register.assert_awaited_once()
+    assert register.await_args.kwargs["payload"]["permissions"]["withdraw"] is False
+    assert body["execution_enabled"] is False
     saved = session.saved["broker_exchange:123:bybit"].value
     assert saved["api_key_enc"] == "enc:abcd1234efgh"
     assert saved["api_secret_enc"] == "enc:secret123456"

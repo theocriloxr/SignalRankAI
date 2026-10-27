@@ -1,0 +1,1227 @@
+from contextlib import asynccontextmanager
+from datetime import timedelta
+import asyncio
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from uuid import uuid4
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+import pytest_asyncio
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+
+async def seed_health_baseline(session, *, profile="governed-health", forward=False):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from utils.timeutils import now_utc_naive
+    if not forward:
+        user = User(telegram_user_id=987650011)
+        session.add(user)
+        session.add(AdaptiveAssetProfile(profile_id=profile, asset="AUDITBASE", asset_class="crypto",
+            version=1, state="SHADOW", is_current=False))
+        await session.flush()
+    else:
+        from sqlalchemy import select
+        user = (await session.execute(select(User).where(User.telegram_user_id == 987650011))).scalar_one()
+    start = now_utc_naive() - timedelta(days=10) if not forward else now_utc_naive() - timedelta(minutes=90)
+    for i in range(30 if forward else 100):
+        identifier = str(uuid4())
+        session.add(Signal(signal_id=identifier, asset="AUDITBASE", asset_class="crypto", timeframe="1h",
+            direction="long", entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+            strategy_name="baseline-audit", strategy_group="trend", regime="trend", status="closed",
+            created_at=start + timedelta(minutes=i * 2)))
+        await session.flush()
+        session.add(Outcome(signal_id=identifier, status="loss" if forward or i % 2 == 0 else "win",
+            r_multiple=-0.1 if forward else -0.5 if i % 2 == 0 else 1,
+            provenance="delivered", closed_at=start + timedelta(minutes=i * 2 + 1), performance_inclusion_status="eligible"))
+        session.add(SignalDelivery(user_id=user.id, signal_id=identifier, sent_ok=True, delivery_state="CONFIRMED"))
+        session.add(AdaptiveSignalEvidence(signal_id=identifier, asset="AUDITBASE", timeframe="1h",
+            strategy_id="baseline-audit", strategy_version="1", family="trend", direction="long", setup_type="audit",
+            confidence=0.8, raw_score=80, profile_id=profile, profile_version=1, duplicate_fingerprint=uuid4().hex))
+    await session.flush()
+
+
+@pytest_asyncio.fixture
+async def worker_database():
+    """Migrate an owned database, leaving the suite's database untouched."""
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        if os.getenv("SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED") == "1":
+            pytest.fail("isolated PostgreSQL required")
+        pytest.skip("isolated PostgreSQL not configured")
+    assert os.getenv("APP_ENV") == "test"
+    parsed = make_url(database_url)
+    assert parsed.get_backend_name() == "postgresql" and parsed.host in {"127.0.0.1", "localhost"}
+    assert "test" in (parsed.database or "") or parsed.database == "signalrank_master_audit"
+    database = "signalrank_research_test_" + uuid4().hex[:16]
+    admin = create_async_engine(parsed.set(drivername="postgresql+asyncpg", database="postgres"),
+                                isolation_level="AUTOCOMMIT")
+    engine = None
+    created = False
+    try:
+        async with admin.connect() as connection:
+            await connection.execute(text(f'CREATE DATABASE "{database}"'))
+        created = True
+        owned_url = parsed.set(database=database)
+        env = {key: value for key, value in os.environ.items() if key.upper() in {
+            "SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "USERPROFILE",
+            "APPDATA", "LOCALAPPDATA", "COMSPEC", "PROGRAMFILES", "PROGRAMFILES(X86)",
+            "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH"}}
+        env.update(APP_ENV="test", ENVIRONMENT="test", SIGNALRANK_ALLOW_DOTENV="0",
+                   PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
+                   GLOBAL_EXECUTION_KILL_SWITCH="1", REAL_EXECUTION_ENABLED="0",
+                   AUTO_EXECUTION_ENABLED="0", AUTO_TRADE_ENABLED="0", COPY_TRADE_ENABLED="0",
+                   PROP_EXECUTION_ENABLED="0", REAL_PAYOUTS_ENABLED="0",
+                   SIGNALRANK_DISABLE_BACKGROUND_THREADS="1",
+                   DATABASE_URL=owned_url.set(drivername="postgresql+asyncpg").render_as_string(hide_password=False),
+                   DATABASE_MIGRATION_URL=owned_url.set(drivername="postgresql").render_as_string(hide_password=False))
+        migration = await asyncio.to_thread(subprocess.run,
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=Path(__file__).resolve().parents[1], env=env, text=True, capture_output=True, timeout=120)
+        assert migration.returncode == 0, "fresh research database migration failed"
+        engine = create_async_engine(owned_url.set(drivername="postgresql+asyncpg"))
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        if engine is not None:
+            await engine.dispose()
+        if created:
+            async with admin.connect() as connection:
+                await connection.execute(text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname=:database AND pid<>pg_backend_pid()"), {"database": database})
+                await connection.execute(text(f'DROP DATABASE "{database}"'))
+        await admin.dispose()
+
+
+def use_database(monkeypatch, database):
+    from engine.adaptive import learning, repository
+
+    @asynccontextmanager
+    async def get_session(**kwargs):
+        async with database() as session:
+            yield session
+
+    monkeypatch.setattr(learning, "get_session", get_session)
+    monkeypatch.setattr(repository, "get_session", get_session)
+    return get_session
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["wrong_calibration", "uncalibrated", "bounded_window", "version_sample"])
+async def test_actual_health_reads_canonical_probabilities_and_a_bounded_unique_window(monkeypatch, worker_database, mode):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from engine.adaptive import learning, repository
+    from utils.timeutils import now_utc_naive
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setenv("ML_PUBLIC_CALIBRATION_METRICS_REQUIRED", "1")
+    monkeypatch.setenv("ML_MIN_CALIBRATION_VALIDATION_ROWS", "100")
+    monkeypatch.setattr(repository, "state", SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True))
+    invalidated = []
+    monkeypatch.setattr(repository, "invalidate_profile_cache", lambda asset, **kwargs: invalidated.append(asset))
+    count = 350 if mode == "bounded_window" else 70 if mode == "version_sample" else 35
+    start = now_utc_naive() - timedelta(days=20)
+    async with sessions() as session:
+        user = User(telegram_user_id=987654320)
+        session.add(user)
+        session.add(AdaptiveAssetProfile(profile_id="health-probability", asset="AUDITPROB", asset_class="crypto",
+                                         version=1, state="CANARY", is_current=True))
+        await session.flush()
+        for i in range(count):
+            identifier = str(uuid4())
+            version = "bad-small" if mode == "version_sample" and i < 20 else "good-large"
+            calibrated = mode in {"wrong_calibration", "version_sample"}
+            probability = 0.05 if mode == "wrong_calibration" or version == "bad-small" else 0.99
+            session.add(Signal(signal_id=identifier, asset="AUDITPROB", asset_class="crypto", timeframe="1h",
+                direction="long", entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                strategy_name="audit", strategy_group="trend", regime="trend", status="closed",
+                ml_probability_calibrated=probability if calibrated else None, ml_calibration_validated=calibrated,
+                ml_calibration_version=version if calibrated else None, ml_calibration_validation_rows=250,
+                ml_calibration_brier=0.16, ml_calibration_ece=0.04, created_at=start + timedelta(minutes=20 * i)))
+            await session.flush()
+            loss = mode == "bounded_window" and i < 100
+            session.add(Outcome(signal_id=identifier, status="loss" if loss else "win", r_multiple=-1 if loss else 0.5,
+                provenance="delivered", closed_at=start + timedelta(minutes=20 * i + 10), performance_inclusion_status="eligible"))
+            session.add(SignalDelivery(user_id=user.id, signal_id=identifier, sent_ok=True, delivery_state="CONFIRMED"))
+            # Two component rows must never turn one signal into two observations.
+            for component in ("a", "b"):
+                session.add(AdaptiveSignalEvidence(signal_id=identifier, asset="AUDITPROB", timeframe="1h", strategy_id=component,
+                    strategy_version="1", family="trend", direction="long", setup_type="audit", confidence=1.0 if calibrated else 0.0,
+                    raw_score=80, profile_id="health-probability", profile_version=1, duplicate_fingerprint=uuid4().hex))
+        await session.commit()
+    result = await learning.monitor_profile_health()
+    report = result["profile_diagnostics"][0]
+    assert report["sample_size"] == min(250, count)
+    assert report["expectancy_r"] == 0.5
+    assert not report["broker_fills_certified"]
+    if mode == "wrong_calibration":
+        assert result["suspended_assets"] == ["AUDITPROB"] and invalidated == ["AUDITPROB"]
+        assert report["brier_score"] == pytest.approx(0.9025)
+        async with sessions() as session:
+            details = (await session.execute(text("SELECT metrics FROM adaptive_drift_events"))).scalar_one()
+            assert details["calibration_versions"]["good-large"]["sample_size"] == 35
+    else:
+        assert result["suspended_assets"] == [] and invalidated == ["AUDITPROB"]
+        assert result["published"] == 0, "unapproved baseline cannot receive a runtime lease"
+        if mode == "version_sample":
+            assert report["qualified_calibration_version_count"] == 1
+            assert report["brier_score"] == pytest.approx(0.0001)
+        else:
+            assert report["brier_score"] is None and report["calibration_status"] == "UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_health_coverage_retains_empty_profiles_and_checks_beyond_display_limit(monkeypatch, worker_database):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from engine.adaptive import learning
+    from utils.timeutils import now_utc_naive
+
+    modes = ["no_outcome", "unresolved", "ineligible", "unconfirmed", "future_close",
+             "backwards_close", "stale", "wrong_profile", "no_evidence"] + ["empty"] * 12 + ["small", "invalid"]
+    now = now_utc_naive()
+    async with worker_database() as session:
+        user = User(telegram_user_id=987654319)
+        session.add(user)
+        session.add_all([
+            AdaptiveAssetProfile(profile_id="excluded-old", asset="OLD", asset_class="crypto", version=1,
+                                 state="APPROVED", is_current=False),
+            AdaptiveAssetProfile(profile_id="excluded-shadow", asset="SHADOW", asset_class="crypto", version=1,
+                                 state="SHADOW", is_current=True)])
+        for i, mode in enumerate(modes):
+            profile_id, asset = f"coverage-{i:02d}", f"AUDITCOVERAGE{i}"
+            session.add(AdaptiveAssetProfile(profile_id=profile_id, asset=asset, asset_class="crypto", version=1,
+                state=("CANARY", "LIMITED_LIVE", "APPROVED")[i % 3], is_current=True))
+            if mode == "empty":
+                continue
+            created = now - timedelta(days=130 if mode == "stale" else 1)
+            closed = created + timedelta(minutes=30)
+            if mode == "future_close":
+                closed = now + timedelta(days=1)
+            elif mode == "backwards_close":
+                closed = created - timedelta(minutes=1)
+            identifier = str(uuid4())
+            session.add(Signal(signal_id=identifier, asset=asset, asset_class="crypto", timeframe="1h",
+                direction="long", entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                strategy_name="coverage-audit", strategy_group="trend", regime="trend", status="closed",
+                created_at=created))
+            await session.flush()
+            if mode != "no_outcome":
+                session.add(Outcome(signal_id=identifier, status="pending" if mode == "unresolved" else "win",
+                    r_multiple=None if mode == "unresolved" else float("nan") if mode == "invalid" else 0.5,
+                    provenance="delivered", closed_at=None if mode == "unresolved" else closed,
+                    performance_inclusion_status="excluded" if mode == "ineligible" else "eligible"))
+            session.add(SignalDelivery(user_id=user.id, signal_id=identifier, sent_ok=True,
+                delivery_state="PENDING" if mode == "unconfirmed" else "CONFIRMED"))
+            if mode != "no_evidence":
+                session.add(AdaptiveSignalEvidence(signal_id=identifier, asset=asset, timeframe="1h", strategy_id="audit",
+                    strategy_version="1", family="trend", direction="long", setup_type="audit", confidence=0.8,
+                    raw_score=80, profile_id="excluded-old" if mode == "wrong_profile" else profile_id,
+                    profile_version=1, duplicate_fingerprint=uuid4().hex))
+        await session.commit()
+        report = await learning._monitor_runtime_profiles(session)
+        await session.commit()
+        assert report["evaluated_profile_count"] == 23
+        assert report["delivery_evidence_counts"] == {"UNAVAILABLE": 21, "INSUFFICIENT": 1, "OBSERVED": 0, "INVALID": 1}
+        assert report["diagnostics_truncated"] is True and len(report["profile_diagnostics"]) == 20
+        assert all(row["sample_size"] == 0 and row["delivery_evidence_status"] == "UNAVAILABLE"
+                   for row in report["profile_diagnostics"])
+        assert report["suspended_assets"] == ["AUDITCOVERAGE22"], "display truncation must not truncate surveillance"
+        assert (await session.execute(text("SELECT state FROM adaptive_asset_profiles WHERE profile_id='coverage-22'"))).scalar_one() == "SUSPENDED"
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles WHERE is_current AND state IN ('CANARY','LIMITED_LIVE','APPROVED')"))).scalar_one() == 22
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_drift_events"))).scalar_one() == 1
+        json.dumps(report, allow_nan=False)
+
+
+async def seed_research_outcomes(get_session, asset):
+    from db.models import Signal, Outcome
+    from utils.timeutils import now_utc_naive
+    start = now_utc_naive() - timedelta(days=10)
+    async with get_session() as session:
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0055_user_renewal_default"
+        for i in range(160):
+            signal_id = str(uuid4())
+            session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
+                               entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                               strategy_name="audit", strategy_group="trend", regime="trend", status="shadow",
+                               created_at=start + timedelta(hours=i)))
+            await session.flush()
+            session.add(Outcome(signal_id=signal_id, status="win" if i % 5 else "loss",
+                                r_multiple=0.4 if i % 5 else -0.5, provenance="shadow",
+                                closed_at=start + timedelta(hours=i, minutes=30), performance_inclusion_status="eligible"))
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_market_inputs_concurrent_capture_replay_and_physical_mutation_guards(worker_database):
+    import numpy as np
+    from sqlalchemy.exc import DBAPIError
+    from db.models import MarketCandle
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs, load_market_input
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    source = sample_context()
+    source.indicators.update(numeric=np.float64(1.25), structure=np.bool_(True))
+    source.candles[-1]["trade_count"] = np.int64(42)
+    snapshot = capture_market_input(source, timestamp_convention="bar_open", captured_at=CAPTURED)
+    async def save():
+        async with worker_database() as session:
+            await persist_market_inputs(session, [snapshot])
+            await session.commit()
+    await asyncio.gather(save(), save())
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_market_inputs"))).scalar_one() == 1
+        session.add(MarketCandle(symbol="BTCUSDT", timeframe="1h", **{
+            key: source.candles[-1][key] for key in ("open_time_ms", "open", "high", "low", "close", "volume")}))
+        await session.flush()
+        await session.execute(text("UPDATE market_candles SET close=900 WHERE symbol='BTCUSDT'"))
+        await session.commit()
+        replay = await load_market_input(session, snapshot.content_hash)
+        assert replay.candles[-1]["close"] == 101.0 and replay.indicators["ema_fast"] == 101.0
+        assert type(replay.indicators["numeric"]) is float and replay.indicators["numeric"] == 1.25
+        assert replay.indicators["structure"] is True and type(replay.candles[-1]["trade_count"]) is int
+        for mutation in ("UPDATE research_market_inputs SET candle_count=0", "DELETE FROM research_market_inputs",
+                         "TRUNCATE research_market_inputs"):
+            with pytest.raises(DBAPIError, match="append.only|immutable"):
+                async with session.begin_nested():
+                    await session.execute(text(mutation))
+        assert (await load_market_input(session, snapshot.content_hash)).candles == replay.candles
+        # Even a privileged, disabled guard cannot make changed bytes replay
+        # successfully under the earlier content identity.
+        await session.execute(text("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_immutable"))
+        await session.execute(text("UPDATE research_market_inputs SET payload=jsonb_set(payload,'{context,indicators,ema_fast}','900')"))
+        with pytest.raises(ValueError, match="hash_mismatch"):
+            await load_market_input(session, snapshot.content_hash)
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_universe", [False, True])
+async def test_captured_input_audit_requires_actual_bytes_scope_time_and_bounded_complete_coverage(monkeypatch, worker_database, with_universe):
+    from copy import deepcopy
+    from datetime import timedelta
+    from engine.adaptive import market_input
+    from engine.adaptive.dataset import build_dataset
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs, audit_captured_inputs
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    context = sample_context()
+    from tests.test_universe_observation import sample_universe
+    observation = sample_universe() if with_universe else None
+    captured = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope() if observation else None)
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=captured.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    if observation:
+        ref["summary"]["universe_observation_hash"] = observation.content_hash
+    base = {"signal_id": "owned-input-audit", "asset": context.asset, "asset_class": "crypto", "timeframe": "1h",
+            "decision_time": CAPTURED + timedelta(minutes=1), "outcome_known_at": CAPTURED + timedelta(minutes=30),
+            "r_multiple": -0.2, "sequence_hashes": [ref["sequence_hash"]], "sequence_provenance": [ref]}
+    def rows(value):
+        return build_dataset([value], as_of=CAPTURED + timedelta(hours=1))[0]
+    async with worker_database() as session:
+        await persist_market_inputs(session, [captured])
+        await session.commit()
+        result = await audit_captured_inputs(session, rows(base))
+        assert result["status"] == "PASS" and result["verified_references"] == 1
+        assert result["observed_universe"]["status"] == ("PASS" if observation else "UNVERIFIED")
+        assert result["observed_universe"]["historical_membership"] == "UNVERIFIED"
+        assert not result["complete_point_in_time_replay"]
+        missing = deepcopy(base)
+        missing["sequence_provenance"][0]["summary"]["market_input_hash"] = "f" * 64
+        assert (await audit_captured_inputs(session, rows(missing)))["status"] == "UNVERIFIED"
+        legacy = deepcopy(base)
+        legacy["sequence_provenance"][0]["summary"].pop("market_input_hash")
+        assert (await audit_captured_inputs(session, rows(legacy)))["status"] == "UNVERIFIED"
+        for key, value, reason in (("asset", "ETHUSDT", "scope_or_time"),
+                                   ("decision_time", CAPTURED - timedelta(seconds=1), "scope_or_time")):
+            bad = {**base, key: value}
+            with pytest.raises(ValueError, match=reason):
+                await audit_captured_inputs(session, rows(bad))
+        bad = deepcopy(base)
+        bad["sequence_provenance"][0]["sequence_hash"] = "e" * 64
+        with pytest.raises(ValueError, match="sequence_hash_mismatch"):
+            await audit_captured_inputs(session, rows(bad))
+        bad = deepcopy(base)
+        bad["sequence_provenance"][0]["summary"]["universe_observation_hash"] = "a" * 64
+        with pytest.raises(ValueError, match="universe_reference_mismatch"):
+            await audit_captured_inputs(session, rows(bad))
+        if observation:
+            from engine.adaptive.dataset_snapshot import encode_dataset_snapshot, restore_dataset_snapshot
+            source_rows, manifest = build_dataset([base], as_of=CAPTURED + timedelta(hours=1))
+            restored, _ = restore_dataset_snapshot(json.loads(encode_dataset_snapshot(source_rows, manifest)),
+                observation_cutoff=CAPTURED + timedelta(hours=1))
+            assert restored == source_rows
+            assert (await audit_captured_inputs(session, restored))["observed_universe"]["status"] == "PASS"
+            legacy_capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED)
+            await persist_market_inputs(session, [legacy_capture])
+            mixed_legacy = deepcopy(base)
+            mixed_legacy["signal_id"] = "legacy-universe"
+            mixed_legacy["sequence_provenance"][0]["summary"].pop("universe_observation_hash")
+            mixed_legacy["sequence_provenance"][0]["summary"]["market_input_hash"] = legacy_capture.content_hash
+            mixed_rows, _ = build_dataset([base, mixed_legacy], as_of=CAPTURED + timedelta(hours=1))
+            mixed = await audit_captured_inputs(session, mixed_rows)
+            assert mixed["status"] == "PASS" and mixed["observed_universe"]["status"] == "UNVERIFIED"
+        monkeypatch.setattr(market_input, "MAX_AUDIT_BYTES", 1)
+        with pytest.raises(ValueError, match="byte_budget"):
+            await audit_captured_inputs(session, rows(base))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["none", "late_database_failure", "missing_capture", "strategy_stat_failure", "universe_reference_mismatch"])
+@pytest.mark.parametrize("writer", ["legacy", "serving"])
+async def test_actual_signal_write_owns_input_capture_and_recovers_optional_evidence_transaction(monkeypatch, worker_database, failure, writer):
+    import db.repository as signal_repository
+    from db import pg_compat, pg_features, session as session_module
+    from engine.adaptive import repository
+    from engine.adaptive.market_input import capture_market_input
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    context = sample_context()
+    from tests.test_universe_observation import sample_universe
+    observation = sample_universe()
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope())
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    ref["summary"]["universe_observation_hash"] = observation.content_hash
+    payload = {"asset": "BTCUSDT", "timeframe": "1h", "direction": "long", "entry": 100,
+        "stop_loss": 90, "take_profit": [110], "strategy_name": "owned-market-input", "adaptive_sequence_refs": [ref],
+        "_adaptive_input_snapshots": [{"content_hash": capture.content_hash, "payload": json.loads(capture.payload)}]}
+    @asynccontextmanager
+    async def owned_session(**kwargs):
+        async with worker_database() as session:
+            yield session
+    monkeypatch.setattr(signal_repository, "get_session", owned_session)
+    monkeypatch.setattr(session_module, "get_session", owned_session)
+    # Keep the serving facade's database operation in pytest's owned event loop.
+    # Its session, canonical writer, savepoint and commit remain real PostgreSQL.
+    monkeypatch.setattr(pg_compat, "_run", lambda operation, **kwargs: operation)
+    monkeypatch.setattr(pg_compat, "postgres_enabled", lambda: True)
+    if failure == "late_database_failure":
+        original = repository.persist_signal_adaptive_evidence
+        async def fail_after_real_writes(session, *args):
+            await original(session, *args)
+            await session.execute(text("SELECT 1/0"))
+        monkeypatch.setattr(repository, "persist_signal_adaptive_evidence", fail_after_real_writes)
+    elif failure == "missing_capture":
+        payload["_adaptive_input_snapshots"] = []
+    elif failure == "universe_reference_mismatch":
+        payload["adaptive_sequence_refs"][0]["summary"]["universe_observation_hash"] = "a" * 64
+    elif failure == "strategy_stat_failure":
+        async def failed_stat(session, **kwargs):
+            await session.execute(text("SELECT 1/0"))
+        monkeypatch.setattr(pg_features, "_touch_strategy_stat", failed_stat)
+    signal = (await signal_repository.persist_signal(payload) if writer == "legacy"
+              else await pg_compat.store_signal_compat(payload))
+    assert signal is not None, "optional research failure must not abort the canonical signal commit"
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM signals"))).scalar_one() == 1
+        count = 1 if failure in {"none", "strategy_stat_failure"} else 0
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_market_inputs"))).scalar_one() == count
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_signal_sequences"))).scalar_one() == count
+        if count:
+            stored = (await session.execute(text("SELECT payload FROM research_market_inputs"))).scalar_one()
+            assert stored["universe_observation"] == observation.envelope()
+
+
+@pytest.mark.asyncio
+async def test_actual_worker_audits_saved_component_inputs_without_claiming_historical_truth(monkeypatch, worker_database):
+    from dataclasses import replace
+    from db.models import AdaptiveSignalSequence
+    from engine.adaptive import learning, repository
+    from engine.adaptive.market_input import capture_market_input, persist_market_inputs
+    from engine.adaptive.sequence import sequence_reference
+    from tests.test_market_input_snapshot import sample_context, CAPTURED
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITINPUTS")
+    context = replace(sample_context(), asset="AUDITINPUTS")
+    from engine.universe_observation import capture_universe_observation, STAGES
+    observation = capture_universe_observation(sources={"managed": [context.asset], "pinned": [], "discovered": []},
+        stages={key: [context.asset] for key in STAGES}, discovery_source="database_registry",
+        profile_filter_applied=False, universe_cap=1, batch_size=1, observed_at=CAPTURED)
+    capture = capture_market_input(context, timestamp_convention="bar_open", captured_at=CAPTURED,
+        universe_observation=observation.envelope())
+    ref = sequence_reference(context.asset, context.timeframe, {"candles": context.candles, "provider": context.provider})
+    ref["summary"].update(market_input_hash=capture.content_hash, captured_at=CAPTURED.isoformat(), input_capture_status="CAPTURED")
+    ref["summary"]["universe_observation_hash"] = observation.content_hash
+    async with sessions() as session:
+        await persist_market_inputs(session, [capture])
+        for signal in (await session.execute(text("SELECT signal_id FROM signals"))).mappings():
+            session.add(AdaptiveSignalSequence(signal_id=signal["signal_id"], asset=context.asset, timeframe="1h",
+                sequence_hash=ref["sequence_hash"], candle_count=ref["candle_count"],
+                start_time_ms=ref["start_time_ms"], end_time_ms=ref["end_time_ms"], provider=context.provider,
+                evidence_stage="pre_signal", summary=ref["summary"]))
+        await session.commit()
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        result = (await session.execute(text("SELECT result FROM research_experiment_results"))).scalar_one()
+        audit = result["captured_input_replay"]
+        assert audit["status"] == "PASS" and audit["verified_references"] == 160 and audit["unique_inputs"] == 1
+        assert not audit["complete_point_in_time_replay"] and not result["integrity"]["passed"]
+        assert not result["promotion_eligible"]
+        assert audit["observed_universe"]["status"] == "PASS" and audit["observed_universe"]["verified_references"] == 160
+        checks = {item["check_id"]: item["status"] for item in result["integrity"]["checks"]}
+        assert checks["observed_engine_universe"] == "PASS" and checks["survivorship"] == "UNVERIFIED"
+        from engine.adaptive.research_ledger import research_snapshot
+        operator = (await research_snapshot(session, asset=context.asset))["experiments"][0]
+        assert operator["dataset_snapshot"]["captured_input_replay"]["observed_universe"] == audit["observed_universe"]
+
+
+@pytest.mark.asyncio
+async def test_actual_worker_persists_a_nonpromotable_candidate_and_reuses_trial(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    get_session = use_database(monkeypatch, worker_database)
+    class State:
+        def get_sync(self, key):
+            return None
+        def set_sync(self, *args, **kwargs):
+            return True
+    monkeypatch.setattr(learning, "state", State())
+    monkeypatch.setattr(repository, "state", State())
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    asset = ("AUDITRESEARCH_" + uuid4().hex[:12]).upper()
+    await seed_research_outcomes(get_session, asset)
+    result = await learning.AdaptiveLearningWorker().run_once()
+    assert result["candidates"] == 1 and result["walk_forward_runs"] == 1
+    retry = await learning.AdaptiveLearningWorker().run_once()
+    assert retry["candidates"] == 0 and retry["duplicates_skipped"] == 1
+    async with get_session() as session:
+        row = (await session.execute(text("SELECT metadata,state,is_current FROM adaptive_asset_profiles WHERE asset=:asset"), {"asset": asset})).mappings().one()
+        evidence = row["metadata"]["research_validation"]
+        assert row["state"] == "SHADOW" and not row["is_current"]
+        assert evidence["trial_counts"]["raw_trial_count"] == 1
+        assert evidence["walk_forward"]["leakage_checks_passed"]
+        assert not evidence["promotion_eligible"] and not evidence["integrity"]["passed"]
+        assert evidence["multiple_testing"]["status"] == "UNVERIFIED"
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_saved_dataset_survives_actual_source_corrections_and_missing_legacy_snapshot(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    from engine.adaptive.dataset_snapshot import load_dataset_snapshot
+    from engine.adaptive.walk_forward import walk_forward_evaluate
+    from utils.timeutils import now_utc_naive
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITREPLAY")
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        version = (await session.execute(text("SELECT dataset_version FROM research_experiments"))).scalar_one()
+        before, before_manifest = await load_dataset_snapshot(session, version)
+        from engine.adaptive.research_ledger import research_snapshot
+        observed = (await research_snapshot(session, asset="AUDITREPLAY"))["experiments"][0]["dataset_snapshot"]
+        assert observed["status"] == "CAPTURED" and observed["content_hash"] == before_manifest.content_hash
+        assert observed["row_count"] == 160 and observed["complete_market_input_replay"] is False
+        await session.execute(text("UPDATE outcomes SET r_multiple=-999,corrected_at=:known_at"),
+            {"known_at": now_utc_naive()})
+        await session.execute(text("UPDATE signals SET strategy_group='corrected'"))
+        await session.commit()
+    # A new process/session must reconstruct the old experiment from stored rows.
+    async with sessions() as session:
+        replay, replay_manifest = await load_dataset_snapshot(session, version)
+        assert (replay, replay_manifest) == (before, before_manifest)
+        assert replay[0].family == "trend" and replay[0].r_multiple == -0.5
+        def evaluate(rows):
+            return walk_forward_evaluate(rows, family_weights={}, minimum_train=80, validation_size=20).to_dict()
+        assert evaluate(replay) == evaluate(before)
+        with pytest.raises(ValueError, match="snapshot_unavailable"):
+            await load_dataset_snapshot(session, "missing-legacy-dataset")
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_dataset_snapshots"))).scalar_one() == 2
+        successor_version = (await session.execute(text(
+            "SELECT dataset_version FROM research_dataset_snapshots WHERE dataset_version<>:old"),
+            {"old": version})).scalar_one()
+        successor, _ = await load_dataset_snapshot(session, successor_version)
+        assert len(successor) == 160 and all(row.r_multiple == -999 and row.family == "corrected" for row in successor)
+        replay, _ = await load_dataset_snapshot(session, version)
+        assert replay == before, "a successor dataset cannot replace old evidence"
+
+
+@pytest.mark.asyncio
+async def test_dataset_snapshot_concurrent_retries_and_database_mutation_guards(worker_database):
+    from datetime import datetime, timezone
+    from sqlalchemy.exc import DBAPIError
+    from engine.adaptive.dataset import build_dataset
+    from engine.adaptive.dataset_snapshot import persist_dataset_snapshot, load_dataset_snapshot
+    cutoff = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    rows, manifest = build_dataset([{"signal_id": "immutable-label", "decision_time": cutoff - timedelta(days=1),
+        "outcome_known_at": cutoff - timedelta(hours=1), "r_multiple": -0.5,
+        "asset": "BTCUSDT", "asset_class": "crypto", "timeframe": "1h", "family": "trend",
+        "regime": "trend", "direction": "LONG", "evidence_category": "shadow"}], as_of=cutoff)
+    async with worker_database() as session:
+        await session.execute(text("""INSERT INTO adaptive_dataset_versions
+            (dataset_version,content_hash,row_count,first_decision_at,last_decision_at,
+             evidence_categories,assets,sequence_coverage,manifest)
+            VALUES(:version,:hash,:count,:first,:last,'["shadow"]','["BTCUSDT"]',0,CAST(:manifest AS JSONB))"""),
+            {"version": manifest.dataset_version, "hash": manifest.content_hash, "count": manifest.row_count,
+             "first": rows[0].decision_time.replace(tzinfo=None), "last": rows[0].decision_time.replace(tzinfo=None),
+             "manifest": json.dumps(manifest.to_dict())})
+        await session.commit()
+    async def save():
+        async with worker_database() as session:
+            await persist_dataset_snapshot(session, rows, manifest, observation_cutoff=cutoff)
+            await session.commit()
+    await asyncio.gather(save(), save())
+    async with worker_database() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_dataset_snapshots"))).scalar_one() == 1
+        assert await load_dataset_snapshot(session, manifest.dataset_version) == (rows, manifest)
+        for statement in ("UPDATE research_dataset_snapshots SET row_count=0",
+                          "DELETE FROM research_dataset_snapshots", "TRUNCATE research_dataset_snapshots"):
+            with pytest.raises(DBAPIError, match="research_evidence_is_append_only"):
+                async with session.begin_nested():
+                    await session.execute(text(statement))
+        assert await load_dataset_snapshot(session, manifest.dataset_version) == (rows, manifest)
+        # Even if older mutable manifest metadata is damaged, replay fails closed.
+        await session.execute(text("UPDATE adaptive_dataset_versions SET manifest='{}'::jsonb"))
+        with pytest.raises(ValueError, match="identity_mismatch"):
+            await load_dataset_snapshot(session, manifest.dataset_version)
+        await session.rollback()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["future_close", "future_correction", "unclosed_sequence"])
+async def test_actual_worker_snapshot_excludes_future_labels_and_audits_sequence_timing(monkeypatch, worker_database, mode):
+    from datetime import timezone
+    from db.models import AdaptiveSignalSequence
+    from engine.adaptive import learning, repository
+    from utils.timeutils import now_utc_naive
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITAVAILABILITY")
+    async with sessions() as session:
+        first = (await session.execute(text("SELECT signal_id,created_at FROM signals ORDER BY created_at LIMIT 1"))).mappings().one()
+        if mode.startswith("future"):
+            column = "closed_at" if mode == "future_close" else "corrected_at"
+            await session.execute(text(f"UPDATE outcomes SET {column}=:future WHERE signal_id=:id"),
+                {"future": now_utc_naive() + timedelta(days=1), "id": first["signal_id"]})
+        else:
+            decision = first["created_at"].replace(tzinfo=timezone.utc)
+            session.add(AdaptiveSignalSequence(signal_id=first["signal_id"], asset="AUDITAVAILABILITY",
+                timeframe="1h", sequence_hash="a" * 64, candle_count=30,
+                start_time_ms=int((decision - timedelta(hours=30)).timestamp() * 1000),
+                end_time_ms=int(decision.timestamp() * 1000), provider="synthetic-audit", evidence_stage="pre_signal",
+                summary={"captured_at": decision.isoformat(), "timestamp_convention": "bar_open"}))
+        await session.commit()
+    await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        manifest = (await session.execute(text("SELECT manifest FROM adaptive_dataset_versions"))).scalar_one()
+        result = (await session.execute(text("SELECT result FROM research_experiment_results"))).scalar_one()
+        evidence = result
+        assert not result["promotion_eligible"]
+        if mode.startswith("future"):
+            assert manifest["row_count"] == 159
+            assert evidence["walk_forward"]["leakage_checks_passed"]
+        else:
+            assert manifest["row_count"] == 160
+            assert not evidence["walk_forward"]["leakage_checks_passed"]
+            assert "sequence_availability_violation" in evidence["walk_forward"]["reasons"]
+            check = next(c for c in evidence["integrity"]["checks"] if c["check_id"] == "captured_sequence_availability")
+            assert check["status"] == "FAIL" and "sequence_bar_unclosed_at_decision" in check["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["objective_exception", "aborted_database_transaction"])
+async def test_actual_failed_worker_keeps_immutable_terminal_evidence_and_skips_closed_trials(monkeypatch, worker_database, mode):
+    from sqlalchemy.exc import DBAPIError
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITFAILURE")
+    original_complete = learning.complete_experiment
+    if mode == "objective_exception":
+        def failed_objective(*args, **kwargs):
+            raise RuntimeError("sensitive diagnostic must not enter persisted failure evidence")
+        monkeypatch.setattr(learning, "walk_forward_evaluate", failed_objective)
+        expected_error = RuntimeError
+    else:
+        async def failed_persistence(session, experiment_id, result, **kwargs):
+            if kwargs.get("status", "COMPLETED") == "COMPLETED":
+                await session.execute(text("SELECT 1 / 0"))
+            await original_complete(session, experiment_id, result, **kwargs)
+        monkeypatch.setattr(learning, "complete_experiment", failed_persistence)
+        expected_error = DBAPIError
+    with pytest.raises(expected_error):
+        await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        evidence = (await session.execute(text("SELECT status,result,evidence_hash FROM research_experiment_results"))).mappings().one()
+        assert evidence["status"] == "FAILED" and not evidence["result"]["promotion_eligible"]
+        assert evidence["result"]["error_type"] == expected_error.__name__
+        assert "sensitive" not in json.dumps(evidence["result"])
+        assert (await session.execute(text("SELECT status FROM adaptive_optimisation_runs"))).scalar_one() == "FAILED"
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles"))).scalar_one() == 0
+    retry = await learning.AdaptiveLearningWorker().run_once()
+    assert retry["candidates"] == 0 and retry["failed_trials_skipped"] == retry["terminal_trials_skipped"] == 1
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 1
+        assert (await session.execute(text("SELECT evidence_hash FROM research_experiment_results"))).scalar_one() == evidence["evidence_hash"]
+
+
+@pytest.mark.asyncio
+async def test_new_trial_with_an_existing_profile_is_rejected_instead_of_left_pending(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITDUPLICATE")
+    monkeypatch.setenv("GITHUB_SHA", "1" * 40)
+    assert (await learning.AdaptiveLearningWorker().run_once())["candidates"] == 1
+    monkeypatch.setenv("GITHUB_SHA", "2" * 40)
+    retry = await learning.AdaptiveLearningWorker().run_once()
+    assert retry["candidates"] == 0 and retry["duplicates_skipped"] == 1
+    async with sessions() as session:
+        rows = (await session.execute(text("SELECT status,result FROM research_experiment_results"))).mappings().all()
+        assert sorted(row["status"] for row in rows) == ["COMPLETED", "REJECTED"]
+        rejected = next(row for row in rows if row["status"] == "REJECTED")
+        assert rejected["result"]["reason"] == "existing_profile_fingerprint"
+        assert not rejected["result"]["promotion_eligible"]
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 2
+        assert (await session.execute(text("SELECT COUNT(*) FROM adaptive_asset_profiles"))).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_failure_recording_outage_keeps_the_durable_pending_definition_and_original_error(monkeypatch, worker_database, caplog):
+    from engine.adaptive import learning, repository
+    sessions = use_database(monkeypatch, worker_database)
+    cache = SimpleNamespace(get_sync=lambda _: None, set_sync=lambda *a, **kw: True)
+    monkeypatch.setattr(learning, "state", cache)
+    monkeypatch.setattr(repository, "state", cache)
+    monkeypatch.setenv("ADAPTIVE_MIN_OUTCOME_SAMPLES", "20")
+    await seed_research_outcomes(sessions, "AUDITRECORDINGOUTAGE")
+    @asynccontextmanager
+    async def unavailable_recording(**kwargs):
+        if kwargs.get("label") == "adaptive.record_failure":
+            raise ConnectionError("synthetic persistence outage")
+        async with sessions() as session:
+            yield session
+    def failed_objective(*args, **kwargs):
+        raise RuntimeError("original objective failure")
+    monkeypatch.setattr(learning, "get_session", unavailable_recording)
+    monkeypatch.setattr(learning, "walk_forward_evaluate", failed_objective)
+    with pytest.raises(RuntimeError, match="original objective failure"):
+        await learning.AdaptiveLearningWorker().run_once()
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 1
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiment_results"))).scalar_one() == 0
+    assert "failure_recording_failed" in caplog.text
+    assert "synthetic persistence outage" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["missing", "wrong_columns", "wrong_relation", "unique", "expression", "partial", "included", "cancelled_build"])
+async def test_actual_admission_rejects_missing_or_misidentified_health_indexes(monkeypatch, worker_database, fault):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+    from db.profile_health_schema import PROFILE_HEALTH_INDEX_SQL, profile_health_index_valid
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    admission = await railway_main._database_readiness_check()
+    async with worker_database() as session:
+        index_metadata = dict((await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one())
+    assert admission["ok"], {"admission": admission, "index": index_metadata}
+    assert schema_gate.check_schema()["ok"]
+    async with sessions() as session:
+        await session.execute(text("DROP INDEX public.ix_adaptive_evidence_profile_signal"))
+        if fault == "wrong_columns":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (signal_id,profile_id)"))
+        elif fault == "wrong_relation":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.signals (signal_id,asset)"))
+        elif fault == "unique":
+            await session.execute(text("CREATE UNIQUE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id)"))
+        elif fault == "expression":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (lower(profile_id),signal_id)"))
+        elif fault == "partial":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id) WHERE profile_id IS NOT NULL"))
+        elif fault == "included":
+            await session.execute(text("CREATE INDEX ix_adaptive_evidence_profile_signal ON public.adaptive_signal_evidence (profile_id,signal_id) INCLUDE (asset)"))
+        await session.commit()
+    if fault == "cancelled_build":
+        # Create a genuine invalid index without editing system catalogues:
+        # hold a writer lock, cancel the concurrent build after catalogue
+        # creation, and release only these owned database connections.
+        from sqlalchemy.exc import DBAPIError
+        from importlib import import_module
+        engine = worker_database.kw["bind"]
+        async with engine.connect() as blocker, engine.connect() as build:
+            await blocker.execute(text("LOCK TABLE public.adaptive_signal_evidence IN ROW EXCLUSIVE MODE"))
+            build = await build.execution_options(isolation_level="AUTOCOMMIT")
+            pid = (await build.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+            operation = asyncio.create_task(build.execute(text(import_module("db.migrations.versions.0050_profile_health_index").CREATE_SQL)))
+            try:
+                for _ in range(100):
+                    async with sessions() as session:
+                        observed = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one_or_none()
+                    if observed is not None and observed["indisvalid"] is False:
+                        break
+                    await asyncio.sleep(0.05)
+                else:
+                    pytest.fail("concurrent build did not expose an invalid index within the bounded wait")
+                async with sessions() as session:
+                    assert (await session.execute(text("SELECT pg_cancel_backend(:pid)"), {"pid": pid})).scalar_one()
+                with pytest.raises(DBAPIError):
+                    await asyncio.wait_for(operation, timeout=10)
+            finally:
+                await blocker.rollback()
+                if not operation.done():
+                    operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+    runtime = await railway_main._database_readiness_check()
+    assert not runtime["ok"] and runtime["detail"] == "adaptive_profile_health_index_missing_or_invalid"
+    assert "adaptive_profile_health_index" in schema_gate.check_schema()["missing"]
+    async with sessions() as session:
+        record = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one_or_none()
+        assert not profile_health_index_valid(dict(record) if record is not None else None)
+    # Exercise the real concurrent migration operation on retry, including
+    # refusal to drop a correctly named index on the wrong keys/relation.
+    from importlib import import_module
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    async def retry_index_build():
+        async with worker_database.kw["bind"].connect() as connection:
+            def retry(sync_connection):
+                context = MigrationContext.configure(sync_connection)
+                with context.begin_transaction(), Operations.context(context):
+                    import_module("db.migrations.versions.0050_profile_health_index").upgrade()
+            await connection.run_sync(retry)
+    if fault in {"missing", "cancelled_build"}:
+        await retry_index_build()
+        await retry_index_build()
+        assert (await railway_main._database_readiness_check())["ok"]
+        assert schema_gate.check_schema()["ok"]
+    else:
+        with pytest.raises(RuntimeError, match="definition_mismatch"):
+            await retry_index_build()
+        async with sessions() as session:
+            unchanged = (await session.execute(text(PROFILE_HEALTH_INDEX_SQL))).mappings().one()
+            assert unchanged["columns"] == record["columns"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["paused", "disabled"])
+@pytest.mark.parametrize("observations", ["degraded", "nonfinite"])
+async def test_health_suspends_degradation_while_research_is_stopped(monkeypatch, worker_database, mode, observations):
+    from db.models import Signal, Outcome, User, SignalDelivery, AdaptiveAssetProfile, AdaptiveSignalEvidence
+    from engine.adaptive import learning, repository
+    from utils.timeutils import now_utc_naive
+    get_session = use_database(monkeypatch, worker_database)
+    cache_invalidations = []
+
+    class State:
+        def get_sync(self, key):
+            return "1" if mode == "paused" and key == "adaptive:optimisation:paused" else None
+        def set_sync(self, *args, **kwargs):
+            return True
+
+    monkeypatch.setattr(learning, "state", State())
+    monkeypatch.setattr(repository, "state", State())
+    monkeypatch.setattr(repository, "invalidate_profile_cache", lambda asset, **kwargs: cache_invalidations.append(asset))
+    monkeypatch.setenv("ADAPTIVE_OPTIMISATION_ENABLED", "0" if mode == "disabled" else "1")
+    asset, current, old = "AUDITHEALTH", "health-current", "health-old"
+    start = now_utc_naive() - timedelta(days=5)
+    async with get_session() as session:
+        user = User(telegram_user_id=987654321)
+        session.add(user)
+        session.add_all([
+            AdaptiveAssetProfile(profile_id=old, asset=asset, asset_class="crypto", version=1,
+                                 state="APPROVED", is_current=False),
+            AdaptiveAssetProfile(profile_id=current, asset=asset, asset_class="crypto", version=2,
+                                 state="CANARY", is_current=True, rollback_profile_id=old)])
+        await session.flush()
+        for i in range(2 if observations == "nonfinite" else 35):
+            signal_id = str(uuid4())
+            session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",
+                               entry=100, stop_loss=90, take_profit="[110]", score=80, strength=0.8,
+                               strategy_name="audit", strategy_group="trend", regime="trend", status="closed",
+                               created_at=start + timedelta(hours=i)))
+            await session.flush()
+            session.add(Outcome(signal_id=signal_id, status="loss", r_multiple=float("nan") if observations == "nonfinite" else -1, provenance="delivered",
+                                closed_at=start + timedelta(hours=i, minutes=30), performance_inclusion_status="eligible"))
+            session.add(SignalDelivery(user_id=user.id, signal_id=signal_id, sent_ok=True, delivery_state="CONFIRMED"))
+            session.add(AdaptiveSignalEvidence(signal_id=signal_id, asset=asset, timeframe="1h", strategy_id="audit",
+                strategy_version="1", family="trend", direction="long", setup_type="audit", confidence=0.8,
+                raw_score=80, profile_id=current, profile_version=2, duplicate_fingerprint=uuid4().hex))
+        await session.commit()
+    result = await learning.AdaptiveLearningWorker().run_once()
+    assert result[mode] is True and result["drift"]["suspended_assets"] == [asset]
+    assert cache_invalidations == [asset]
+    async with get_session() as session:
+        profiles = (await session.execute(text("SELECT profile_id,state,is_current FROM adaptive_asset_profiles"))).mappings().all()
+        assert not any(row["is_current"] for row in profiles)
+        assert next(row for row in profiles if row["profile_id"] == current)["state"] == "SUSPENDED"
+        assert next(row for row in profiles if row["profile_id"] == old)["state"] == "APPROVED"
+        assert (await session.execute(text("SELECT resolution FROM adaptive_drift_events"))).scalar_one() == "neutral_fallback_requires_revalidation"
+        assert (await session.execute(text("SELECT COUNT(*) FROM research_experiments"))).scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_and_startup_admission_reject_every_disabled_research_guard(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+
+    for table in ("research_hypotheses", "research_experiments", "research_experiment_results"):
+        for suffix in ("immutable", "no_truncate"):
+            guard = f"{table}_{suffix}"
+            async with worker_database() as session:
+                await session.execute(text(f"ALTER TABLE public.{table} DISABLE TRIGGER {guard}"))
+                await session.commit()
+            try:
+                runtime = await railway_main._database_readiness_check()
+                assert not runtime["ok"]
+                assert runtime["detail"] == "research_evidence_immutability_guards_missing"
+                startup = schema_gate.check_schema()
+                assert not startup["ok"]
+                assert "research_append_only_triggers" in startup["missing"]
+            finally:
+                async with worker_database() as session:
+                    await session.execute(text(f"ALTER TABLE public.{table} ENABLE TRIGGER {guard}"))
+                    await session.commit()
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+
+
+@pytest.mark.asyncio
+async def test_same_named_guard_on_the_wrong_relation_cannot_pass_admission(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield session
+
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setattr(schema_gate, "_runtime_database_url", lambda: url)
+    async with worker_database() as session:
+        await session.execute(text("DROP TRIGGER research_hypotheses_immutable ON public.research_hypotheses"))
+        await session.execute(text("""CREATE TRIGGER research_hypotheses_immutable
+            BEFORE UPDATE OR DELETE ON public.research_experiments
+            FOR EACH ROW EXECUTE FUNCTION public.reject_research_evidence_mutation()"""))
+        await session.commit()
+    assert (await railway_main._database_readiness_check())["detail"] == "research_evidence_immutability_guards_missing"
+    assert "research_append_only_triggers" in schema_gate.check_schema()["missing"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["suspend", "rollback"])
+async def test_inflight_profile_publication_cannot_undo_deactivation(monkeypatch, worker_database, action):
+    from db.models import AdaptiveAssetProfile
+    from engine.adaptive import repository, profiles
+    from signalrank_telegram import adaptive_commands as commands
+
+    async with worker_database() as session:
+        session.add_all([
+            AdaptiveAssetProfile(profile_id="cache-old", asset="AUDITCACHE", asset_class="crypto", version=1,
+                                 state="APPROVED", is_current=False),
+            AdaptiveAssetProfile(profile_id="cache-current", asset="AUDITCACHE", asset_class="crypto", version=2,
+                                 state="CANARY", is_current=True, rollback_profile_id="cache-old")])
+        await session.commit()
+    read = asyncio.Event()
+    release = asyncio.Event()
+    contender = asyncio.Event()
+    values = {}
+    fake_state = SimpleNamespace(get_sync=values.get,
+        set_sync=lambda key, value, **kwargs: values.__setitem__(key, value))
+
+    class SessionProxy:
+        def __init__(self, session, label):
+            self.session, self.label = session, label
+        def __getattr__(self, name):
+            return getattr(self.session, name)
+        async def execute(self, statement, parameters=None):
+            sql = str(statement)
+            if self.label.startswith("adaptive.command.") and "pg_advisory_xact_lock" in sql:
+                contender.set()
+            result = await self.session.execute(statement, parameters or {})
+            if self.label == "adaptive.publish_profiles" and "FROM adaptive_asset_profiles" in sql:
+                read.set()
+                await release.wait()
+            return result
+
+    @asynccontextmanager
+    async def sessions(**kwargs):
+        async with worker_database() as session:
+            yield SessionProxy(session, kwargs.get("label", ""))
+
+    monkeypatch.setattr(repository, "get_session", sessions)
+    monkeypatch.setattr(commands, "get_session", sessions)
+    monkeypatch.setattr(repository, "state", fake_state)
+    monkeypatch.setattr(profiles, "state", fake_state)
+    monkeypatch.setattr(commands, "_require_owner", AsyncMock(return_value=True))
+    monkeypatch.setattr(commands, "_reply", AsyncMock())
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    command = commands.adaptive_suspend_command if action == "suspend" else commands.adaptive_rollback_command
+    context = SimpleNamespace(args=["cache-current" if action == "suspend" else "AUDITCACHE"])
+    publisher = asyncio.create_task(repository.publish_approved_profiles())
+    deactivation = None
+    try:
+        await asyncio.wait_for(read.wait(), timeout=5)
+        deactivation = asyncio.create_task(command(update, context))
+        await asyncio.wait_for(contender.wait(), timeout=5)
+        done, _ = await asyncio.wait({deactivation}, timeout=0.05)
+        assert not done, "deactivation must serialize with the in-flight publisher"
+        release.set()
+        await asyncio.wait_for(asyncio.gather(publisher, deactivation), timeout=10)
+        cached = json.loads(values["adaptive:profile:approved:AUDITCACHE"])
+        assert cached["state"] == "SUSPENDED"
+        assert profiles.ProfileResolver().resolve("AUDITCACHE", "crypto").metadata["neutral_fallback"]
+        async with worker_database() as session:
+            assert not (await session.execute(text("SELECT EXISTS(SELECT 1 FROM adaptive_asset_profiles WHERE is_current)"))).scalar_one()
+            assert (await session.execute(text("SELECT state FROM adaptive_asset_profiles WHERE profile_id='cache-old'"))).scalar_one() == "APPROVED"
+    finally:
+        release.set()
+        for task in (publisher, deactivation):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.gather(*(task for task in (publisher, deactivation) if task is not None), return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_approved_baseline_detects_forward_decay_and_never_restores_suspended_profile(monkeypatch, worker_database):
+    from engine.adaptive import learning, repository
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    sessions = use_database(monkeypatch, worker_database)
+    values = {}
+    monkeypatch.setattr(repository, "state", SimpleNamespace(get_sync=values.get,
+        set_sync=lambda key, value, **kwargs: values.__setitem__(key, value)))
+    async with sessions() as session:
+        await seed_health_baseline(session)
+        result = await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+            approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+        assert not result["automatic_promotion"]
+        await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE"))
+        await session.commit()
+    first = await learning.monitor_profile_health()
+    assert first["profile_diagnostics"][0]["approved_baseline_comparison"] == "INSUFFICIENT", first["profile_diagnostics"][0]
+    assert first["published"] == 1
+    async with sessions() as session:
+        # PostgreSQL NOW() is transaction-start time; place forward fixture
+        # decisions strictly after approval, while keeping them observable.
+        await session.execute(text("SELECT pg_sleep(0.01)"))
+        await seed_health_baseline(session, forward=True)
+        await session.execute(text("UPDATE signals SET created_at=(SELECT approved_at FROM strategy_health_baselines)+INTERVAL '1 millisecond' "
+            "WHERE created_at>(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 day'"))
+        await session.execute(text("UPDATE outcomes SET closed_at=(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 millisecond' "
+            "WHERE signal_id IN (SELECT signal_id FROM signals WHERE created_at>(NOW() AT TIME ZONE 'UTC')-INTERVAL '1 day')"))
+        await session.commit()
+    second = await learning.monitor_profile_health()
+    report = second["profile_diagnostics"][0]
+    assert report["approved_baseline_comparison"] == "BREACHED" and report["baseline_sample_size"] == 30
+    assert report["expectancy_r"] > 0 and report["max_drawdown_r"] < 10
+    assert second["suspended_assets"] == ["AUDITBASE"] and second["published"] == 0
+    async with sessions() as session:
+        stored = (await session.execute(text("SELECT state,is_current FROM adaptive_asset_profiles"))).mappings().one()
+        assert stored["state"] == "SUSPENDED" and not stored["is_current"]
+        assert (await session.execute(text("SELECT COUNT(*) FROM strategy_health_events"))).scalar_one() == 2
+    assert (await learning.monitor_profile_health())["published"] == 0
+    assert json.loads(values["adaptive:profile:approved:AUDITBASE"])["state"] == "SUSPENDED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("zone", ["Africa/Lagos", "America/New_York", "Asia/Tokyo"])
+async def test_lifecycle_evidence_uses_utc_and_does_not_leak_transaction_timezone(worker_database, zone):
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline, baseline_valid, record_health_event
+    from engine.adaptive.lifecycle import lock_profile_lifecycle
+    from utils.timeutils import now_utc_naive
+    async with worker_database() as session:
+        await session.execute(text("SELECT set_config('TimeZone',:zone,false)"), {"zone": zone})
+        await session.commit()
+        # Keep this same connection checked out for the rollback check below.
+        async with session.begin():
+            await seed_health_baseline(session)
+            await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+                approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+            baseline = (await session.execute(text("SELECT * FROM strategy_health_baselines"))).mappings().one()
+            profile = (await session.execute(text("SELECT * FROM adaptive_asset_profiles"))).mappings().one()
+            assert baseline_valid(baseline, profile)
+            assert abs((now_utc_naive() - baseline["approved_at"]).total_seconds()) < 30
+            await record_health_event(session, profile_id="governed-health", report={"baseline_id": baseline["baseline_id"], "test": "timezone"})
+            checked = (await session.execute(text("SELECT created_at FROM strategy_health_events"))).scalar_one()
+            assert abs((now_utc_naive() - checked).total_seconds()) < 30
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == zone
+        await session.rollback()
+        await lock_profile_lifecycle(session)
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == "UTC"
+        await session.rollback()
+        assert (await session.execute(text("SELECT current_setting('TimeZone')"))).scalar_one() == zone
+
+
+@pytest.mark.asyncio
+async def test_health_history_is_append_only_and_baseline_cannot_be_reset(monkeypatch, worker_database):
+    from sqlalchemy.exc import DBAPIError
+    from engine.adaptive import learning, repository
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    from engine.adaptive import health_baselines
+    monkeypatch.setattr(health_baselines.time, "time", lambda: 1791638400.0)
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(repository, "state", SimpleNamespace(set_sync=lambda *a, **kw: True))
+    conditions = HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False)
+    async with sessions() as session:
+        await seed_health_baseline(session)
+        await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+            approved_by=42, conditions=conditions)
+        await session.commit()
+    async with sessions() as session:
+        with pytest.raises(ValueError, match="immutable_baseline_already_approved"):
+            await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+                approved_by=42, conditions=conditions)
+        await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE"))
+        await session.commit()
+    await learning.monitor_profile_health()
+    await learning.monitor_profile_health()
+    async with sessions() as session:
+        assert (await session.execute(text("SELECT COUNT(*) FROM strategy_health_events"))).scalar_one() == 1
+    for table in ("strategy_health_baselines", "strategy_health_events"):
+        for statement in (f"UPDATE {table} SET profile_id=profile_id", f"DELETE FROM {table}", f"TRUNCATE {table} CASCADE"):
+            async with sessions() as session:
+                with pytest.raises(DBAPIError, match="research_evidence_is_append_only"):
+                    await session.execute(text(statement))
+                await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_missing_baseline_and_mutated_profile_configuration_cannot_receive_cache_approval(monkeypatch, worker_database):
+    from db.models import AdaptiveAssetProfile
+    from engine.adaptive import repository
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    sessions = use_database(monkeypatch, worker_database)
+    values = {}
+    monkeypatch.setattr(repository, "state", SimpleNamespace(set_sync=lambda key, value, **kw: values.__setitem__(key, value)))
+    async with sessions() as session:
+        session.add(AdaptiveAssetProfile(profile_id="missing-baseline", asset="MISSINGBASE", asset_class="crypto",
+            version=1, state="CANARY", is_current=True))
+        await seed_health_baseline(session)
+        await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+            approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+        await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE,"
+            "family_weights=CAST(:weights AS JSONB) WHERE profile_id='governed-health'"), {"weights": json.dumps({"trend": 1.15})})
+        await session.commit()
+    assert await repository.publish_approved_profiles() == 0
+    assert all(json.loads(value)["state"] == "BASELINE_UNVERIFIED" for value in values.values())
+
+
+@pytest.mark.asyncio
+async def test_startup_and_runtime_reject_disabled_health_baseline_guard(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("DATABASE_MIGRATION_URL", url)
+    assert (await railway_main._database_readiness_check())["ok"]
+    async with sessions() as session:
+        await session.execute(text("ALTER TABLE strategy_health_baselines DISABLE TRIGGER strategy_health_baselines_immutable"))
+        await session.commit()
+    assert (await railway_main._database_readiness_check())["detail"] == "strategy_health_baseline_schema_or_guards_missing"
+    assert "strategy_health_schema" in schema_gate.check_schema()["missing"]
+
+
+@pytest.mark.asyncio
+async def test_startup_and_runtime_reject_missing_or_disabled_snapshot_guards(monkeypatch, worker_database):
+    import db.session as db_session
+    import railway_main
+    from scripts import assert_database_schema as schema_gate
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(db_session, "is_db_configured", lambda: True)
+    monkeypatch.setattr(db_session, "get_session", sessions)
+    url = worker_database.kw["bind"].url.set(drivername="postgresql").render_as_string(hide_password=False)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("DATABASE_MIGRATION_URL", url)
+    assert (await railway_main._database_readiness_check())["ok"]
+    assert schema_gate.check_schema()["ok"]
+    statements = [
+        ("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_immutable",
+         "ALTER TABLE research_market_inputs ENABLE TRIGGER research_market_inputs_immutable"),
+        ("ALTER TABLE research_market_inputs DISABLE TRIGGER research_market_inputs_no_truncate",
+         "ALTER TABLE research_market_inputs ENABLE TRIGGER research_market_inputs_no_truncate"),
+        ("ALTER TABLE research_market_inputs RENAME TO missing_market_input_fixture",
+         "ALTER TABLE missing_market_input_fixture RENAME TO research_market_inputs"),
+        ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_immutable",
+         "ALTER TABLE research_dataset_snapshots ENABLE TRIGGER research_dataset_snapshots_immutable"),
+        ("ALTER TABLE research_dataset_snapshots DISABLE TRIGGER research_dataset_snapshots_no_truncate",
+         "ALTER TABLE research_dataset_snapshots ENABLE TRIGGER research_dataset_snapshots_no_truncate"),
+        ("ALTER TABLE research_dataset_snapshots RENAME TO missing_snapshot_fixture",
+         "ALTER TABLE missing_snapshot_fixture RENAME TO research_dataset_snapshots"),
+    ]
+    for mutation, recovery in statements:
+        async with sessions() as session:
+            await session.execute(text(mutation))
+            await session.commit()
+        assert (await railway_main._database_readiness_check())["detail"] == "research_dataset_snapshot_schema_or_guards_missing"
+        assert "research_snapshot_schema" in schema_gate.check_schema()["missing"]
+        async with sessions() as session:
+            await session.execute(text(recovery))
+            await session.commit()
+        assert (await railway_main._database_readiness_check())["ok"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["signal_asset", "signal_class", "evidence_asset", "profile_version"])
+async def test_health_observations_must_match_profile_instrument_and_version(monkeypatch, worker_database, mismatch):
+    from engine.adaptive import learning, repository
+    from engine.adaptive.health_baselines import HealthConditions, approve_health_baseline
+    sessions = use_database(monkeypatch, worker_database)
+    monkeypatch.setattr(repository, "state", SimpleNamespace(set_sync=lambda *a, **kw: True))
+    statements = {
+        "signal_asset": "UPDATE signals SET asset='OTHERASSET'",
+        "signal_class": "UPDATE signals SET asset_class='forex'",
+        "evidence_asset": "UPDATE adaptive_signal_evidence SET asset='OTHERASSET'",
+        "profile_version": "UPDATE adaptive_signal_evidence SET profile_version=2"}
+    async with sessions() as session:
+        await seed_health_baseline(session)
+        await session.execute(text(statements[mismatch]))
+        with pytest.raises(ValueError, match="health_observation_window_must_be_1_to_250"):
+            await approve_health_baseline(session, profile_id="governed-health", profile_version=1,
+                approved_by=42, conditions=HealthConditions(30, 0.2, 5, 15, 0.5, 0.1, False))
+        await session.execute(text("UPDATE adaptive_asset_profiles SET state='CANARY',is_current=TRUE"))
+        await session.commit()
+    report = await learning.monitor_profile_health()
+    assert report["published"] == 0 and report["suspended_assets"] == []
+    assert report["profile_diagnostics"][0]["sample_size"] == 0
+    assert report["profile_diagnostics"][0]["delivery_evidence_status"] == "UNAVAILABLE"

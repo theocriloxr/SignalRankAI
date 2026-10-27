@@ -4,6 +4,7 @@ Revision ID: 0012_outcome_notify_state
 Revises: 0011_platform_harden_security
 Create Date: 2026-04-06
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -45,9 +46,15 @@ def upgrade() -> None:
     )
     _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_outcome_id ON outcome_notifications (outcome_id)")
     _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_signal_id ON outcome_notifications (signal_id)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_telegram_user_id ON outcome_notifications (telegram_user_id)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_outcome_status ON outcome_notifications (outcome_status)")
-    _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_delivery_state ON outcome_notifications (delivery_state)")
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_outcome_notifications_telegram_user_id ON outcome_notifications (telegram_user_id)"
+    )
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_outcome_notifications_outcome_status ON outcome_notifications (outcome_status)"
+    )
+    _exec(
+        "CREATE INDEX IF NOT EXISTS ix_outcome_notifications_delivery_state ON outcome_notifications (delivery_state)"
+    )
     _exec("CREATE INDEX IF NOT EXISTS ix_outcome_notifications_delivered_at ON outcome_notifications (delivered_at)")
 
     # Seed queue for historical outcomes not explicitly marked as notified.

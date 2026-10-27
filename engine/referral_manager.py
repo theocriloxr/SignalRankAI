@@ -4,6 +4,7 @@ Referral rewards are granted when a genuinely new user is attributed through a
 stored referral code. First-purchase conversion is tracked separately and never
 runs a second reward policy.
 """
+
 from __future__ import annotations
 
 import logging
@@ -11,7 +12,7 @@ from typing import Tuple
 
 from sqlalchemy import func, select
 
-from db.models import ReferralAttribution, ReferralReward, User
+from db.models import ReferralAttribution, ReferralReward
 from db.session import get_session
 from utils.timeutils import now_utc_naive
 
@@ -104,9 +105,7 @@ class ReferralManager:
             ) as session:
                 existing = (
                     await session.execute(
-                        select(ReferralAttribution).where(
-                            ReferralAttribution.referred_user_id == int(referred_user_id)
-                        )
+                        select(ReferralAttribution).where(ReferralAttribution.referred_user_id == int(referred_user_id))
                     )
                 ).scalar_one_or_none()
                 if existing is not None:

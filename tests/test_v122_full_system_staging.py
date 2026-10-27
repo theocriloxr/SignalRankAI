@@ -100,6 +100,7 @@ def test_live_mt5_account_requires_separate_permission(monkeypatch):
     monkeypatch.setenv("REAL_EXECUTION_ENABLED", "1")
     monkeypatch.setenv("MT5_ALLOW_LIVE_ACCOUNTS", "0")
     monkeypatch.setenv("AUTO_TRADE_ENABLED", "1")
+    monkeypatch.setenv("AUTO_EXECUTION_ENABLED", "1")
     request = ExecutionRequest(
         user_id=1, signal_id="sig-1", account_id="acct-1", tier="enterprise", mode="auto",
         signal={"entry": 100.0, "stop_loss": 99.0, "direction": "buy"},
@@ -111,7 +112,7 @@ def test_live_mt5_account_requires_separate_permission(monkeypatch):
     )
     decision = ExecutionGate().preflight(request)
     assert decision.allowed is False
-    assert "MT5_LIVE_ACCOUNTS_DISABLED" in decision.reasons
+    assert "METATRADER_LIVE_ACCOUNTS_DISABLED" in decision.reasons
 
 
 def test_v122_profile_contains_all_workflow_flags():

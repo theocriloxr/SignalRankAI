@@ -5,6 +5,7 @@ behavior can be tuned and audited without touching the signal engine. Every AI
 review should carry the prompt version used, either in the signal payload or in
 its persisted review metadata.
 """
+
 from __future__ import annotations
 
 import json

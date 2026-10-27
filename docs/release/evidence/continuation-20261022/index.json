@@ -1,0 +1,11 @@
+{
+  "tested_sha": "e01e7c41f49a3e35335b00edc2de97367aa2dade",
+  "scope": "Stage 0 safe local Git, worktree preservation, migration head, GitHub ruleset/PR/CI billing-lock inspection, branch audit vs dispositions continuity, governance inventory checks, and live public-route observations. Railway reverification blocked external.",
+  "artifacts": [
+    {
+      "path": "docs/release/evidence/continuation-20261022/stage0-forensics.json",
+      "sha256": "211db4abf523eab477ff939d215db58d539d2da6741c98e565a8ee5fc01a7f74",
+      "bytes": 10585
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 Stooq is historical/best-effort only and must not be used as execution truth.
 """
+
 from __future__ import annotations
 
 import csv
@@ -26,7 +27,9 @@ def _symbol(value: str) -> str:
     return f"{raw}.us"
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str, timeframe: str, limit: int = 200, timeout: float = 10.0
+) -> List[Dict[str, Any]]:
     if str(timeframe or "").lower() not in {"1d", "d", "day", "daily"}:
         return []
     client = httpx_client.get_client("stooq")
@@ -56,7 +59,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
                 )
             except (KeyError, TypeError, ValueError):
                 continue
-        return rows[-max(2, int(limit or 200)):]
+        return rows[-max(2, int(limit or 200)) :]
     except Exception as exc:
         logger.debug("stooq candle request failed: %s", exc)
         return []

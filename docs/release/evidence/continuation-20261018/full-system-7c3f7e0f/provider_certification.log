@@ -1,0 +1,52 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/certify_providers.py --output-dir 'artifacts\full-system-7c3f7e0f\provider-certification'
+
+ATTEMPT 1/1
+
+# Provider Certification Matrix
+
+Generated: 2026-10-17T12:53:25.900205+00:00
+
+A mock/import result is not live production certification. Only explicit live/public/sandbox statuses prove an external connection.
+
+| Provider | Implemented | Configured | Enabled | Status | Sample | Candles | Latency ms | Error |
+|---|---:|---:|---:|---|---|---:|---:|---|
+| Market Data | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 5m | 0 | - |  |
+| CCXT public spot | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 5m | 0 | - |  |
+| Interactive Brokers TWS data | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 5m | 0 | - |  |
+| FCS API | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | EURUSD 5m | 0 | - |  |
+| Coinbase Exchange | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSD 5m | 0 | - |  |
+| OKX | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 5m | 0 | - |  |
+| Kraken | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSD 5m | 0 | - |  |
+| KuCoin | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 5m | 0 | - |  |
+| Bybit V5 | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 5m | 0 | - |  |
+| Binance | True | True | False | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 5m | 0 | - |  |
+| CryptoCompare | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSD 1h | 0 | - |  |
+| Yahoo Finance / yfinance | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1d | 0 | - |  |
+| Twelve Data | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| Massive (formerly Polygon.io) | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| Tiingo | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1d | 0 | - |  |
+| Financial Modeling Prep | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| Alpha Vantage | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| OANDA v20 | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | EURUSD 1h | 0 | - |  |
+| European Central Bank | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | EURUSD 1d | 0 | - |  |
+| Deribit | True | True | False | IMPLEMENTED_AND_MOCK_VERIFIED | BTC-PERPETUAL 5m | 0 | - |  |
+| EODHD | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1d | 0 | - |  |
+| Marketstack | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1d | 0 | - |  |
+| Finnhub | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| Alpaca | True | False | True | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1h | 0 | - |  |
+| Tradier | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 5m | 0 | - |  |
+| Nasdaq Data Link | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | GC 1d | 0 | - |  |
+| Stooq | True | True | False | IMPLEMENTED_AND_MOCK_VERIFIED | AAPL 1d | 0 | - |  |
+| CoinGecko / GeckoTerminal | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 1h | 0 | - |  |
+| Coin Metrics Community | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | BTCUSDT 1d | 0 | - |  |
+| DefiLlama | True | True | True | IMPLEMENTED_AND_MOCK_VERIFIED | USDCUSDT 1d | 0 | - |  |
+| FRED | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | DGS10 1d | 0 | - |  |
+| Trading Economics | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+| CoinGlass | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+| Dune | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+| Kaiko | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+| Glassnode | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+| CryptoQuant | True | False | False | IMPLEMENTED_AND_MOCK_VERIFIED | - 1h | 0 | - |  |
+
+JSON: artifacts\full-system-7c3f7e0f\provider-certification\provider_certification.json
+Markdown: artifacts\full-system-7c3f7e0f\provider-certification\provider_certification.md

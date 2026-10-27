@@ -1,0 +1,36 @@
+{
+  "name": "source-governance-2ee0a918",
+  "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:37:34.266670+00:00",
+  "finished_at": "2026-10-18T08:37:49.333420+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_v7_governance_contract.py::test_generated_v7_governance_is_current",
+    "tests/test_crosschat_intake.py"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "2ee0a918d915549f7f5ce59d59f0a8a07d2202a9",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/source-governance-2ee0a918.log",
+  "log_sha256": "bb9cc2a5fa1fdbe1b5c6250fff26e3ec1c7bd91417eaaae7ad2823e2645a079c",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "source_fingerprint_after": "e3ce91978bfe9ce5f969a839e778195e080c56e3a6fde0de2e2808c0354937c8",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

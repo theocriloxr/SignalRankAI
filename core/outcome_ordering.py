@@ -1,4 +1,5 @@
 """Monotonic ordering policy for user-facing outcome notifications."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,10 +24,20 @@ _STAGE_RANKS = {
     "cancelled": 30,
     "closed": 30,
 }
-_TERMINAL = {
-    "tp3", "sl", "stop", "stopped", "partial_win", "partial_win_be", "breakeven", "be",
-    "missed", "expired", "cancelled", "closed",
-}
+TERMINAL_OUTCOME_STATUSES = frozenset({
+    "tp3",
+    "sl",
+    "stop",
+    "stopped",
+    "partial_win",
+    "partial_win_be",
+    "breakeven",
+    "be",
+    "missed",
+    "expired",
+    "cancelled",
+    "closed",
+})
 
 
 def canonical_outcome_status(value: Any) -> str:
@@ -38,7 +49,7 @@ def outcome_stage_rank(value: Any) -> int:
 
 
 def outcome_is_terminal(value: Any) -> bool:
-    return canonical_outcome_status(value) in _TERMINAL
+    return canonical_outcome_status(value) in TERMINAL_OUTCOME_STATUSES
 
 
 @dataclass(frozen=True, slots=True)

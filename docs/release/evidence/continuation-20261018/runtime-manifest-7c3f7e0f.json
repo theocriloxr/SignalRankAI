@@ -1,0 +1,42 @@
+{
+  "name": "runtime-manifest-7c3f7e0f",
+  "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-17T12:54:01.827744+00:00",
+  "finished_at": "2026-10-17T12:55:02.614035+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "scripts/run_release_manifest.py",
+    "--environment",
+    "local",
+    "--gate",
+    "static-ruff",
+    "--gate",
+    "static-pyright-critical",
+    "--gate",
+    "stage1-source-inventory",
+    "--gate",
+    "stage1-crosschat-intake"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "7c3f7e0f2fb8a337fbf0d6e142544f0041fd5995",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/runtime-manifest-7c3f7e0f.log",
+  "log_sha256": "4a24dd8491e09c6c5e5e3b12ba39aaa466eac324a96773d49c7700653a521911",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+  "source_fingerprint_after": "8056948d25386e204279613dd31fcc8f7b5aecb26c9bbb0bf66722fbb09d3d10",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

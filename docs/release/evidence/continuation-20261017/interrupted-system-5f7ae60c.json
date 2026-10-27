@@ -1,0 +1,8 @@
+{
+  "sha": "5f7ae60cbac612761640f1010df73e3b4b03ed38",
+  "result": "INTERRUPTED",
+  "exit_code": null,
+  "scope": "Incomplete diagnostic run; not full-suite acceptance.",
+  "reason": "Android export rewrote tracked legacy dist files during verification. Restored only these generated files. Stopped the identified test tree before receipt validation repair.",
+  "cleanup_limit": "Browser drill recorded successful cleanup; forcibly stopped backend fixtures may have left UUID-named local test databases. No production operations occurred."
+}

@@ -242,13 +242,13 @@ def test_paper_recovery_ultra_failure_is_advisory_but_normal_ultra_failure_stays
     root = Path(__file__).resolve().parents[1]
     engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
     ultra = engine[
-        engine.index("if _env_bool('ULTRA_QUALITY_ENABLED'"):
+        engine.index("_range_friendly_strategy = False"):
         engine.index("# ML-driven dynamic risk sizing hint")
     ]
     assert 'if bool(sig.get("ml_recovery_mode"))' in ultra
     assert 'sig["ml_recovery_ultra_advisory"] = ultra_reason' in ultra
     assert "canonical_quality_continues=1" in ultra
-    assert '_post_ml_reject(sig, "ultra_quality", sig[\'rejection_reason\'])' in ultra
+    assert '_post_ml_reject(sig, "ultra_quality", sig["rejection_reason"])' in ultra
     assert "continue" in ultra
 
 
@@ -407,9 +407,12 @@ def test_instrument_catalogue_persistence_batches_database_round_trips() -> None
     assert "instrument_params: list[dict[str, Any]] = []" in block
     assert "certification_params: list[dict[str, Any]] = []" in block
     assert "mapping_params: list[dict[str, Any]] = []" in block
-    assert '), instrument_params)' in block
-    assert '), certification_params)' in block
-    assert '), mapping_params)' in block
+    assert "INSERT INTO instruments(" in block
+    assert "INSERT INTO instrument_certifications(" in block
+    assert "INSERT INTO provider_instruments(" in block
+    assert "instrument_params," in block
+    assert "certification_params," in block
+    assert "mapping_params," in block
     assert block.count("await session.execute(") == 3
     first_execute = block.index("await session.execute(")
     instrument_loop = block.index("for instrument in registry.all():")
@@ -458,9 +461,9 @@ def test_engine_repairs_missing_atr_before_quality_filters() -> None:
     ultra = source.index("ultra_quality.apply_ultra_filter", filters)
     block = source[marker:filters]
     assert "_canonical_atr = sum(_trs) / len(_trs)" in block
-    assert "sig['atr'] = _canonical_atr" in block
-    assert "sig['atr_rel'] = _canonical_atr / _close_for_atr" in block
-    assert "'adx': _safe_float(sig.get('adx'), 30.0)" in block
+    assert 'sig["atr"] = _canonical_atr' in block
+    assert 'sig["atr_rel"] = _canonical_atr / _close_for_atr' in block
+    assert '"adx": _safe_float(sig.get("adx"), 30.0)' in block
     assert marker < filters < ultra
 
 
@@ -657,7 +660,8 @@ def test_ultra_trend_filter_is_not_globally_applied_to_range_strategies() -> Non
     assert 'advanced_filters.is_range_friendly_signal(sig)' in block
     assert '"not_applicable_range_strategy"' in block
     assert "ultra_quality.apply_ultra_filter(sig)" in block
-    assert "elif _env_bool('ULTRA_QUALITY_ENABLED', False)" in block
+    assert 'if _env_bool("ULTRA_QUALITY_ENABLED", False) and _range_friendly_strategy' in block
+    assert 'elif _env_bool("ULTRA_QUALITY_ENABLED", False)' in block
 
 
 def test_advanced_filter_logs_strategy_and_regime_evidence() -> None:

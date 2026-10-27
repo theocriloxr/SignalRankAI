@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import tempfile
 import time
 from pathlib import Path
 import logging
@@ -38,11 +37,7 @@ def _resolve_model_path() -> str:
     2) XGBOOST_MODEL_PATH (legacy/compat)
     3) default project model path
     """
-    return (
-        os.getenv("ML_MODEL_PATH")
-        or os.getenv("XGBOOST_MODEL_PATH")
-        or DEFAULT_MODEL_PATH
-    )
+    return os.getenv("ML_MODEL_PATH") or os.getenv("XGBOOST_MODEL_PATH") or DEFAULT_MODEL_PATH
 
 
 MODEL_PATH = _resolve_model_path()
@@ -70,9 +65,7 @@ def _sync_durable_model_if_due(path: str) -> bool:
         restored = restore_active_model_artifact_from_database_sync(
             path,
             model_name="primary",
-            connect_timeout_seconds=int(
-                os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5
-            ),
+            connect_timeout_seconds=int(os.getenv("ML_DURABLE_ARTIFACT_DB_CONNECT_TIMEOUT_SECONDS", "5") or 5),
         )
         if restored:
             logger.info("[ml] MLFilter synchronized durable primary artifact")
@@ -131,15 +124,10 @@ def _fail_closed_on_unavailable() -> bool:
 
 
 def _ml_enabled() -> bool:
-    """ML switch with compatibility across env naming.
+    """ML switch with strict compatibility alias handling."""
+    from core.env import env_bool_alias
 
-    Supports both ENABLE_ML and ML_ENABLED; ML_ENABLED wins if both are set.
-    """
-    if os.getenv("ML_ENABLED") is not None:
-        return _env_bool("ML_ENABLED", True)
-    if os.getenv("ENABLE_ML") is not None:
-        return _env_bool("ENABLE_ML", False)
-    return True
+    return env_bool_alias("ML_ENABLED", "ENABLE_ML", default=True)
 
 
 def _runtime_state_model_payload() -> dict | None:
@@ -147,6 +135,7 @@ def _runtime_state_model_payload() -> dict | None:
         return None
     try:
         from config import resolve_database_url
+
         dsn = resolve_database_url(async_driver=False) or ""
     except Exception:
         dsn = ""
@@ -171,8 +160,6 @@ def _runtime_state_model_payload() -> dict | None:
             conn.close()
     except Exception:
         return None
-
-
 
 
 class MLFilter:
@@ -208,7 +195,7 @@ class MLFilter:
             model_path = _resolve_model_path()
             _sync_durable_model_if_due(model_path)
             try:
-                with open(model_path, 'r') as f:
+                with open(model_path, "r") as f:
                     model_data = normalize_model_payload(json.load(f))
             except Exception:
                 model_data = None
@@ -221,7 +208,7 @@ class MLFilter:
             if not model_data:
                 self.active = False
                 return
-            
+
             # Extract metadata and model bytes
             model_b64 = model_data.get("model_bytes_b64")
             self.feature_cols = model_data.get("feature_cols", [])
@@ -237,13 +224,14 @@ class MLFilter:
                 self.classification_threshold = float(raw_threshold) if raw_threshold is not None else None
             except Exception:
                 self.classification_threshold = None
-            
+
             if not model_b64:
                 self.active = False
                 return
 
             if _env_bool("ML_REQUIRE_FEATURE_ENCODING_CONTRACT", False):
                 from ml.features import FEATURE_ENCODING_VERSION
+
                 if self.feature_encoding_version != FEATURE_ENCODING_VERSION:
                     logger.warning(
                         "[ml] model encoding contract mismatch expected=%s actual=%s",
@@ -252,7 +240,7 @@ class MLFilter:
                     )
                     self.active = False
                     return
-            
+
             # Decode base64 and load model directly from bytes (ubj format)
             model_bytes = base64.b64decode(model_b64)
             booster = xgb.Booster()
@@ -261,8 +249,10 @@ class MLFilter:
             self.active = True
 
             if str(os.getenv("RAILWAY_SERVICE_NAME") or "").strip() and MODEL_PATH == DEFAULT_MODEL_PATH:
-                logger.warning("[ml] using local model path on Railway; ensure runtime_state backup key is populated for durability")
-                
+                logger.warning(
+                    "[ml] using local model path on Railway; ensure runtime_state backup key is populated for durability"
+                )
+
         except Exception as e:
             self.active = False
             self.model = None
@@ -298,41 +288,41 @@ class MLFilter:
     def ml_filter(self, features, threshold: float | None = None):
         """
         Filter signals through ML model.
-        
+
         Args:
             features: dict of feature_name -> value
             threshold: optional confidence threshold (None = advisory only)
-        
+
         Returns:
             (approved: bool, probability: float | None)
         """
         if not self.active or self.model is None:
             return (not _fail_closed_on_unavailable()), None
-        
+
         try:
             # Map input features to model's expected feature order
             normalized = migrate_feature_payload(
                 features if isinstance(features, dict) else {},
                 list(self.feature_cols or []),
                 strict=strict_feature_schema_enabled() and int(self.schema_version or 1) >= 3,
-                critical_features=get_critical_features(
-                    int(self.schema_version or 1)
-                ),
+                critical_features=get_critical_features(int(self.schema_version or 1)),
             )
             try:
                 from ml.live_drift import record_live_feature_vector
+
                 record_live_feature_vector(normalized)
             except Exception:
                 pass
 
             feature_vector = []
-            for col in (self.feature_cols or []):
+            for col in self.feature_cols or []:
                 feature_vector.append(float(normalized.get(col, 0.0)))
-            
+
             if not feature_vector:
                 return (not _fail_closed_on_unavailable()), None
-            
+
             import numpy as np
+
             dmatrix = xgb.DMatrix(
                 np.array([feature_vector], dtype=np.float32),
                 feature_names=list(self.feature_cols or []),
@@ -350,6 +340,7 @@ class MLFilter:
                 return True, float(prob)
             try:
                 from ml.live_drift import record_live_prediction
+
                 record_live_prediction(raw_prob, prob, thresh_val)
             except Exception:
                 pass

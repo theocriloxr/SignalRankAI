@@ -1,25 +1,36 @@
 import asyncio
+from types import SimpleNamespace
 
 import httpx
+import pytest
 
 
 class TestRailwayRedisQueue:
-    async def _run(self):
+    async def _run(self, monkeypatch, stream):
         import railway_main
 
-        railway_main._bot_ready = True
-        railway_main._bot_application = object()
-        railway_main._use_redis_webhook_queue = True
-        railway_main._webhook_dispatch_queue = asyncio.Queue(maxsize=10)
+        monkeypatch.setattr(railway_main, "_bot_ready", True)
+        monkeypatch.setattr(railway_main, "_bot_application", object())
+        monkeypatch.setattr(railway_main, "_use_redis_webhook_queue", True)
+        monkeypatch.setattr(railway_main, "_webhook_dispatch_queue", asyncio.Queue(maxsize=10))
+        calls = []
 
         async def _enqueue(payload, max_depth=None):
+            calls.append(("legacy", payload["update_id"]))
             return True
 
         async def _depth():
-            return 3
+            raise AssertionError("acknowledgement must not make a second Redis round trip")
 
-        railway_main.state.enqueue_webhook_update = _enqueue  # type: ignore[attr-defined]
-        railway_main.state.webhook_queue_depth = _depth  # type: ignore[attr-defined]
+        async def _stream_enqueue(payload, *, idempotency_key):
+            calls.append(("stream", payload["update_id"], idempotency_key))
+            return SimpleNamespace(accepted=True, duplicate=False)
+
+        monkeypatch.setattr(railway_main.state, "enqueue_webhook_update", _enqueue)
+        monkeypatch.setattr(railway_main.state, "webhook_queue_depth", _depth)
+        monkeypatch.setattr(railway_main, "_webhook_stream", SimpleNamespace(
+            configured=stream, enqueue=_stream_enqueue,
+        ))
 
         transport = httpx.ASGITransport(app=railway_main.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -27,10 +38,12 @@ class TestRailwayRedisQueue:
             assert resp.status_code == 200
             body = resp.json()
             assert body.get("ok") is True
-            assert body.get("queue_backend") == "redis"
+            assert body.get("queue_backend") == ("redis_stream" if stream else "redis")
             assert "queue_size" not in body, (
                 "the acknowledgement path must not add a second Redis round trip"
             )
+        assert calls == ([("stream", 777, "telegram-update:777")] if stream else [("legacy", 777)])
 
-    def test_telegram_webhook_route_uses_redis_backend(self):
-        asyncio.run(self._run())
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_telegram_webhook_route_uses_redis_backend(self, monkeypatch, stream):
+        asyncio.run(self._run(monkeypatch, stream))

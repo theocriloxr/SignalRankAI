@@ -95,9 +95,7 @@ class OutcomeSnapshot:
 
     def is_stale(self, *, max_age_seconds: float | None = None) -> bool:
         threshold = float(
-            max_age_seconds
-            if max_age_seconds is not None
-            else os.getenv("OUTCOME_SNAPSHOT_STALE_SECONDS", "90") or 90
+            max_age_seconds if max_age_seconds is not None else os.getenv("OUTCOME_SNAPSHOT_STALE_SECONDS", "90") or 90
         )
         try:
             updated = datetime.fromisoformat(self.updated_at.replace("Z", "+00:00"))
@@ -207,9 +205,7 @@ async def read_outcome_snapshot(
                 await session.execute(select(Outcome).where(Outcome.signal_id == sid).limit(1))
             ).scalar_one_or_none()
 
-        state_value = normalize_lifecycle_state(
-            getattr(lifecycle, "state", None) or getattr(outcome, "status", None)
-        )
+        state_value = normalize_lifecycle_state(getattr(lifecycle, "state", None) or getattr(outcome, "status", None))
         outcome_meta = dict(getattr(outcome, "meta", None) or {})
         highest = max(
             highest_tp_for_state(state_value),
@@ -248,11 +244,7 @@ def format_outcome_snapshot(snapshot: OutcomeSnapshot) -> str:
         if snapshot.price is not None
         else "\nPrice feed: temporarily unavailable"
     )
-    next_line = (
-        f"\nNext target: <code>{snapshot.next_target:.6g}</code>"
-        if snapshot.next_target is not None
-        else ""
-    )
+    next_line = f"\nNext target: <code>{snapshot.next_target:.6g}</code>" if snapshot.next_target is not None else ""
     trust_line = "" if snapshot.provider_trusted else "\nFeed confidence: awaiting a trusted refresh"
     highest_label = f"TP{snapshot.highest_tp_hit}" if snapshot.highest_tp_hit > 0 else "None yet"
     return (

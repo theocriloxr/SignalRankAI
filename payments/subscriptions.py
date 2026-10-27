@@ -11,6 +11,4 @@ loudly.
 from __future__ import annotations
 
 
-raise RuntimeError(
-    "payments.subscriptions (SQLite) has been removed. Use Postgres-backed subscription persistence."
-)
+raise RuntimeError("payments.subscriptions (SQLite) has been removed. Use Postgres-backed subscription persistence.")

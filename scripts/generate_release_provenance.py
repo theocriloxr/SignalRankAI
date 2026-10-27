@@ -8,6 +8,7 @@ The generated bundle contains:
 No signing key is created or guessed here. External artifact signing/attestation
 can sign the deterministic digest produced by this tool.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -18,12 +19,14 @@ from pathlib import Path
 import re
 import subprocess
 from typing import Any
+from packaging.markers import Marker
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "requirements.lock"
 DOCKERFILE = ROOT / "Dockerfile"
 CURRENT_RELEASE = ROOT / "CURRENT_RELEASE.md"
-MANIFEST = ROOT / "release_certification_manifest.txt"
+MANIFEST = ROOT / "certification" / "release_manifest.yaml"
+TEST_SELECTION_MANIFEST = ROOT / "release_certification_manifest.txt"
 
 ALEMBIC_RE = re.compile(r"Repository Alembic head:\s*([A-Za-z0-9_\-]+)")
 REQ_RE = re.compile(r"^([A-Za-z0-9_.\-]+)==([^\s#]+)$")
@@ -57,13 +60,17 @@ def git_value(*args: str) -> str:
 
 
 def release_identity(commit: str | None = None, branch: str | None = None) -> tuple[str, str]:
-    resolved_commit = str(
-        commit
-        or os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("GIT_COMMIT_SHA")
-        or git_value("rev-parse", "HEAD")
-        or ""
-    ).strip().lower()
+    resolved_commit = (
+        str(
+            commit
+            or os.getenv("RAILWAY_GIT_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or git_value("rev-parse", "HEAD")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     if not re.fullmatch(r"[0-9a-f]{40}", resolved_commit):
         raise ValueError("release_commit_must_be_exact_40_char_sha")
 
@@ -94,7 +101,8 @@ def locked_components() -> list[dict[str, Any]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        match = REQ_RE.match(line)
+        requirement, separator, marker = line.partition(";")
+        match = REQ_RE.match(requirement.strip())
         if not match:
             raise ValueError(f"unsupported_lock_line:{line[:120]}")
         name, version = match.groups()
@@ -102,15 +110,37 @@ def locked_components() -> list[dict[str, Any]]:
         if key in seen:
             raise ValueError(f"duplicate_locked_component:{key}")
         seen.add(key)
-        components.append(
-            {
+        component = {
                 "type": "library",
                 "name": name,
                 "version": version,
                 "purl": f"pkg:pypi/{key}@{version}",
             }
-        )
+        if separator:
+            component["properties"] = [{"name": "signalrank:environment-marker", "value": str(Marker(marker.strip()))}]
+        components.append(component)
     return sorted(components, key=lambda item: (item["name"].lower(), item["version"]))
+
+
+def _deterministic_build_time(commit: str) -> str:
+    """Return a stable provenance timestamp for the same source commit."""
+    source_date_epoch = str(os.getenv("SOURCE_DATE_EPOCH") or "").strip()
+    if source_date_epoch:
+        try:
+            import datetime
+            return datetime.datetime.fromtimestamp(
+                int(source_date_epoch), tz=datetime.timezone.utc
+            ).isoformat()
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("invalid_SOURCE_DATE_EPOCH")
+
+    git_timestamp = git_value("show", "-s", "--format=%cI", commit)
+    if git_timestamp:
+        return git_timestamp
+    # Unit tests may use a synthetic 40-char SHA that is not a real Git object.
+    # A fixed sentinel keeps the artifact deterministic without pretending the
+    # current wall clock is part of source identity.
+    return "1970-01-01T00:00:00+00:00"
 
 
 def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -120,8 +150,6 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
     current_release_hash = sha256_file(CURRENT_RELEASE)
     head = alembic_head()
 
-    import datetime
-    
     sbom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -150,14 +178,15 @@ def build_bundle(commit: str, branch: str) -> tuple[dict[str, Any], dict[str, An
             "git_commit": commit,
             "git_branch": branch,
             "alembic_head": head,
-            "build_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "build_time": _deterministic_build_time(commit),
             "certification_manifest_version": "1.0",
         },
         "inputs": {
             "requirements.lock": {"sha256": lock_hash, "component_count": len(components)},
             "Dockerfile": {"sha256": docker_hash},
             "CURRENT_RELEASE.md": {"sha256": current_release_hash},
-            "release_certification_manifest.txt": {"sha256": sha256_file(MANIFEST)},
+            "certification/release_manifest.yaml": {"sha256": sha256_file(MANIFEST)},
+            "release_certification_manifest.txt": {"sha256": sha256_file(TEST_SELECTION_MANIFEST)},
         },
         "artifacts": {
             "sbom.cdx.json": {"sha256": sbom_hash, "format": "CycloneDX-1.5"},

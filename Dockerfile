@@ -1,47 +1,93 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Install system dependencies required by some Python packages (e.g. psycopg2)
+# Pin the Debian security updates as well as the base digest. The base predates
+# DSA-6530-1 (PCRE2) and DSA-6531-1 (OpenSSL); installing libpq alone keeps those
+# vulnerable inherited packages in the final image.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends gcc libpq-dev \
-	&& rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends gcc=4:14.2.0-1 libpq-dev=17.11-0+deb13u1 libpcre2-8-0=10.46-1~deb13u3 libssl3t64=3.5.7-1~deb13u3 openssl=3.5.7-1~deb13u3 openssl-provider-legacy=3.5.7-1~deb13u3 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the declared direct requirements and the certified full dependency graph
-# Copy the declared direct requirements and the certified full dependency graph
-# first to preserve Docker layer caching. Runtime images install the lock, not
-# a freshly-resolved graph.
-COPY requirements.txt requirements.lock release_certification_manifest.txt ./
+COPY requirements.txt requirements.lock requirements-build-tools.txt requirements-market-data-sdk.lock release_certification_manifest.txt ./
+RUN python -m venv "$VIRTUAL_ENV" \
+    && python -m pip install --requirement requirements-build-tools.txt \
+    && pip install --no-deps -r requirements.lock \
+    && pip check
 
-# Install the exact certified graph without allowing pip to re-resolve
-# transitive dependencies. pip check fails the image build if the lock is
-# internally inconsistent or misses a dependency required by installed
-# packages.
-RUN python -m pip install --upgrade pip setuptools wheel \
-	&& pip install --no-deps -r requirements.lock \
-	&& pip check
+# Keep SDK dependencies out of the Telegram runtime (httpx versions conflict).
+RUN python -m venv /opt/market-data-sdk \
+    && /opt/market-data-sdk/bin/python -m pip install -r requirements-build-tools.txt \
+    && /opt/market-data-sdk/bin/python -m pip install --no-build-isolation --require-hashes -r requirements-market-data-sdk.lock \
+    && /opt/market-data-sdk/bin/python -m pip check
 
-# Copy application code
 COPY . .
+RUN /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v
 
-# Release-critical regression gate. GitHub-hosted CI can be unavailable before a
-# runner starts; these deterministic tests therefore also execute in the image
-# build and must pass before Railway can deploy the artifact.
-RUN echo "release_gate=20260925_web_fanout_db_pressure_v3" \
-    && python -m compileall -q engine db data worker services ml signalrank_telegram web runtime core execution \
-    && xargs -a release_certification_manifest.txt python -m pytest -q \
-    && python scripts/generate_release_provenance.py --output-dir /tmp/signalrank-build-provenance --commit 0000000000000000000000000000000000000000 --branch build-gate --verify-self \
-    && python scripts/generate_release_docs.py --provenance /tmp/signalrank-build-provenance/release-provenance.json --output /tmp/signalrank-build-provenance/RELEASE_NOTES.md \
-    && python scripts/production_readiness_check.py
+# Build-time certification is intentionally deterministic and network-free
+# except for dependency installation above. This prevents Railway from
+# deploying an image whose release-critical regression set does not pass.
+RUN python scripts/run_release_manifest.py --environment image --group image
 
-# Ensure start script is executable and use it as entrypoint so migrations/run-time
-# setup happens when the container starts (not during image build).
-RUN chmod +x ./start.sh || true
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS stripped-runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    MARKET_DATA_SDK_PYTHON=/opt/market-data-sdk/bin/python \
+    SIGNALRANK_IMMUTABLE_RUNTIME=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5=17.11-0+deb13u1 ca-certificates=20250419 libpcre2-8-0=10.46-1~deb13u3 libssl3t64=3.5.7-1~deb13u3 openssl=3.5.7-1~deb13u3 openssl-provider-legacy=3.5.7-1~deb13u3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 signalrank \
+    && useradd --system --uid 10001 --gid signalrank --create-home --home-dir /home/signalrank signalrank
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/market-data-sdk /opt/market-data-sdk
+COPY --from=builder --chown=signalrank:signalrank /app /app
+
+RUN python -m pip uninstall --yes pip \
+    && /opt/market-data-sdk/bin/python -m pip uninstall --yes pip \
+    && rm -rf /usr/local/lib/python3.11/site-packages/pip /usr/local/lib/python3.11/site-packages/pip-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/setuptools /usr/local/lib/python3.11/site-packages/setuptools-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/_distutils_hack /usr/local/lib/python3.11/site-packages/pkg_resources \
+        /usr/local/lib/python3.11/site-packages/wheel /usr/local/lib/python3.11/site-packages/wheel-*.dist-info \
+        /usr/local/lib/python3.11/ensurepip \
+    && rm -f /usr/local/lib/python3.11/site-packages/distutils-precedence.pth \
+        /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.11 /usr/local/bin/wheel \
+    && python scripts/verify_runtime_dependencies.py \
+    && /opt/market-data-sdk/bin/python scripts/verify_runtime_dependencies.py \
+    && python -c "import importlib.util; assert importlib.util.find_spec('pip') is None" \
+    && /opt/market-data-sdk/bin/python -c "import importlib.util; assert importlib.util.find_spec('pip') is None" \
+    && /usr/local/bin/python -c "import importlib.util; assert importlib.util.find_spec('pip') is None; assert importlib.util.find_spec('setuptools') is None" \
+    && python -c "import numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2" \
+    && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v \
+    && chmod +x /app/start.sh \
+    && python scripts/build_minimal_runtime.py --docker-build \
+    && chroot /signalrank-runtime /opt/venv/bin/python -c "import ssl, uuid, sqlite3, multiprocessing, zoneinfo, numpy, pandas, scipy, sklearn, xgboost, asyncpg, psycopg2; assert len(ssl.create_default_context().get_ca_certs()) > 100; assert uuid.uuid4().version == 4; assert zoneinfo.ZoneInfo('Africa/Lagos')" \
+    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/market-data-sdk/bin/python -m unittest discover -s tests_sdk -v' \
+    && chroot /signalrank-runtime /bin/sh -c 'cd /app && /opt/venv/bin/python -m pytest -q -s -p no:cacheprovider tests/test_minimal_runtime.py tests/test_posix_startup.py'
+
+# Publish the required runtime payload and accurate original OS package records.
+FROM scratch AS runtime
+COPY --from=stripped-runtime /signalrank-runtime/ /
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    MARKET_DATA_SDK_PYTHON=/opt/market-data-sdk/bin/python \
+    SIGNALRANK_IMMUTABLE_RUNTIME=1 \
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
+WORKDIR /app
+USER 10001:10001
 
 EXPOSE 8080
-
-# Use the start script which runs migrations and then starts the appropriate service
-ENTRYPOINT ["/bin/bash", "./start.sh"]
+ENTRYPOINT ["/bin/sh", "/app/start.sh"]

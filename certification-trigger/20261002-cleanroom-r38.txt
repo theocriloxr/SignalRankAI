@@ -1,0 +1,9 @@
+SignalRankAI synchronized certification trigger r38
+branch=implementation-of-master-blueprint
+head_before_trigger=c0d4c05085b7c1221fb5b30d79a4898fd3d3b3ed
+backend_cleanroom=required
+frontend_cleanroom=required
+mobile_native_cleanroom=required
+static_security_cleanroom=required
+oct1_replay_orm_materialization=required
+live_execution_authorized=false

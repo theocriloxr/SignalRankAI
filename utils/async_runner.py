@@ -25,7 +25,13 @@ def _background_workers_disabled() -> bool:
     """
     if "pytest" in sys.modules:
         return True
-    requested = str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() in {"1", "true", "yes", "y", "on"}
+    requested = str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
     railway = any(
         bool((os.getenv(name) or "").strip())
         for name in (
@@ -39,6 +45,7 @@ def _background_workers_disabled() -> bool:
     if requested and railway:
         try:
             import logging
+
             logging.getLogger(__name__).warning(
                 "[async_runner] SIGNALRANK_DISABLE_BACKGROUND_THREADS ignored on Railway; using shared loop"
             )
@@ -46,6 +53,7 @@ def _background_workers_disabled() -> bool:
             pass
         return False
     return requested
+
 
 def _ensure_background_loop() -> asyncio.AbstractEventLoop:
     """Create (once) and return a dedicated background event loop.
@@ -205,6 +213,7 @@ def submit_background_coro(coro, *, label: str = "background"):
     started = time.perf_counter()
     try:
         import logging
+
         logging.getLogger(__name__).info("[%s] background coroutine submitted", label)
     except Exception:
         pass
@@ -216,13 +225,23 @@ def submit_background_coro(coro, *, label: str = "background"):
             result = done_fut.result()
             try:
                 import logging
-                logging.getLogger(__name__).info("[%s] background coroutine finished elapsed_ms=%s result=%s", label, elapsed_ms, result)
+
+                logging.getLogger(__name__).info(
+                    "[%s] background coroutine finished elapsed_ms=%s result=%s", label, elapsed_ms, result
+                )
             except Exception:
                 pass
         except BaseException as exc:  # pragma: no cover - defensive logging path
             try:
                 import logging
-                logging.getLogger(__name__).warning("[%s] background coroutine failed elapsed_ms=%s err_type=%s err=%s", label, elapsed_ms, type(exc).__name__, exc)
+
+                logging.getLogger(__name__).warning(
+                    "[%s] background coroutine failed elapsed_ms=%s err_type=%s err=%s",
+                    label,
+                    elapsed_ms,
+                    type(exc).__name__,
+                    exc,
+                )
             except Exception:
                 pass
 

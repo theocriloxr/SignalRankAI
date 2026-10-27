@@ -5,20 +5,18 @@ trading, copy trading and strategy bots. Pure, decimal-safe and deterministic
 so it can be unit-tested without a database or broker. Kill-switch state is
 explicit and env-derived; every decision returns a typed ``RiskDecision``.
 """
+
 from __future__ import annotations
 
-import math
 import os
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    return str(os.getenv(name, "1" if default else "0")).strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    return str(os.getenv(name, "1" if default else "0")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -154,9 +152,7 @@ class PortfolioRiskAuthority:
         self.consecutive_losses = 0
         self.peak_equity = self.equity
         self._kill_switch = (
-            _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True)
-            if kill_switch_global is None
-            else bool(kill_switch_global)
+            _env_bool("GLOBAL_EXECUTION_KILL_SWITCH", True) if kill_switch_global is None else bool(kill_switch_global)
         )
         self._now = now
         self.decisions_recorded = 0
@@ -217,13 +213,9 @@ class PortfolioRiskAuthority:
         account_exposure = (self.total_notional + notional) / self.equity if self.equity > 0 else Decimal("0")
         symbol_exposure = symbol_notional / self.equity if self.equity > 0 else Decimal("0")
         if account_exposure > self.limits.max_account_exposure_pct:
-            return RiskDecision(
-                False, "account_exposure_limit", tuple(checks), account_exposure
-            )
+            return RiskDecision(False, "account_exposure_limit", tuple(checks), account_exposure)
         if symbol_exposure > self.limits.max_symbol_exposure_pct:
-            return RiskDecision(
-                False, "symbol_exposure_limit", tuple(checks), account_exposure
-            )
+            return RiskDecision(False, "symbol_exposure_limit", tuple(checks), account_exposure)
         entry = _decimal(candidate.entry, "entry")
         stop = _decimal(candidate.stop, "stop")
         if entry <= 0 or stop <= 0 or entry == stop:

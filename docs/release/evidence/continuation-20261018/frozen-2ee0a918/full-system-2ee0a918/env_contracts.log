@@ -1,0 +1,20 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' scripts/validate_env_contract.py .env.example RAILWAY_ENV_UPDATED.env.example 'configs\env\hermetic-test.env.example' 'configs\env\production.env.example' 'configs\env\railway-hobby-full-advisory.env.example' 'configs\env\railway-hobby-owner-beta.env.example' 'configs\env\railway-hobby-paper-demo.env.example' 'configs\env\railway-hobby-real-execution-gated.env.example' 'configs\env\railway-staging.env.example' 'deploy\railway_roles\analytics.env' 'deploy\railway_roles\delivery.env' 'deploy\railway_roles\engine.env' 'deploy\railway_roles\gateway.env' 'deploy\railway_roles\monolith_safe.env' 'deploy\railway_roles\outcome.env' 'deploy\railway_roles\worker.env'
+
+ATTEMPT 1/1
+
+.env.example: VALID
+RAILWAY_ENV_UPDATED.env.example: VALID
+configs\env\hermetic-test.env.example: VALID
+configs\env\production.env.example: VALID
+configs\env\railway-hobby-full-advisory.env.example: VALID
+configs\env\railway-hobby-owner-beta.env.example: VALID
+configs\env\railway-hobby-paper-demo.env.example: VALID
+configs\env\railway-hobby-real-execution-gated.env.example: VALID
+configs\env\railway-staging.env.example: VALID
+deploy\railway_roles\analytics.env: VALID
+deploy\railway_roles\delivery.env: VALID
+deploy\railway_roles\engine.env: VALID
+deploy\railway_roles\gateway.env: VALID
+deploy\railway_roles\monolith_safe.env: VALID
+deploy\railway_roles\outcome.env: VALID
+deploy\railway_roles\worker.env: VALID

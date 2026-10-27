@@ -1,0 +1,4 @@
+COMMAND: 'C:\Users\sammm\Desktop\a folder of everything\SignalRankAI\.audit-venv\Scripts\python.exe' -m compileall -q core engine web worker db data market_data_sdk strategies services ml signalrank_telegram runtime execution
+
+ATTEMPT 1/1
+

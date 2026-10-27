@@ -1,4 +1,5 @@
 """Static verifier for SignalRankAI v1.2.7 outcome/price/production release."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,7 +26,10 @@ def main() -> None:
     )
 
     tracker = (ROOT / "engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
-    require("func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES)" in tracker, "case-normalised delivery proof")
+    require(
+        "func.lower(SignalDelivery.delivery_state).in_(_DELIVERY_PROOF_STATES)" in tracker,
+        "case-normalised delivery proof",
+    )
     require("async def reconcile_signal_now" in tracker, "interactive outcome reconciliation")
     require("reconciliation_backfill fetched=%d" in tracker, "backfill observability")
     require("priority=_outcome_db_priority()" in tracker, "critical outcome DB lane")
@@ -38,7 +42,13 @@ def main() -> None:
     require("MONITOR_SNAPSHOT_MAX_AGE_SECONDS" in bot, "monitor freshness ceiling")
     require("result.provider_symbol" in bot and "feed_identity" in bot, "monitor provider symbol attribution")
     require("CHECK_OUTCOME_RECONCILE_TIMEOUT_SECONDS" in bot, "check-outcome read-through reconciliation")
-    require("from core.trade_tracker" not in bot[bot.index("async def _build_monitor_snapshot"):bot.index("async def _build_monitor_snapshot") + 9000], "monitor avoids legacy price cache")
+    require(
+        "from core.trade_tracker"
+        not in bot[
+            bot.index("async def _build_monitor_snapshot") : bot.index("async def _build_monitor_snapshot") + 9000
+        ],
+        "monitor avoids legacy price cache",
+    )
 
     trade_tracker = (ROOT / "core/trade_tracker.py").read_text(encoding="utf-8")
     require("TRADE_TRACKER_LATEST_TICK_MAX_AGE_SECONDS" in trade_tracker, "stale Redis tick rejection")
@@ -51,7 +61,10 @@ def main() -> None:
     require('bindparam("asset", type_=String())' in adaptive_commands, "typed adaptive status bind")
 
     error_classification = (ROOT / "signalrank_telegram/error_classification.py").read_text(encoding="utf-8")
-    require("ambiguousparametererror" in error_classification.lower() and "db_query" in error_classification, "SQL defects not labelled DB pressure")
+    require(
+        "ambiguousparametererror" in error_classification.lower() and "db_query" in error_classification,
+        "SQL defects not labelled DB pressure",
+    )
 
     commands = (ROOT / "signalrank_telegram/commands.py").read_text(encoding="utf-8")
     require("socket_timeout=3" in commands and "socket_timeout_seconds" not in commands, "valid Redis health timeout")
@@ -69,15 +82,24 @@ def main() -> None:
     require(staging.exists(), "staging environment profile")
     profile = production.read_text(encoding="utf-8")
     require("APP_ENV=production" in profile, "production mode")
-    require("REAL_EXECUTION_ENABLED=0" in profile and "COPY_TRADE_ENABLED=0" in profile, "initial live-execution fail-closed")
-    require("PAYMENTS_PUBLIC_ENABLED=1" in profile and "REAL_PAYOUTS_ENABLED=0" in profile, "public payments with payouts fail-closed")
+    require(
+        "REAL_EXECUTION_ENABLED=0" in profile and "COPY_TRADE_ENABLED=0" in profile,
+        "initial live-execution fail-closed",
+    )
+    require(
+        "PAYMENTS_PUBLIC_ENABLED=1" in profile and "REAL_PAYOUTS_ENABLED=0" in profile,
+        "public payments with payouts fail-closed",
+    )
     require("DB_POOL_SIZE=2" in profile and "DB_MAX_OVERFLOW=0" in profile, "safe Railway monolith app pool")
 
     diagnostics = (ROOT / "scripts/deployment_diagnostics.py").read_text(encoding="utf-8")
     require('name="postgresql_capacity_headroom"' in diagnostics, "PostgreSQL capacity launch gate")
 
     railway = (ROOT / "railway_main.py").read_text(encoding="utf-8")
-    require("redis_enqueue_indeterminate" in railway and "retry_no_local_fallback" in railway, "webhook timeout duplicate prevention")
+    require(
+        "redis_enqueue_indeterminate" in railway and "retry_no_local_fallback" in railway,
+        "webhook timeout duplicate prevention",
+    )
 
     print("PASS v1.2.7 outcome/price/production verification")
 

@@ -1,0 +1,40 @@
+{
+  "name": "opengrep-393f3d88",
+  "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+  "environment": "sanitized_local_test",
+  "started_at": "2026-10-18T08:53:53.589730+00:00",
+  "finished_at": "2026-10-18T08:57:13.395228+00:00",
+  "command": [
+    "C:\\Users\\sammm\\Desktop\\a folder of everything\\SignalRankAI\\.audit-venv\\Scripts\\python.exe",
+    "artifacts/run_windows_static_tool.py",
+    "scripts.semgrep_gate",
+    "--engine",
+    "opengrep",
+    "--minimum-scanned",
+    "400",
+    "--output",
+    "artifacts/security/semgrep-393f3d88.json"
+  ],
+  "cwd": ".",
+  "exit_code": 0,
+  "command_exit_code": 0,
+  "launch_error": null,
+  "require_clean": true,
+  "acceptance_eligible": true,
+  "worktree_before": {
+    "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+    "dirty": false
+  },
+  "worktree_after": {
+    "sha": "393f3d88d6018d01c3f04234cc9c44b23a5de8fc",
+    "dirty": false
+  },
+  "step_timeout_seconds": null,
+  "log": "artifacts/stage1-20261014/opengrep-393f3d88.log",
+  "log_sha256": "176b1fbf23a4af4689861e9f1d2ae16b8b9aa29275a4b9554fbb64da0a0c1395",
+  "result": "PASS",
+  "source_unchanged": true,
+  "source_fingerprint_before": "ebf2a3fc0a18617d9918e045ec28089c873ceee0ec73d2c96eac59531a2befac",
+  "source_fingerprint_after": "ebf2a3fc0a18617d9918e045ec28089c873ceee0ec73d2c96eac59531a2befac",
+  "scope": "Local check only; no hosted CI, deployment, provider, broker or live execution certification"
+}

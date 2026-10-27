@@ -1,0 +1,11 @@
+{
+  "name": "@signalrank/next-root-glob",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bounded directory discovery for Next ESLint, backed by tinyglobby",
+  "main": "index.cjs",
+  "license": "MIT",
+  "dependencies": {
+    "tinyglobby": "0.2.17"
+  }
+}

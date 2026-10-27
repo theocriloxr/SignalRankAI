@@ -69,6 +69,7 @@ _DEFAULT_PIP_VALUE = 10.0  # USD per lot per pip for standard FX
 # Lot-size calculators
 # ---------------------------------------------------------------------------
 
+
 def calculate_lot_size_premium(user) -> float:  # type: ignore[valid-type]
     """Return the fixed lot size for a PREMIUM user.
 
@@ -137,6 +138,7 @@ def calculate_lot_size_vip(
 # Daily execution guard
 # ---------------------------------------------------------------------------
 
+
 def _is_new_day(user) -> bool:  # type: ignore[valid-type]
     """Return True if user's execution counter should be reset (new UTC day)."""
     reset_at = getattr(user, "daily_executions_reset_at", None)
@@ -196,6 +198,7 @@ async def can_execute(user) -> Tuple[bool, str]:  # type: ignore[valid-type]
 # Execution helpers
 # ---------------------------------------------------------------------------
 
+
 async def _record_execution(
     db: AsyncSession,
     user_id: int,
@@ -213,7 +216,6 @@ async def _record_execution(
     """Persist an ``MT5Execution`` row and increment the user's daily counter."""
     try:
         from db.models import MT5Execution
-        from db.session import get_session as _gs
 
         execution = MT5Execution(
             user_id=user_id,
@@ -251,9 +253,7 @@ def _execution_signal_payload(signal, *, premium: bool) -> dict:
                 return value
         return default
 
-    targets = MT5SignalRouter._parse_take_profit(
-        _get("take_profit", "targets", default=None)
-    )
+    targets = MT5SignalRouter._parse_take_profit(_get("take_profit", "targets", default=None))
     for name in ("tp1", "take_profit1", "tp2", "take_profit2", "tp3", "take_profit3"):
         value = _get(name, default=None)
         if value is not None:
