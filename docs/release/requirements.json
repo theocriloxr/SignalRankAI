@@ -82,7 +82,15 @@
       "live_trading_authorized": false,
       "change": "CX-OBS-03 partial: /version falls back to the code's Alembic head for schema_head",
       "tests": "tests/test_version_schema_head_20261027.py: 3 passed (local Windows, Python 3.13.7; not CI, staging or production)",
-      "promotion": "requested without PROMOTE_TO_PRODUCTION or plan prerequisites; not executed"
+      "promotion": "requested without PROMOTE_TO_PRODUCTION or plan prerequisites; not executed",
+      "python_suite_on_branch": {
+        "commit": "920ca054",
+        "passed": 3950,
+        "failed": 1,
+        "skipped": 161,
+        "result": "FAIL (environmental: alembic only in user site-packages, excluded by python -I)",
+        "scope": "Local Windows 11, Python 3.13.7, no PostgreSQL; not CI, staging or production"
+      }
     }
   },
   "inventory_is_verification": false,
