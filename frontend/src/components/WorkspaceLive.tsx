@@ -250,11 +250,22 @@ function QualityView({ data }: { data: Row }) {
   const categories=Object.entries(bucket).filter(([key])=>["ml","score","news","stale","slippage","other"].includes(key));
   return <Card title="Signal quality gate" eyebrow={`Last ${numberLabel(data.window_hours,0)} hours`} description="Quality decisions over the backend-reported window. Not an account return or a promised signal volume.">
     <div className="ui-stat-grid"><Stat label="Issued decisions" value={numberLabel(data.issued,0)}/><Stat label="Rejected or skipped" value={numberLabel(data.rejected_or_skipped,0)}/><Stat label="Acceptance fraction" value={probabilityLabel(data.acceptance_rate)}/></div>
+    {finite(data.issued)===0&&finite(data.rejected_or_skipped)===0&&<Notice tone="warning">No quality decisions were recorded in this window. A running engine records rejections even when it issues nothing, so an empty window usually means the signal engine did not run — not that markets were quiet.</Notice>}
     <div className="ws-grid-2">
       <div className="ws-subsection"><h3>Rejection categories</h3>{categories.length?<KVList>{categories.map(([key,value])=><KV key={key} label={key} value={numberLabel(value,0)}/>)}</KVList>:<p className="ui-muted">No categories reported.</p>}</div>
       <div className="ws-subsection"><h3>Most frequent reasons</h3>{reasons.length?<KVList>{reasons.map((r,i)=><KV key={display(r.reason,String(i))} label={display(r.reason)} value={numberLabel(r.rows,0)}/>)}</KVList>:<p className="ui-muted">No rejection reasons reported.</p>}</div>
     </div>
+    <QualityBreakdowns breakdowns={record(data.breakdowns)}/>
   </Card>;
+}
+
+const QUALITY_DIMENSIONS: [string,string][] = [["strategy","Strategy"],["asset","Instrument"],["timeframe","Timeframe"],["layer","Pipeline layer"]];
+
+/** Where decisions are rejected; rows without a recorded strategy stay "(unattributed)". */
+function QualityBreakdowns({ breakdowns }: { breakdowns: Row }) {
+  const sections=QUALITY_DIMENSIONS.map(([key,label])=>[key,label,rows(breakdowns[key])] as const).filter(([,,items])=>items.length);
+  if(!sections.length) return null;
+  return <div className="ws-grid-2">{sections.map(([key,label,items])=><div className="ws-subsection" key={key}><h3>Decisions by {label.toLowerCase()}</h3><TableWrap label={`Scrollable decisions by ${label.toLowerCase()}`}><thead><tr><th>{label}</th><th>Issued</th><th>Rejected or skipped</th><th>Acceptance fraction</th></tr></thead><tbody>{items.map((item,i)=><tr key={display(item.value,String(i))+"-"+i}><th>{display(item.value)}</th><td>{numberLabel(item.issued,0)}</td><td>{numberLabel(item.rejected_or_skipped,0)}</td><td>{probabilityLabel(item.acceptance_rate)}</td></tr>)}</tbody></TableWrap></div>)}</div>;
 }
 
 function ResearchView({ data }: { data: Row }) {

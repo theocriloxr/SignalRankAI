@@ -230,7 +230,13 @@
 @media (max-width: 980px) and (min-width: 681px) {
   .mk-statement { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
 }
+@media (max-width: 480px) {
+  .mk-nav { gap: var(--space-3); }
+  .mk-nav-actions .ui-btn--primary { padding-inline: 12px; }
+}
 @media (max-width: 390px) {
+  /* The menu panel repeats "Open workspace"; the Menu button must stay on screen. */
+  .mk-nav-actions > .ui-btn--primary { display: none; }
   .mk-hero h1 { font-size: 2.35rem; }
   .mk-hero-actions .ui-btn { width: 100%; }
   .mk-lifecycle-nav { grid-template-columns: minmax(0, 1fr); }

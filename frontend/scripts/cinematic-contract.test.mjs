@@ -71,3 +71,13 @@ test("design system handles mobile, themes, reduced motion and forced colors rat
   assert.ok(styles.includes('.ws-nav-group a[aria-current="page"]'));
   assert.ok(styles.includes(":focus-visible"));
 });
+
+test("public header keeps the Menu button on screen at 320-390 px",()=>{
+  // At 320 px the header's Open workspace button pushed Menu off-screen (x 328-398),
+  // leaving small phones with no site navigation. The menu panel repeats the link.
+  const css=read("src/styles/marketing.css");
+  const nav=read("src/components/PublicNav.tsx");
+  const narrow=css.slice(css.indexOf("@media (max-width: 390px)"));
+  assert.match(narrow.slice(0,narrow.indexOf("}\n")+1),/\.mk-nav-actions > \.ui-btn--primary \{ display: none; \}/);
+  assert.match(nav,/mk-menu-actions[\s\S]*href="\/app">Open workspace/);
+});
