@@ -47,6 +47,9 @@ async def _reserve_execution_quota(
             if user is None:
                 await session.rollback()
                 return False, "user_profile_missing", None
+            # Rollback expires ORM state; reading user.id afterwards would lazy-load
+            # synchronously and turn every refusal into "execution_quota_unavailable".
+            user_db_id = int(user.id)
 
             try:
                 from services.user_intelligence import get_platform_user_trading_preferences
@@ -86,7 +89,7 @@ async def _reserve_execution_quota(
                     drawdown_cap = min(drawdown_cap, profile_drawdown)
             if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
                 await session.rollback()
-                return False, "daily_drawdown_guard", int(user.id)
+                return False, "daily_drawdown_guard", user_db_id
 
             current = int(getattr(user, "daily_executions_today", 0) or 0)
             tier_upper = str(tier or "FREE").upper()
@@ -98,7 +101,7 @@ async def _reserve_execution_quota(
                         limit = min(limit, profile_limit) if limit > 0 else profile_limit
                 if limit == 0 or current >= limit:
                     await session.rollback()
-                    return False, "premium_daily_execution_limit", int(user.id)
+                    return False, "premium_daily_execution_limit", user_db_id
 
             mode = str(execution_mode or "").strip().lower()
             if mode in {"auto", "live", "copy_trade"}:
@@ -120,15 +123,15 @@ async def _reserve_execution_quota(
                         auto_limit = min(auto_limit, profile_limit) if auto_limit > 0 else profile_limit
                 if auto_limit == 0:
                     await session.rollback()
-                    return False, "auto_execution_limit_disabled", int(user.id)
+                    return False, "auto_execution_limit_disabled", user_db_id
                 if auto_limit > 0 and current >= auto_limit:
                     await session.rollback()
-                    return False, "auto_daily_execution_limit", int(user.id)
+                    return False, "auto_daily_execution_limit", user_db_id
 
             user.daily_executions_today = current + 1
             user.daily_executions_reset_at = now
             await session.commit()
-            return True, "", int(user.id)
+            return True, "", user_db_id
     except Exception:
         logger.warning("shared execution quota unavailable; blocking", exc_info=True)
         return False, "execution_quota_unavailable", None
