@@ -1551,10 +1551,26 @@ def _top_cycle_reasons(pipeline_stats: dict[str, Any], key: str, limit: int = 8)
 
 def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200) -> None:
     """Persist compact latest-cycle telemetry for admin pulse/debug views."""
+    if payload.get("status") != "stalled":
+        from engine import stall_watchdog
+
+        stall_watchdog.mark(str(payload.get("status") or "cycle_state"))
     try:
         state.set_sync("engine:last_cycle", json.dumps(payload, default=str), ex=max(60, int(ttl_seconds)))
     except Exception:
         logger.debug("[engine] failed to publish cycle state", exc_info=True)
+
+
+def _publish_engine_stall(details: dict[str, Any]) -> None:
+    """Heartbeat published by the stall watchdog; readiness treats ``stalled`` as not ready."""
+    _publish_engine_cycle_state(
+        {
+            **details,
+            "git_sha": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT_SHA") or "unknown"),
+            "deployment_id": str(os.getenv("RAILWAY_DEPLOYMENT_ID") or "local"),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 def _publish_engine_cycle_skip(cycle_no: int, reason: str, sleep_seconds: float) -> None:
@@ -2608,6 +2624,13 @@ def load_tradable_assets() -> List[str]:
 def main_loop(DRY_RUN: bool = False):
     start_outage_alert_job()
 
+    # A database call on a dead connection once blocked this loop for six days
+    # while the process stayed "online"; the watchdog names the stuck call and,
+    # for a dedicated engine process, exits so the platform restarts it.
+    from engine import stall_watchdog
+
+    stall_watchdog.start(publish=_publish_engine_stall)
+
     # Outcome tracker ownership is worker-only in monolith runtime.
     logger.info("[engine] RealtimeOutcomeTracker disabled (owned by worker loop)")
 
@@ -3563,6 +3586,7 @@ def main_loop(DRY_RUN: bool = False):
                 continue
 
             logger.info(f"[engine] pipeline: starting asset={asset}")
+            stall_watchdog.mark(f"pipeline:{asset}")
             try:
                 market_data = all_market_data.get(asset, {})
                 if isinstance(market_data, dict):

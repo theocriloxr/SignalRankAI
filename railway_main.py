@@ -3258,6 +3258,13 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
                 # Alive but not working: name the early exit instead of a bare status.
                 checks["engine_runtime"]["skip_reason"] = str(cycle.get("skip_reason") or "unknown")
                 checks["engine_runtime"]["next_attempt_in_seconds"] = cycle.get("next_attempt_in_seconds")
+            if cycle.get("status") == "stalled":
+                checks["engine_runtime"]["stall_stage"] = str(cycle.get("stall_stage") or "unknown")
+                checks["engine_runtime"]["stall_age_seconds"] = cycle.get("stall_age_seconds")
+                checks["engine_runtime"]["action"] = (
+                    "The engine loop stopped progressing; its log has the stuck call's stack. "
+                    "Restart the engine service if it did not restart itself."
+                )
         except _EngineHeartbeatMissing as missing:
             checks["engine_runtime"] = {
                 "ok": False,
