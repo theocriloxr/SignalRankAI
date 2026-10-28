@@ -128,6 +128,13 @@
         "railway_state": "Online, 1 replica, 0 failures",
         "deployed_sha": "9865a3d1",
         "pr_202_deployed": false
+      },
+      "third_pass": {
+        "commits": "8495d912..42f212a2",
+        "schema_head": "0056_ai_usage_ledger",
+        "python_suite": "Full Python suite at `42f212a2` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0056`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,250 passed, 2 failed, 2 skipped**. Failures: V7 governance freshness (artifacts regenerated in the following commit) and the environmental `release_provenance[isolated_metadata]` case (`alembic` only in user site-packages, excluded by `python -I`).",
+        "expectancy_lockout": "EXPECTANCY_HARD_BLOCK_ENABLED with 0 delivered outcomes in 30 days refuses every crypto candidate; owner decision required",
+        "backtest": "harness added; real-data run blocked: market-data hosts unreachable from this machine"
       }
     }
   },
@@ -136,17 +143,17 @@
   "summary": {
     "documents": 393,
     "requirements_and_source_sections": 10014,
-    "source_clauses": 60021,
+    "source_clauses": 60022,
     "interfaces": {
-      "ENDPOINT": 181,
-      "API": 169,
+      "ENDPOINT": 182,
+      "API": 170,
       "WEB": 54,
       "MOBILE": 14,
       "COMMAND": 192,
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
-      "STRATEGY_CALLABLE": 59,
+      "STRATEGY_CALLABLE": 60,
       "STRATEGY": 9,
       "TIMEFRAME": 6
     }
@@ -346,9 +353,9 @@
     },
     {
       "path": "CURRENT_RELEASE.md",
-      "sha256_lf": "ffdf50f4f760eb71d606e9496cb9d3932ce778567a4f9396e0ac77c788f391e5",
+      "sha256_lf": "b857e1567d39f44ba62bd747f01e2b7078fc15c7b982665c2b725bacf4f78ce0",
       "encoding": "utf-8-sig",
-      "line_count": 102,
+      "line_count": 104,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 6
     },
@@ -21559,10 +21566,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "b193dff3665efa8187d76aff85d0fa385082f03599fc4614b0a32063eba26624",
+      "source_sha256": "321d3cde850e6084f50dca20f4501c70f069f5a1ffb0407f8d22a32c5a2f03fe",
       "line_start": 1,
       "line_end": 24,
-      "text": "# Current SignalRankAI Release\n\nThe authoritative recovery/handoff contract is now\n[`docs/release/MASTER_EXECUTION_CONTRACT.md`](docs/release/MASTER_EXECUTION_CONTRACT.md),\nwith exact source revisions in [`baseline.json`](docs/release/baseline.json).\nStage 1 acceptance and current evidence are recorded there. Production baseline\nvalues below are historical observations, not a fresh deployment certification.\n\n```text\nVersion: 1.5.1\nPatch level: master-blueprint-release-candidate-20261001\nFingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002\nRepository Alembic head: 0055_user_renewal_default\nRelease-candidate branch: fix/stage1-canonical-reconciliation-20261014\nRelease-candidate status: NOT YET LIVE-CERTIFIED\nPreviously certified staging baseline: 0045_mt5_credential_retirement (historical only)\nProduction runtime baseline: 9865a3d1bcee632bfd9347e50d5de34d355225d9 (schema 0053_research_market_inputs)\nProduction live-money posture during certification: keep disabled / fail-closed\n```\n\nThis file summarizes release provenance. Historical staging,\nproduction and clean-room reports remain evidence for the exact older SHAs they\nname; they do **not** certify the current release candidate.\n",
+      "text": "# Current SignalRankAI Release\n\nThe authoritative recovery/handoff contract is now\n[`docs/release/MASTER_EXECUTION_CONTRACT.md`](docs/release/MASTER_EXECUTION_CONTRACT.md),\nwith exact source revisions in [`baseline.json`](docs/release/baseline.json).\nStage 1 acceptance and current evidence are recorded there. Production baseline\nvalues below are historical observations, not a fresh deployment certification.\n\n```text\nVersion: 1.5.1\nPatch level: master-blueprint-release-candidate-20261001\nFingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002\nRepository Alembic head: 0056_ai_usage_ledger\nRelease-candidate branch: fix/stage1-canonical-reconciliation-20261014\nRelease-candidate status: NOT YET LIVE-CERTIFIED\nPreviously certified staging baseline: 0045_mt5_credential_retirement (historical only)\nProduction runtime baseline: 9865a3d1bcee632bfd9347e50d5de34d355225d9 (schema 0053_research_market_inputs)\nProduction live-money posture during certification: keep disabled / fail-closed\n```\n\nThis file summarizes release provenance. Historical staging,\nproduction and clean-room reports remain evidence for the exact older SHAs they\nname; they do **not** certify the current release candidate.\n",
       "clauses": [
         {
           "line": 1,
@@ -21606,7 +21613,7 @@
         },
         {
           "line": 13,
-          "text": "Repository Alembic head: 0055_user_renewal_default"
+          "text": "Repository Alembic head: 0056_ai_usage_ledger"
         },
         {
           "line": 14,
@@ -21655,10 +21662,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "a92ee96444a505d2e73bba08603f864a97b3b4a6f36ddc06684b041e90d45486",
+      "source_sha256": "9a7f3d9e1a78a83c624a854786fb4b2f9df26ea2cd2f16d50f6cd6f25c6b4f5c",
       "line_start": 25,
-      "line_end": 61,
-      "text": "## Current release-candidate changes\n\nThe repository schema now extends the previously certified credential-retirement\nchain with:\n\n- `0046_decision_log`: unified decision/rejection evidence;\n- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;\n- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;\n- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.\n- `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.\n- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.\n\n- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.\n- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.\n\n- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.\n\n- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.\n\nThe current release candidate also includes:\n\n- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;\n- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;\n- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;\n- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));\n- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;\n- immediate removal of ineligible assets from pending and refill scanner queues;\n- exact-branch CI/release-manifest gating;\n- web fan-out ORM materialization before SQLAlchemy session expiry;\n- bounded adaptive-candle database transaction wall time;\n- separate Telegram queue-delay and handler-duration SLOs;\n- Redis-first event publication with durable PostgreSQL fallback and replay;\n- process-only liveness plus dependency readiness;\n- explicit build/version provenance;\n- a real Next.js SignalRankAI public/application shell instead of the default\n  Create Next App page.\n",
+      "line_end": 63,
+      "text": "## Current release-candidate changes\n\nThe repository schema now extends the previously certified credential-retirement\nchain with:\n\n- `0046_decision_log`: unified decision/rejection evidence;\n- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;\n- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;\n- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.\n- `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.\n- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.\n\n- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.\n- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.\n\n- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.\n\n- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.\n\n- `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data).\n\nThe current release candidate also includes:\n\n- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;\n- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;\n- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;\n- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));\n- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;\n- immediate removal of ineligible assets from pending and refill scanner queues;\n- exact-branch CI/release-manifest gating;\n- web fan-out ORM materialization before SQLAlchemy session expiry;\n- bounded adaptive-candle database transaction wall time;\n- separate Telegram queue-delay and handler-duration SLOs;\n- Redis-first event publication with durable PostgreSQL fallback and replay;\n- process-only liveness plus dependency readiness;\n- explicit build/version provenance;\n- a real Next.js SignalRankAI public/application shell instead of the default\n  Create Next App page.\n",
       "clauses": [
         {
           "line": 25,
@@ -21714,74 +21721,78 @@
         },
         {
           "line": 44,
-          "text": "The current release candidate also includes:"
+          "text": "- `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data)."
         },
         {
           "line": 46,
-          "text": "- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;"
-        },
-        {
-          "line": 47,
-          "text": "- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;"
+          "text": "The current release candidate also includes:"
         },
         {
           "line": 48,
-          "text": "- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;"
+          "text": "- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;"
         },
         {
           "line": 49,
-          "text": "- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));"
+          "text": "- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;"
         },
         {
           "line": 50,
-          "text": "- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;"
+          "text": "- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;"
         },
         {
           "line": 51,
-          "text": "- immediate removal of ineligible assets from pending and refill scanner queues;"
+          "text": "- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));"
         },
         {
           "line": 52,
-          "text": "- exact-branch CI/release-manifest gating;"
+          "text": "- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;"
         },
         {
           "line": 53,
-          "text": "- web fan-out ORM materialization before SQLAlchemy session expiry;"
+          "text": "- immediate removal of ineligible assets from pending and refill scanner queues;"
         },
         {
           "line": 54,
-          "text": "- bounded adaptive-candle database transaction wall time;"
+          "text": "- exact-branch CI/release-manifest gating;"
         },
         {
           "line": 55,
-          "text": "- separate Telegram queue-delay and handler-duration SLOs;"
+          "text": "- web fan-out ORM materialization before SQLAlchemy session expiry;"
         },
         {
           "line": 56,
-          "text": "- Redis-first event publication with durable PostgreSQL fallback and replay;"
+          "text": "- bounded adaptive-candle database transaction wall time;"
         },
         {
           "line": 57,
-          "text": "- process-only liveness plus dependency readiness;"
+          "text": "- separate Telegram queue-delay and handler-duration SLOs;"
         },
         {
           "line": 58,
-          "text": "- explicit build/version provenance;"
+          "text": "- Redis-first event publication with durable PostgreSQL fallback and replay;"
         },
         {
           "line": 59,
-          "text": "- a real Next.js SignalRankAI public/application shell instead of the default"
+          "text": "- process-only liveness plus dependency readiness;"
         },
         {
           "line": 60,
+          "text": "- explicit build/version provenance;"
+        },
+        {
+          "line": 61,
+          "text": "- a real Next.js SignalRankAI public/application shell instead of the default"
+        },
+        {
+          "line": 62,
           "text": "  Create Next App page."
         }
       ]
     },
     {
-      "id": "SR-SOURCE-d71c56ea68d9428e",
+      "id": "SR-SOURCE-d2d2c8af0abc6f52",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:62",
+      "source": "CURRENT_RELEASE.md:64",
       "requirement": "Certification boundary",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -21792,36 +21803,36 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "b4235de443c6e19e66d503b5fcc930831c6c19b526a0a42144b530d9926619c6",
-      "line_start": 62,
-      "line_end": 68,
+      "line_start": 64,
+      "line_end": 70,
       "text": "## Certification boundary\n\nThis release candidate is **not** production/live-money certified until all\nrequired gates in `certification/release_manifest.yaml` pass for one immutable\nSHA. Required external/runtime evidence includes:\n\n1. clean-room compile/schema/targeted regression pass;",
       "clauses": [
         {
-          "line": 62,
+          "line": 64,
           "text": "## Certification boundary"
         },
         {
-          "line": 64,
+          "line": 66,
           "text": "This release candidate is **not** production/live-money certified until all"
         },
         {
-          "line": 65,
+          "line": 67,
           "text": "required gates in `certification/release_manifest.yaml` pass for one immutable"
         },
         {
-          "line": 66,
+          "line": 68,
           "text": "SHA. Required external/runtime evidence includes:"
         },
         {
-          "line": 68,
+          "line": 70,
           "text": "1. clean-room compile/schema/targeted regression pass;"
         }
       ]
     },
     {
-      "id": "SR-SOURCE-eda25eff1f4b4fce",
+      "id": "SR-SOURCE-afb751397279d5f9",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:69",
+      "source": "CURRENT_RELEASE.md:71",
       "requirement": "2. GitHub/static security and frontend/mobile build gates or equivalent",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -21832,44 +21843,44 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "2e8cfdaf1cc719787fb83adf67f1c0e49dadbf6df35fb49dbabd65116ea71cf9",
-      "line_start": 69,
-      "line_end": 75,
+      "line_start": 71,
+      "line_end": 77,
       "text": "2. GitHub/static security and frontend/mobile build gates or equivalent\n   independent evidence;\n3. isolated Railway staging using separate PostgreSQL and Redis state;\n4. current-head migration and restore drill;\n5. provider freshness certification for each enabled asset class;\n6. demo broker lifecycle and reconciliation certification;\n7. database storage headroom and session-hold SLOs;",
       "clauses": [
         {
-          "line": 69,
+          "line": 71,
           "text": "2. GitHub/static security and frontend/mobile build gates or equivalent"
         },
         {
-          "line": 70,
+          "line": 72,
           "text": "   independent evidence;"
         },
         {
-          "line": 71,
+          "line": 73,
           "text": "3. isolated Railway staging using separate PostgreSQL and Redis state;"
         },
         {
-          "line": 72,
+          "line": 74,
           "text": "4. current-head migration and restore drill;"
         },
         {
-          "line": 73,
+          "line": 75,
           "text": "5. provider freshness certification for each enabled asset class;"
         },
         {
-          "line": 74,
+          "line": 76,
           "text": "6. demo broker lifecycle and reconciliation certification;"
         },
         {
-          "line": 75,
+          "line": 77,
           "text": "7. database storage headroom and session-hold SLOs;"
         }
       ]
     },
     {
-      "id": "SR-SOURCE-9387a8bb18b0d27f",
+      "id": "SR-SOURCE-a4847d56f7979e32",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:76",
+      "source": "CURRENT_RELEASE.md:78",
       "requirement": "8. Telegram/web delivery and outcome reconciliation SLOs;",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -21880,48 +21891,48 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "ea3c61d25e31d5f05b4bba3877b911a72357095db71db099bb1af92ce08dfe11",
-      "line_start": 76,
-      "line_end": 86,
+      "line_start": 78,
+      "line_end": 88,
       "text": "8. Telegram/web delivery and outcome reconciliation SLOs;\n9. 24–72 hour immutable-SHA staging soak;\n10. explicit human approval for any controlled live-money pilot.\n\nNo successful build or deployment by itself changes this boundary.\n\nThe [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0\ncorrections, local PostgreSQL evidence, the GitHub billing blocker, active\nbranch governance and remaining dependency/runtime certification gaps.\nNo local result grants exact-SHA staging or live-money certification.\n",
       "clauses": [
         {
-          "line": 76,
+          "line": 78,
           "text": "8. Telegram/web delivery and outcome reconciliation SLOs;"
         },
         {
-          "line": 77,
+          "line": 79,
           "text": "9. 24–72 hour immutable-SHA staging soak;"
         },
         {
-          "line": 78,
+          "line": 80,
           "text": "10. explicit human approval for any controlled live-money pilot."
         },
         {
-          "line": 80,
+          "line": 82,
           "text": "No successful build or deployment by itself changes this boundary."
         },
         {
-          "line": 82,
+          "line": 84,
           "text": "The [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0"
         },
         {
-          "line": 83,
+          "line": 85,
           "text": "corrections, local PostgreSQL evidence, the GitHub billing blocker, active"
         },
         {
-          "line": 84,
+          "line": 86,
           "text": "branch governance and remaining dependency/runtime certification gaps."
         },
         {
-          "line": 85,
+          "line": 87,
           "text": "No local result grants exact-SHA staging or live-money certification."
         }
       ]
     },
     {
-      "id": "SR-SOURCE-a524966522cdb264",
+      "id": "SR-SOURCE-81d32a9db882e6da",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:87",
+      "source": "CURRENT_RELEASE.md:89",
       "requirement": "Historical evidence retained",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -21932,60 +21943,60 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "32103fc8c9313d5a5480e07c7f1e8f0ed330f535866e86a2a486a45027ab2c7c",
-      "line_start": 87,
-      "line_end": 102,
+      "line_start": 89,
+      "line_end": 104,
       "text": "## Historical evidence retained\n\nThe following remain useful historical references but apply only to the older\nrelease they document:\n\n- `FINAL_COMPLETION_REPORT_20260926.md`\n- `BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md`\n- `docs/security/THREAT_MODEL.md`\n- `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md`\n- `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`\n- `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`\n\nProduction promotion remains a separate controlled operation. Real execution,\nautomatic execution, copy trading, prop execution and real payouts must remain\ndisabled until the exact release candidate is certified and the user explicitly\nauthorizes a controlled pilot.",
       "clauses": [
         {
-          "line": 87,
+          "line": 89,
           "text": "## Historical evidence retained"
         },
         {
-          "line": 89,
+          "line": 91,
           "text": "The following remain useful historical references but apply only to the older"
         },
         {
-          "line": 90,
+          "line": 92,
           "text": "release they document:"
         },
         {
-          "line": 92,
+          "line": 94,
           "text": "- `FINAL_COMPLETION_REPORT_20260926.md`"
         },
         {
-          "line": 93,
+          "line": 95,
           "text": "- `BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md`"
         },
         {
-          "line": 94,
+          "line": 96,
           "text": "- `docs/security/THREAT_MODEL.md`"
         },
         {
-          "line": 95,
+          "line": 97,
           "text": "- `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md`"
         },
         {
-          "line": 96,
+          "line": 98,
           "text": "- `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`"
         },
         {
-          "line": 97,
+          "line": 99,
           "text": "- `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`"
         },
         {
-          "line": 99,
+          "line": 101,
           "text": "Production promotion remains a separate controlled operation. Real execution,"
         },
         {
-          "line": 100,
+          "line": 102,
           "text": "automatic execution, copy trading, prop execution and real payouts must remain"
         },
         {
-          "line": 101,
+          "line": 103,
           "text": "disabled until the exact release candidate is certified and the user explicitly"
         },
         {
-          "line": 102,
+          "line": 104,
           "text": "authorizes a controlled pilot."
         }
       ]
@@ -506652,7 +506663,7 @@
     {
       "id": "SR-ENDPOINT-ab06bca739e4a77d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:988",
+      "source": "web/platform_api.py:972",
       "requirement": "GET /api/v1/platform/capabilities",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::capabilities",
@@ -506668,7 +506679,7 @@
     {
       "id": "SR-ENDPOINT-8055a43c0f5ae9ab",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1006",
+      "source": "web/platform_api.py:990",
       "requirement": "GET /api/v1/platform/command-catalog",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::command_catalog",
@@ -506686,7 +506697,7 @@
     {
       "id": "SR-ENDPOINT-157b45dfb6f3fce8",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1109",
+      "source": "web/platform_api.py:1096",
       "requirement": "GET /api/v1/platform/operator/overview",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_overview",
@@ -506704,7 +506715,7 @@
     {
       "id": "SR-ENDPOINT-a8d0be153361d5de",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1134",
+      "source": "web/platform_api.py:1121",
       "requirement": "GET /api/v1/platform/operator/diagnostics",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_diagnostics",
@@ -506722,7 +506733,7 @@
     {
       "id": "SR-ENDPOINT-17d69d53c7df01d9",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1273",
+      "source": "web/platform_api.py:1260",
       "requirement": "POST /api/v1/platform/operator/ai-test",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_ai_test",
@@ -506738,9 +506749,27 @@
       ]
     },
     {
+      "id": "SR-ENDPOINT-b8bd718b5d94eb17",
+      "kind": "ENDPOINT",
+      "source": "web/platform_api.py:1276",
+      "requirement": "GET /api/v1/platform/operator/ai-spend",
+      "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
+      "responsible_component": "web/platform_api.py::operator_ai_spend",
+      "verification_method": "Test authenticated/anonymous, roles, cross-user ownership, invalid input, retries and failure recovery.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "endpoint": "/api/v1/platform/operator/ai-spend",
+      "method": "GET",
+      "handler": "operator_ai_spend",
+      "dependencies": [
+        "current_user"
+      ]
+    },
+    {
       "id": "SR-ENDPOINT-3e7a1e8b1270b387",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1302",
+      "source": "web/platform_api.py:1310",
       "requirement": "POST /api/v1/platform/operator/kill-switch",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_kill_switch",
@@ -506758,7 +506787,7 @@
     {
       "id": "SR-ENDPOINT-2f78e7ec9a56e9cc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1329",
+      "source": "web/platform_api.py:1337",
       "requirement": "POST /api/v1/platform/operator/kill-switch/scoped",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_scoped_kill_switch",
@@ -506776,7 +506805,7 @@
     {
       "id": "SR-ENDPOINT-823cb3e3e3871803",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1372",
+      "source": "web/platform_api.py:1380",
       "requirement": "GET /api/v1/platform/operator/account-merges",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_account_merges",
@@ -506794,7 +506823,7 @@
     {
       "id": "SR-ENDPOINT-8cd8da5a00e6ca36",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1387",
+      "source": "web/platform_api.py:1395",
       "requirement": "GET /api/v1/platform/operator/account-merges/{merge_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_account_merge_preview",
@@ -506812,7 +506841,7 @@
     {
       "id": "SR-ENDPOINT-1a88c2d0b61d7e89",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1405",
+      "source": "web/platform_api.py:1413",
       "requirement": "POST /api/v1/platform/operator/account-merges/{merge_id}/apply",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_account_merge_apply",
@@ -506830,7 +506859,7 @@
     {
       "id": "SR-ENDPOINT-231c73eec23a1470",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1431",
+      "source": "web/platform_api.py:1439",
       "requirement": "GET /api/v1/platform/operator/maintenance",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_maintenance",
@@ -506848,7 +506877,7 @@
     {
       "id": "SR-ENDPOINT-9e806cb0d86759c0",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1565",
+      "source": "web/platform_api.py:1573",
       "requirement": "POST /api/v1/platform/operator/performance-rebuild",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_performance_rebuild",
@@ -506866,7 +506895,7 @@
     {
       "id": "SR-ENDPOINT-ca75382b4d21595c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1621",
+      "source": "web/platform_api.py:1629",
       "requirement": "POST /api/v1/platform/operator/outcome-rebuild",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_outcome_rebuild",
@@ -506884,7 +506913,7 @@
     {
       "id": "SR-ENDPOINT-163b5f9254ad4d71",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1669",
+      "source": "web/platform_api.py:1677",
       "requirement": "POST /api/v1/platform/operator/queue-replay",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_queue_replay",
@@ -506902,7 +506931,7 @@
     {
       "id": "SR-ENDPOINT-1f27ce8c8cc4b0f6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1729",
+      "source": "web/platform_api.py:1737",
       "requirement": "POST /api/v1/platform/operator/adaptive",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_adaptive",
@@ -506920,7 +506949,7 @@
     {
       "id": "SR-ENDPOINT-8f9b37ea6fbce5bf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1768",
+      "source": "web/platform_api.py:1776",
       "requirement": "GET /api/v1/platform/operator/research",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_research",
@@ -506938,7 +506967,7 @@
     {
       "id": "SR-ENDPOINT-20ac6ad5f869ff2c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1777",
+      "source": "web/platform_api.py:1785",
       "requirement": "GET /api/v1/platform/operator/health-baseline",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_health_baseline",
@@ -506956,7 +506985,7 @@
     {
       "id": "SR-ENDPOINT-abe670976c5ddd7e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1788",
+      "source": "web/platform_api.py:1796",
       "requirement": "POST /api/v1/platform/operator/health-baseline",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_approve_health_baseline",
@@ -506974,7 +507003,7 @@
     {
       "id": "SR-ENDPOINT-e9ff934ae650c661",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1807",
+      "source": "web/platform_api.py:1815",
       "requirement": "GET /api/v1/platform/operator/business",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_business",
@@ -506992,7 +507021,7 @@
     {
       "id": "SR-ENDPOINT-a4165f0b88f01b9a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1879",
+      "source": "web/platform_api.py:1887",
       "requirement": "POST /api/v1/platform/operator/market-scan",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_market_scan",
@@ -507010,7 +507039,7 @@
     {
       "id": "SR-ENDPOINT-e0853ff27fccf689",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:1956",
+      "source": "web/platform_api.py:1964",
       "requirement": "POST /api/v1/platform/operator/force-signal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::operator_force_signal",
@@ -507028,7 +507057,7 @@
     {
       "id": "SR-ENDPOINT-dcfbb9a4507116d1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2202",
+      "source": "web/platform_api.py:2210",
       "requirement": "POST /api/v1/platform/auth/register",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::register",
@@ -507044,7 +507073,7 @@
     {
       "id": "SR-ENDPOINT-31c8eead835aa854",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2292",
+      "source": "web/platform_api.py:2300",
       "requirement": "POST /api/v1/platform/auth/login",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::login",
@@ -507060,7 +507089,7 @@
     {
       "id": "SR-ENDPOINT-7e3f62c066437601",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2309",
+      "source": "web/platform_api.py:2317",
       "requirement": "POST /api/v1/platform/auth/refresh",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::refresh",
@@ -507076,7 +507105,7 @@
     {
       "id": "SR-ENDPOINT-fe5d53f8f1ecb1d7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2346",
+      "source": "web/platform_api.py:2354",
       "requirement": "POST /api/v1/platform/auth/telegram/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::telegram_activation_complete",
@@ -507092,7 +507121,7 @@
     {
       "id": "SR-ENDPOINT-eae3fae735e75ed2",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2399",
+      "source": "web/platform_api.py:2407",
       "requirement": "POST /api/v1/platform/auth/telegram/login",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::telegram_login",
@@ -507108,7 +507137,7 @@
     {
       "id": "SR-ENDPOINT-2efeaed99622d932",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2427",
+      "source": "web/platform_api.py:2435",
       "requirement": "POST /api/v1/platform/auth/telegram/mini-app",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::telegram_mini_app_login",
@@ -507124,7 +507153,7 @@
     {
       "id": "SR-ENDPOINT-89e5d64165a46636",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2460",
+      "source": "web/platform_api.py:2468",
       "requirement": "POST /api/v1/platform/auth/logout",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::logout",
@@ -507142,7 +507171,7 @@
     {
       "id": "SR-ENDPOINT-91016f9169a32667",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2471",
+      "source": "web/platform_api.py:2479",
       "requirement": "POST /api/v1/platform/auth/logout-all",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::logout_all",
@@ -507160,7 +507189,7 @@
     {
       "id": "SR-ENDPOINT-5566ce258cc94bc4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2480",
+      "source": "web/platform_api.py:2488",
       "requirement": "POST /api/v1/platform/auth/logout-mobile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::logout_mobile",
@@ -507176,7 +507205,7 @@
     {
       "id": "SR-ENDPOINT-c9b6f05a15d12eca",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2492",
+      "source": "web/platform_api.py:2500",
       "requirement": "GET /api/v1/platform/me",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::me",
@@ -507194,7 +507223,7 @@
     {
       "id": "SR-ENDPOINT-69d66016c998fa3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2514",
+      "source": "web/platform_api.py:2522",
       "requirement": "GET /api/v1/platform/entitlements",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::entitlements",
@@ -507212,7 +507241,7 @@
     {
       "id": "SR-ENDPOINT-2238be6b9c34c019",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2533",
+      "source": "web/platform_api.py:2541",
       "requirement": "GET /api/v1/platform/dashboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::dashboard",
@@ -507230,7 +507259,7 @@
     {
       "id": "SR-ENDPOINT-c0494efa77e3df2a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2572",
+      "source": "web/platform_api.py:2580",
       "requirement": "GET /api/v1/platform/signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::signal_feed",
@@ -507248,7 +507277,7 @@
     {
       "id": "SR-ENDPOINT-cbe1fa682789dd58",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2649",
+      "source": "web/platform_api.py:2657",
       "requirement": "GET /api/v1/platform/signals/{signal_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::signal_detail",
@@ -507266,7 +507295,7 @@
     {
       "id": "SR-ENDPOINT-0fa586fb995a884f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2748",
+      "source": "web/platform_api.py:2756",
       "requirement": "POST /api/v1/platform/signals/{signal_id}/execute",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::execute_signal_from_platform",
@@ -507284,7 +507313,7 @@
     {
       "id": "SR-ENDPOINT-9cbd76b31d888f30",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2875",
+      "source": "web/platform_api.py:2883",
       "requirement": "POST /api/v1/platform/signals/{signal_id}/feedback",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::submit_signal_feedback",
@@ -507302,7 +507331,7 @@
     {
       "id": "SR-ENDPOINT-04316e6cf1dd730e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2907",
+      "source": "web/platform_api.py:2915",
       "requirement": "GET /api/v1/platform/live-price",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::live_price",
@@ -507320,7 +507349,7 @@
     {
       "id": "SR-ENDPOINT-5bc289446cfac7ef",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:2958",
+      "source": "web/platform_api.py:2966",
       "requirement": "GET /api/v1/platform/recap",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::weekly_recap",
@@ -507338,7 +507367,7 @@
     {
       "id": "SR-ENDPOINT-609fc3f6574781d3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3046",
+      "source": "web/platform_api.py:3054",
       "requirement": "POST /api/v1/platform/ai/analyze",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::ai_analyze",
@@ -507356,7 +507385,7 @@
     {
       "id": "SR-ENDPOINT-edceb95f747536f7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3118",
+      "source": "web/platform_api.py:3129",
       "requirement": "GET /api/v1/platform/paper",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_summary",
@@ -507374,7 +507403,7 @@
     {
       "id": "SR-ENDPOINT-a1852fa688194fbe",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3187",
+      "source": "web/platform_api.py:3198",
       "requirement": "GET /api/v1/platform/paper/detail",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_detail",
@@ -507392,7 +507421,7 @@
     {
       "id": "SR-ENDPOINT-2446871538b3e83d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3233",
+      "source": "web/platform_api.py:3244",
       "requirement": "PUT /api/v1/platform/paper/settings",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_settings",
@@ -507410,7 +507439,7 @@
     {
       "id": "SR-ENDPOINT-c7eb44ff42374850",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3282",
+      "source": "web/platform_api.py:3293",
       "requirement": "POST /api/v1/platform/paper/close-all",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_close_all",
@@ -507428,7 +507457,7 @@
     {
       "id": "SR-ENDPOINT-81c86a62f80fb14b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3306",
+      "source": "web/platform_api.py:3317",
       "requirement": "POST /api/v1/platform/paper/reset",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_reset",
@@ -507446,7 +507475,7 @@
     {
       "id": "SR-ENDPOINT-4bcd5636144b1f3a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3330",
+      "source": "web/platform_api.py:3341",
       "requirement": "POST /api/v1/platform/paper/retry",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::paper_retry",
@@ -507464,7 +507493,7 @@
     {
       "id": "SR-ENDPOINT-221d85c2cdd7eeee",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3349",
+      "source": "web/platform_api.py:3360",
       "requirement": "GET /api/v1/platform/instruments/search",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::instrument_search",
@@ -507482,7 +507511,7 @@
     {
       "id": "SR-ENDPOINT-a778061d2bc36a59",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3387",
+      "source": "web/platform_api.py:3398",
       "requirement": "GET /api/v1/platform/watchlists",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_watchlists",
@@ -507500,7 +507529,7 @@
     {
       "id": "SR-ENDPOINT-8bcef565c23b0642",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3409",
+      "source": "web/platform_api.py:3420",
       "requirement": "POST /api/v1/platform/watchlists",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_watchlist",
@@ -507518,7 +507547,7 @@
     {
       "id": "SR-ENDPOINT-66a151ae1cad7bdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3427",
+      "source": "web/platform_api.py:3438",
       "requirement": "POST /api/v1/platform/watchlists/{watchlist_id}/items",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_watchlist_item",
@@ -507536,7 +507565,7 @@
     {
       "id": "SR-ENDPOINT-9c7e5d4eea6db638",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3457",
+      "source": "web/platform_api.py:3468",
       "requirement": "GET /api/v1/platform/referrals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::referrals",
@@ -507554,7 +507583,7 @@
     {
       "id": "SR-ENDPOINT-aa34fc0b12956de4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3518",
+      "source": "web/platform_api.py:3529",
       "requirement": "GET /api/v1/platform/referrals/leaderboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::referral_leaderboard",
@@ -507572,7 +507601,7 @@
     {
       "id": "SR-ENDPOINT-89d4f145352246e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3573",
+      "source": "web/platform_api.py:3584",
       "requirement": "POST /api/v1/platform/account/telegram-link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_telegram_link",
@@ -507590,7 +507619,7 @@
     {
       "id": "SR-ENDPOINT-0c7c3eeabec8eef3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3616",
+      "source": "web/platform_api.py:3627",
       "requirement": "POST /api/v1/platform/push-devices",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::register_push_device",
@@ -507608,7 +507637,7 @@
     {
       "id": "SR-ENDPOINT-d2d4edff081bc48e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3656",
+      "source": "web/platform_api.py:3667",
       "requirement": "DELETE /api/v1/platform/push-devices/{push_device_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_push_device",
@@ -507626,7 +507655,7 @@
     {
       "id": "SR-ENDPOINT-cd5dab1dd55b10e1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3672",
+      "source": "web/platform_api.py:3683",
       "requirement": "GET /api/v1/platform/devices",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::devices",
@@ -507644,7 +507673,7 @@
     {
       "id": "SR-ENDPOINT-22a147ff977e1f84",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3692",
+      "source": "web/platform_api.py:3703",
       "requirement": "GET /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::get_notification_preferences",
@@ -507662,7 +507691,7 @@
     {
       "id": "SR-ENDPOINT-5c77e77f5fa8a532",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3708",
+      "source": "web/platform_api.py:3719",
       "requirement": "PUT /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_notification_preferences",
@@ -507680,7 +507709,7 @@
     {
       "id": "SR-ENDPOINT-1d09048484bf125b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3759",
+      "source": "web/platform_api.py:3770",
       "requirement": "GET /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::journal_entries",
@@ -507698,7 +507727,7 @@
     {
       "id": "SR-ENDPOINT-3b0de4f6ee646a0b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3784",
+      "source": "web/platform_api.py:3795",
       "requirement": "POST /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_journal_entry",
@@ -507716,7 +507745,7 @@
     {
       "id": "SR-ENDPOINT-4f8b8ea4cc6db48a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3819",
+      "source": "web/platform_api.py:3830",
       "requirement": "DELETE /api/v1/platform/journal/{journal_entry_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_journal_entry",
@@ -507734,7 +507763,7 @@
     {
       "id": "SR-ENDPOINT-4a4f3798430cfd3c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3835",
+      "source": "web/platform_api.py:3846",
       "requirement": "GET /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_api_keys",
@@ -507752,7 +507781,7 @@
     {
       "id": "SR-ENDPOINT-44332d24ba1ce67a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3856",
+      "source": "web/platform_api.py:3867",
       "requirement": "POST /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_api_key",
@@ -507770,7 +507799,7 @@
     {
       "id": "SR-ENDPOINT-b5379c1e047dfb41",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3897",
+      "source": "web/platform_api.py:3908",
       "requirement": "DELETE /api/v1/platform/api-keys/{key_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_api_key",
@@ -507788,7 +507817,7 @@
     {
       "id": "SR-ENDPOINT-f3447c293c3b2fee",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3914",
+      "source": "web/platform_api.py:3925",
       "requirement": "GET /api/v1/platform/professional/signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::professional_signal_feed",
@@ -507806,7 +507835,7 @@
     {
       "id": "SR-ENDPOINT-59dcdcfb549092f4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3973",
+      "source": "web/platform_api.py:3984",
       "requirement": "GET /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::execution_webhook_status",
@@ -507824,7 +507853,7 @@
     {
       "id": "SR-ENDPOINT-2289d47c0388f504",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3996",
+      "source": "web/platform_api.py:4007",
       "requirement": "PUT /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_webhook",
@@ -507842,7 +507871,7 @@
     {
       "id": "SR-ENDPOINT-9dff6d6c84b98300",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4022",
+      "source": "web/platform_api.py:4033",
       "requirement": "DELETE /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::disable_execution_webhook",
@@ -507860,7 +507889,7 @@
     {
       "id": "SR-ENDPOINT-80687afced824d01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4036",
+      "source": "web/platform_api.py:4047",
       "requirement": "GET /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_webhooks",
@@ -507878,7 +507907,7 @@
     {
       "id": "SR-ENDPOINT-c78cf6b934b83579",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4057",
+      "source": "web/platform_api.py:4068",
       "requirement": "POST /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_webhook",
@@ -507896,7 +507925,7 @@
     {
       "id": "SR-ENDPOINT-b0fb4aafd337162f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4102",
+      "source": "web/platform_api.py:4113",
       "requirement": "DELETE /api/v1/platform/webhooks/{webhook_endpoint_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_webhook",
@@ -507914,7 +507943,7 @@
     {
       "id": "SR-ENDPOINT-7ab85c187acbcd38",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4122",
+      "source": "web/platform_api.py:4133",
       "requirement": "GET /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organizations",
@@ -507932,7 +507961,7 @@
     {
       "id": "SR-ENDPOINT-2d3938ab0cfc45a1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4144",
+      "source": "web/platform_api.py:4155",
       "requirement": "POST /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization",
@@ -507950,7 +507979,7 @@
     {
       "id": "SR-ENDPOINT-f4f7ac01e97aa554",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4185",
+      "source": "web/platform_api.py:4196",
       "requirement": "GET /api/v1/platform/support/tickets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_tickets",
@@ -513749,6 +513778,71 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    {
+      "id": "SR-API-9629ddf3bada4e77",
+      "kind": "API",
+      "source": "openapi.json::paths::/api/v1/platform/operator/ai-spend",
+      "requirement": "GET /api/v1/platform/operator/ai-spend",
+      "current_implementation": "Mounted in the generated canonical application schema; auth and behavior require separate tests.",
+      "responsible_component": "operator_ai_spend_api_v1_platform_operator_ai_spend_get",
+      "verification_method": "OpenAPI regeneration parity plus actual request/ownership/side-effect and failure-path tests.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "endpoint": "/api/v1/platform/operator/ai-spend",
+      "method": "GET",
+      "operation": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Ai Spend",
+        "description": "Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts.",
+        "operationId": "operator_ai_spend_api_v1_platform_operator_ai_spend_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 366,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Ai Spend Api V1 Platform Operator Ai Spend Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -525596,7 +525690,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-632150c4dc6f1da6",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:47",
+      "source": "strategies/zone_rejection.py:51",
       "requirement": "ZoneConfig",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525608,7 +525702,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-e30e191b0af3d015",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:60",
+      "source": "strategies/zone_rejection.py:64",
       "requirement": "Zone",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525620,7 +525714,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-18cab7bf522ca8ef",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:68",
+      "source": "strategies/zone_rejection.py:72",
       "requirement": "enabled",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525632,7 +525726,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-3f8b9172f26dcc4e",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:86",
+      "source": "strategies/zone_rejection.py:90",
       "requirement": "atr",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525644,7 +525738,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-63a588f9403b46f1",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:97",
+      "source": "strategies/zone_rejection.py:101",
       "requirement": "swing_points",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525656,7 +525750,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-b9b93d5a160bec86",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:110",
+      "source": "strategies/zone_rejection.py:114",
       "requirement": "find_fresh_zones",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525668,7 +525762,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-8074f54af8f0af30",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:135",
+      "source": "strategies/zone_rejection.py:139",
       "requirement": "structure_broke",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525680,7 +525774,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-ca50177101520005",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:154",
+      "source": "strategies/zone_rejection.py:158",
       "requirement": "execution_trigger",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525692,7 +525786,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-88720e7835cf4913",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:191",
+      "source": "strategies/zone_rejection.py:197",
       "requirement": "dealing_range",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
@@ -525704,8 +525798,20 @@
     {
       "id": "SR-STRATEGY_CALLABLE-59f9c61eb7a0cc91",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:212",
+      "source": "strategies/zone_rejection.py:237",
       "requirement": "map_index",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-2b991703351d3fdb",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:248",
+      "requirement": "structure_index",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
       "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
@@ -525716,7 +525822,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-bf595ed4e0f8266c",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/zone_rejection.py:223",
+      "source": "strategies/zone_rejection.py:264",
       "requirement": "zone_rejection_strategies",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/zone_rejection.py",
