@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+from data import provider_diagnostics
 import os
 import logging
 import asyncio
@@ -37,13 +38,45 @@ def _enabled() -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# Polygon names indices, currencies and crypto with prefixes; the platform
+# passes canonical symbols (NAS100, GBPUSD, BTCUSDT), which Polygon would look
+# up as stock tickers and answer with no results.
+_POLYGON_INDEX = {
+    "NAS100": "I:NDX", "US100": "I:NDX", "USTEC": "I:NDX", "NDX": "I:NDX",
+    "US500": "I:SPX", "SPX500": "I:SPX", "SPX": "I:SPX", "US30": "I:DJI", "DJI": "I:DJI",
+    "GER40": "I:DAX", "DE40": "I:DAX", "UK100": "I:UKX", "JP225": "I:NI225", "VIX": "I:VIX",
+}
+_FIAT = {"USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "SGD", "HKD",
+         "ZAR", "MXN", "TRY", "PLN", "CNH"}
+
+
+def polygon_ticker(symbol: str) -> str:
+    raw = str(symbol or "").upper().strip()
+    if ":" in raw:
+        return raw
+    compact = raw.replace("/", "").replace("-", "").replace("_", "")
+    if compact in _POLYGON_INDEX:
+        return _POLYGON_INDEX[compact]
+    if len(compact) == 6 and compact[:3] in _FIAT and compact[3:] in _FIAT:
+        return f"C:{compact}"
+    for quote in ("USDT", "USDC", "USD"):
+        if compact.endswith(quote) and len(compact) > len(quote) and compact[:-len(quote)] not in _FIAT:
+            if compact.startswith(("XAU", "XAG", "XPT", "XPD")):
+                return f"C:{compact[:3]}USD"
+            return f"X:{compact[:-len(quote)]}USD"
+    return compact
+
+
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
     api_key = _resolved_api_key()
     if not api_key or not _enabled():
         logger.debug("polygon_adapter: massive/polygon disabled or key not set")
+        provider_diagnostics.note("polygon", "api_key_missing_or_disabled")
         return []
     if httpx is None:
+        provider_diagnostics.note("polygon", "httpx_unavailable")
         return []
+    symbol = polygon_ticker(symbol)
 
     # Map timeframe
     tf_map = {
@@ -58,6 +91,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     }
     interval = tf_map.get(str(timeframe or "").strip().lower())
     if interval is None:
+        provider_diagnostics.note("polygon", f"unsupported_timeframe:{timeframe}")
         return []
     multiplier, timespan = interval
     requested_limit = max(1, min(5000, int(limit)))
@@ -84,12 +118,12 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
             return []
         resp = await _client.get(url, params=params, timeout=request_timeout)
         if resp.status_code != 200:
-            if resp.status_code == 429:
-                return []
+            provider_diagnostics.note("polygon", f"http_{resp.status_code}")
             return []
         data = resp.json()
         results = data.get("results", [])
         if not results:
+            provider_diagnostics.note("polygon", f"empty_response:{data.get('status') or 'no_results'}")
             return []
         candles = []
         for bar in results:

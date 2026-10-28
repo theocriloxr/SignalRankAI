@@ -6,6 +6,7 @@ import logging
 import asyncio
 from datetime import datetime, timezone
 from data.symbol_formatter import format_symbol_for_twelvedata
+from data import provider_diagnostics
 
 try:
     import httpx
@@ -20,19 +21,23 @@ logger = logging.getLogger(__name__)
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
     if httpx is None:
+        provider_diagnostics.note("twelvedata", "httpx_unavailable")
         return []
     # TwelveData requires API key; read from env
     api_key = (os.getenv("TWELVEDATA_API_KEY") or os.getenv("TWELVE_DATA_API_KEY") or "").strip()
     if not api_key:
         logger.debug("twelvedata_adapter: TWELVEDATA_API_KEY not set")
+        provider_diagnostics.note("twelvedata", "api_key_missing")
         return []
     from data.providers import _is_cooldown_active, _maybe_apply_rate_limit_cooldown
     if _is_cooldown_active("twelvedata"):
+        provider_diagnostics.note("twelvedata", "rate_limit_cooldown_active")
         return []
     url = "https://api.twelvedata.com/time_series"
     tf_map = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe)
     if interval is None:
+        provider_diagnostics.note("twelvedata", f"unsupported_timeframe:{timeframe}")
         return []
     requested = max(2, min(5000, int(limit or 200)))
     params = {"symbol": format_symbol_for_twelvedata(symbol), "interval": interval,
@@ -48,8 +53,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         if resp.status_code == 429:
             _maybe_apply_rate_limit_cooldown("twelvedata", status_code=429)
             logger.warning("[twelvedata] quota_limited; provider cooldown applied")
+            provider_diagnostics.note("twelvedata", "http_429")
             return []
         if resp.status_code != 200:
+            provider_diagnostics.note("twelvedata", f"http_{resp.status_code}")
             return []
         data = resp.json()
         if data.get("status") == "error":
@@ -57,9 +64,11 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
                 "twelvedata", message=str(data.get("message") or ""))
             logger.warning("[twelvedata] rejected symbol=%s reason=%s", symbol,
                            "quota_limited" if limited else "provider_rejected")
+            provider_diagnostics.note("twelvedata", "quota_limited" if limited else "provider_rejected")
             return []
         values = data.get("values", [])
         if not values:
+            provider_diagnostics.note("twelvedata", "empty_response")
             return []
         candles = []
         for bar in values:
@@ -89,6 +98,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         )
     except Exception as e:
         logger.debug("twelvedata_adapter error_type=%s", type(e).__name__)
+        provider_diagnostics.note("twelvedata", f"error:{type(e).__name__}")
         return []
 
 

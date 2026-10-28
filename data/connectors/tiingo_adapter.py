@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import List, Dict, Any
 from datetime import datetime, timedelta, timezone
+from data import provider_diagnostics
 import math
 import os
 import logging
@@ -103,6 +104,7 @@ async def _async_get_candles(
     api_key = (os.getenv("TIINGO_API_KEY") or "").strip()
     if not api_key:
         logger.debug("tiingo_adapter: TIINGO_API_KEY not set")
+        provider_diagnostics.note("tiingo", "api_key_missing")
         return []
 
     symbol = (symbol or "").upper().strip()
@@ -163,11 +165,13 @@ async def _async_get_candles(
 
         if resp.status_code != 200:
             logger.debug(f"tiingo_adapter HTTP {resp.status_code}: {getattr(resp, 'text', '')[:200]}")
+            provider_diagnostics.note("tiingo", f"http_{resp.status_code}")
             return []
 
         data = resp.json()
 
         if not data or not isinstance(data, list):
+            provider_diagnostics.note("tiingo", "empty_response")
             return []
 
         out: List[Dict[str, Any]] = []

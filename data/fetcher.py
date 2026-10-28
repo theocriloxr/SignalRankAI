@@ -692,6 +692,12 @@ def _provider_failure_reason(
     provider = str(provider_name or "unknown").strip() or "unknown"
     detail = str(reason or "unknown").strip() or "unknown"
     parts = [f"{provider}:{detail}"]
+    if candles_count == 0:
+        from data import provider_diagnostics
+
+        cause = provider_diagnostics.recent(provider)
+        if cause:
+            parts.append(f"cause={cause}")
     if candles_count is not None:
         parts.append(f"candles={int(candles_count or 0)}")
     if latency_ms is not None:
