@@ -972,8 +972,12 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	except Exception:
 		pass
 
-	limits = {"free": 3, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
-	limit = limits.get(tier, 3)
+	# The canonical policy the delivery gate and the web plan view also use.
+	try:
+		from core.tier_policy import get_entitlements
+		limit = get_entitlements(tier).daily_signal_limit
+	except Exception:
+		limit = "?"
 
 	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
 
@@ -1020,45 +1024,113 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Alias for /status with dynamic tier menu."""
 	return await status_command(update, context)
-async def _get_existing_api_token_meta(user_id: int):
-	from db.session import get_session
+def _developer_destination_host(url: object) -> str:
+	"""Scheme and host only: webhook paths and queries can carry secrets."""
+	from urllib.parse import urlsplit
+
+	try:
+		parts = urlsplit(str(url or ""))
+	except ValueError:
+		return "(invalid URL)"
+	return f"{parts.scheme}://{parts.hostname}" if parts.scheme and parts.hostname else "(invalid URL)"
+
+
+async def _developer_access_snapshot(telegram_user_id: int, username: str | None, tier: str) -> dict:
+	"""Read-only developer-access metadata from the stores the web Developer view uses."""
+	from sqlalchemy import text
+	from core.tier_policy import evaluate_feature_access
 	from db.repository import get_latest_active_api_token_meta
-	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-		meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
-		await session.rollback()
-	return meta
+	from services.platform.identity import ensure_telegram_user
+
+	rest_api = evaluate_feature_access(tier, "rest_api")
+	webhooks = evaluate_feature_access(tier, "outbound_webhooks")
+	snapshot: dict = {
+		"rest_api_allowed": rest_api.allowed,
+		"webhooks_allowed": webhooks.allowed,
+		"required_tier": rest_api.required_tier.value,
+		"api_keys": [],
+		"webhooks": [],
+		"legacy_token": None,
+	}
+	async with get_session(priority="interactive", label="telegram.developer_access") as session:
+		uid = await ensure_telegram_user(session, telegram_user_id=int(telegram_user_id), username=username)
+		snapshot["legacy_token"] = await get_latest_active_api_token_meta(session, telegram_user_id=int(telegram_user_id))
+		if rest_api.allowed:
+			snapshot["api_keys"] = [dict(row) for row in (await session.execute(text(
+				"SELECT name,key_prefix,scopes,expires_at,last_used_at FROM api_keys "
+				"WHERE user_id=:uid AND active IS TRUE AND revoked_at IS NULL "
+				"AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 10"
+			), {"uid": uid})).mappings().all()]
+		if webhooks.allowed:
+			snapshot["webhooks"] = [dict(row) for row in (await session.execute(text(
+				"SELECT url,subscribed_events FROM webhook_endpoints "
+				"WHERE user_id=:uid AND active IS TRUE ORDER BY created_at DESC LIMIT 10"
+			), {"uid": uid})).mappings().all()]
+		await session.commit()
+	return snapshot
+
+
+def _short_date(value: object) -> str:
+	text_value = str(value or "").strip()
+	return text_value[:10] if text_value else "never"
 
 
 @require_tier("PREMIUM")
 async def apikey_command(update, context) -> None:
-	"""Show API-key metadata only; secrets are created/revealed on the authenticated web app."""
+	"""Show developer-access metadata only; keys and webhooks are created on the authenticated web app.
+
+	Reads the same api_keys and webhook_endpoints rows as the web Developer
+	view, with the same plan features. Secrets are never stored readable and
+	are never shown here.
+	"""
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = int(update.effective_user.id)
-	meta = await _get_existing_api_token_meta(user_id)
 	base_url = str(
 		os.getenv("APP_BASE_URL")
 		or os.getenv("WEB_APP_URL")
 		or "https://signalrank.criloxsolutions.com"
 	).rstrip("/")
 	manage_url = f"{base_url}/app/settings"
-	if meta is None:
-		message = (
-			"🔐 No active API key is registered.\n\n"
-			"API keys are never created or revealed inside Telegram. "
-			f"Open your authenticated SignalRankAI settings to create one: {manage_url}"
+	try:
+		snapshot = await _developer_access_snapshot(
+			user_id, getattr(update.effective_user, "username", None), _effective_tier(user_id)
+		)
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("Could not load your developer access.", exc))
+		return
+
+	lines = ["🔐 Developer access"]
+	if not snapshot["rest_api_allowed"]:
+		lines.append(
+			f"Scoped API keys and signed webhooks need the {snapshot['required_tier'].title()} plan. "
+			"Compare plans with /tiers."
 		)
 	else:
-		prefix = str(meta.get("token_prefix") or "")
-		exp = str(meta.get("expires_at") or "unknown")
-		message = (
-			"🔐 Active API key metadata\n"
-			f"Prefix: {prefix}\n"
-			f"Expires: {exp}\n\n"
-			"Rotate, revoke, or create keys only from the authenticated web app: "
-			f"{manage_url}"
+		keys = snapshot["api_keys"]
+		lines.append(f"\nAPI keys ({len(keys)} active):" if keys else "\nNo active API keys.")
+		for key in keys:
+			scopes = ", ".join(str(scope) for scope in (key.get("scopes") or [])) or "none"
+			lines.append(
+				f"• {str(key.get('name') or 'unnamed')[:40]} — {key.get('key_prefix')} — scopes: {scopes}\n"
+				f"  expires {_short_date(key.get('expires_at'))} — last used {_short_date(key.get('last_used_at'))}"
+			)
+	if snapshot["webhooks_allowed"]:
+		hooks = snapshot["webhooks"]
+		lines.append(f"\nWebhooks ({len(hooks)} active):" if hooks else "\nNo active webhooks.")
+		for hook in hooks:
+			events = ", ".join(str(event) for event in (hook.get("subscribed_events") or [])) or "none"
+			lines.append(f"• {_developer_destination_host(hook.get('url'))} — events: {events}")
+	legacy = snapshot["legacy_token"]
+	if legacy:
+		lines.append(
+			f"\nLegacy v1 token: prefix {legacy.get('token_prefix')}, expires {_short_date(legacy.get('expires_at'))}"
 		)
-	await update.message.reply_text(message)
+	lines.append(
+		"\nCreate, rotate or revoke keys and webhooks only in the authenticated web app "
+		f"(recent sign-in required; secrets are shown once): {manage_url}"
+	)
+	await update.message.reply_text("\n".join(lines))
 
 # Basic translation dictionary
 TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -3010,10 +3082,21 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		logger.exception("[notify] preference update failed user=%s", user_id)
 		await update.message.reply_text(safe_command_error("Could not update notification preferences.", exc))
 # --------- FEEDBACK COMMAND ---------
-from .feedback import feedback_store
+_FEEDBACK_USAGE = (
+	"Usage: /feedback <signal_ref> <1-5|issue> [comment]\n"
+	"Issues: stale, bad_setup, wrong_levels, wrong_outcome, late_delivery, duplicate, unclear, other\n"
+	"Example: /feedback SIG-1a2b3c4d wrong_outcome TP1 was hit before SL"
+)
+
+
 @require_tier("PREMIUM")
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Allow non-free users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
+	"""Rate a received signal or report an issue. Usage: /feedback <signal_ref> <1-5|issue> [comment]
+
+	Records through the same delivery-scoped service as the web app, so the
+	feedback reaches the canonical account ledger, and only for a signal this
+	person actually received.
+	"""
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
@@ -3025,39 +3108,45 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		return
 	args: list[str] = context.args or []
 	if len(args) < 2:
-		await update.message.reply_text("Usage: /feedback <signal_ref> <rating|issue> [comment]")
+		await update.message.reply_text(_FEEDBACK_USAGE)
 		return
-	signal_ref: str = str(args[0]).strip()
 	rating_or_issue: str = str(args[1]).strip().lower()
-	comment: str | None = " ".join(args[2:]).strip() if len(args) > 2 else None
+	comment: str | None = " ".join(args[2:]).strip() or None
+	rating: int | None = int(rating_or_issue) if rating_or_issue.isdigit() else None
+	issue: str | None = None if rating is not None else rating_or_issue
 
-	# Accept rating as 1-5 or issue as text
-	rating = None
-	issue = None
-	if rating_or_issue.isdigit() and 1 <= int(rating_or_issue) <= 5:
-		rating = int(rating_or_issue)
-	else:
-		issue: str = rating_or_issue
+	from services.platform.identity import ensure_telegram_user
+	from services.platform.signal_feedback import FeedbackRejected, record_signal_feedback
 
-	# Optionally: resolve signal_id from short ref (first 8 chars)
-	signal_id = None
 	try:
-		from db.session import get_session, get_engine_for_event_loop
-		if get_engine_for_event_loop() is not None:
-			from db.pg_features import get_signal_id_by_short_ref
-			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
-	except Exception:
-		pass
-	if not signal_id:
-		signal_id: str = signal_ref  # fallback: use as-is
-
-	feedback_store.add_feedback(user_id, signal_id, rating=rating, issue=issue, comment=comment)
-	await update.message.reply_text("✅ Feedback received. Thank you!")
-
-	# Optionally flush feedback every 10 submissions
-	if len(feedback_store.get_feedback(signal_id)) % 10 == 0:
-		feedback_store.flush()
+		async with get_session(priority="interactive", label="telegram.signal_feedback") as session:
+			canonical_id = await ensure_telegram_user(
+				session,
+				telegram_user_id=int(user_id),
+				username=getattr(update.effective_user, "username", None),
+			)
+			try:
+				result = await record_signal_feedback(
+					session,
+					user_id=canonical_id,
+					signal_ref=args[0],
+					rating=rating,
+					issue=issue,
+					comment=comment,
+					source="telegram",
+				)
+			except FeedbackRejected as exc:
+				await session.rollback()
+				reason = exc.public_message
+				await update.message.reply_text(f"⚠️ {reason}. Nothing was recorded.\n\n{_FEEDBACK_USAGE}")
+				return
+			await session.commit()
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("Could not record your feedback.", exc))
+		return
+	await update.message.reply_text(
+		f"✅ Feedback recorded for SIG-{str(result['signal_id'])[:8]}. Thank you!"
+	)
 
 # /pricing command
 import logging
@@ -6014,95 +6103,90 @@ async def performance_command(update, context) -> None:
 	await update.message.reply_text("\n".join(lines))
 
 
+_QUALITY_DIMENSION_LABELS = (
+	("strategy", "strategy"),
+	("asset", "instrument"),
+	("timeframe", "timeframe"),
+	("layer", "pipeline layer"),
+)
+_QUALITY_BUCKET_LABELS = (
+	("score", "score"),
+	("ml", "ML"),
+	("news", "news"),
+	("stale", "stale"),
+	("slippage", "slippage"),
+	("other", "other"),
+)
+
+
+def _format_quality_report(report: dict, *, per_dimension: int = 3) -> str:
+	"""Render the shared decision-quality report for a Telegram message."""
+	hours = int(report.get("window_hours") or 24)
+	issued = int(report.get("issued") or 0)
+	rejected = int(report.get("rejected_or_skipped") or 0)
+	if issued == 0 and rejected == 0:
+		return (
+			f"🧪 Quality (last {hours}h)\n\n"
+			"No quality decisions were recorded in this window. A running engine records "
+			"rejections even when it issues nothing, so an empty window usually means the "
+			"signal engine did not run, not that markets were quiet."
+		)
+	rate = report.get("acceptance_rate")
+	buckets = dict(report.get("reject_buckets") or {})
+	lines = [
+		f"🧪 Quality (last {hours}h)",
+		"",
+		f"Issued: {issued}",
+		f"Rejected/Skipped: {rejected}",
+		f"Acceptance rate: {float(rate or 0.0) * 100:.1f}%",
+		"",
+		"Reject buckets:",
+	]
+	lines += [f"- {label}: {int(buckets.get(key) or 0)}" for key, label in _QUALITY_BUCKET_LABELS]
+	top = [item for item in (report.get("top_reasons") or []) if str(item.get("reason") or "")][:3]
+	if top:
+		lines += ["", "Top reject reasons:"]
+		lines += [f"- {str(item['reason'])[:70]}: {int(item.get('rows') or 0)}" for item in top]
+	breakdowns = dict(report.get("breakdowns") or {})
+	for key, label in _QUALITY_DIMENSION_LABELS:
+		items = list(breakdowns.get(key) or [])[: max(1, int(per_dimension))]
+		if not items:
+			continue
+		lines += ["", f"Most rejected by {label}:"]
+		for item in items:
+			share = item.get("acceptance_rate")
+			accepted = f" ({float(share) * 100:.0f}% accepted)" if share is not None else ""
+			lines.append(
+				f"- {str(item.get('value') or '')[:40]}: {int(item.get('rejected_or_skipped') or 0)} rejected / "
+				f"{int(item.get('issued') or 0)} issued{accepted}"
+			)
+	lines += ["", "Full tables: Markets → Signal quality gate in the web app. Usage: /quality [hours 1-168]"]
+	return "\n".join(lines)
+
+
 @require_tier("PREMIUM")
 async def quality_command(update, context) -> None:
+	"""Decision quality with the same breakdowns as the web Quality view."""
 	if await _public_guard(update):
 		return
 	if update.message is None:
 		return
+	args = list(getattr(context, "args", None) or [])
+	hours = 24
+	if args:
+		raw = str(args[0]).strip().lower().rstrip("h")
+		if not raw.isdigit() or not 1 <= int(raw) <= 168:
+			await update.message.reply_text("Usage: /quality [hours 1-168]")
+			return
+		hours = int(raw)
 
 	try:
-		from datetime import datetime, timedelta
-		from collections import Counter
-		from sqlalchemy import text
-		from db.session import get_session
+		from services.platform.decision_quality import decision_quality_report
 
-		cutoff = now_utc_naive() - timedelta(hours=24)
-		rows = []
-		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
-			res = await session.execute(
-				text(
-					"""
-					SELECT decision, COALESCE(reason, '') AS reason, COUNT(*) AS c
-					FROM decision_log
-					WHERE created_at >= :cutoff
-					GROUP BY decision, reason
-					"""
-				),
-				{"cutoff": cutoff},
-			)
-			rows = list(res.fetchall() or [])
-			await session.commit()
-
-		if not rows:
-			await update.message.reply_text(
-				"Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
-			)
-			return
-
-		issued = 0
-		rejected = 0
-		cats = Counter()
-		top_reasons = Counter()
-
-		for decision, reason, c in rows:
-			cnt = int(c or 0)
-			d = str(decision or "").lower()
-			r = str(reason or "").lower()
-
-			if d == "issued":
-				issued += cnt
-			if d in {"rejected", "skipped"}:
-				rejected += cnt
-				top_reasons[r or "(empty)"] += cnt
-				if "slippage" in r:
-					cats["slippage"] += cnt
-				elif "stale" in r:
-					cats["stale"] += cnt
-				elif "news" in r:
-					cats["news"] += cnt
-				elif "ml" in r:
-					cats["ml"] += cnt
-				elif "score" in r:
-					cats["score"] += cnt
-				else:
-					cats["other"] += cnt
-
-		total = issued + rejected
-		accept_rate = (issued / total * 100.0) if total > 0 else 0.0
-		top_lines = []
-		for reason, cnt in top_reasons.most_common(3):
-			if not reason:
-				continue
-			top_lines.append(f"- {reason[:70]}: {cnt}")
-
-		msg = (
-			"🧪 Quality (last 24h)\n\n"
-			f"Issued: {issued}\n"
-			f"Rejected/Skipped: {rejected}\n"
-			f"Acceptance rate: {accept_rate:.1f}%\n\n"
-			"Reject buckets:\n"
-			f"- score: {int(cats.get('score', 0))}\n"
-			f"- ML: {int(cats.get('ml', 0))}\n"
-			f"- news: {int(cats.get('news', 0))}\n"
-			f"- stale: {int(cats.get('stale', 0))}\n"
-			f"- slippage: {int(cats.get('slippage', 0))}\n"
-			f"- other: {int(cats.get('other', 0))}"
-		)
-		if top_lines:
-			msg += "\n\nTop reject reasons:\n" + "\n".join(top_lines)
-
-		await update.message.reply_text(msg)
+		async with get_session(priority="interactive", label="telegram.quality") as session:
+			report = await decision_quality_report(session, hours=hours)
+			await session.rollback()
+		await update.message.reply_text(_format_quality_report(report))
 	except Exception as exc:
 		await update.message.reply_text(safe_command_error("Could not build the quality report.", exc))
 

@@ -2048,8 +2048,45 @@ async def kill_switch_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         "Kill switch\n"
         f"enabled={bool(getattr(status, 'enabled', True))}\n"
-        f"reason={str(getattr(status, 'reason', '') or 'none')}"
+        f"reason={str(getattr(status, 'reason', '') or 'none')}\n\n"
+        + await _scoped_kill_switch_summary()
     )
+
+
+async def _scoped_kill_switch_summary(limit: int = 10) -> str:
+    """Read-only view of the strategy/instrument/asset-class switches.
+
+    Engaging or releasing one needs the web/API owner control, which requires
+    explicit confirmation and a recent sign-in that Telegram cannot prove.
+    """
+    from core.scoped_kill_switch import SCOPES
+
+    try:
+        document = await state.get_scoped_killswitches()
+    except Exception:
+        return (
+            "Scoped switches: store unavailable, so every execution stays blocked "
+            "(fail closed)."
+        )
+    switches = dict(document.get("switches") or {})
+    lines = ["Scoped switches (read-only here):"]
+    engaged = 0
+    for scope in SCOPES:
+        entries = dict(switches.get(scope) or {})
+        engaged += len(entries)
+        for key in sorted(entries)[:limit]:
+            entry = dict(entries.get(key) or {})
+            reason = str(entry.get("reason") or "no reason given")[:80]
+            lines.append(f"- {scope}:{key} by {entry.get('actor') or 'unknown'} ({reason})")
+        if len(entries) > limit:
+            lines.append(f"- {scope}: {len(entries) - limit} more")
+    if not engaged:
+        lines.append("- none engaged")
+    lines.append(
+        "Engage or release scoped switches from the web/API owner control "
+        "(explicit confirmation and recent sign-in required)."
+    )
+    return "\n".join(lines)
 
 async def ml_candidate_command(
     update: Update,

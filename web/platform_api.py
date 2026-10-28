@@ -28,6 +28,12 @@ from sqlalchemy import text
 from db.session import get_session, is_db_configured
 from services.security import encrypt_secret, is_encryption_available
 from services.platform.webhooks import validate_webhook_destination
+from services.platform.decision_quality import quality_breakdowns as _quality_breakdowns
+from services.platform.privacy import (
+    ACCOUNT_DELETION_CATEGORY,
+    ACCOUNT_DELETION_PHRASE,
+    ACCOUNT_RETAINED_RECORDS,
+)
 from core.tier_policy import evaluate_command_access, evaluate_feature_access, get_entitlements, policy_snapshot
 from services.user_intelligence import (
     get_platform_user_trading_preferences,
@@ -696,30 +702,9 @@ def _assert_command(user: dict[str, Any], command: str) -> None:
 
 
 def _platform_operator_authority(user: dict[str, Any]) -> str | None:
-    from config import (
-        ADMIN_IDS,
-        OWNER_IDS,
-        OWNER_TELEGRAM_ID,
-        OWNER_TELEGRAM_IDS,
-    )
+    from services.platform.operator_authority import operator_authority
 
-    telegram_user_id = int(user.get("telegram_user_id") or 0)
-    owner_ids = {int(value) for value in (OWNER_IDS or set())}
-    owner_ids.update(int(value) for value in (OWNER_TELEGRAM_IDS or set()))
-    if int(OWNER_TELEGRAM_ID or 0) > 0:
-        owner_ids.add(int(OWNER_TELEGRAM_ID))
-    if telegram_user_id > 0 and telegram_user_id in owner_ids:
-        return "OWNER"
-
-    tier = str(user.get("tier") or "").strip().upper()
-    if tier == "OWNER":
-        return "OWNER"
-    admin_ids = {int(value) for value in (ADMIN_IDS or set())}
-    if telegram_user_id > 0 and telegram_user_id in admin_ids:
-        return "ADMIN"
-    if tier == "ADMIN":
-        return "ADMIN"
-    return None
+    return operator_authority(telegram_user_id=user.get("telegram_user_id"), tier=user.get("tier"))
 
 
 def _normalized_scopes(values: list[str]) -> list[str]:
@@ -1077,6 +1062,9 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
         "referral_rewards": "account",
         "referral_leaderboard": "account",
         "cancel": "account",
+        "quality": "markets",
+        "privacy": "account",
+        "apikey": "account",
     }
     items = []
     for spec in COMMANDS:
@@ -1273,13 +1261,34 @@ async def operator_ai_test(user: dict[str, Any] = Depends(current_user)) -> dict
     authority = _platform_operator_authority(user)
     if authority not in {"OWNER", "ADMIN"}:
         raise HTTPException(status_code=403, detail="Operator access required")
+    from services.ai_cost_ledger import ai_usage_attribution
     from services.openai_ai import provider_status, test_connection
 
     status = dict(provider_status() or {})
     if not bool(status.get("key_configured")):
         raise HTTPException(status_code=409, detail="OpenAI API key is not configured")
-    result = await test_connection()
+    with ai_usage_attribution(user_id=int(user["id"]), workload="diagnostics"):
+        result = await test_connection()
     return {"authority": authority, "status": status, "test": result}
+
+
+@router.get("/operator/ai-spend")
+async def operator_ai_spend(
+    days: int = Query(30, ge=1, le=366),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts."""
+    authority = _platform_operator_authority(user)
+    if authority not in {"OWNER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Operator access required")
+    from services.ai_cost_ledger import spend_summary
+
+    try:
+        summary = await spend_summary(days=days)
+    except Exception as exc:
+        logger.warning("[operator] ai spend summary failed err=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="AI spend ledger unavailable")
+    return {"authority": authority, **summary}
 
 
 async def _audit_operator_action(user: dict[str, Any], event_type: str, metadata: dict[str, Any]) -> bool:
@@ -2876,68 +2885,30 @@ async def submit_signal_feedback(
     payload: SignalFeedbackRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    """Persist delivery-scoped signal feedback in the canonical account ledger."""
+    """Persist delivery-scoped signal feedback in the canonical account ledger.
+
+    Telegram /feedback records through the same service, so both channels
+    accept only signals the person received and write the same event.
+    """
     _assert_command(user, "feedback")
-    ref = str(signal_id or "").strip()
-    if not ref or len(ref) > 64:
-        raise HTTPException(status_code=422, detail="Invalid signal reference")
-    issue = str(payload.issue or "").strip().lower() or None
-    comment = str(payload.comment or "").strip() or None
-    if payload.rating is None and issue is None:
-        raise HTTPException(status_code=422, detail="Provide a rating or issue")
-    allowed_issues = {
-        "stale",
-        "bad_setup",
-        "wrong_levels",
-        "wrong_outcome",
-        "late_delivery",
-        "duplicate",
-        "unclear",
-        "other",
-    }
-    if issue is not None and issue not in allowed_issues:
-        raise HTTPException(status_code=422, detail="Unsupported feedback issue")
+    from services.platform.signal_feedback import FeedbackRejected, record_signal_feedback
 
     async with get_session(label="platform.signal_feedback", timeout_seconds=8.0) as session:
-        delivered = (
-            await session.execute(
-                text(
-                    """
-                    SELECT 1 FROM (
-                        SELECT sd.signal_id::text AS signal_id
-                        FROM signal_deliveries sd
-                        WHERE sd.user_id=:uid AND sd.signal_id=:sid AND sd.sent_ok=TRUE
-                        UNION ALL
-                        SELECT ne.channel_data->>'signal_id' AS signal_id
-                        FROM notification_events ne
-                        WHERE ne.user_id=:uid AND ne.event_type='signal'
-                          AND ne.channel_data->>'signal_id'=:sid
-                    ) receipt
-                    LIMIT 1
-                    """
-                ),
-                {"uid": int(user["id"]), "sid": ref},
+        try:
+            result = await record_signal_feedback(
+                session,
+                user_id=int(user["id"]),
+                signal_ref=signal_id,
+                rating=payload.rating,
+                issue=payload.issue,
+                comment=payload.comment,
+                source="web",
             )
-        ).scalar_one_or_none()
-        if delivered is None:
-            raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
-        from db.pg_features import record_user_event
-
-        await record_user_event(
-            session,
-            user_id=int(user["id"]),
-            event_type="feedback",
-            meta={
-                "source": "web",
-                "signal_id": ref,
-                "rating": payload.rating,
-                "issue": issue,
-                "comment": comment,
-                "submitted_at": datetime.utcnow().isoformat(),
-            },
-        )
+        except FeedbackRejected as exc:
+            await session.rollback()
+            raise HTTPException(status_code=exc.status, detail=str(exc))
         await session.commit()
-    return {"recorded": True, "signal_id": ref}
+    return result
 
 
 @router.get("/live-price")
@@ -3131,7 +3102,10 @@ async def ai_analyze(
         explanation = None
         if openai_available():
             try:
-                explanation = await explain_signal(setup)
+                from services.ai_cost_ledger import ai_usage_attribution
+
+                with ai_usage_attribution(user_id=int(user["id"]), workload="explanation"):
+                    explanation = await explain_signal(setup)
             except Exception as exc:
                 logger.info("[platform_ai_analyze] explanation unavailable type=%s", type(exc).__name__)
         return {
@@ -4238,17 +4212,6 @@ async def support_tickets(user: dict[str, Any] = Depends(current_user)) -> dict[
     return {"tickets": [dict(row) for row in rows]}
 
 
-ACCOUNT_DELETION_PHRASE = "DELETE MY ACCOUNT"
-ACCOUNT_DELETION_CATEGORY = "privacy_deletion"
-# Records kept after a deletion request because reconciliation, tax or security
-# obligations require them; the review explains each one to the account owner.
-ACCOUNT_RETAINED_RECORDS = (
-    "payment receipts and subscription history",
-    "security and audit events",
-    "signal delivery records needed for outcome reconciliation",
-)
-
-
 class AccountDeletionRequest(BaseModel):
     confirm_phrase: str = Field(min_length=1, max_length=64)
     reason: str | None = Field(default=None, max_length=2000)
@@ -4973,132 +4936,12 @@ async def quality_report(
 ) -> dict[str, Any]:
     """Expose the same decision-quality view as Telegram /quality."""
     _assert_command(user, "quality")
-    cutoff = datetime.utcnow() - timedelta(hours=int(hours))
+    from services.platform.decision_quality import decision_quality_report
+
     async with get_session(label="platform.quality", timeout_seconds=8.0) as session:
-        rows = (
-            (
-                await session.execute(
-                    text(
-                        """
-                    SELECT decision, COALESCE(reason, '') AS reason, COUNT(*) AS rows
-                    FROM decision_log
-                    WHERE created_at >= :cutoff
-                    GROUP BY decision, reason
-                    ORDER BY COUNT(*) DESC
-                    """
-                    ),
-                    {"cutoff": cutoff},
-                )
-            )
-            .mappings()
-            .all()
-        )
-        # One scan of the same window, split four ways (CX-SIG-21). A missing
-        # strategy is reported as unattributed, never inferred.
-        dimension_rows = (
-            (
-                await session.execute(
-                    text(
-                        """
-                    SELECT CASE WHEN GROUPING(asset) = 0 THEN 'asset'
-                                WHEN GROUPING(timeframe) = 0 THEN 'timeframe'
-                                WHEN GROUPING(COALESCE(meta->>'strategy', meta->>'strategy_name')) = 0 THEN 'strategy'
-                                ELSE 'layer' END AS dimension,
-                           COALESCE(asset, timeframe, COALESCE(meta->>'strategy', meta->>'strategy_name'), meta->>'layer') AS value,
-                           LOWER(COALESCE(decision, '')) AS decision,
-                           COUNT(*) AS rows
-                    FROM decision_log
-                    WHERE created_at >= :cutoff
-                    GROUP BY GROUPING SETS (
-                        (asset, decision),
-                        (timeframe, decision),
-                        (COALESCE(meta->>'strategy', meta->>'strategy_name'), decision),
-                        (meta->>'layer', decision)
-                    )
-                    """
-                    ),
-                    {"cutoff": cutoff},
-                )
-            )
-            .mappings()
-            .all()
-        )
+        report = await decision_quality_report(session, hours=int(hours))
         await session.rollback()
-
-    issued = 0
-    rejected = 0
-    buckets = {"score": 0, "ml": 0, "news": 0, "stale": 0, "slippage": 0, "other": 0}
-    reason_counts: dict[str, int] = {}
-    for row in rows:
-        decision = str(row.get("decision") or "").lower()
-        reason = str(row.get("reason") or "").lower()
-        count = int(row.get("rows") or 0)
-        if decision == "issued":
-            issued += count
-        if decision in {"rejected", "skipped"}:
-            rejected += count
-            reason_counts[reason or "(empty)"] = reason_counts.get(reason or "(empty)", 0) + count
-            if "slippage" in reason:
-                buckets["slippage"] += count
-            elif "stale" in reason:
-                buckets["stale"] += count
-            elif "news" in reason:
-                buckets["news"] += count
-            elif "ml" in reason:
-                buckets["ml"] += count
-            elif "score" in reason:
-                buckets["score"] += count
-            else:
-                buckets["other"] += count
-    total = issued + rejected
-    top_reasons = sorted(reason_counts.items(), key=lambda item: item[1], reverse=True)[:10]
-    return {
-        "window_hours": int(hours),
-        "issued": issued,
-        "rejected_or_skipped": rejected,
-        "acceptance_rate": (issued / total if total else None),
-        "reject_buckets": buckets,
-        "top_reasons": [{"reason": reason, "rows": count} for reason, count in top_reasons],
-        "breakdowns": _quality_breakdowns(dimension_rows),
-    }
-
-
-_QUALITY_UNATTRIBUTED = {"asset": "(no asset)", "timeframe": "(no timeframe)",
-                         "strategy": "(unattributed)", "layer": "(no layer)"}
-
-
-def _quality_breakdowns(rows: Any, limit: int = 12) -> dict[str, list[dict[str, Any]]]:
-    """Issued vs rejected decisions per asset, timeframe, strategy and pipeline layer."""
-    tallies: dict[str, dict[str, dict[str, int]]] = {name: {} for name in _QUALITY_UNATTRIBUTED}
-    for row in rows or []:
-        dimension = str(row.get("dimension") or "")
-        if dimension not in tallies:
-            continue
-        value = str(row.get("value") or "").strip() or _QUALITY_UNATTRIBUTED[dimension]
-        decision = str(row.get("decision") or "")
-        count = int(row.get("rows") or 0)
-        entry = tallies[dimension].setdefault(value, {"issued": 0, "rejected_or_skipped": 0, "other": 0})
-        if decision == "issued":
-            entry["issued"] += count
-        elif decision in {"rejected", "skipped"}:
-            entry["rejected_or_skipped"] += count
-        else:
-            entry["other"] += count
-    result: dict[str, list[dict[str, Any]]] = {}
-    for dimension, values in tallies.items():
-        ordered = sorted(values.items(), key=lambda item: (-item[1]["rejected_or_skipped"], -item[1]["issued"], item[0]))
-        result[dimension] = [
-            {
-                "value": value,
-                **counts,
-                "acceptance_rate": (
-                    counts["issued"] / (counts["issued"] + counts["rejected_or_skipped"])
-                    if counts["issued"] + counts["rejected_or_skipped"] else None
-                ),
-            }
-            for value, counts in ordered[: max(1, int(limit))]
-        ]
-    return result
+    return report
 
 
 @router.get("/shadow-report")

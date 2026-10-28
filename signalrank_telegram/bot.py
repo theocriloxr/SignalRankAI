@@ -6606,6 +6606,9 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("link", _audit_handler("link", link_command)))
     application.add_handler(CommandHandler("devices", _audit_handler("devices", devices_command)))
     application.add_handler(CommandHandler("security", _audit_handler("security", security_command)))
+    from .platform_parity_commands import account_merges_command, privacy_command
+    application.add_handler(CommandHandler("privacy", _audit_handler("privacy", privacy_command)))
+    application.add_handler(CommandHandler("account_merges", _audit_handler("account_merges", account_merges_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))

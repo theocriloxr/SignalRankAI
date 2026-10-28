@@ -557,9 +557,11 @@ async def _handle_ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return
 
     try:
+        from services.ai_cost_ledger import ai_usage_attribution
         from services.gemini_ml import ask_gemini_signal_explanation
 
-        explanation = await ask_gemini_signal_explanation(dict(signal))
+        with ai_usage_attribution(telegram_user_id=user_id, workload="explanation"):
+            explanation = await ask_gemini_signal_explanation(dict(signal))
         if not explanation:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,

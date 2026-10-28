@@ -398,6 +398,59 @@
         ]
       }
     },
+    "/api/v1/platform/operator/ai-spend": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Ai Spend",
+        "description": "Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts.",
+        "operationId": "operator_ai_spend_api_v1_platform_operator_ai_spend_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 366,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Ai Spend Api V1 Platform Operator Ai Spend Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/operator/account-merges": {
       "get": {
         "tags": [

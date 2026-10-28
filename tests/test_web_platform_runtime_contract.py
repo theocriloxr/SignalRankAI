@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_JS = (ROOT / "web/platform_app/app.js").read_text(encoding="utf-8")
 APP_HTML = (ROOT / "web/platform_app/index.html").read_text(encoding="utf-8")
 API = (ROOT / "web/platform_api.py").read_text(encoding="utf-8")
+FEEDBACK_SERVICE = (ROOT / "services/platform/signal_feedback.py").read_text(encoding="utf-8")
 
 
 def test_multi_element_dom_operations_use_query_selector_all_helper():
@@ -122,10 +123,12 @@ def test_signal_feedback_is_delivery_scoped_and_canonical():
         API.index('@router.get("/live-price")')
     ]
     assert '_assert_command(user, "feedback")' in section
-    assert "signal_deliveries" in section
-    assert "sent_ok=TRUE" in section
-    assert "record_user_event" in section
-    assert '"source": "web"' in section
+    # The delivery scope and ledger write live in the service Telegram also uses.
+    assert "record_signal_feedback(" in section
+    assert 'source="web"' in section
+    assert "signal_deliveries" in FEEDBACK_SERVICE
+    assert "sent_ok=TRUE" in FEEDBACK_SERVICE
+    assert "record_user_event" in FEEDBACK_SERVICE
     assert "/feedback" in APP_JS
     assert 'id="signalFeedbackForm"' in APP_JS
     assert "wrong_outcome" in APP_JS
@@ -168,9 +171,10 @@ def test_feedback_accepts_either_authorized_signal_receipt():
         API.index('@router.post("/signals/{signal_id}/feedback"'):
         API.index('@router.get("/live-price")')
     ]
-    assert "signal_deliveries" in section
-    assert "notification_events" in section
-    assert "record_user_event" in section
+    assert "record_signal_feedback(" in section
+    assert "signal_deliveries" in FEEDBACK_SERVICE
+    assert "notification_events" in FEEDBACK_SERVICE
+    assert "record_user_event" in FEEDBACK_SERVICE
 
 
 
