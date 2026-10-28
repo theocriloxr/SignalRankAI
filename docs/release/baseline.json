@@ -118,6 +118,13 @@
       "railway_state": "Online, 1 replica, 0 failures",
       "deployed_sha": "9865a3d1",
       "pr_202_deployed": false
+    },
+    "third_pass": {
+      "commits": "8495d912..42f212a2",
+      "schema_head": "0056_ai_usage_ledger",
+      "python_suite": "Full Python suite at `42f212a2` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0056`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,250 passed, 2 failed, 2 skipped**. Failures: V7 governance freshness (artifacts regenerated in the following commit) and the environmental `release_provenance[isolated_metadata]` case (`alembic` only in user site-packages, excluded by `python -I`).",
+      "expectancy_lockout": "EXPECTANCY_HARD_BLOCK_ENABLED with 0 delivered outcomes in 30 days refuses every crypto candidate; owner decision required",
+      "backtest": "harness added; real-data run blocked: market-data hosts unreachable from this machine"
     }
   }
 }

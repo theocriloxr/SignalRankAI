@@ -10,8 +10,8 @@
   "BLOCKED_EXTERNAL_DEPENDENCY": 4,
   "BLOCKED_HUMAN_DECISION": 4,
   "IMPLEMENTED_AND_VERIFIED": 8,
-  "IMPLEMENTED_NOT_VERIFIED": 126,
-  "MISSING": 2,
+  "IMPLEMENTED_NOT_VERIFIED": 127,
+  "MISSING": 1,
   "PARTIALLY_IMPLEMENTED": 123,
   "PROPOSED_NOT_APPROVED": 2,
   "UNRESOLVED_HISTORICAL_AMBIGUITY": 3
@@ -19,8 +19,8 @@
  "acceptance_counts": {
   "awaiting approval": 7,
   "blocked": 20,
-  "not implemented": 4,
-  "partially verified": 249,
+  "not implemented": 3,
+  "partially verified": 250,
   "verified": 8
  },
  "requirements": [
@@ -554,9 +554,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "data/connectors/binance_adapter.py",
-    "tests/test_provider_region_restriction_20261024.py"
+    "tests/test_provider_region_restriction_20261024.py",
+    "data/provider_diagnostics.py",
+    "tests/test_provider_diagnostics_20261028.py"
    ],
-   "note": "HTTP 451 now classified REGION_RESTRICTED (permanent, warned once); live provider re-test needs keys."
+   "note": "HTTP 451 now classified REGION_RESTRICTED (permanent, warned once); live provider re-test needs keys. 28 Oct: production FX/index/commodity requests all returned no candles; causes now reported; Polygon ticker and yfinance BRENT/index/4h defects fixed (not deployed)."
   },
   {
    "id": "CX-FACT-12",
@@ -1182,9 +1184,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_market_data_routing.py"
+    "tests/test_market_data_routing.py",
+    "data/provider_diagnostics.py"
    ],
-   "note": ""
+   "note": "28 Oct: failover now records why each provider was skipped."
   },
   {
    "id": "CX-DATA-06",
@@ -1265,9 +1268,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "engine/loop.py",
-    "tests/test_pipeline.py"
+    "tests/test_pipeline.py",
+    "engine/expectancy_gate.py"
    ],
-   "note": "Execution leg disabled by policy."
+   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending."
   },
   {
    "id": "CX-SIG-02",
@@ -1505,9 +1509,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "services/openai_ai.py"
+    "services/openai_ai.py",
+    "services/ai_cost_ledger.py"
    ],
-   "note": "Token usage counted for OpenAI only; no per-user budgets or spend alerts."
+   "note": "Token usage counted for OpenAI only; no per-user budgets or spend alerts. 28 Oct: OpenAI and Gemini calls both reserved/settled in the ledger; /operator/ai-spend summary; budget alerts deduplicated."
   },
   {
    "id": "CX-AI-07",
@@ -1722,9 +1727,11 @@
    "evidence": [
     "tests/test_class_universe_and_strategy_capabilities.py",
     "strategies/zone_rejection.py",
-    "tests/test_zone_rejection_strategy_20261028.py"
+    "tests/test_zone_rejection_strategy_20261028.py",
+    "scripts/backtest_zone_rejection.py",
+    "tests/test_backtest_zone_rejection_harness_20261028.py"
    ],
-   "note": "Approval history/rollback fields incomplete. 28 Oct: owner video strategy added as order-block-abc-v1, disabled by default pending approved backtest/shadow evidence."
+   "note": "Approval history/rollback fields incomplete. 28 Oct: owner video strategy added as order-block-abc-v1, disabled by default pending approved backtest/shadow evidence. 28 Oct: strategy defects fixed; backtest harness ready; real-data run blocked by network."
   },
   {
    "id": "CX-STRAT-03",
@@ -2144,9 +2151,11 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_web_command_parity_redesign_20260928.py"
+    "tests/test_web_command_parity_redesign_20260928.py",
+    "docs/release/TELEGRAM_WEB_PARITY_MATRIX.md",
+    "scripts/build_parity_matrix.py"
    ],
-   "note": ""
+   "note": "28 Oct: matrix generated from code; gaps listed (watchlists, journal)."
   },
   {
    "id": "CX-CHAN-02",
@@ -2166,9 +2175,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_command_contracts.py",
-    "tests/test_callback_contract.py"
+    "tests/test_callback_contract.py",
+    "tests/test_telegram_web_parity_20261028.py"
    ],
-   "note": "Unit-level only; deployed bot unverified."
+   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level."
   },
   {
    "id": "CX-TG-02",
@@ -2719,10 +2729,14 @@
   {
    "id": "CX-COST-01",
    "label": "Cost tracking",
-   "status": "MISSING",
-   "acceptance_class": "not implemented",
-   "evidence": [],
-   "note": "Only OpenAI token counters exist; no attribution/budgets."
+   "status": "IMPLEMENTED_NOT_VERIFIED",
+   "acceptance_class": "partially verified",
+   "evidence": [
+    "services/ai_cost_ledger.py",
+    "db/migrations/versions/0056_ai_usage_ledger.py",
+    "tests/test_ai_cost_ledger_budgets_20261028.py"
+   ],
+   "note": "Only OpenAI token counters exist; no attribution/budgets. 28 Oct: append-only AI usage/cost ledger with per-provider/workload/user attribution and fail-closed budgets (real-PostgreSQL tests). Budgets not yet set by the owner; not deployed."
   },
   {
    "id": "CX-CAP-01",
@@ -3057,6 +3071,20 @@
     "CX-STRAT-02"
    ],
    "note": "Read-only Railway evidence and local tests. Nothing deployed."
+  },
+  {
+   "date": "2026-10-28",
+   "ids": [
+    "CX-COST-01",
+    "CX-AI-06",
+    "CX-CHAN-01",
+    "CX-TG-01",
+    "CX-FACT-11",
+    "CX-DATA-05",
+    "CX-SIG-01",
+    "CX-STRAT-02"
+   ],
+   "note": "Third pass; local evidence only. Nothing deployed."
   }
  ]
 }
