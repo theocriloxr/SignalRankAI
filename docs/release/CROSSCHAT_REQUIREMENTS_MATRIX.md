@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 26899. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26886.
+Rows: 26911. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26898.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -26854,7 +26854,7 @@ Rows: 26899. Reviewed dispositions: 13. Unresolved applicability/acceptance: 268
 | SR-STRATEGY_CALLABLE-2adbd5878e89745f | engine/adaptive/components/price_action.py:8  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-2910c45239fbcbc7 | engine/adaptive/components/supply_demand.py:7  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-b1ca3a0bd7564739 | engine/adaptive/components/wyckoff.py:7  | INCOMPLETE |
-| SR-STRATEGY_CALLABLE-e6f4deab95cda0ef | strategies/__init__.py:88  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-e6f4deab95cda0ef | strategies/__init__.py:89  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-855cb141d3134e21 | strategies/commodity.py:6  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-2c95847e9a68b7d3 | strategies/crypto.py:6  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-4e571150d6cd30a9 | strategies/dynamic_targets.py:15  | INCOMPLETE |
@@ -26893,12 +26893,24 @@ Rows: 26899. Reviewed dispositions: 13. Unresolved applicability/acceptance: 268
 | SR-STRATEGY_CALLABLE-557a10fb0cc03632 | strategies/volatility.py:46  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-9a40d13070e350f1 | strategies/volatility.py:67  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-28ccc8cab71e765a | strategies/volatility.py:88  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-632150c4dc6f1da6 | strategies/zone_rejection.py:47  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-e30e191b0af3d015 | strategies/zone_rejection.py:60  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-18cab7bf522ca8ef | strategies/zone_rejection.py:68  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-3f8b9172f26dcc4e | strategies/zone_rejection.py:86  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-63a588f9403b46f1 | strategies/zone_rejection.py:97  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-b9b93d5a160bec86 | strategies/zone_rejection.py:110  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-8074f54af8f0af30 | strategies/zone_rejection.py:135  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-ca50177101520005 | strategies/zone_rejection.py:154  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-88720e7835cf4913 | strategies/zone_rejection.py:191  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-59f9c61eb7a0cc91 | strategies/zone_rejection.py:212  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-bf595ed4e0f8266c | strategies/zone_rejection.py:223  | INCOMPLETE |
 | SR-STRATEGY-2ab022d82080f5d9 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-446be308664e1964 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-0133e0bc637cb7af | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-520cdb563bf80b19 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-59b47e9ec520a951 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-9e258d1804965ab2 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
+| SR-STRATEGY-8c279b58e430cfbe | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-310206690a5a7b57 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-STRATEGY-08c4242b5f585628 | strategies/capabilities.py::CAPABILITY_MATRIX  | INCOMPLETE |
 | SR-TIMEFRAME-ade5880f369fd976 | strategies/capabilities.py::ALL_TIMEFRAMES  | INCOMPLETE |

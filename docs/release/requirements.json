@@ -111,7 +111,24 @@
       },
       "frontend_checks": "tsc, eslint, next build and 108 node tests pass on Next.js 16.4.2; npm audit 0 vulnerabilities",
       "dependency_security": "Next.js 16.4.2, zod 4.6.7, aiohttp 3.14.5, certifi 2026.10.19, OpenTelemetry 1.45.1/0.66b1, Pillow 13.0.0",
-      "migration_rehearsal": "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json"
+      "migration_rehearsal": "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json",
+      "python_suite_with_upgraded_dependencies": {
+        "commit": "fa223df4",
+        "passed": 4145,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (one 15 s subprocess deadline under cold imports; passes on re-run)",
+        "scope": "Local Windows 11, Python 3.12 venv from requirements.lock, owned PostgreSQL 17; not CI, staging or production"
+      },
+      "production_engine_observation": {
+        "source": "Railway read-only logs and environment status, 2026-10-28",
+        "engine_service": "striking-optimism",
+        "last_pipeline_log": "2026-10-22T08:08:30Z",
+        "postgres_redeployed": "2026-10-22T08:07:47Z",
+        "railway_state": "Online, 1 replica, 0 failures",
+        "deployed_sha": "9865a3d1",
+        "pr_202_deployed": false
+      }
     }
   },
   "inventory_is_verification": false,
@@ -129,8 +146,8 @@
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
-      "STRATEGY_CALLABLE": 48,
-      "STRATEGY": 8,
+      "STRATEGY_CALLABLE": 59,
+      "STRATEGY": 9,
       "TIMEFRAME": 6
     }
   },
@@ -525111,7 +525128,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-e6f4deab95cda0ef",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/__init__.py:88",
+      "source": "strategies/__init__.py:89",
       "requirement": "run_all_strategies",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/__init__.py",
@@ -525577,6 +525594,138 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
     },
     {
+      "id": "SR-STRATEGY_CALLABLE-632150c4dc6f1da6",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:47",
+      "requirement": "ZoneConfig",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-e30e191b0af3d015",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:60",
+      "requirement": "Zone",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-18cab7bf522ca8ef",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:68",
+      "requirement": "enabled",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-3f8b9172f26dcc4e",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:86",
+      "requirement": "atr",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-63a588f9403b46f1",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:97",
+      "requirement": "swing_points",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-b9b93d5a160bec86",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:110",
+      "requirement": "find_fresh_zones",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-8074f54af8f0af30",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:135",
+      "requirement": "structure_broke",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-ca50177101520005",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:154",
+      "requirement": "execution_trigger",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-88720e7835cf4913",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:191",
+      "requirement": "dealing_range",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-59f9c61eb7a0cc91",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:212",
+      "requirement": "map_index",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-bf595ed4e0f8266c",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/zone_rejection.py:223",
+      "requirement": "zone_rejection_strategies",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/zone_rejection.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
       "id": "SR-STRATEGY-2ab022d82080f5d9",
       "kind": "STRATEGY",
       "source": "strategies/capabilities.py::CAPABILITY_MATRIX",
@@ -525641,6 +525790,18 @@
       "kind": "STRATEGY",
       "source": "strategies/capabilities.py::CAPABILITY_MATRIX",
       "requirement": "fibonacci",
+      "current_implementation": "Declared strategy family. Stock is equity-only, 15m/1h/4h/1d; other families declare all canonical asset classes and six engine timeframes.",
+      "responsible_component": "strategies/__init__.py::run_all_strategies",
+      "verification_method": "Verify dispatcher selection, profile eligibility, causal replay and independent strategy/regime/asset/timeframe performance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY-8c279b58e430cfbe",
+      "kind": "STRATEGY",
+      "source": "strategies/capabilities.py::CAPABILITY_MATRIX",
+      "requirement": "zones",
       "current_implementation": "Declared strategy family. Stock is equity-only, 15m/1h/4h/1d; other families declare all canonical asset classes and six engine timeframes.",
       "responsible_component": "strategies/__init__.py::run_all_strategies",
       "verification_method": "Verify dispatcher selection, profile eligibility, causal replay and independent strategy/regime/asset/timeframe performance.",
