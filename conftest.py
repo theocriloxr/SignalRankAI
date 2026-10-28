@@ -12,6 +12,9 @@ install_optional_dependency_stubs()
 # with the test runner or hit live services in smoke tests.
 os.environ.setdefault("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "1")
 os.environ.setdefault("PYTHONUNBUFFERED", "1")
+# Provider unit tests must not write AI cost ledger rows into whatever database
+# DATABASE_URL names; the ledger's own tests enable it explicitly.
+os.environ.setdefault("AI_COST_LEDGER_ENABLED", "0")
 
 
 async def _inline_to_thread(func, /, *args, **kwargs):

@@ -23,6 +23,8 @@ from typing import Any, Mapping, Sequence
 
 import httpx
 
+from services import ai_cost_ledger
+
 logger = logging.getLogger("OpenAIIntelligence")
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -327,6 +329,30 @@ async def _structured_response(
         minimum=1.0,
         maximum=120.0,
     )
+    # Reserve worst-case spend before contacting the provider. An exhausted
+    # budget skips this advisory step; callers take their degraded path.
+    ledger_admission = await ai_cost_ledger.admit(
+        provider="openai",
+        model=model,
+        task=task,
+        estimated_prompt_tokens=ai_cost_ledger.estimate_tokens(json.dumps(body["input"], ensure_ascii=False)),
+        max_output_tokens=int(body["max_output_tokens"]),
+    )
+    if not ledger_admission.admitted:
+        return ledger_admission.refusal()
+
+    async def _settle(outcome: str, *, usage: Any = None, billable: bool = True, error: str | None = None) -> None:
+        prompt_tokens, completion_tokens = ai_cost_ledger.openai_usage_tokens(usage)
+        await ai_cost_ledger.settle(
+            ledger_admission,
+            outcome=outcome,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=round((time.perf_counter() - started) * 1000.0, 2),
+            error=error,
+            billable=billable,
+        )
+
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             response = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
@@ -335,6 +361,7 @@ async def _structured_response(
                 "rate_limited",
                 _env_int("OPENAI_RATE_LIMIT_COOLDOWN_SECONDS", 900, minimum=30, maximum=86400),
             )
+            await _settle("error", billable=False, error="rate_limited")
             return {"ok": False, "provider": "openai", "model": model, "error": "rate_limited"}
         if response.status_code in {400, 401, 403, 404}:
             _open_circuit(
@@ -348,6 +375,7 @@ async def _structured_response(
                 response.status_code,
                 detail,
             )
+            await _settle("error", billable=False, error=f"provider_http_{response.status_code}")
             return {
                 "ok": False,
                 "provider": "openai",
@@ -357,9 +385,10 @@ async def _structured_response(
         response.raise_for_status()
         raw = response.json()
         data = _extract_json_response(raw)
-        if not data:
-            return {"ok": False, "provider": "openai", "model": model, "error": "invalid_structured_response"}
         usage = raw.get("usage") if isinstance(raw, dict) else None
+        if not data:
+            await _settle("error", usage=usage, error="invalid_structured_response")
+            return {"ok": False, "provider": "openai", "model": model, "error": "invalid_structured_response"}
         result = {
             "ok": True,
             "provider": "openai",
@@ -373,11 +402,19 @@ async def _structured_response(
             "cache_hit": False,
         }
         _record_usage(usage if isinstance(usage, Mapping) else None)
+        await _settle("ok", usage=usage)
         _cache_put(cache_key, result)
         return result
     except (httpx.TimeoutException, asyncio.TimeoutError):
+        # The provider may still bill a timed-out request; keep the reservation.
+        await _settle("timeout", error="timeout")
         return {"ok": False, "provider": "openai", "model": model, "error": "timeout"}
+    except httpx.HTTPStatusError as exc:
+        await _settle("error", billable=False, error=f"provider_http_{exc.response.status_code}")
+        logger.warning("[openai_ai] task=%s failed error=%s", task, type(exc).__name__)
+        return {"ok": False, "provider": "openai", "model": model, "error": type(exc).__name__}
     except Exception as exc:
+        await _settle("error", error=type(exc).__name__)
         logger.warning("[openai_ai] task=%s failed error=%s", task, type(exc).__name__)
         return {"ok": False, "provider": "openai", "model": model, "error": type(exc).__name__}
 

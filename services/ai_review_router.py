@@ -283,10 +283,19 @@ async def review_signal(
             for task in calls:
                 task.cancel()
         normalized: list[dict[str, Any]] = []
-        for item in raw_results:
-            if isinstance(item, Exception):
+        consensus_trace: list[dict[str, Any]] = []
+        for name, item in zip(external, raw_results):
+            if isinstance(item, BaseException):
+                consensus_trace.append({"provider": name, "ok": False, "error": type(item).__name__})
                 continue
             row = _normalize(item)
+            consensus_trace.append(
+                {
+                    "provider": name,
+                    "ok": row is not None,
+                    "error": None if row is not None else str(item.get("error") or "invalid_response")[:120],
+                }
+            )
             if row is not None:
                 normalized.append(row)
         require_two = _env_bool("AI_CONSENSUS_REQUIRE_TWO_PROVIDERS", False)
@@ -314,7 +323,12 @@ async def review_signal(
                 "usage": single["usage"],
                 "input_hash": single["input_hash"],
             }
-        return {"ok": False, "provider": "consensus", "error": "external_consensus_unavailable"}
+        return {
+            "ok": False,
+            "provider": "consensus",
+            "error": "external_consensus_unavailable",
+            "provider_trace": consensus_trace,
+        }
 
     provider_trace: list[dict[str, Any]] = []
     for provider in external:

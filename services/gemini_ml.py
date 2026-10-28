@@ -28,6 +28,8 @@ import threading
 from typing import Dict, List, Any, Optional, Tuple, Mapping, Sequence
 import asyncio
 
+from services import ai_cost_ledger
+
 
 logger = logging.getLogger("GeminiValidator")
 _LAST_REVIEW_KEY = "gemini_last_review"
@@ -268,6 +270,9 @@ def _gemini_compat_fallback_allowed() -> bool:
 async def _call_gemini_result(
     prompt: str,
     max_tokens: int = 512,
+    *,
+    task: str = "gemini_text",
+    workload: str | None = None,
 ) -> dict[str, Any]:
     """Call Gemini with bounded process-level provider protection."""
     active_client = _get_client()
@@ -289,6 +294,17 @@ async def _call_gemini_result(
             "circuit_open": True,
         }
 
+    ledger_admission = await ai_cost_ledger.admit(
+        provider="gemini",
+        model=MODEL_ID,
+        task=task,
+        workload=workload,
+        estimated_prompt_tokens=ai_cost_ledger.estimate_tokens(prompt),
+        max_output_tokens=max(1, int(max_tokens)),
+    )
+    if not ledger_admission.admitted:
+        return ledger_admission.refusal()
+
     started = time.perf_counter()
     try:
         config = None
@@ -304,11 +320,18 @@ async def _call_gemini_result(
         }
         if config is not None:
             kwargs["config"] = config
-        response = await asyncio.to_thread(
-            active_client.models.generate_content,
-            **kwargs,
-        )
+        try:
+            response = await asyncio.to_thread(
+                active_client.models.generate_content,
+                **kwargs,
+            )
+        except Exception as exc:
+            await _settle_gemini_failure(ledger_admission, exc, started)
+            raise
         text = str(getattr(response, "text", "") or "").strip()
+        await _settle_gemini_response(
+            ledger_admission, response, prompt, started, outcome="ok" if text else "empty_response"
+        )
         if not text:
             return {
                 "ok": False,
@@ -351,9 +374,68 @@ async def _call_gemini_result(
         }
 
 
-async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
+async def _settle_gemini_response(
+    admission: Any, response: Any, prompt: str, started: float, *, outcome: str = "ok"
+) -> None:
+    prompt_tokens, completion_tokens, estimated = ai_cost_ledger.gemini_usage_tokens(response, prompt)
+    await ai_cost_ledger.settle(
+        admission,
+        outcome=outcome,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        tokens_estimated=estimated,
+        latency_ms=round((time.perf_counter() - started) * 1000.0, 2),
+    )
+
+
+async def _settle_gemini_failure(admission: Any, exc: BaseException, started: float) -> None:
+    # An HTTP-classified rejection generated nothing; anything else may have
+    # been billed, so its reservation is kept.
+    status = _provider_http_status(exc)
+    await ai_cost_ledger.settle(
+        admission,
+        outcome="error",
+        latency_ms=round((time.perf_counter() - started) * 1000.0, 2),
+        error=f"provider_http_{status}" if status is not None else type(exc).__name__,
+        billable=status is None,
+    )
+
+
+async def _ledgered_generate_content(prompt: str, *, task: str, workload: str) -> Any:
+    """Raw ``generate_content`` for legacy text paths, recorded in the AI cost ledger.
+
+    Raises ``AIBudgetExhausted`` when a budget refuses the call; every legacy
+    caller already treats an exception as "Gemini unavailable".
+    """
+    admission = await ai_cost_ledger.admit(
+        provider="gemini",
+        model=MODEL_ID,
+        task=task,
+        workload=workload,
+        estimated_prompt_tokens=ai_cost_ledger.estimate_tokens(prompt),
+        max_output_tokens=_env_int("GEMINI_LEGACY_RESERVED_OUTPUT_TOKENS", 2048, minimum=1, maximum=65536),
+    )
+    if not admission.admitted:
+        raise ai_cost_ledger.AIBudgetExhausted(admission.reason, admission.scope)
+    started = time.perf_counter()
+    try:
+        response = await asyncio.to_thread(client.models.generate_content, model=MODEL_ID, contents=prompt)
+    except Exception as exc:
+        await _settle_gemini_failure(admission, exc, started)
+        raise
+    await _settle_gemini_response(admission, response, prompt, started)
+    return response
+
+
+async def _call_gemini(
+    prompt: str,
+    max_tokens: int = 512,
+    *,
+    task: str = "gemini_text",
+    workload: str | None = None,
+) -> Optional[str]:
     """Backward-compatible text helper backed by the protected provider call."""
-    result = await _call_gemini_result(prompt, max_tokens=max_tokens)
+    result = await _call_gemini_result(prompt, max_tokens=max_tokens, task=task, workload=workload)
     if not bool(result.get("ok")):
         return None
     return str(result.get("text") or "").strip() or None
@@ -481,7 +563,7 @@ async def review_signal_structured(
             separators=(",", ":"),
         )[:24000]
     )
-    call = await _call_gemini_result(prompt, max_tokens=420)
+    call = await _call_gemini_result(prompt, max_tokens=420, task="gemini_trade_review", workload="signal_review")
     if not bool(call.get("ok")):
         return {
             "ok": False,
@@ -636,7 +718,9 @@ async def choose_direction_structured(
             separators=(",", ":"),
         )[:18000]
     )
-    call = await _call_gemini_result(prompt, max_tokens=260)
+    call = await _call_gemini_result(
+        prompt, max_tokens=260, task="gemini_direction_arbitration", workload="signal_review"
+    )
     if not bool(call.get("ok")):
         return {
             "ok": False,
@@ -696,6 +780,8 @@ async def quantize_news_sentiment(asset: str, headlines: List[str]) -> float:
         f"Rate the overall news sentiment for {asset} from -3 to +3.\n\n"
         f"Headlines:\n{headlines_text}\n\nReply with only the number.",
         max_tokens=10,
+        task="gemini_news_sentiment",
+        workload="market_context",
     )
     if not response:
         return 0.0
@@ -734,7 +820,7 @@ async def ask_gemini_signal_explanation(signal: dict) -> Optional[str]:
             signal.setdefault("ai_prompt_version", version)
     except Exception:
         pass
-    return await _call_gemini(prompt, max_tokens=300)
+    return await _call_gemini(prompt, max_tokens=300, task="gemini_signal_explanation", workload="explanation")
 
 
 async def ask_gemini_custom_question(question: str, context: Optional[dict] = None) -> Optional[str]:
@@ -751,7 +837,7 @@ async def ask_gemini_custom_question(question: str, context: Optional[dict] = No
     if not _gemini_compat_fallback_allowed() or not gemini_available():
         return None
     prompt, _version = render_prompt("custom_question", question=question, context=context or {})
-    return await _call_gemini(prompt, max_tokens=500)
+    return await _call_gemini(prompt, max_tokens=500, task="gemini_operator_question", workload="chat")
 
 
 async def analyze_market_regime(asset: str, market_data: dict) -> dict:
@@ -777,7 +863,7 @@ async def analyze_market_regime(asset: str, market_data: dict) -> dict:
     if not _gemini_compat_fallback_allowed() or not gemini_available():
         return fallback
     prompt, version = render_prompt("market_regime", asset=asset, market_data=market_data)
-    response = await _call_gemini(prompt, max_tokens=250)
+    response = await _call_gemini(prompt, max_tokens=250, task="gemini_market_regime", workload="market_context")
     if not response:
         return fallback
     return {"regime": "AI_REVIEWED", "confidence": 0.5, "reason": response[:500], "prompt_version": version}
@@ -815,8 +901,8 @@ async def get_news_sentiment(asset: str, headlines: list) -> str:
 
         prompt, _version = render_prompt("news_sentiment", asset=asset, headlines_text=headlines_text)
 
-        # New SDK: client.models.generate_content()
-        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        # Recorded in the AI cost ledger; a refused budget raises and reads as unavailable.
+        response = await _ledgered_generate_content(prompt, task="gemini_news_sentiment", workload="market_context")
 
         decision = response.text.strip().upper()
 
@@ -904,7 +990,7 @@ THOUGHT PROCESS: (Briefly explain your reasoning)
 FINAL DECISION: [APPROVE] or [VETO]"""
 
         # New SDK call
-        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await _ledgered_generate_content(prompt, task="gemini_cro_check", workload="signal_review")
 
         decision = response.text.strip().upper()
 
@@ -1017,7 +1103,7 @@ Reply ONLY with one of these exact responses:
 Do not explain. Just reply with APPROVE or VETO."""
 
         # New SDK call
-        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await _ledgered_generate_content(prompt, task="gemini_confluence_check", workload="signal_review")
 
         decision = response.text.strip().upper()
 
@@ -1098,7 +1184,7 @@ REASON: [brief reason]
 DECISION: [APPROVE/VETO]"""
 
         # New SDK call
-        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await _ledgered_generate_content(prompt, task="gemini_risk_review", workload="signal_review")
 
         text = response.text.strip()
 
@@ -1373,10 +1459,8 @@ RECOMMENDATIONS: [Specific suggestions]
                 if not analysis:
                     if not gemini_ready:
                         raise RuntimeError("all_external_ai_providers_unavailable")
-                    response = await asyncio.to_thread(
-                        client.models.generate_content,
-                        model=MODEL_ID,
-                        contents=prompt,
+                    response = await _ledgered_generate_content(
+                        prompt, task="gemini_performance_review", workload="research"
                     )
                     analysis = response.text.strip()
                     feature_suggestions = _review_feature_suggestions(analysis)
@@ -1496,7 +1580,7 @@ Otherwise, respond 'PROCEED'.
 Response must be one word only.
 """
         # New SDK call
-        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        response = await _ledgered_generate_content(prompt, task="gemini_final_veto", workload="signal_review")
 
         decision = response.text.strip().upper()
 

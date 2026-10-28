@@ -564,6 +564,17 @@ async def _gemini_review_signal(
 
     if not bool(result.get("ok")):
         error = str(result.get("error") or "external_review_unavailable")[:120]
+        budget_skips = [
+            str(row.get("error") or "")
+            for row in list(result.get("provider_trace") or [])
+            if isinstance(row, dict) and str(row.get("error") or "").startswith("budget_")
+        ]
+        if budget_skips:
+            # A budget-skipped review is never waived: the deterministic local
+            # review applies even when AI_REVIEW_FALLBACK_ENABLED is off.
+            logger.warning("[engine] AI review skipped by spend budget errors=%s action=local_review", budget_skips)
+            ok, score, reason = _local_ai_review_signal(signal, candles)
+            return ok, score, f"ai_review_status={budget_skips[0]};{reason}"
         logger.info("[engine] AI review degraded error=%s action=local_fallback", error)
         return _fallback(error)
 
