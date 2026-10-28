@@ -244,7 +244,8 @@ def test_engine_uses_provider_neutral_ai_router_instead_of_raw_gemini_http():
     assert "signal[\"ai_review_provider\"]" in review
     assert "signal[\"ai_review_disagreement\"]" in review
     assert "async def review_signal_structured(" in gemini
-    assert "_call_gemini_result(prompt, max_tokens=420)" in gemini
+    # 28 Oct 2026: the same 420-token structured review, now attributed in the AI cost ledger.
+    assert '_call_gemini_result(prompt, max_tokens=420, task="gemini_trade_review", workload="signal_review")' in gemini
     assert "def _gemini_provider_admit()" in gemini
     assert "def _open_gemini_provider_circuit" in gemini
     assert 'return False, f"{base}_circuit_open"' in gemini
@@ -401,7 +402,7 @@ def test_canonical_migration_head_is_active_guard_reconcile():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["0055_user_renewal_default"]
+    assert script.get_heads() == ["0056_ai_usage_ledger"]
 
 
 def test_engine_metadata_reads_wait_boundedly_under_db_contention():

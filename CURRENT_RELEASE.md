@@ -10,7 +10,7 @@ values below are historical observations, not a fresh deployment certification.
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0055_user_renewal_default
+Repository Alembic head: 0056_ai_usage_ledger
 Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -40,6 +40,8 @@ chain with:
 - `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.
 
 - `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.
+
+- `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data).
 
 The current release candidate also includes:
 
