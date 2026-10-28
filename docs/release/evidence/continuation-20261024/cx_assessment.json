@@ -480,7 +480,7 @@
    "evidence": [
     "docs/release/INDEPENDENT_ACCEPTANCE_AUDIT_20261024.md"
    ],
-   "note": "Services and watch patterns inventoried read-only; singleton enforcement in prod unverified."
+   "note": "Services and watch patterns inventoried read-only; singleton enforcement in prod unverified. 28 Oct: Railway topology observed read-only (16 services, engine striking-optimism europe-west4, web SignalRankAI us-east4)."
   },
   {
    "id": "CX-FACT-05",
@@ -500,9 +500,10 @@
    "evidence": [
     "web/platform_api.py",
     "frontend/src/components/WorkspaceLive.tsx",
-    "tests/test_engine_skip_heartbeat_20261027.py"
+    "tests/test_engine_skip_heartbeat_20261027.py",
+    "engine/stall_watchdog.py"
    ],
-   "note": "Rejection distribution exposed via /quality; current live root cause is the engine not cycling (heartbeat absent). 27 Oct: skipped cycles now name their reason; /quality breaks rejections down by asset, timeframe, strategy and layer."
+   "note": "Rejection distribution exposed via /quality; current live root cause is the engine not cycling (heartbeat absent). 27 Oct: skipped cycles now name their reason; /quality breaks rejections down by asset, timeframe, strategy and layer. 28 Oct: root cause of the current drought is the engine loop hung since 22 Oct; logs also show providers returning 0 candles and risk/expectancy_unavailable refusals."
   },
   {
    "id": "CX-FACT-07",
@@ -1719,9 +1720,11 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_class_universe_and_strategy_capabilities.py"
+    "tests/test_class_universe_and_strategy_capabilities.py",
+    "strategies/zone_rejection.py",
+    "tests/test_zone_rejection_strategy_20261028.py"
    ],
-   "note": "Approval history/rollback fields incomplete."
+   "note": "Approval history/rollback fields incomplete. 28 Oct: owner video strategy added as order-block-abc-v1, disabled by default pending approved backtest/shadow evidence."
   },
   {
    "id": "CX-STRAT-03",
@@ -2433,9 +2436,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_phase4_pass7_runtime_roles.py",
-    "tests/test_engine_skip_heartbeat_20261027.py"
+    "tests/test_engine_skip_heartbeat_20261027.py",
+    "engine/stall_watchdog.py",
+    "tests/test_engine_stall_watchdog_20261028.py"
    ],
-   "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs."
+   "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs. 28 Oct (read-only Railway logs): engine loop hung at 2026-10-22 08:08:30 UTC when Postgres restarted; process stayed Online. Stall watchdog added (not deployed)."
   },
   {
    "id": "CX-SEC-01",
@@ -3042,6 +3047,16 @@
     "CX-FACT-06"
    ],
    "note": "Local evidence only (Windows 11, Python 3.13.7, PostgreSQL 17). Nothing deployed."
+  },
+  {
+   "date": "2026-10-28",
+   "ids": [
+    "CX-Q-05",
+    "CX-FACT-06",
+    "CX-FACT-04",
+    "CX-STRAT-02"
+   ],
+   "note": "Read-only Railway evidence and local tests. Nothing deployed."
   }
  ]
 }

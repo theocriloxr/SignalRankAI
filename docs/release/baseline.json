@@ -101,6 +101,23 @@
     },
     "frontend_checks": "tsc, eslint, next build and 108 node tests pass on Next.js 16.4.2; npm audit 0 vulnerabilities",
     "dependency_security": "Next.js 16.4.2, zod 4.6.7, aiohttp 3.14.5, certifi 2026.10.19, OpenTelemetry 1.45.1/0.66b1, Pillow 13.0.0",
-    "migration_rehearsal": "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json"
+    "migration_rehearsal": "docs/release/evidence/continuation-20261027/migration_rehearsal_0053_0055.json",
+    "python_suite_with_upgraded_dependencies": {
+      "commit": "fa223df4",
+      "passed": 4145,
+      "failed": 1,
+      "skipped": 2,
+      "result": "FAIL (one 15 s subprocess deadline under cold imports; passes on re-run)",
+      "scope": "Local Windows 11, Python 3.12 venv from requirements.lock, owned PostgreSQL 17; not CI, staging or production"
+    },
+    "production_engine_observation": {
+      "source": "Railway read-only logs and environment status, 2026-10-28",
+      "engine_service": "striking-optimism",
+      "last_pipeline_log": "2026-10-22T08:08:30Z",
+      "postgres_redeployed": "2026-10-22T08:07:47Z",
+      "railway_state": "Online, 1 replica, 0 failures",
+      "deployed_sha": "9865a3d1",
+      "pr_202_deployed": false
+    }
   }
 }
