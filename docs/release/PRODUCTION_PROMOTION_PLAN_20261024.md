@@ -7,7 +7,7 @@
 | Item | Today (production) | After promotion |
 | --- | --- | --- |
 | Code on `fix/provider-discovery-readiness-20260923` | `9865a3d1` | Fast-forward to the feature branch head (no divergence; more than 450 commits as of 28 Oct — recount at promotion time) |
-| Database revision | `0053_research_market_inputs` | `0056_ai_usage_ledger` (was `0055` until 28 Oct) |
+| Database revision | `0053_research_market_inputs` | `0057_expectancy_shadow_index` (was `0055` until 28 Oct) |
 | Services that redeploy on push | `SignalRankAI`, `signalrankai-analytics-prod`, `striking-optimism`, `bountiful-miracle` | same, all at once (watch pattern `**`) |
 | Public web (`SignalRankAI-Public-Web`) | tracks `fix/release-recovery-20261008` | **unchanged** — the rebuilt frontend is not served until this service is pointed at the promoted branch (Railway setting, owner action) |
 
@@ -15,7 +15,9 @@
 
 - `0054_shadow_pending_index` — `CREATE INDEX CONCURRENTLY` on `decision_log`; no locks on writes, no data change. Downgrade drops the index.
 - `0055_user_renewal_default` — changes the **default** of `users.auto_renew` from `TRUE` to `FALSE`. Existing users are untouched; **new sign-ups will no longer auto-renew unless they opt in** (Stage 1 recurring-consent requirement). This is a billing behavior change for new accounts — confirm it is wanted.
-- `0056_ai_usage_ledger` (added 28 Oct) — creates `ai_usage_ledger` and `ai_budget_alerts`, append-only by trigger; touches no existing table, so no locks on live data. Its downgrade refuses once the ledger holds rows (spend history is evidence). Every `EXPECTED_ALEMBIC_HEAD` must be `0056_ai_usage_ledger`.
+- `0056_ai_usage_ledger` (added 28 Oct) — creates `ai_usage_ledger` and `ai_budget_alerts`, append-only by trigger; touches no existing table, so no locks on live data. Its downgrade refuses once the ledger holds rows (spend history is evidence). 
+- `0057_expectancy_shadow_index` (added 28 Oct) — `CREATE INDEX CONCURRENTLY` partial index on `decision_log` for expectancy-shadow rows, validated after the build (same pattern as `0054`); no data change. Every `EXPECTED_ALEMBIC_HEAD` must be `0057_expectancy_shadow_index`.
+- New behaviour after promotion: candidates refused only for missing expectancy are recorded as shadow trades (`EXPECTANCY_SHADOW_RECORDING_ENABLED`, default on). Admitting candidates on shadow evidence stays off until `EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED=1` is set; even then it needs at least 20 tracked outcomes whose lower 95% expectancy bound, after costs, is at least 0.15 R. The hard block stays on.
 
 ### Behavior the owner asked to keep
 
