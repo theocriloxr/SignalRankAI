@@ -8,9 +8,12 @@ higher high taking A) followed by the first close below B.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from strategies import zone_rejection as zr
 
 ON = {"ZONE_REJECTION_STRATEGY_ENABLED": "1"}
+DAY0 = 1_772_409_600  # 2026-03-02 00:00 UTC, seconds
 
 
 def _bar(o, h, l, c, ts):
@@ -40,7 +43,7 @@ def _htf():
     return bars, zone_low, zone_high
 
 
-def _exec(zone_low, c_high=0.80, break_b=True, already_broken=False):
+def _exec(zone_low, c_high=0.80, break_b=True, already_broken=False, spike_high=None):
     z = zone_low
     bars, price = [], z - 2.0
     for i in range(44):  # steady approach from below, no swings
@@ -55,6 +58,8 @@ def _exec(zone_low, c_high=0.80, break_b=True, already_broken=False):
     ]
     if already_broken:
         shape[-1] = (0.45, -0.05, 0.00)  # B was already closed through before the last bar
+    if spike_high is not None:
+        shape.append((spike_high, 0.20, 0.22))  # an unconfirmed higher high just before the break
     for j, (h, l, c) in enumerate(shape):
         o = bars[-1]["close"]
         bars.append(_bar(o, z + max(h, o - z, c), z + min(l, o - z, c), z + c, 44 + j))
@@ -172,3 +177,106 @@ def test_engine_dispatches_the_zones_group_once_per_asset_on_its_execution_timef
     assert calls == ["EURUSD"]
     assert strategy_is_supported("zones", "forex", "15m", "TRENDING")
     assert not strategy_is_supported("zones", "forex", "1d", "TRENDING")
+
+
+# Regression tests for defects found while preparing the backtest evidence (28 Oct 2026).
+
+def _restamp(candles, start_seconds, step_seconds, unit="s"):
+    out = []
+    for i, bar in enumerate(candles):
+        seconds = start_seconds + step_seconds * i
+        stamp = (seconds * 1000 if unit == "ms" else
+                 datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat() if unit == "iso" else seconds)
+        out.append(dict(bar, timestamp=stamp))
+    return out
+
+
+def _daily(four_hour):
+    days = []
+    for k in range(0, len(four_hour), 6):
+        group = four_hour[k:k + 6]
+        days.append(_bar(group[0]["open"], max(b["high"] for b in group), min(b["low"] for b in group),
+                         group[-1]["close"], group[0]["timestamp"]))
+    return days
+
+
+def _intraday_swing_market():
+    """Daily base whose last 4h swing low before the drop forms inside the base day.
+
+    The older uptrend swing low (day 30) is never broken; the base-day swing low is.
+    """
+    four, price = [], 80.0
+
+    def add(close, wick=0.1):
+        nonlocal price
+        o = price
+        four.append(_bar(o, max(o, close) + wick, min(o, close) - wick, close, DAY0 + 14400 * len(four)))
+        price = close
+
+    for day in range(45):                                  # uptrend with one dip on day 30
+        for k in range(6):
+            if day == 30 and k == 2:
+                add(price - 0.6, wick=0.3)
+            elif day == 30 and k == 3:
+                add(price + 0.67)
+            else:
+                add(price + 0.07)
+    p = price
+    for close, wick in ((p + 0.2, 0.1), (p + 0.4, 0.1), (p - 0.1, 0.3),   # base day: up close,
+                        (p + 0.3, 0.1), (p + 0.6, 0.1), (p + 0.8, 0.1)):  # intraday swing low
+        add(close, wick)
+    zone_low = p - 0.4
+    for _ in range(18):                                    # three-day bearish displacement
+        add(price - 0.2)
+    for _ in range(24):                                    # retrace that stays below the zone
+        add(price + 0.09)
+    for close in (price + 0.15, price + 0.45, price + 0.35):  # current day reaches the zone
+        add(close)
+    market = {"1d": {"candles": _daily(four)}, "4h": {"candles": four},
+              "15m": {"candles": _exec(zone_low)}}
+    return market, zone_low
+
+
+def test_a_daily_base_maps_to_its_last_4h_bar_so_the_base_day_swing_is_the_prior_structure():
+    market, zone_low = _intraday_swing_market()
+    shorts = _shorts(market)
+    assert shorts and shorts[0]["zone_timeframe"] == "1d"
+    assert abs(shorts[0]["zone_low"] - zone_low) < 1e-9
+
+
+def test_daily_and_4h_timestamps_in_different_units_still_align():
+    htf, _, _ = _htf()
+    four_ms = _restamp(htf, DAY0, 14400, unit="ms")
+    daily_iso = _restamp(htf, DAY0, 14400, unit="iso")
+    market, _, _ = _market()
+    market["4h"] = {"candles": four_ms}
+    market["1d"] = {"candles": daily_iso}
+    shorts = _shorts(market)
+    assert shorts and shorts[0]["zone_timeframe"] == "1d"
+
+
+def test_a_forming_execution_bar_is_not_treated_as_closed():
+    market, _, _ = _market()
+    market["15m"]["candles"] = _restamp(market["15m"]["candles"], DAY0, 900)
+    last_open = market["15m"]["candles"][-1]["timestamp"]
+    forming = datetime.fromtimestamp(last_open + 60, tz=timezone.utc)
+    closed = datetime.fromtimestamp(last_open + 900, tz=timezone.utc)
+    assert _shorts(market, now=forming) == []
+    assert _shorts(market, now=closed)
+
+
+def test_without_daily_candles_the_dealing_range_still_spans_range_bars_days():
+    htf, _, _ = _htf()
+    high = [_bar(150.0, 160.0, 149.0, 155.0, 0) for _ in range(100)]
+    flat = [_bar(100.0, 100.3, 99.7, 100.0, 0) for _ in range(30)]
+    market, _, _ = _market()
+    market["4h"] = {"candles": _restamp(flat + htf, 0, 1)}
+    assert _shorts(market)                                 # premium of the 4h-only range
+    market["4h"] = {"candles": _restamp(high + flat + htf, 0, 1)}
+    assert _shorts(market) == []                           # discount of the 60-day range
+
+
+def test_the_stop_sits_beyond_the_highest_high_since_c():
+    market, zone_low, _ = _market(spike_high=0.95)
+    shorts = _shorts(market, config=zr.ZoneConfig(min_rr=1.0))
+    assert shorts and shorts[0]["stop_loss"] > zone_low + 0.95

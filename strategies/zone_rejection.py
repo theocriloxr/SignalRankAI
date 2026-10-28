@@ -31,8 +31,10 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
+from engine.adaptive.data_quality import candle_timestamp
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ STRATEGY_NAME = "Order Block ABC (Top-Down)"
 STRATEGY_VERSION = "order-block-abc-v1"
 HTF_ORDER = ("1d", "4h")
 EXEC_ORDER = ("15m", "5m")
+_BAR_MS = {"5m": 300_000, "15m": 900_000, "4h": 14_400_000, "1d": 86_400_000}
+_4H_PER_DAY = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +174,8 @@ def execution_trigger(rows: Sequence[tuple[float, float, float, float]], zone: Z
         in_zone = zone.low <= c_high and a_high <= zone.high
         first_break = c < b_low and prev_close >= b_low and all(x >= b_low for x in after_c)
         if c_high > a_high and in_zone and first_break and c < o:
-            return {"direction": "SHORT", "entry": c, "extreme": max(c_high, h), "swept_level": a_high,
+            extreme = max([h] + [r[1] for r in window[c_idx:]])  # beyond any high since C
+            return {"direction": "SHORT", "entry": c, "extreme": extreme, "swept_level": a_high,
                     "abc": (a_high, b_low, c_high)}
     if zone.kind == "demand" and len(lows) >= 2 and highs:
         c_idx = lows[-1]
@@ -183,7 +188,8 @@ def execution_trigger(rows: Sequence[tuple[float, float, float, float]], zone: Z
         in_zone = c_low <= zone.high and a_low >= zone.low
         first_break = c > b_high and prev_close <= b_high and all(x <= b_high for x in after_c)
         if c_low < a_low and in_zone and first_break and c > o:
-            return {"direction": "LONG", "entry": c, "extreme": min(c_low, l), "swept_level": a_low,
+            extreme = min([l] + [r[2] for r in window[c_idx:]])  # beyond any low since C
+            return {"direction": "LONG", "entry": c, "extreme": extreme, "swept_level": a_low,
                     "abc": (a_low, b_high, c_low)}
     return None
 
@@ -200,12 +206,31 @@ def _candles(market_data: Mapping[str, Any], timeframe: str) -> list:
     return list((data or {}).get("candles") or []) if isinstance(data, Mapping) else []
 
 
-def _pick(market_data: Mapping[str, Any], order: Sequence[str], minimum: int) -> tuple[str | None, list, list]:
+def _closed(candles: Sequence[Mapping[str, Any]], timeframe: str,
+            now_ms: int | None) -> tuple[list, list[int | None]]:
+    """OHLC rows with epoch-ms open times; with ``now_ms``, only the bars closed by then.
+
+    Providers return the forming bar last. Closure is provable only from a bar's
+    open time, so a missing open time yields nothing when closure is required.
+    """
+    rows = _ohlc(candles)
+    stamps = [candle_timestamp(c) for c in candles] if rows else []
+    if now_ms is None or not rows:
+        return rows, stamps
+    if any(stamp is None for stamp in stamps):
+        return [], []
+    keep = len(rows)
+    while keep and stamps[keep - 1] + _BAR_MS[timeframe] > now_ms:
+        keep -= 1
+    return rows[:keep], stamps[:keep]
+
+
+def _pick(market_data: Mapping[str, Any], order: Sequence[str], minimum: int,
+          now_ms: int | None = None) -> tuple[str | None, list, list]:
     for tf in order:
-        candles = _candles(market_data, tf)
-        rows = _ohlc(candles)
+        rows, stamps = _closed(_candles(market_data, tf), tf, now_ms)
         if len(rows) >= minimum:
-            return tf, rows, [c.get("timestamp") or c.get("time") for c in candles]
+            return tf, rows, stamps
     return None, [], []
 
 
@@ -220,30 +245,50 @@ def map_index(source_stamps: Sequence[Any], index: int, target_stamps: Sequence[
         return None
 
 
+def structure_index(htf_stamps: Sequence[Any], index: int, structure_stamps: Sequence[Any]) -> int | None:
+    """Last 4h bar inside the HTF base bar (the zone forms at its close); None unless 4h history covers it."""
+    try:
+        if htf_stamps[index] is None or structure_stamps[0] is None or structure_stamps[0] > htf_stamps[index]:
+            return None
+    except (IndexError, TypeError):
+        return None
+    following = map_index(htf_stamps, index + 1, structure_stamps)
+    return following - 1 if following else None
+
+
+def _epoch_ms(moment: datetime) -> int:
+    aware = moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    return int(aware.timestamp() * 1000)
+
+
 def zone_rejection_strategies(asset: str, market_data: Mapping[str, Any],
                               environment: Mapping[str, str] | None = None,
-                              config: ZoneConfig | None = None) -> list[dict[str, Any]]:
+                              config: ZoneConfig | None = None,
+                              now: datetime | None = None) -> list[dict[str, Any]]:
+    """``now`` (UTC, default the current time) decides which execution and 4h bars have closed."""
     if not enabled(environment):
         return []
     cfg = config or ZoneConfig()
     try:
+        now_ms = _epoch_ms(now if now is not None else now_utc_naive())
+        # The HTF keeps its forming bar: it is the bar under evaluation, never counted as a touch.
         htf, htf_rows, htf_stamps = _pick(market_data, HTF_ORDER, cfg.min_candles)
-        exec_tf, exec_rows, _ = _pick(market_data, EXEC_ORDER, cfg.min_candles)
-        structure_candles = _candles(market_data, "4h")
-        structure_rows = _ohlc(structure_candles)
-        structure_stamps = [c.get("timestamp") or c.get("time") for c in structure_candles]
+        exec_tf, exec_rows, _ = _pick(market_data, EXEC_ORDER, cfg.min_candles, now_ms)
+        structure_rows, structure_stamps = _closed(_candles(market_data, "4h"), "4h", now_ms)
         if not htf or not exec_tf or len(structure_rows) < cfg.min_candles:
             return []
         exec_atr = atr(exec_rows, cfg.atr_period)
-        range_rows = _ohlc(_candles(market_data, "1d")) or htf_rows
-        dealing = dealing_range(range_rows, cfg.range_bars)
+        daily_rows = _ohlc(_candles(market_data, "1d"))
+        # range_bars counts days; without daily candles the 4h range spans the same days.
+        dealing = (dealing_range(daily_rows, cfg.range_bars) if daily_rows
+                   else dealing_range(htf_rows, cfg.range_bars * _4H_PER_DAY))
         if exec_atr <= 0 or dealing is None or dealing[1] <= dealing[0]:
             return []
         out = []
         for zone in find_fresh_zones(htf_rows, htf, cfg):
             # Locate the zone's base candle on the 4h chart by time; skip when that is not provable.
             created = (zone.created_index if htf == "4h"
-                       else map_index(htf_stamps, zone.created_index, structure_stamps))
+                       else structure_index(htf_stamps, zone.created_index, structure_stamps))
             if created is None:
                 continue
             target = structure_broke(structure_rows, Zone(zone.kind, zone.low, zone.high, created, "4h"), cfg)
@@ -290,5 +335,5 @@ def zone_rejection_strategies(asset: str, market_data: Mapping[str, Any],
 
 
 __all__ = ["STRATEGY_NAME", "STRATEGY_VERSION", "Zone", "ZoneConfig", "enabled", "execution_trigger",
-           "dealing_range", "find_fresh_zones", "map_index", "structure_broke", "swing_points",
-           "zone_rejection_strategies"]
+           "dealing_range", "find_fresh_zones", "map_index", "structure_broke", "structure_index",
+           "swing_points", "zone_rejection_strategies"]
