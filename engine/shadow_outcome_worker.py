@@ -26,7 +26,18 @@ def _shadow_db_priority() -> str:
 
 
 class ShadowOutcomeWorker:
-    def __init__(self) -> None:
+    """Track rejected rows of one ``decision_log`` layer.
+
+    ``ml`` (the original tracker) also writes ML shadow predictions and metrics.
+    ``expectancy`` rows are candidates refused only for missing expectancy
+    evidence; they store the realized R on the row and never feed ML metrics.
+    """
+
+    def __init__(self, layer: str = "ml") -> None:
+        self._layer = str(layer)
+        prefix = "shadow:tracker" if self._layer == "ml" else f"shadow:{self._layer}:tracker"
+        self._cursor_key = f"{prefix}:scan_after_id"
+        self._health_key = f"{prefix}:health"
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._interval = max(15, int(os.getenv("SHADOW_TRACKER_INTERVAL_SECONDS", "60") or 60))
@@ -40,7 +51,7 @@ class ShadowOutcomeWorker:
         try:
             from core.redis_state import state
 
-            self._scan_after_id = max(0, int(state.get_sync("shadow:tracker:scan_after_id") or 0))
+            self._scan_after_id = max(0, int(state.get_sync(self._cursor_key) or 0))
         except (TypeError, ValueError, OverflowError):
             self._scan_after_id = 0
         except Exception:
@@ -54,7 +65,7 @@ class ShadowOutcomeWorker:
         try:
             from core.redis_state import state
 
-            state.set_sync("shadow:tracker:scan_after_id", str(self._scan_after_id), ex=86400)
+            state.set_sync(self._cursor_key, str(self._scan_after_id), ex=86400)
         except Exception:
             logger.debug("[shadow_tracker] cursor checkpoint unavailable", exc_info=True)
 
@@ -85,7 +96,7 @@ class ShadowOutcomeWorker:
                 "error": str(error)[:240] if error else None,
             }
             state.set_sync(
-                "shadow:tracker:health",
+                self._health_key,
                 json.dumps(payload, sort_keys=True),
                 ex=max(300, self._interval * 5),
             )
@@ -98,8 +109,9 @@ class ShadowOutcomeWorker:
         self._stop.clear()
         self._restore_scan_cursor()
         self._publish_health("starting")
-        self._task = asyncio.create_task(self._run_loop(), name="shadow-outcome-tracker")
-        logger.info("[shadow_tracker] started interval=%ss batch=%s", self._interval, self._batch_size)
+        self._task = asyncio.create_task(self._run_loop(), name=f"shadow-outcome-tracker-{self._layer}")
+        logger.info("[shadow_tracker] started layer=%s interval=%ss batch=%s", self._layer, self._interval,
+                    self._batch_size)
 
     async def stop(self) -> None:
         self._stop.set()
@@ -125,7 +137,7 @@ class ShadowOutcomeWorker:
                 query = (
                     select(DecisionLog)
                     .where(DecisionLog.decision == "rejected")
-                    .where(DecisionLog.meta["layer"].as_string() == "ml")
+                    .where(DecisionLog.meta["layer"].as_string() == self._layer)
                     .where(DecisionLog.meta["outcome_tracked_at"].as_string().is_(None))
                     .where(DecisionLog.created_at <= cutoff)
                     .order_by(DecisionLog.id.asc())
@@ -289,7 +301,7 @@ class ShadowOutcomeWorker:
                             select(DecisionLog)
                             .where(DecisionLog.id.in_(ids))
                             .where(DecisionLog.decision == "rejected")
-                            .where(DecisionLog.meta["layer"].as_string() == "ml")
+                            .where(DecisionLog.meta["layer"].as_string() == self._layer)
                             .with_for_update(skip_locked=True)
                         )
                     )
@@ -302,6 +314,17 @@ class ShadowOutcomeWorker:
                     source, outcome = by_id.get(int(record.id), ({}, ""))
                     record_meta = dict(record.meta or {})
                     if not outcome or record_meta.get("outcome_tracked_at"):
+                        continue
+                    if self._layer != "ml":
+                        from engine.expectancy_shadow import realized_r
+
+                        shadow_r = realized_r(source.get("direction"), source.get("entry"), source.get("stop_loss"),
+                                              source.get("take_profit"), outcome)
+                        record.meta = {**record_meta, "actual_outcome": outcome[:32],
+                                       "outcome_tracked_at": now.isoformat(), "shadow_r": shadow_r}
+                        tracked += 1
+                        bucket = "win" if (shadow_r or 0) > 0 else "loss" if shadow_r is not None else "unscored"
+                        metric_deltas[f"{self._layer}_shadow:counts:{bucket}"] += 1
                         continue
                     source_features = dict(source.get("features") or {})
                     is_candidate_forward = (
@@ -409,3 +432,4 @@ class ShadowOutcomeWorker:
 
 
 shadow_outcome_worker = ShadowOutcomeWorker()
+expectancy_shadow_worker = ShadowOutcomeWorker(layer="expectancy")

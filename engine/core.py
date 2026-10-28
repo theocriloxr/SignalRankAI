@@ -834,6 +834,51 @@ def _log_decision(
         pass
 
 
+def _log_risk_refusal(sig: Dict[str, Any]) -> None:
+    """Log a risk refusal; an expectancy-only refusal is recorded once as a shadow trade."""
+    from engine import expectancy_shadow
+
+    if sig.get("risk_rejection_reason") == "expectancy_unavailable" and expectancy_shadow.recording_enabled():
+        key = expectancy_shadow.claim(sig, state)
+        if key is not None:
+            _log_decision(
+                "rejected",
+                sig,
+                reason=expectancy_shadow.REASON,
+                meta={"layer": expectancy_shadow.LAYER, "shadow_key": key, "rr_ratio": sig.get("rr_ratio")},
+            )
+            return
+    _log_decision("skipped", sig, reason=sig.get("rejection_reason"))
+
+
+def _apply_shadow_expectancy(sig: Dict[str, Any], asset: str) -> None:
+    """Without qualified live evidence, consult stricter shadow evidence (flagged off by default)."""
+    from engine import expectancy_shadow
+
+    if sig.get("live_expectancy") is not None or not expectancy_shadow.bootstrap_enabled():
+        return
+    try:
+        context = run_sync(
+            expectancy_shadow.get_shadow_performance_context(
+                str(sig.get("asset") or asset),
+                strategy=str(sig.get("strategy_name") or sig.get("strategy") or "") or None,
+                lookback_hours=max(24, _env_int("HISTORICAL_PERFORMANCE_LOOKBACK_HOURS", 24 * 30)),
+            ),
+            timeout=max(2.0, _env_float("HISTORICAL_PERFORMANCE_CONTEXT_TIMEOUT_SECONDS", 4.0)),
+        )
+    except Exception as exc:
+        logger.debug("[engine] shadow expectancy unavailable asset=%s error=%s", asset, type(exc).__name__)
+        return
+    if not isinstance(context, dict):
+        return
+    sig["shadow_evidence_reason"] = str(context.get("reason") or "unknown")
+    sig["shadow_sample_size"] = int(context.get("sample_size") or 0)
+    if context.get("actionable") and context.get("expectancy_lower_95_r") is not None:
+        # The gate sees the conservative lower bound after costs, never the mean.
+        sig["live_expectancy"] = float(context["expectancy_lower_95_r"])
+        sig["expectancy_evidence_source"] = "shadow_bootstrap"
+
+
 def _risk_check_with_history(sig: Dict[str, Any], account_state: Any, asset: str) -> bool:
     """Load delivered-outcome evidence before applying the configured risk gate."""
     # Strategy payloads cannot supply their own qualification evidence.
@@ -902,6 +947,7 @@ def _risk_check_with_history(sig: Dict[str, Any], account_state: Any, asset: str
             type(_history_err).__name__,
         )
 
+    _apply_shadow_expectancy(sig, asset)
     ok, reason = risk_check_with_reason(sig, account_state)
     sig["risk_rejection_reason"] = reason
     return ok
@@ -3995,7 +4041,7 @@ def main_loop(DRY_RUN: bool = False):
                             _bump_cycle_reason(pipeline_stats, "risk_failed_reasons", sig["rejection_reason"])
                             _increment_engine_veto("other")
                             _record_gate_failure(asset, "risk", sig["rejection_reason"])
-                            _log_decision("skipped", sig, reason=sig["rejection_reason"])
+                            _log_risk_refusal(sig)
                             continue
                         # confluence (only enforce if threshold configured or score available)
                         conf = calculate_confluence(sig)

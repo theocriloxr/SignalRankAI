@@ -243,6 +243,19 @@ class Worker:
                 logger.info("[worker] ShadowOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
+            # Candidates refused only for missing expectancy evidence (engine/expectancy_shadow.py).
+            if _env_bool_any(("EXPECTANCY_SHADOW_TRACKING_ENABLED",), True):
+                try:
+                    from engine.shadow_outcome_worker import expectancy_shadow_worker
+
+                    _register_task(
+                        "expectancy_shadow_tracker",
+                        lambda: self._shadow_outcome_tracker_loop(expectancy_shadow_worker),
+                        restart_on_failure=True,
+                    )
+                    logger.info("[worker] ExpectancyShadowTracker started")
+                except Exception as e:
+                    logger.warning("[worker] Failed to start expectancy shadow tracker: %s", e)
         else:
             logger.info("[worker] ShadowOutcomeTracker disabled for this worker instance")
 
