@@ -89,13 +89,13 @@ foreach ($service in $services) {
 
     $schemaMarker = Invoke-RailwayCapture -Arguments @(
         "logs", "-s", $service, "-e", $Environment, "--since", "7d",
-        "--lines", "20", "--filter", "alembic_current=0056_ai_usage_ledger"
+        "--lines", "20", "--filter", "alembic_current=0057_expectancy_shadow_index"
     )
     $patchMarker = Invoke-RailwayCapture -Arguments @(
         "logs", "-s", $service, "-e", $Environment, "--since", "7d",
         "--lines", "20", "--filter", "patch=deployment-final-r4"
     )
-    if (-not $schemaMarker.Contains('alembic_current=0056_ai_usage_ledger')) {
+    if (-not $schemaMarker.Contains('alembic_current=0057_expectancy_shadow_index')) {
         throw "$service did not prove Alembic head 0045 in retained deployment logs."
     }
     if (-not $patchMarker.Contains('patch=deployment-final-r4')) {

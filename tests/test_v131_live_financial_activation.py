@@ -92,7 +92,7 @@ def _full_env() -> dict[str, str]:
 def test_version_and_migration_head():
     assert APP_VERSION == "1.5.1"
     assert RELEASE_FINGERPRINT == "v1.5.1-unified-ecosystem-completion-full-suite-20260806"
-    assert audit_versions(ROOT)["heads"] == ["0056_ai_usage_ledger"]
+    assert audit_versions(ROOT)["heads"] == ["0057_expectancy_shadow_index"]
 
 
 def test_financial_flags_off_are_safe():

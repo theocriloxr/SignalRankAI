@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0056_ai_usage_ledger")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0057_expectancy_shadow_index")
 
 
 def main() -> int:
@@ -54,6 +54,9 @@ def main() -> int:
         "0056_ai_usage_ledger",
         "CREATE TABLE ai_usage_ledger",
         "ai_usage_ledger_is_append_only",
+        "0057_expectancy_shadow_index",
+        "ix_decision_log_expectancy_shadow_created",
+        "expectancy_shadow_index_invalid_or_definition_mismatch",
         "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
         "shadow_pending_index_invalid_or_definition_mismatch",
