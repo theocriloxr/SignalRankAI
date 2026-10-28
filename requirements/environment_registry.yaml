@@ -1449,8 +1449,8 @@
         "data/market_data.py:773",
         "db/migration_environment.py:9",
         "engine/admin_pulse.py:1039",
-        "engine/core.py:1202",
-        "engine/core.py:5830",
+        "engine/core.py:1248",
+        "engine/core.py:5876",
         "payments/paystack_policy.py:45",
         "railway_main.py:1191",
         "signalrank_telegram/bot.py:1822",
@@ -1605,7 +1605,7 @@
       "name": "ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2010"
+        "engine/core.py:2056"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1634,7 +1634,7 @@
       "name": "ASSET_CLASSES_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2032"
+        "engine/core.py:2078"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1892,7 +1892,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6686",
+        "engine/core.py:6732",
         "services/automated_analyst.py:24"
       ],
       "required_by_code": true,
@@ -2822,7 +2822,7 @@
       "name": "CONFLUENCE_GATE_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4004",
+        "engine/core.py:4050",
         "engine/threshold_optimizer.py:100"
       ],
       "required_by_code": true,
@@ -3175,7 +3175,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:6106"
+        "engine/core.py:6152"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4092,7 +4092,7 @@
       "name": "DECISION_LOG_RETRY_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:738"
+        "worker/worker.py:751"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4153,7 +4153,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4865"
+        "engine/core.py:4911"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4183,8 +4183,8 @@
       "name": "DEFAULT_RR",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1892",
-        "engine/core.py:4614"
+        "engine/core.py:1938",
+        "engine/core.py:4660"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4210,7 +4210,7 @@
       "production_example_default": "day",
       "read_locations": [
         "data/market_data.py:76",
-        "engine/core.py:2137"
+        "engine/core.py:2183"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4245,7 +4245,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5828",
+        "engine/core.py:5874",
         "payments/paystack_policy.py:71",
         "railway_main.py:2816",
         "railway_main.py:2931",
@@ -5239,7 +5239,7 @@
       "name": "ENGINE_ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2010"
+        "engine/core.py:2056"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5284,7 +5284,7 @@
       "name": "ENGINE_DATABASE_UNIVERSE_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2971"
+        "engine/core.py:3017"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5522,7 +5522,7 @@
         "data/fetcher_router.py:33",
         "data/market_data.py:774",
         "db/migration_environment.py:9",
-        "engine/core.py:1203",
+        "engine/core.py:1249",
         "payments/paystack_policy.py:46",
         "services/platform/identity.py:1135",
         "services/platform/identity.py:636",
@@ -5604,7 +5604,7 @@
       "name": "EVENT_OUTBOX_CLAIM_LEASE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:766"
+        "worker/worker.py:779"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5614,7 +5614,7 @@
       "name": "EVENT_OUTBOX_MAX_ATTEMPTS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:764"
+        "worker/worker.py:777"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5624,7 +5624,7 @@
       "name": "EVENT_OUTBOX_RELAY_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:763"
+        "worker/worker.py:776"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6444,10 +6444,10 @@
       "production_example_default": null,
       "read_locations": [
         "engine/admin_pulse.py:344",
-        "engine/core.py:1580",
-        "engine/core.py:1599",
-        "engine/core.py:3272",
-        "engine/shadow_outcome_worker.py:80",
+        "engine/core.py:1626",
+        "engine/core.py:1645",
+        "engine/core.py:3318",
+        "engine/shadow_outcome_worker.py:91",
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:666",
@@ -6826,7 +6826,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/instrument_catalogue_refresh.py:139",
-        "worker/worker.py:544"
+        "worker/worker.py:557"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7158,7 +7158,7 @@
       "name": "MARKET_CIRCUIT_BREAKER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2819"
+        "engine/core.py:2865"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7415,7 +7415,7 @@
         "web/platform_api.py:5226",
         "web/platform_api.py:5295",
         "web/platform_api.py:6205",
-        "worker/worker.py:325"
+        "worker/worker.py:338"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -7529,7 +7529,7 @@
         "web/platform_api.py:5226",
         "web/platform_api.py:5295",
         "web/platform_api.py:6205",
-        "worker/worker.py:325"
+        "worker/worker.py:338"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -7682,7 +7682,7 @@
       "name": "ML_BASELINE_FEATURE_STATS_PATH",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1055"
+        "worker/worker.py:1068"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7908,7 +7908,7 @@
       "name": "ML_DRIFT_CHECK_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1030"
+        "worker/worker.py:1043"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7938,7 +7938,7 @@
       "name": "ML_DRIFT_MIN_EVALUATED_FEATURES",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1083"
+        "worker/worker.py:1096"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7948,7 +7948,7 @@
       "name": "ML_DRIFT_MIN_LIVE_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1082"
+        "worker/worker.py:1095"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7966,7 +7966,7 @@
       "name": "ML_DRIFT_MONITOR_ENABLED",
       "production_example_default": "0",
       "read_locations": [
-        "worker/worker.py:387"
+        "worker/worker.py:400"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7976,7 +7976,7 @@
       "name": "ML_DRIFT_NOTIFICATION_DEDUPE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1276"
+        "worker/worker.py:1289"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7986,7 +7986,7 @@
       "name": "ML_DRIFT_PSI_THRESHOLD",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1031"
+        "worker/worker.py:1044"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7996,7 +7996,7 @@
       "name": "ML_DRIFT_REQUIRED_CONSECUTIVE_CHECKS",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1179"
+        "worker/worker.py:1192"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8006,7 +8006,7 @@
       "name": "ML_DRIFT_RETRAIN_ON_DETECT",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1032"
+        "worker/worker.py:1045"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8048,7 +8048,7 @@
       "name": "ML_HARD_FILTER_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4307"
+        "engine/core.py:4353"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8058,7 +8058,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4852"
+        "engine/core.py:4898"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8088,7 +8088,7 @@
       "name": "ML_LIVE_FEATURE_STATS_PATH",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1056"
+        "worker/worker.py:1069"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8142,7 +8142,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4854"
+        "engine/core.py:4900"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8229,7 +8229,7 @@
       "name": "ML_MODEL_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:319"
+        "engine/shadow_outcome_worker.py:342"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8388,7 +8388,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4853"
+        "engine/core.py:4899"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8398,7 +8398,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4857"
+        "engine/core.py:4903"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8408,7 +8408,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4855"
+        "engine/core.py:4901"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8468,7 +8468,7 @@
       "name": "ML_STARVATION_MIN_LIVE_SAMPLES",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1096"
+        "worker/worker.py:1109"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8478,7 +8478,7 @@
       "name": "ML_STARVATION_MIN_PASS_RATE",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:1102"
+        "worker/worker.py:1115"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10047,7 +10047,7 @@
       "name": "OUTCOME_OUTBOX_REPAIR_BATCH_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:872"
+        "worker/worker.py:885"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10077,7 +10077,7 @@
       "name": "OUTCOME_PERFORMANCE_RECONCILIATION_USER_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:896"
+        "worker/worker.py:909"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10300,7 +10300,7 @@
       "read_locations": [
         "data/get_live_price.py:111",
         "data/get_live_price.py:647",
-        "engine/core.py:5847",
+        "engine/core.py:5893",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
         "railway_main.py:587"
@@ -11682,7 +11682,7 @@
       "name": "PROFILE_DEMAND_LOAD_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2874"
+        "engine/core.py:2920"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11982,7 +11982,7 @@
       "name": "QUALITY_FX_ALLOWED_TIMEFRAMES",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1454"
+        "engine/core.py:1500"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12045,10 +12045,10 @@
         "config.py:89",
         "core/health_notifications.py:25",
         "engine/admin_pulse.py:230",
-        "engine/core.py:1581",
-        "engine/core.py:1600",
-        "engine/core.py:3273",
-        "engine/shadow_outcome_worker.py:79",
+        "engine/core.py:1627",
+        "engine/core.py:1646",
+        "engine/core.py:3319",
+        "engine/shadow_outcome_worker.py:90",
         "railway_main.py:1194",
         "web/app.py:557"
       ],
@@ -12066,9 +12066,9 @@
         "data/fetcher_router.py:31",
         "data/market_data.py:772",
         "data/pair_discovery.py:831",
-        "engine/core.py:1201",
-        "engine/core.py:2665",
-        "engine/core.py:3190",
+        "engine/core.py:1247",
+        "engine/core.py:2711",
+        "engine/core.py:3236",
         "payments/paystack_policy.py:44",
         "railway_main.py:1190",
         "signalrank_telegram/admin_commands.py:233",
@@ -12105,7 +12105,7 @@
         "data/fetcher_router.py:30",
         "data/market_data.py:771",
         "data/pair_discovery.py:831",
-        "engine/core.py:1200",
+        "engine/core.py:1246",
         "payments/paystack_policy.py:43",
         "railway_main.py:1189",
         "services/platform/identity.py:1135",
@@ -12138,10 +12138,10 @@
         "config.py:90",
         "engine/adaptive/learning.py:539",
         "engine/admin_pulse.py:344",
-        "engine/core.py:1580",
-        "engine/core.py:1599",
-        "engine/core.py:3272",
-        "engine/shadow_outcome_worker.py:80",
+        "engine/core.py:1626",
+        "engine/core.py:1645",
+        "engine/core.py:3318",
+        "engine/shadow_outcome_worker.py:91",
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:666",
@@ -12198,8 +12198,8 @@
         "core/tier_constants.py:147",
         "data/pair_discovery.py:830",
         "db/session.py:26",
-        "engine/core.py:2665",
-        "engine/core.py:3190",
+        "engine/core.py:2711",
+        "engine/core.py:3236",
         "railway_main.py:1449",
         "railway_main.py:1525",
         "signalrank_telegram/admin_commands.py:233",
@@ -12654,7 +12654,7 @@
       "name": "REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:33",
+        "engine/shadow_outcome_worker.py:44",
         "engine/signal_deduplicator.py:503"
       ],
       "required_by_code": true,
@@ -13792,8 +13792,8 @@
       "name": "SHADOW_OUTCOME_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:122",
-        "engine/shadow_outcome_worker.py:283"
+        "engine/shadow_outcome_worker.py:134",
+        "engine/shadow_outcome_worker.py:295"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13824,7 +13824,7 @@
       "name": "SHADOW_PRICE_CONCURRENCY",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:35"
+        "engine/shadow_outcome_worker.py:46"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13834,7 +13834,7 @@
       "name": "SHADOW_TRACKER_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:34"
+        "engine/shadow_outcome_worker.py:45"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13844,7 +13844,7 @@
       "name": "SHADOW_TRACKER_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:32"
+        "engine/shadow_outcome_worker.py:43"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14810,7 +14810,7 @@
         "data/fetcher.py:2038",
         "engine/admin_pulse.py:762",
         "engine/admin_pulse.py:924",
-        "engine/core.py:1807",
+        "engine/core.py:1853",
         "engine/signal_deduplicator.py:1074",
         "railway_main.py:2878",
         "railway_main.py:3303",
@@ -14822,7 +14822,7 @@
         "web/platform_api.py:2408",
         "web/platform_api.py:2440",
         "worker/market_monitor.py:165",
-        "worker/worker.py:1251"
+        "worker/worker.py:1264"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -15347,8 +15347,8 @@
       "production_example_default": null,
       "read_locations": [
         "data/startup_selfcheck.py:55",
-        "engine/core.py:2618",
-        "engine/core.py:2900"
+        "engine/core.py:2664",
+        "engine/core.py:2946"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15893,7 +15893,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4628"
+        "engine/core.py:4674"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15903,7 +15903,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4630"
+        "engine/core.py:4676"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15913,7 +15913,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4631"
+        "engine/core.py:4677"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16266,7 +16266,7 @@
       "name": "WORKER_ENGINE_PULSE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "worker/worker.py:259"
+        "worker/worker.py:272"
       ],
       "required_by_code": true,
       "sensitive": false
