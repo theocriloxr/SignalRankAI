@@ -1269,9 +1269,11 @@
    "evidence": [
     "engine/loop.py",
     "tests/test_pipeline.py",
-    "engine/expectancy_gate.py"
+    "engine/expectancy_gate.py",
+    "engine/expectancy_shadow.py",
+    "tests/test_expectancy_shadow_bootstrap_20261028.py"
    ],
-   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending."
+   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending. 28 Oct (owner decision): shadow evidence for the expectancy gate built; recording on, admission behind EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED with a stricter bar; not deployed."
   },
   {
    "id": "CX-SIG-02",
@@ -2448,7 +2450,9 @@
     "tests/test_phase4_pass7_runtime_roles.py",
     "tests/test_engine_skip_heartbeat_20261027.py",
     "engine/stall_watchdog.py",
-    "tests/test_engine_stall_watchdog_20261028.py"
+    "tests/test_engine_stall_watchdog_20261028.py",
+    "engine/expectancy_shadow.py",
+    "tests/test_expectancy_shadow_bootstrap_20261028.py"
    ],
    "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs. 28 Oct (read-only Railway logs): engine loop hung at 2026-10-22 08:08:30 UTC when Postgres restarted; process stayed Online. Stall watchdog added (not deployed)."
   },
@@ -3085,6 +3089,14 @@
     "CX-STRAT-02"
    ],
    "note": "Third pass; local evidence only. Nothing deployed."
+  },
+  {
+   "date": "2026-10-28",
+   "ids": [
+    "CX-SIG-01",
+    "CX-Q-05"
+   ],
+   "note": "Expectancy shadow evidence; local evidence only."
   }
  ]
 }
