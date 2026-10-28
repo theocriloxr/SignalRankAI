@@ -7259,26 +7259,26 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 423,
+      "line_count": 424,
       "path": "docs/release/BRANCH_RECONCILIATION.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e9feaafb1c184f3826f170405e0972ea87208e36394cf47bcd0da59ecd96ccfb",
-      "size_bytes": 88636
+      "sha256": "b730b7b761b0c23df8a6471cdb489a9e9c2ef79493049c764c30fd1a6fc225cc",
+      "size_bytes": 89292
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 329,
+      "line_count": 330,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "272a2c76d65ad3db134b78b3de4b9385229cb43421c0a04228b4dbd91ebb1b7c",
-      "size_bytes": 32040
+      "sha256": "a1913b4848e0c3ce9a7d91ccf9d2f209b7ead8dbb17f014dbaa18f0e01841be0",
+      "size_bytes": 32696
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 26921,
       "path": "docs/release/CROSSCHAT_REQUIREMENTS_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "3fd1b0cbef1ffc5705735e4650f25c33af129bb67f4b7edb992845280e7ed59a",
+      "sha256": "494b2fc1e415e806c17ec48c82d097dfaabd6a5618698d7de38bdc9c6910ad68",
       "size_bytes": 3003508
     },
     {
@@ -7299,11 +7299,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 321,
+      "line_count": 322,
       "path": "docs/release/MASTER_EXECUTION_CONTRACT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "c0d31d910d5289902d51e9c6d35a46549141e431c7dd8cf506caa91b9b38f60e",
-      "size_bytes": 30378
+      "sha256": "873a785c946bf84e8d3f57d0e185f6bac32464cc1377e9f7d895852e08fa5c8a",
+      "size_bytes": 31034
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7315,18 +7315,18 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 245,
+      "line_count": 246,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "51b0d55901d9e9963b818ad87ef6c9af023f12a8a4bfd70998b463a8115685ad",
-      "size_bytes": 28100
+      "sha256": "a4a58662bd3a181393ee520e3a5385b45e062d49c00ca544fafa27c4e66ab4c7",
+      "size_bytes": 28756
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 10784,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0f6edd2bc8ceaef42d65c67f79efc977e621c453476c305b3205f131f47ed94b",
+      "sha256": "5f34292da4ee57819684d767448f9c9eda81ee5d5dcab97a86b46f9e62e231e7",
       "size_bytes": 4898032
     },
     {
@@ -10198,7 +10198,7 @@
       "line_count": 525909,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "46a02771921f3034eb9f0be45071578d90ace3788dc9b73ae7e04742601894aa",
+      "sha256": "48f4c4cbbd1fb05cb906038d2a0b1539fbab858167b803791329cbe0a74f173d",
       "size_bytes": 24443736
     },
     {
@@ -10214,7 +10214,7 @@
       "line_count": null,
       "path": "docs/release/requirements_universe.jsonl",
       "reason": "documentation/specification/evidence",
-      "sha256": "7c5b3871b4b78aff3d4eecdb2dd36978316dbf077d62b1970acdfe79e776451e",
+      "sha256": "bed82e962de240c34322dd656bd4b47a74163843c2c55da202f1ba2f13b15130",
       "size_bytes": 18454305
     },
     {
@@ -10222,7 +10222,7 @@
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "20c092bcb2762612022b1366e67c020c937ccf3373bc4854de776791e9913551",
+      "sha256": "8430e216c3b8078efabc2cb9c523527984b7272055bde9f7e60a79f5a2e7b6c9",
       "size_bytes": 2986
     },
     {
@@ -13846,7 +13846,7 @@
       "line_count": 16384,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "5d960992795b959a11dd99d6d04b2c618f51e4a9b1b2dc1e120671037d5fbb06",
+      "sha256": "d6184ffc4d716b2d2409b8569a93183bb6ccbaabd812f358c39cebadec0212a6",
       "size_bytes": 479778
     },
     {
@@ -20379,11 +20379,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 301,
+      "line_count": 305,
       "path": "tests/test_web_platform_runtime_contract.py",
       "reason": "automated test evidence",
-      "sha256": "d024dc31dadc614971157d2bff8d4d5086dcde8190227510cf4509e2c7879a40",
-      "size_bytes": 12362
+      "sha256": "9775f91797580ca08a4085a5c03e7dbce3e92e13d782a55a6bb50c504021624f",
+      "size_bytes": 12686
     },
     {
       "disposition": "TEST_ONLY",
@@ -20651,11 +20651,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7353,
+      "line_count": 7196,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "30b8f030a05a6a8554545dfa3d3afe182b429ac8bd4443298cc0bfa544f5ba1c",
-      "size_bytes": 306037
+      "sha256": "82a3203245bafbefa7314f10ab9d28827959ea8f2645cb76c737d7eff7e089c7",
+      "size_bytes": 299543
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
