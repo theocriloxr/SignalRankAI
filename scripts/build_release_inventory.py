@@ -259,7 +259,7 @@ def strategy_interfaces(paths: list[str]) -> list[dict]:
                 rows.append(row("STRATEGY_CALLABLE", name+":"+node.name, f"{name}:{node.lineno}", node.name,
                     name, "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
                     "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance."))
-    for group in ["trend","momentum","volatility","structure","liquidity","fibonacci","tradingview","stock"]:
+    for group in ["trend","momentum","volatility","structure","liquidity","fibonacci","zones","tradingview","stock"]:
         rows.append(row("STRATEGY",group,"strategies/capabilities.py::CAPABILITY_MATRIX",group,
             "strategies/__init__.py::run_all_strategies", "Declared strategy family. Stock is equity-only, 15m/1h/4h/1d; other families declare all canonical asset classes and six engine timeframes.",
             "Verify dispatcher selection, profile eligibility, causal replay and independent strategy/regime/asset/timeframe performance."))

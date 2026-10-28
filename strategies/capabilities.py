@@ -27,6 +27,8 @@ CAPABILITY_MATRIX: dict[str, StrategyCapability] = {
     "structure": StrategyCapability(_MARKETS),
     "liquidity": StrategyCapability(_MARKETS),
     "fibonacci": StrategyCapability(_MARKETS),
+    # Owner-supplied order-block ABC method; executes on 15m (else 5m), off unless explicitly enabled.
+    "zones": StrategyCapability(_MARKETS, frozenset({"5m", "15m"})),
     "tradingview": StrategyCapability(_MARKETS),
     "stock": StrategyCapability(frozenset({AssetClass.EQUITY}), frozenset({"15m", "1h", "4h", "1d"})),
 }

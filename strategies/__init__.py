@@ -19,6 +19,7 @@ from .structure import structure_strategy
 from .imp import institutional_momentum_pulse_strategies
 from .liquidity_sweep import liquidity_sweep_strategies
 from .fibonacci_confluence import fibonacci_confluence_strategies
+from .zone_rejection import EXEC_ORDER as _ZONE_EXEC_ORDER, zone_rejection_strategies
 
 
 # Import fallback strategies - these run when main strategies produce no signals
@@ -169,20 +170,21 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         # Determine which groups to run.
         # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
         if run_all:
-            groups = ["trend", "momentum", "volatility", "structure", "liquidity", "fibonacci", "stock", "tradingview"]
+            groups = ["trend", "momentum", "volatility", "structure", "liquidity", "fibonacci", "zones", "stock",
+                      "tradingview"]
         else:
             groups = []
             if regime_strategies and regime in regime_strategies:
                 groups = regime_strategies[regime]
             else:
                 if regime == "TRENDING":
-                    groups = ["trend", "structure", "liquidity", "fibonacci", "tradingview"]
+                    groups = ["trend", "structure", "liquidity", "zones", "fibonacci", "tradingview"]
                 elif regime == "RANGING":
-                    groups = ["momentum", "structure", "liquidity", "tradingview"]
+                    groups = ["momentum", "structure", "liquidity", "zones", "tradingview"]
                 elif regime == "VOLATILE":
-                    groups = ["volatility", "liquidity", "fibonacci", "tradingview"]
+                    groups = ["volatility", "liquidity", "zones", "fibonacci", "tradingview"]
                 else:
-                    groups = ["structure", "liquidity", "fibonacci", "tradingview"]
+                    groups = ["structure", "liquidity", "zones", "fibonacci", "tradingview"]
 
         def _add(sig):
             """Normalize direction, apply HTF filter and weight, then append."""
@@ -229,6 +231,11 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             _run_group("liquidity", lambda: liquidity_sweep_strategies(asset, market_data))
         if "fibonacci" in groups:
             _run_group("fibonacci", lambda: fibonacci_confluence_strategies(asset, market_data))
+        # Multi-timeframe like fibonacci, but evaluated once per asset on its execution timeframe
+        # so the loop over timeframes cannot emit the same order-block entry twice.
+        zone_exec_tf = next((tf for tf in _ZONE_EXEC_ORDER if tf in market_data), None)
+        if "zones" in groups and timeframe == zone_exec_tf:
+            _run_group("zones", lambda: zone_rejection_strategies(asset, market_data))
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
 
