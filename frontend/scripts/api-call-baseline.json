@@ -20,6 +20,14 @@
   },
   {
    "method": "DELETE",
+   "path": "/api/v1/platform/watchlists/{watchlist_id}"
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/v1/platform/watchlists/{watchlist_id}/items/{instrument_id}"
+  },
+  {
+   "method": "DELETE",
    "path": "/api/v1/platform/webhooks/{webhook_endpoint_id}"
   },
   {

@@ -110,6 +110,12 @@
 .ui-badge--info { --badge-fg: var(--info); --badge-bg: var(--info-soft); --badge-border: transparent; }
 .ui-badge--brand { --badge-fg: var(--brand); --badge-bg: var(--brand-soft); --badge-border: transparent; }
 .ui-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ui-chip-remove {
+  display: inline-grid; place-items: center; min-width: 24px; min-height: 24px; margin: 0 -6px 0 4px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-3); cursor: pointer; font-size: 15px; line-height: 1;
+}
+.ui-chip-remove:hover { color: var(--negative); background: var(--negative-soft); }
+.ui-chip-remove:disabled { opacity: .5; cursor: default; }
 .ui-chip {
   display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: var(--radius-sm);
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);

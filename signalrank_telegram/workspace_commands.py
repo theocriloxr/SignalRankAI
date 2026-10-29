@@ -60,13 +60,13 @@ def _strip_word(words: list[str], word: str) -> list[str]:
     return words[1:] if words and words[0].lower() == word else words
 
 
-def format_watchlists(lists: list[dict[str, Any]], labels: dict[str, str]) -> str:
+def format_watchlists(lists: list[dict[str, Any]]) -> str:
     if not lists:
         return "👀 You have no watchlists yet.\n\nStart one with /watchlist add BTCUSDT."
     lines = ["👀 Your watchlists"]
     for item in lists[:20]:
-        ids = [str(entry.get("instrument_id")) for entry in (item.get("items") or []) if entry.get("instrument_id")]
-        symbols = sorted(labels.get(i, i) for i in ids)
+        symbols = sorted(str(entry.get("display_symbol") or entry.get("instrument_id"))
+                         for entry in (item.get("items") or []) if entry.get("instrument_id"))
         marker = " (default)" if item.get("is_default") else ""
         shown = ", ".join(symbols[:30]) + (f" and {len(symbols) - 30} more" if len(symbols) > 30 else "")
         lines.append(f"\n• {item.get('name')}{marker} — {len(symbols)} instrument{'s' if len(symbols) != 1 else ''}")
@@ -107,9 +107,7 @@ async def watchlist_reply(session: Any, uid: int, args: list[str]) -> str:
     action = (args[0].lower() if args else "list")
     rest = list(args[1:])
     if action in {"list", "show"}:
-        lists = await watchlists.list_watchlists(session, uid)
-        ids = [str(e.get("instrument_id")) for w in lists for e in (w.get("items") or [])]
-        return format_watchlists(lists, await watchlists.instrument_labels(session, ids))
+        return format_watchlists(await watchlists.list_watchlists(session, uid))
     if action == "new":
         try:
             created = await watchlists.create_watchlist(session, uid, " ".join(rest))

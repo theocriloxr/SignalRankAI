@@ -32,8 +32,10 @@ async def list_watchlists(session: Any, user_id: int) -> list[dict[str, Any]]:
         await session.execute(
             text(
                 "SELECT w.watchlist_id,w.name,w.is_default,w.created_at,w.updated_at,"
-                "COALESCE(jsonb_agg(jsonb_build_object('instrument_id',wi.instrument_id)) FILTER (WHERE wi.instrument_id IS NOT NULL),'[]'::jsonb) AS items "
+                "COALESCE(jsonb_agg(jsonb_build_object('instrument_id',wi.instrument_id,'display_symbol',i.display_symbol) "
+                "ORDER BY wi.created_at,wi.instrument_id) FILTER (WHERE wi.instrument_id IS NOT NULL),'[]'::jsonb) AS items "
                 "FROM watchlists w LEFT JOIN watchlist_items wi ON wi.watchlist_id=w.watchlist_id "
+                "LEFT JOIN instruments i ON i.instrument_id=wi.instrument_id "
                 "WHERE w.user_id=:uid GROUP BY w.watchlist_id ORDER BY w.is_default DESC,w.created_at"
             ),
             {"uid": int(user_id)},
@@ -159,21 +161,8 @@ async def resolve_instrument(session: Any, query: Any) -> tuple[dict[str, Any] |
     return None, candidates
 
 
-async def instrument_labels(session: Any, instrument_ids: list[str]) -> dict[str, str]:
-    ids = sorted({str(value) for value in instrument_ids if value})
-    if not ids:
-        return {}
-    rows = (
-        await session.execute(
-            text("SELECT instrument_id,display_symbol FROM instruments WHERE instrument_id = ANY(:ids)"),
-            {"ids": ids},
-        )
-    ).all()
-    return {str(row[0]): str(row[1] or row[0]) for row in rows}
-
-
 __all__ = [
     "DEFAULT_NAME", "WatchlistError", "add_item", "clean_name", "create_watchlist", "default_watchlist",
-    "delete_watchlist", "find_watchlist", "instrument_labels", "list_watchlists", "remove_item",
+    "delete_watchlist", "find_watchlist", "list_watchlists", "remove_item",
     "resolve_instrument",
 ]

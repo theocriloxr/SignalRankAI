@@ -167,7 +167,10 @@ test("watchlist search uses backend-returned instrument identity, not freeform b
   assert.ok(view.includes('client.POST("/api/v1/platform/watchlists/{watchlist_id}/items"'));
   assert.match(view,/instrument\.instrument_id/);
   assert.match(view,/r\.data\.added===true/);
-  assert.doesNotMatch(view,/client\.(DELETE|PATCH|PUT)\(|localStorage|sessionStorage|\/execute/);
+  assert.doesNotMatch(view,/client\.(PATCH|PUT)\(|localStorage|sessionStorage|\/execute/);
+  // 29 Oct: removing an instrument and deleting a list (second click) are the only deletes; same rows as Telegram /watchlist.
+  const deletes=[...view.matchAll(/client\.DELETE\("([^"]+)"/g)].map(m=>m[1]).sort();
+  assert.deepEqual(deletes,["/api/v1/platform/watchlists/{watchlist_id}","/api/v1/platform/watchlists/{watchlist_id}/items/{instrument_id}"]);
 });
 
 
