@@ -1,5 +1,5 @@
 {
-  "file_count": 2645,
+  "file_count": 2648,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2920,6 +2920,14 @@
       "reason": "production/build source",
       "sha256": "efd49f1ef18cbde7bca84267df5ce474f1fd184779781338e93c2a0eaaa620c9",
       "size_bytes": 2657
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 96,
+      "path": "core/client_ip.py",
+      "reason": "production/build source",
+      "sha256": "ed1dc0a9a72ce5608555d1fe9103d58180c0ef95ccfdb8e828887f3274a16c48",
+      "size_bytes": 3654
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7299,11 +7307,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 26935,
+      "line_count": 26937,
       "path": "docs/release/CROSSCHAT_REQUIREMENTS_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "591bd626442518f6e1ce3941a54455f97e7230f0142141e7732032cdb8324edf",
-      "size_bytes": 3004656
+      "sha256": "2d45a11fa467128067a1bdb4f4d84f7284fbb005523f99c98c0b159486ed8d64",
+      "size_bytes": 3004838
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7347,19 +7355,19 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10798,
+      "line_count": 10800,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "2059401ffb6f8c4069640817222bb98827726d60204b789b33dc1d8bbecba2b4",
-      "size_bytes": 4903835
+      "sha256": "a09dcfbfe157edd9a970d5d5284517341e40d506dd7fa0bf7b2eee02520dd98f",
+      "size_bytes": 4904744
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 304,
+      "line_count": 305,
       "path": "docs/release/TELEGRAM_WEB_PARITY_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "43c876abb752568cead7e3b01ec294b40669eeb724d58203abe4c134d02e5363",
-      "size_bytes": 15823
+      "sha256": "bee87cd5373c0ad07bf8ab0da737cfecbe63a783878c1e217037df7e517d6b4e",
+      "size_bytes": 15868
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10235,11 +10243,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 526579,
+      "line_count": 526638,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "b5e6f9e296107ea8565d2f22a0c123d1e39893e9c8279eec05b9b4f476b3f216",
-      "size_bytes": 24488052
+      "sha256": "fbb463b87d483f21cc64c40136cf4e011662edd8bcc5752d5f48dd1e3f4369e0",
+      "size_bytes": 24490742
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10254,15 +10262,15 @@
       "line_count": null,
       "path": "docs/release/requirements_universe.jsonl",
       "reason": "documentation/specification/evidence",
-      "sha256": "3a72720ee0db27cc74988583b54141853e7dedbaa42003f127ae7c8f2e54a81a",
-      "size_bytes": 18464201
+      "sha256": "1533da1fa0f70bd681b04766177b5ee5f8d0feda56b4f9ba2b9c39fcb5c45c68",
+      "size_bytes": 18465683
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "293f7f852f7effba88166395bd7edd274fda08fbf8d19272a67f009efa32f629",
+      "sha256": "75ed19e3ba6ee7a32836f2a01938bb9f42c338abaa51252126ccd1b25b5c31a6",
       "size_bytes": 2986
     },
     {
@@ -11782,8 +11790,8 @@
       "line_count": 40,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "dcfe9fb33457a34b0f5fd1793c33932a009023a92882c134db9680a6a211664b",
-      "size_bytes": 1494
+      "sha256": "786d1b00908403bb52b209b8c6d7a7bb19ea7afadc7a47ab00e2b4bc1317804a",
+      "size_bytes": 1526
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11888,6 +11896,14 @@
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "bc116a26f298006a1751c7961f84ae0178bfd3fdce29df6d5ac20baddc47823d",
       "size_bytes": 4642
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 51,
+      "path": "frontend/scripts/client-address.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "1ec0fda76cd659d72d7580b7c33d0b75c591ff2ac9a135313748a07350630c76",
+      "size_bytes": 2799
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12427,11 +12443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 9134,
+      "line_count": 9179,
       "path": "frontend/src/lib/api.d.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cc466b8f0f58140988dc83101f34860296ad6c62805bc99b44c28f8de06c1180",
-      "size_bytes": 266249
+      "sha256": "b96983ee245870b54e8d9ce27748df96561b6d94380a4741b6c9dc4ce8e9202c",
+      "size_bytes": 267704
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12451,11 +12467,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 57,
+      "line_count": 75,
       "path": "frontend/src/lib/platform-proxy.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "47a21b3cded76d70109d29968610d6a5b3723840cfc3b5e2d4dced71041f474e",
-      "size_bytes": 3332
+      "sha256": "84c4dda5bf2e36409bb5b31cf2312d06cb72125477faf51bac062ff20962a9fa",
+      "size_bytes": 4405
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13139,11 +13155,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 10725,
+      "line_count": 10754,
       "path": "openapi.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "6deb009d1803f2837ea20fdb9194366d9b5df45730efe9fe56b62998e9440e69",
-      "size_bytes": 285803
+      "sha256": "e7c98ddfe8b8f55ec28abe1af0b82cc44f373103731e95ffa53c860a6cf46a6a",
+      "size_bytes": 286885
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13227,11 +13243,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 227,
+      "line_count": 226,
       "path": "payments/paystack_webhook.py",
       "reason": "production/build source",
-      "sha256": "5bac65898004782755bbe28868ada80306fee047768b851553b1aeb570d2c22f",
-      "size_bytes": 8783
+      "sha256": "27157e86f2b07986c8c26908f1d0abb2dee5415f38601fe9390d68d65327e00a",
+      "size_bytes": 8769
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13931,11 +13947,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16458,
+      "line_count": 16479,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e7286fbb3d072a8e8f57965760ffad385124bc7ead0fbd9bae1c6f95e1a985fb",
-      "size_bytes": 481853
+      "sha256": "5493c64a467e372f07eb486a0d8c011c098f615b7c2064ff3e17cafd0bf54b56",
+      "size_bytes": 482393
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -17779,6 +17795,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 128,
+      "path": "tests/test_client_ip_trust_20261029.py",
+      "reason": "automated test evidence",
+      "sha256": "9dedcfc1a9d474d48489b8aab6fcdf6060c3d17d8a458cc1587bf26969d1177b",
+      "size_bytes": 6081
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 170,
       "path": "tests/test_codex_governance_and_asset_locks.py",
       "reason": "automated test evidence",
@@ -20942,16 +20966,16 @@
       "line_count": 1381,
       "path": "web/app.py",
       "reason": "production/build source",
-      "sha256": "b94c1c472bc36c5114e78a00e31634d0a0a2331569ba6a98121d48999ee68046",
-      "size_bytes": 53918
+      "sha256": "a8f82c13e9af777589c0a07040cb8ff91f2a4190692d5e7a948eac021b5cf2e3",
+      "size_bytes": 53865
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7161,
+      "line_count": 7185,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "d3778b4c9ab8ca2233be091c36fb6367caacbfd417026fa646f4834b00610d34",
-      "size_bytes": 297912
+      "sha256": "3318e3ed0545ddcf7903896d38c07104f453d2c955e6c5deb956b62f71ba156e",
+      "size_bytes": 299021
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21175,7 +21199,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 873,
-    "PRESERVE_BEHAVIOUR": 1354,
-    "TEST_ONLY": 417
+    "PRESERVE_BEHAVIOUR": 1356,
+    "TEST_ONLY": 418
   }
 }

@@ -253,6 +253,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/operator/overview` | — |
 | POST | `/operator/performance-rebuild` | `/performance_rebuild` |
 | POST | `/operator/queue-replay` | `/queue_replay` |
+| GET | `/operator/request-identity` | — |
 | GET | `/operator/research` | `/research` |
 | GET | `/organizations` | — |
 | POST | `/organizations` | — |
@@ -301,4 +302,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 123 commands (46 without a web section), 16 web sections, 141 routes (86 without a name-matched command).
+Summary: 123 commands (46 without a web section), 16 web sections, 142 routes (87 without a name-matched command).
