@@ -1,5 +1,5 @@
 {
-  "file_count": 2650,
+  "file_count": 2651,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4507,11 +4507,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 857,
+      "line_count": 858,
       "path": "db/repository.py",
       "reason": "production/build source",
-      "sha256": "540d889ff4019aba9864d4e5427422cfc1b71bda2f3a081b3adf8ac4b5f7dc24",
-      "size_bytes": 32412
+      "sha256": "a9532343b76922eb4123e93c89ff6f4971cfe6afc413a492e21b0935f0b795d6",
+      "size_bytes": 32558
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13950,8 +13950,8 @@
       "line_count": 16479,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "5493c64a467e372f07eb486a0d8c011c098f615b7c2064ff3e17cafd0bf54b56",
-      "size_bytes": 482393
+      "sha256": "468914c50724e92ee2f74485863576932b1c4046f80a4e715ee60d4dc9c8b567",
+      "size_bytes": 482395
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15611,11 +15611,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 504,
+      "line_count": 535,
       "path": "services/economic_calendar.py",
       "reason": "production/build source",
-      "sha256": "b051ec7e67457813193f1abec111372a34177a025adca64af2fcb1f7e1d9f53c",
-      "size_bytes": 19132
+      "sha256": "572c0486d24ae977003c452efc31d21413501867ea20d7aba6ce827e7de553d6",
+      "size_bytes": 21230
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18112,6 +18112,14 @@
       "reason": "automated test evidence",
       "sha256": "51ed91e6b9de2074749f4989372ec080a758001dca9b7a8e15fcf3260f27e042",
       "size_bytes": 3306
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 282,
+      "path": "tests/test_economic_calendar_20261030.py",
+      "reason": "automated test evidence",
+      "sha256": "a224d8bb41d286265e410a56f6bfdf58dcb85c3a95ff61dba4ed5bf84364e746",
+      "size_bytes": 13304
     },
     {
       "disposition": "TEST_ONLY",
@@ -21171,11 +21179,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 305,
+      "line_count": 310,
       "path": "worker/news_sync_worker.py",
       "reason": "production/build source",
-      "sha256": "741c68b80e047e51d280f025cbd4bb1f8c167def8db5c908eff3f3f9cdcbf61b",
-      "size_bytes": 11410
+      "sha256": "44afb45059f26db5b8f6ec361ec5729f3c1195cd6fdaafee286eaf686f60eead",
+      "size_bytes": 11949
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21216,6 +21224,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 873,
     "PRESERVE_BEHAVIOUR": 1356,
-    "TEST_ONLY": 420
+    "TEST_ONLY": 421
   }
 }

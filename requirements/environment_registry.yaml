@@ -5066,7 +5066,7 @@
       "name": "ECONOMIC_CALENDAR_CACHE_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:37"
+        "services/economic_calendar.py:39"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5078,7 +5078,7 @@
       "name": "ECONOMIC_CALENDAR_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:38"
+        "services/economic_calendar.py:46"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5992,7 +5992,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/connectors/finnhub_adapter.py:43",
-        "services/economic_calendar.py:166"
+        "services/economic_calendar.py:181"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -6066,7 +6066,7 @@
       "name": "FOREX_FACTORY_CALENDAR_URL",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:40"
+        "services/economic_calendar.py:48"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9018,7 +9018,7 @@
       "name": "NEWS_VOLATILITY_BUFFER_MULTIPLIER",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:94"
+        "services/economic_calendar.py:109"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9060,7 +9060,7 @@
       "name": "NO_TRADE_BUFFER_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:92"
+        "services/economic_calendar.py:100"
       ],
       "required_by_code": true,
       "sensitive": false
