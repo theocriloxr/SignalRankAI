@@ -115,7 +115,10 @@ def run_sync(coro, timeout: float | None = None) -> Any:
             current_loop = None
 
         if current_loop is None:
-            return asyncio.run(coro)
+            # The timeout must hold here too; this path previously ignored it.
+            if wait_timeout is None:
+                return asyncio.run(coro)
+            return asyncio.run(asyncio.wait_for(coro, wait_timeout))
 
         result_queue: "queue.Queue[Any]" = queue.Queue(maxsize=1)
         error_queue: "queue.Queue[BaseException]" = queue.Queue(maxsize=1)

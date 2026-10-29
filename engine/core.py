@@ -256,6 +256,21 @@ except Exception:
 _ml_rejection_tracker = MLRejectionTracker()
 
 
+def _db_call_timeout() -> float:
+    """Upper bound for one database round trip made from the engine loop.
+
+    On 2026-10-22 a write on a connection killed by a Postgres restart never
+    returned and the loop stalled for six days. Every call below is bounded;
+    each caller already treats an error as its safe outcome (skip a log row,
+    refuse a trade).
+    """
+    try:
+        value = float(os.getenv("ENGINE_DB_CALL_TIMEOUT_SECONDS", "10") or 10)
+    except ValueError:
+        return 10.0
+    return min(120.0, max(1.0, value)) if value == value else 10.0
+
+
 def classify_signal_store_error(exc: BaseException) -> str:
     """Classify a signal-storage exception (Phase 19).
 
@@ -775,7 +790,8 @@ def _log_decision(
                 decision,
                 reason=reason,
                 meta=_meta,
-            )
+            ),
+            timeout=_db_call_timeout(),
         )
         # Persist rejection immediately for ML outcome tracking so the
         # adaptive learning pipeline can observe engine-rejected candidates
@@ -823,7 +839,8 @@ def _log_decision(
                             rejection_reason=str(reason or _meta.get("reason") or "rejected")[:128],
                             features=features,
                             rejection_type="engine",
-                        )
+                        ),
+                        timeout=_db_call_timeout(),
                     )
                 except Exception:
                     logger.debug("[engine] persist_rejection best-effort failed", exc_info=True)
@@ -4273,7 +4290,8 @@ def main_loop(DRY_RUN: bool = False):
                                     direction=str(sig.get("direction") or ""),
                                     ml_probability=float(prob),
                                     features=(features if isinstance(features, dict) else {}),
-                                )
+                                ),
+                                timeout=_db_call_timeout(),
                             )
                         except Exception as _ml_log_err:
                             logger.debug(
@@ -5462,12 +5480,14 @@ def main_loop(DRY_RUN: bool = False):
                                 # Use helper to get asset class
                                 _sig_asset_cls = _asset_class_key(_asset_name)
                                 # FIX: Use run_sync to call async function from sync context
+                                # A timeout raises into the fail-closed handler below.
                                 _is_allowed = run_sync(
                                     exposure_manager.is_trade_allowed(
                                         None,  # Session will be created inside if needed
                                         _sig_asset_cls,
                                         _direction,
-                                    )
+                                    ),
+                                    timeout=_db_call_timeout(),
                                 )
                                 if not _is_allowed:
                                     pipeline_stats["skipped_portfolio_exposure"] = (
@@ -5764,7 +5784,8 @@ def main_loop(DRY_RUN: bool = False):
                             async def _notify_with_timeout() -> None:
                                 await _asyncio.wait_for(notify_users_about_outcomes(), timeout=30.0)
 
-                            _run_sync(_notify_with_timeout())
+                            # The outer bound also covers a cancellation that cannot complete.
+                            _run_sync(_notify_with_timeout(), timeout=45.0)
                         except Exception:
                             pass
 
