@@ -251,6 +251,21 @@
           "result": "FAIL (environmental isolated-metadata case only)",
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
+      },
+      "client_address_trust": {
+        "commits": "57e56058..bf067ce2",
+        "resolver": "core/client_ip.py: signed proxy address, then X-Real-IP on Railway, then socket peer",
+        "evidence_for_trusted_header": "Railway public networking specs (X-Real-IP set by the edge); domain resolves to Railway edge",
+        "observed_in_production": false,
+        "owner_check": "GET /api/v1/platform/operator/request-identity",
+        "python_suite_on_branch": {
+          "commit": "bf067ce2",
+          "passed": 4313,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
       }
     }
   },
@@ -258,8 +273,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 393,
-    "requirements_and_source_sections": 10021,
-    "source_clauses": 60085,
+    "requirements_and_source_sections": 10022,
+    "source_clauses": 60091,
     "interfaces": {
       "ENDPOINT": 183,
       "API": 171,
@@ -3205,11 +3220,11 @@
     },
     {
       "path": "docs/security/THREAT_MODEL.md",
-      "sha256_lf": "5dd5f3fcde8f0c2c5b9725119a7c8a775ac1b659e03c721bcf308b0f6b48a623",
+      "sha256_lf": "d3e1fbcc306302c49e9b77956dff6fffcd180756ae65f125be2095baf294a87e",
       "encoding": "utf-8-sig",
-      "line_count": 371,
+      "line_count": 382,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 33
+      "section_count": 34
     },
     {
       "path": "docs/specs/2026-09-25/01-platform-roadmap.txt",
@@ -249898,10 +249913,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "777a9996fe2cef1bbf7b277fa478a1a85328fc822c2ca207a2253767a814b6b2",
+      "source_sha256": "18184ae1719e3d19f9ce5e72f12553b16a921d7c5a56ed6ed0b29e5f99b531b6",
       "line_start": 360,
       "line_end": 366,
-      "text": "### 12.4 Open items (not fixed in this revision)\n\n- **Forwarded-address trust.** Route rate limits and the IP recorded in security events take the client address from a forwarding header. Sign-in and account emails now have per-account limits that do not depend on it. The general API limits and the recorded IP still do. The right fix depends on how the hosting edge sets that header, which must be confirmed on the deployed platform before changing it.\n- **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.\n- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.\n- **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.\n",
+      "text": "### 12.4 Open items (not fixed in this revision)\n\n- **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*\n- **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.\n- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.\n- **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.\n",
       "clauses": [
         {
           "line": 360,
@@ -249909,7 +249924,7 @@
         },
         {
           "line": 362,
-          "text": "- **Forwarded-address trust.** Route rate limits and the IP recorded in security events take the client address from a forwarding header. Sign-in and account emails now have per-account limits that do not depend on it. The general API limits and the recorded IP still do. The right fix depends on how the hosting edge sets that header, which must be confirmed on the deployed platform before changing it."
+          "text": "- **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*"
         },
         {
           "line": 363,
@@ -249938,10 +249953,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "8abf74482aeab2038215a6b27bf969d9d7a3b660eb3ad1765f678cd1724d6d94",
+      "source_sha256": "8d23e8d68c2d166f7127050a9ea665a3d60a01f031a289dfa42a4ced855794e0",
       "line_start": 367,
-      "line_end": 371,
-      "text": "### 12.5 How this revision was verified\n\n- Local only: Windows 11, Python 3.13.7, an owned PostgreSQL 17 test cluster migrated to `0057`. Not CI, staging or production.\n- New tests: 17 across the four fixes, 5 of them on real PostgreSQL. 598 related tests pass.\n- The TLS claim in TM-28 was checked directly: a certificate valid only for `127.0.0.1` is refused when a pinned request names another host.",
+      "line_end": 372,
+      "text": "### 12.5 How this revision was verified\n\n- Local only: Windows 11, Python 3.13.7, an owned PostgreSQL 17 test cluster migrated to `0057`. Not CI, staging or production.\n- New tests: 17 across the four fixes, 5 of them on real PostgreSQL. 598 related tests pass.\n- The TLS claim in TM-28 was checked directly: a certificate valid only for `127.0.0.1` is refused when a pinned request names another host.\n",
       "clauses": [
         {
           "line": 367,
@@ -249958,6 +249973,50 @@
         {
           "line": 371,
           "text": "- The TLS claim in TM-28 was checked directly: a certificate valid only for `127.0.0.1` is refused when a pinned request names another host."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-e16a26926c4ff73f",
+      "kind": "SOURCE",
+      "source": "docs/security/THREAT_MODEL.md:373",
+      "requirement": "12.6 Follow-up, 29 October 2026 — client address trust",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "497bd7f80164a0f08b496f7b27802e4cc576eec2ab063cd647a79cd365a3d221",
+      "line_start": 373,
+      "line_end": 382,
+      "text": "### 12.6 Follow-up, 29 October 2026 — client address trust\n\n| ID | Threat | L | I | Controls / evidence | Status |\n|---|---|---:|---:|---|---|\n| TM-42 | A client chooses the address used for rate limits, security events or the Paystack IP allowlist | M | M | `core/client_ip.py` trusts, in order: an address signed by our web proxy (HMAC with a shared secret, 5-minute window), then `X-Real-IP` on Railway (`TRUSTED_CLIENT_IP_HEADER` to override), then the socket peer; the first `X-Forwarded-For` value is never used. The web proxy no longer forwards browser-supplied forwarding headers. `tests/test_client_ip_trust_20261029.py`, `frontend/scripts/client-address.test.mjs` | **Fixed**; mitigated |\n\n- **Evidence for the trusted header.** Railway's public networking specification says its edge sets `X-Real-IP` to the client's remote address and does not mention setting `X-Forwarded-For`. The production domain resolves directly to Railway's edge, with no CDN in front. That the edge *replaces* a client-supplied `X-Real-IP` comes from the documentation; it was not observed, because production cannot be inspected without a deployment.\n- **Post-deployment check.** Signed in as the owner, open `/api/v1/platform/operator/request-identity`. `client_ip` must be your public address, with source `x-real-ip` (direct) or `signed_proxy` (through the web app). Repeat with a forged `X-Forwarded-For` or `X-Real-IP` request header: the result must not change.\n- **Web proxy hop.** If the web app reaches the API through the public edge rather than Railway's private network, set the same `SIGNALRANK_CLIENT_IP_SECRET` (32 or more random characters) on both services. Without it, every web user would share the web server's address for rate limiting.\n",
+      "clauses": [
+        {
+          "line": 373,
+          "text": "### 12.6 Follow-up, 29 October 2026 — client address trust"
+        },
+        {
+          "line": 375,
+          "text": "| ID | Threat | L | I | Controls / evidence | Status |"
+        },
+        {
+          "line": 377,
+          "text": "| TM-42 | A client chooses the address used for rate limits, security events or the Paystack IP allowlist | M | M | `core/client_ip.py` trusts, in order: an address signed by our web proxy (HMAC with a shared secret, 5-minute window), then `X-Real-IP` on Railway (`TRUSTED_CLIENT_IP_HEADER` to override), then the socket peer; the first `X-Forwarded-For` value is never used. The web proxy no longer forwards browser-supplied forwarding headers. `tests/test_client_ip_trust_20261029.py`, `frontend/scripts/client-address.test.mjs` | **Fixed**; mitigated |"
+        },
+        {
+          "line": 379,
+          "text": "- **Evidence for the trusted header.** Railway's public networking specification says its edge sets `X-Real-IP` to the client's remote address and does not mention setting `X-Forwarded-For`. The production domain resolves directly to Railway's edge, with no CDN in front. That the edge *replaces* a client-supplied `X-Real-IP` comes from the documentation; it was not observed, because production cannot be inspected without a deployment."
+        },
+        {
+          "line": 380,
+          "text": "- **Post-deployment check.** Signed in as the owner, open `/api/v1/platform/operator/request-identity`. `client_ip` must be your public address, with source `x-real-ip` (direct) or `signed_proxy` (through the web app). Repeat with a forged `X-Forwarded-For` or `X-Real-IP` request header: the result must not change."
+        },
+        {
+          "line": 381,
+          "text": "- **Web proxy hop.** If the web app reaches the API through the public edge rather than Railway's private network, set the same `SIGNALRANK_CLIENT_IP_SECRET` (32 or more random characters) on both services. Without it, every web user would share the web server's address for rate limiting."
         }
       ]
     },

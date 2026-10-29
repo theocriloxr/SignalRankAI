@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 26927. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26914.
+Rows: 26928. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26915.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -21512,6 +21512,7 @@ Rows: 26927. Reviewed dispositions: 13. Unresolved applicability/acceptance: 269
 | SR-SOURCE-816593da90382abb | docs/security/THREAT_MODEL.md:341  | INCOMPLETE |
 | SR-SOURCE-803db32e56481af3 | docs/security/THREAT_MODEL.md:360  | INCOMPLETE |
 | SR-SOURCE-34776dc49f1445c5 | docs/security/THREAT_MODEL.md:367  | INCOMPLETE |
+| SR-SOURCE-e16a26926c4ff73f | docs/security/THREAT_MODEL.md:373  | INCOMPLETE |
 | SR-SOURCE-790ed7591c26a0b1 | docs/specs/2026-09-25/01-platform-roadmap.txt:1  | INCOMPLETE |
 | SR-SOURCE-2e434dd408622961 | docs/specs/2026-09-25/01-platform-roadmap.txt:3  | INCOMPLETE |
 | SR-SOURCE-1b93a7358e83f2be | docs/specs/2026-09-25/01-platform-roadmap.txt:55  | INCOMPLETE |

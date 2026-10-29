@@ -59,6 +59,7 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 - Owner web screens (scoped kill switches, account merges, AI spend) reach users only after the public web service is repointed (step 7).
 - New free Telegram commands `/watchlist` and `/journal` (private chats only); the bot's command menu updates on its next start. The web Watchlists page gains remove and delete controls (public web only after repointing).
 - Security behaviour after promotion: 10 failed passwords in 15 minutes lock password sign-in for that account (`LOGIN_MAX_FAILURES_PER_ACCOUNT`, `LOGIN_FAILURE_WINDOW_SECONDS`); sign-in-link and reset emails are capped at 5 per account per hour (`ACCOUNT_EMAIL_MAX_PER_HOUR`); bot account commands no longer answer in groups; webhook deliveries connect only to the validated address.
+- Client addresses come from Railway's `X-Real-IP` (or a proxy-signed address), never the first `X-Forwarded-For` value. Optional: set the same `SIGNALRANK_CLIENT_IP_SECRET` (32 or more random characters) on `SignalRankAI` and `SignalRankAI-Public-Web`. It matters only if the web app reaches the API through the public edge. After the release, signed in as the owner, open `/api/v1/platform/operator/request-identity`: `client_ip` must be your own address, and a forged `X-Forwarded-For` header must not change it.
 - No new migration: the head stays `0057_expectancy_shadow_index`.
 
 ## Known limits at promotion time

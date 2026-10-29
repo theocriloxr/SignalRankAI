@@ -2496,9 +2496,12 @@
     "tests/test_webhook_ssrf_pinning_20261029.py",
     "tests/test_login_account_throttle_20261029.py",
     "tests/test_account_email_budget_20261029.py",
-    "tests/test_telegram_private_chat_scope_20261029.py"
+    "tests/test_telegram_private_chat_scope_20261029.py",
+    "core/client_ip.py",
+    "tests/test_client_ip_trust_20261029.py",
+    "frontend/scripts/client-address.test.mjs"
    ],
-   "note": "29 Oct: webhook address pinning, per-account sign-in limit, account email cap, private-chat-only bot commands."
+   "note": "29 Oct: webhook address pinning, per-account sign-in limit, account email cap, private-chat-only bot commands. 29 Oct: client IPs from a signed proxy address or X-Real-IP, never the first X-Forwarded-For value (rate limits, security events, Paystack allowlist)."
   },
   {
    "id": "CX-SEC-03",
@@ -3155,6 +3158,13 @@
     "CX-WEB-02"
    ],
    "note": "Threat model revision, four security fixes, accessibility audit; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-SEC-02"
+   ],
+   "note": "Client address trust; local evidence only, status unchanged."
   }
  ]
 }

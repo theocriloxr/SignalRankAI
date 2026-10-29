@@ -359,7 +359,7 @@ it was changed in this revision.
 
 ### 12.4 Open items (not fixed in this revision)
 
-- **Forwarded-address trust.** Route rate limits and the IP recorded in security events take the client address from a forwarding header. Sign-in and account emails now have per-account limits that do not depend on it. The general API limits and the recorded IP still do. The right fix depends on how the hosting edge sets that header, which must be confirmed on the deployed platform before changing it.
+- **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*
 - **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.
 - **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.
 - **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.
@@ -369,3 +369,14 @@ it was changed in this revision.
 - Local only: Windows 11, Python 3.13.7, an owned PostgreSQL 17 test cluster migrated to `0057`. Not CI, staging or production.
 - New tests: 17 across the four fixes, 5 of them on real PostgreSQL. 598 related tests pass.
 - The TLS claim in TM-28 was checked directly: a certificate valid only for `127.0.0.1` is refused when a pinned request names another host.
+
+### 12.6 Follow-up, 29 October 2026 — client address trust
+
+| ID | Threat | L | I | Controls / evidence | Status |
+|---|---|---:|---:|---|---|
+| TM-42 | A client chooses the address used for rate limits, security events or the Paystack IP allowlist | M | M | `core/client_ip.py` trusts, in order: an address signed by our web proxy (HMAC with a shared secret, 5-minute window), then `X-Real-IP` on Railway (`TRUSTED_CLIENT_IP_HEADER` to override), then the socket peer; the first `X-Forwarded-For` value is never used. The web proxy no longer forwards browser-supplied forwarding headers. `tests/test_client_ip_trust_20261029.py`, `frontend/scripts/client-address.test.mjs` | **Fixed**; mitigated |
+
+- **Evidence for the trusted header.** Railway's public networking specification says its edge sets `X-Real-IP` to the client's remote address and does not mention setting `X-Forwarded-For`. The production domain resolves directly to Railway's edge, with no CDN in front. That the edge *replaces* a client-supplied `X-Real-IP` comes from the documentation; it was not observed, because production cannot be inspected without a deployment.
+- **Post-deployment check.** Signed in as the owner, open `/api/v1/platform/operator/request-identity`. `client_ip` must be your public address, with source `x-real-ip` (direct) or `signed_proxy` (through the web app). Repeat with a forged `X-Forwarded-For` or `X-Real-IP` request header: the result must not change.
+- **Web proxy hop.** If the web app reaches the API through the public edge rather than Railway's private network, set the same `SIGNALRANK_CLIENT_IP_SECRET` (32 or more random characters) on both services. Without it, every web user would share the web server's address for rate limiting.
+

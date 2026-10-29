@@ -241,6 +241,21 @@
         "result": "FAIL (environmental isolated-metadata case only)",
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       }
+    },
+    "client_address_trust": {
+      "commits": "57e56058..bf067ce2",
+      "resolver": "core/client_ip.py: signed proxy address, then X-Real-IP on Railway, then socket peer",
+      "evidence_for_trusted_header": "Railway public networking specs (X-Real-IP set by the edge); domain resolves to Railway edge",
+      "observed_in_production": false,
+      "owner_check": "GET /api/v1/platform/operator/request-identity",
+      "python_suite_on_branch": {
+        "commit": "bf067ce2",
+        "passed": 4313,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (environmental isolated-metadata case only)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      }
     }
   }
 }
