@@ -1,5 +1,20 @@
 # Release blockers and exact continuation
 
+## Continuation, 30 October 2026 — economic calendar and news blackout (owner request)
+
+Commits `d6949b09` (fix and tests) and `c27ced4d` (governance). Nothing was deployed.
+
+Writing tests for the economic calendar (CX-RISK-01, CX-SIG-22) exposed five bugs, all fixed:
+
+- **The blackout never blocked anything in the all-in-one runtime.** `railway_main` runs the engine loop in an executor thread. There the sync gate's `asyncio.get_event_loop()` raised, and the wrapper swallowed the error and returned False. The gate now uses `utils.async_runner.run_sync` with a 20-second bound. When it cannot be evaluated it still does not block (existing policy), but logs a warning at most every 10 minutes.
+- **One failed feed fetch disabled news protection everywhere for an hour.** The timeless static fallback was cached in Redis. It is no longer shared, old entries are ignored, and the live feeds are retried after 5 minutes. `calendar_status()` reports whether real event times are loaded.
+- **The database copy of the calendar was always empty.** The sync worker read `event_date` while events carry `event_time`. It also compared timezone-aware values with the naive column, which PostgreSQL rejects (reproduced locally). It now stores naive UTC.
+- **The database and Redis copies dropped just-past events,** losing the blackout after a release; they keep the last 2 hours.
+- **`EUR/USD`-style symbols were not recognised.**
+- **Tests:** 10 new (1 on real PostgreSQL); 6 of them fail on the previous code; 261 related tests pass. Full suite at `c27ced4d` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,337 passed, 1 failed, 2 skipped**; the failure is the environmental `release_provenance[isolated_metadata]` case.
+- **Behaviour change after promotion:** the 60-minute blackout around high-impact USD events will actually suppress signals for USD-sensitive assets (major USD pairs, gold and silver, BTC/ETH and the US indices) in the all-in-one runtime. This was always the design, but it was not working there.
+- **Owner decision recorded, not changed:** when no calendar source is available the gate lets trading continue (fail-open). Making it fail-closed would stop USD-sensitive signals during every feed outage.
+
 ## Continuation, 29 October 2026 — backtest execution realism (owner request)
 
 Commits `a062edd9` (harness) and `516b2023` (governance). Research tooling only; nothing deployed and no engine behaviour changed.

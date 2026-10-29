@@ -295,5 +295,26 @@
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       }
     }
+  },
+  "continuation_20261030": {
+    "economic_calendar": {
+      "commits": "d6949b09..c27ced4d",
+      "bugs_fixed": [
+        "sync gate failed open in executor threads",
+        "fallback cached in Redis for an hour",
+        "sync worker never stored events (key and timezone)",
+        "post-release events dropped from caches",
+        "EUR/USD-style symbols not recognised"
+      ],
+      "gate_policy_when_calendar_unavailable": "fail-open (unchanged; owner decision)",
+      "python_suite_on_branch": {
+        "commit": "c27ced4d",
+        "passed": 4337,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (environmental isolated-metadata case only)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      }
+    }
   }
 }

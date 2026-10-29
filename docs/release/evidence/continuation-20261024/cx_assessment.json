@@ -1348,9 +1348,10 @@
    "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_owner_decisions_20261024.py"
+    "tests/test_owner_decisions_20261024.py",
+    "tests/test_economic_calendar_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: a gate that silently failed open (news blackout in executor threads) restored; tests fail on the old code."
   },
   {
    "id": "CX-SIG-30",
@@ -1942,9 +1943,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "core/risk_authority.py",
-    "tests/test_v20_risk_authority.py"
+    "tests/test_v20_risk_authority.py",
+    "services/economic_calendar.py",
+    "tests/test_economic_calendar_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: the high-impact-news blackout now applies from the engine's executor thread, survives feed outages without poisoning caches, and its DB cache is populated; fail-open when no calendar is available (owner decision)."
   },
   {
    "id": "CX-RISK-02",
@@ -3182,6 +3185,14 @@
     "CX-BT-01"
    ],
    "note": "Backtest execution realism; local evidence only, status unchanged."
+  },
+  {
+   "date": "2026-10-30",
+   "ids": [
+    "CX-RISK-01",
+    "CX-SIG-22"
+   ],
+   "note": "Economic calendar and news blackout fixes; local evidence only, statuses unchanged."
   }
  ]
 }
