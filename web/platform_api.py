@@ -774,10 +774,10 @@ def _require_api_scope(user: dict[str, Any], scope: str) -> None:
 
 
 def _client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
-    return request.client.host if request.client else None
+    # Signed proxy address, then the edge-set header, then the socket (core/client_ip.py).
+    from core.client_ip import client_ip
+
+    return client_ip(request)
 
 
 def _app_base_url_from_env() -> str:
@@ -1270,6 +1270,30 @@ async def operator_ai_test(user: dict[str, Any] = Depends(current_user)) -> dict
     with ai_usage_attribution(user_id=int(user["id"]), workload="diagnostics"):
         result = await test_connection()
     return {"authority": authority, "status": status, "test": result}
+
+
+@router.get("/operator/request-identity")
+async def operator_request_identity(request: Request, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Owner check after deployment: which client address the server derived, and from where.
+
+    Echoes only the caller's own request. Open it in a browser and compare
+    ``client_ip`` with your public address; a forged X-Forwarded-For must not change it.
+    """
+    authority = _platform_operator_authority(user)
+    if authority != "OWNER":
+        raise HTTPException(status_code=403, detail="Strict owner access required")
+    from core.client_ip import resolve_client_ip, trusted_header
+
+    ip, source = resolve_client_ip(request)
+    return {
+        "client_ip": ip,
+        "source": source,
+        "trusted_header": trusted_header() or None,
+        "signed_proxy_configured": len(str(os.getenv("SIGNALRANK_CLIENT_IP_SECRET") or "")) >= 32,
+        "x_forwarded_for_received": request.headers.get("x-forwarded-for"),
+        "x_real_ip_received": request.headers.get("x-real-ip"),
+        "railway_edge": request.headers.get("x-railway-edge"),
+    }
 
 
 @router.get("/operator/ai-spend")

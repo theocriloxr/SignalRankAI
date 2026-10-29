@@ -45,11 +45,10 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     )
 
     # ── IP whitelist check ────────────────────────────────────────────────────
-    client_ip = (
-        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-        or request.headers.get("X-Real-IP", "").strip()
-        or (request.client.host if request.client else "")
-    )
+    # The first X-Forwarded-For value is client-supplied; use the trusted resolver.
+    from core.client_ip import client_ip as _trusted_client_ip
+
+    client_ip = _trusted_client_ip(request) or ""
 
     # Skip IP check in dev/test mode
     import os

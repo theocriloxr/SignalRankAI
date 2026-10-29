@@ -398,6 +398,35 @@
         ]
       }
     },
+    "/api/v1/platform/operator/request-identity": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Request Identity",
+        "description": "Owner check after deployment: which client address the server derived, and from where.\n\nEchoes only the caller's own request. Open it in a browser and compare\n``client_ip`` with your public address; a forged X-Forwarded-For must not change it.",
+        "operationId": "operator_request_identity_api_v1_platform_operator_request_identity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Operator Request Identity Api V1 Platform Operator Request Identity Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/platform/operator/ai-spend": {
       "get": {
         "tags": [

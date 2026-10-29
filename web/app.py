@@ -320,10 +320,10 @@ async def verify_api_key(
 
 
 def _request_client_ip(request: Request) -> str:
-    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",", 1)[0].strip()
-    if forwarded:
-        return forwarded
-    return str(getattr(getattr(request, "client", None), "host", None) or "unknown")
+    # Never the client-supplied first X-Forwarded-For value (core/client_ip.py).
+    from core.client_ip import client_ip
+
+    return client_ip(request) or "unknown"
 
 
 def rate_limit_key(request: Request, category: str = "general") -> str:

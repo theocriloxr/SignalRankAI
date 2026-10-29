@@ -1,11 +1,28 @@
+import { createHmac } from "node:crypto";
+import { isIP } from "node:net";
 import { canonicalApiOrigin } from "./server-origin.ts";
 
 const privateHeaders = {"Cache-Control":"private, no-store, max-age=0, must-revalidate",
   "X-Robots-Tag":"noindex, nofollow, noarchive, nosnippet", "Referrer-Policy":"no-referrer",
   "X-Content-Type-Options":"nosniff"};
+// Never the browser's own x-forwarded-for/x-real-ip: the backend must not trust client-chosen addresses.
 const requestHeaders = ["accept", "content-type", "authorization", "cookie", "origin", "referer",
-  "x-csrf-token", "idempotency-key", "if-match", "if-none-match", "x-request-id",
-  "x-forwarded-for", "x-real-ip", "user-agent"];
+  "x-csrf-token", "idempotency-key", "if-match", "if-none-match", "x-request-id", "user-agent"];
+
+/** Pass on the address the hosting edge saw (x-real-ip), signed when a shared secret is configured.
+ * The signature survives a second trip through the public edge, which would replace x-real-ip
+ * with this server's own address and put every web user in one rate-limit bucket. */
+function forwardClientAddress(request: Request, headers: Headers): void {
+  const address = (request.headers.get("x-real-ip") || "").trim();
+  if (!isIP(address)) return;
+  headers.set("x-real-ip", address);
+  const secret = process.env.SIGNALRANK_CLIENT_IP_SECRET || "";
+  if (secret.length < 32) return;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  headers.set("x-signalrank-client-ip", address);
+  headers.set("x-signalrank-client-ip-ts", timestamp);
+  headers.set("x-signalrank-client-ip-signature", createHmac("sha256", secret).update(`${address}.${timestamp}`).digest("hex"));
+}
 const hopHeaders = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
   "te", "trailer", "transfer-encoding", "upgrade", "content-length", "content-encoding"];
 
@@ -28,6 +45,7 @@ export async function proxyPlatformRequest(request: Request, send: typeof fetch 
     if (value !== null) headers.set(name,value);
   }
   headers.set("accept-encoding","identity");
+  forwardClientAddress(request, headers);
   // This host is only metadata. It can never choose the fixed destination.
   headers.set("x-forwarded-host",incoming.host);
   const method = request.method;

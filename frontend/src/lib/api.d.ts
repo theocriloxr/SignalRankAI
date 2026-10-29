@@ -201,6 +201,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/operator/request-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Request Identity
+         * @description Owner check after deployment: which client address the server derived, and from where.
+         *
+         *     Echoes only the caller's own request. Open it in a browser and compare
+         *     ``client_ip`` with your public address; a forged X-Forwarded-For must not change it.
+         */
+        get: operations["operator_request_identity_api_v1_platform_operator_request_identity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/operator/ai-spend": {
         parameters: {
             query?: never;
@@ -4283,6 +4306,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_request_identity_api_v1_platform_operator_request_identity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
