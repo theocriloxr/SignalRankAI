@@ -13,7 +13,7 @@ Writing tests for the economic calendar (CX-RISK-01, CX-SIG-22) exposed five bug
 - **`EUR/USD`-style symbols were not recognised.**
 - **Tests:** 10 new (1 on real PostgreSQL); 6 of them fail on the previous code; 261 related tests pass. Full suite at `c27ced4d` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,337 passed, 1 failed, 2 skipped**; the failure is the environmental `release_provenance[isolated_metadata]` case.
 - **Behaviour change after promotion:** the 60-minute blackout around high-impact USD events will actually suppress signals for USD-sensitive assets (major USD pairs, gold and silver, BTC/ETH and the US indices) in the all-in-one runtime. This was always the design, but it was not working there.
-- **Owner decision recorded, not changed:** when no calendar source is available the gate lets trading continue (fail-open). Making it fail-closed would stop USD-sensitive signals during every feed outage.
+- **Owner decision (30 Oct): keep fail-open.** When no calendar source is available the gate lets trading continue; fail-closed would stop USD-sensitive signals during every feed outage. Recorded in `requirements_conflicts.md` and locked by `tests/test_owner_decisions_20261030.py`, which also checks the blackout still blocks when event times exist.
 
 ## Continuation, 29 October 2026 — backtest execution realism (owner request)
 

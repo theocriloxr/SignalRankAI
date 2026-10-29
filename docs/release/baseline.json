@@ -306,7 +306,7 @@
         "post-release events dropped from caches",
         "EUR/USD-style symbols not recognised"
       ],
-      "gate_policy_when_calendar_unavailable": "fail-open (unchanged; owner decision)",
+      "gate_policy_when_calendar_unavailable": "fail-open: owner decision 30 Oct 2026, locked by tests/test_owner_decisions_20261030.py",
       "python_suite_on_branch": {
         "commit": "c27ced4d",
         "passed": 4337,
