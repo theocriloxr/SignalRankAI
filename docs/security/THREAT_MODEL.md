@@ -1,6 +1,6 @@
 # THREAT_MODEL — SignalRankAI
 
-Last updated: 2026-09-26  
+Last updated: 2026-10-29 (section 12 extends the model to `0057`; sections 1–11 are the 2026-09-26 baseline)  
 Scope: public web/PWA and Telegram frontdoor, account identity and sessions,
 payments, signal generation, delivery/outcomes, market-data providers, broker
 connections, execution admission, account ledgers, analytics/ML, Redis/Postgres,
@@ -306,3 +306,66 @@ Key deterministic evidence includes:
 A threat marked “mitigated” means the documented control exists and has the
 listed deterministic evidence. It does not mean the threat is impossible or
 that external provider/infrastructure certification has occurred.
+
+## 12. Revision 2026-10-29 — surfaces added since `0045`
+
+Sections 1–11 describe the system at `0045_mt5_credential_retirement` and are
+kept unchanged. This section extends the model to the code on
+`feat/frontend-rebuild-and-stage1-hardening` at schema head
+`0057_expectancy_shadow_index`. Production still runs `9865a3d1` at `0053`,
+so nothing below is a statement about the deployed system. Every control was
+read in the code during this revision and has the cited tests. "Fixed" means
+it was changed in this revision.
+
+### 12.1 New or changed surfaces
+
+| Surface | Entry point | Owner of authority |
+|---|---|---|
+| Rebuilt web frontend (Next.js 16) and its API proxy | browser → `frontend/src/proxy.ts`, `frontend/src/lib/platform-proxy.ts` | backend platform API |
+| Developer API keys and outbound webhooks | `/api/v1/platform/api-keys`, `/webhooks`; `services/platform/webhooks.py` | account owner (plan feature) |
+| Privacy export and deletion request | `/account/export`, `/account/deletion-request` | account owner; support review |
+| Telegram ↔ web account merges | link flow; `/operator/account-merges`; `services/platform/account_merge.py` | owner (apply), owner/admin (preview) |
+| Owner web controls | `/operator/kill-switch/scoped`, `/operator/ai-spend`; `frontend/src/components/OwnerControls.tsx` | owner |
+| AI usage and cost ledger | `services/ai_cost_ledger.py`, migration `0056` | system (budgets), owner (view) |
+| Telegram `/watchlist`, `/journal` and other account commands | bot command wrapper `_audit_handler`; `signalrank_telegram/workspace_commands.py` | account owner |
+| Engine liveness and owner alerts | `engine/stall_watchdog.py`, `observability/owner_alerts.py` | system |
+
+### 12.2 New trust boundaries
+
+- **TB-09 — Browser → web proxy → platform API.** The proxy forwards only `/api/v1/platform/*` to one configured backend origin. It refuses encoded path separators and does not follow redirects. Responses are marked `no-store`. Pages carry a nonce-based Content-Security-Policy with `frame-ancestors 'none'`. Session cookies are `HttpOnly` and `SameSite=Lax`, and cookie-authenticated writes need the double-submit CSRF token (`web/app.py` `platform_csrf_middleware`).
+- **TB-10 — Platform → customer webhook endpoints.** Customers choose the destination URL, so every delivery is a server-side request to an address an outsider controls.
+- **TB-11 — Telegram chat context.** A command's reply goes to the chat it came from. Groups and channels are shared spaces, unlike a private chat.
+- **TB-12 — Owner web controls.** Changes need owner authority, explicit confirmation and a recent sign-in. Kill-switch changes are audited, and a merge applies in one transaction.
+- **TB-13 — One identity across channels.** Web and Telegram read and write the same canonical rows (watchlists, journal, paper, preferences). A reviewed merge moves rows from an archived account to the kept one.
+
+### 12.3 Threat catalogue additions
+
+| ID | Threat | L | I | Controls / evidence | Status |
+|---|---|---:|---:|---|---|
+| TM-28 | Server-side request forgery through webhook destinations, including DNS rebinding between validation and connection | M | H | HTTPS only, no credentials in URLs, port allowlist, optional host allowlist, no redirects, non-global addresses refused, and delivery connects to the validated address with TLS verified against the real hostname; no connection reuse across customers. `tests/test_webhook_ssrf_pinning_20261029.py`, `tests/test_unified_platform_webhooks.py` | **Fixed** (pinning, `is_global`, no keep-alive); mitigated |
+| TM-29 | Password guessing that sidesteps IP-keyed limits | M | H | scrypt hashes; per-account failure limit (10 per 15 min, counted for unknown emails too); TOTP challenges limited to 5 attempts each. `tests/test_login_account_throttle_20261029.py` | **Fixed** (per-account limit); mitigated |
+| TM-30 | Inbox flooding through unauthenticated sign-in-link and reset requests | M | M | per-account cap of 5 emails per hour per purpose, with the same reply for accepted, capped and unknown addresses. `tests/test_account_email_budget_20261029.py` | **Fixed**; mitigated |
+| TM-31 | Account or operations data shown in a Telegram group | M | M/H | the command wrapper refuses all but eight public-information commands outside private chats; `/watchlist` and `/journal` repeat the check. `tests/test_telegram_private_chat_scope_20261029.py`, `tests/test_telegram_workspace_commands_20261029.py` | **Fixed**; mitigated |
+| TM-32 | Cross-site request forgery against cookie sessions | M | H | double-submit CSRF token on every cookie-authenticated write; `SameSite=Lax`; a fixed-origin proxy | Mitigated |
+| TM-33 | Proxy misuse (open proxy, path traversal, header injection) | L | H | fixed destination, path prefix check, encoded-separator rejection, header allowlist, hop-by-hop headers stripped, 30 s timeout. `frontend/scripts/platform-proxy.test.mjs` | Mitigated |
+| TM-34 | Script injection in the web app | L | H | nonce-based CSP with `strict-dynamic`; React escaping; no `dangerouslySetInnerHTML` on user content | Mitigated |
+| TM-35 | One account reading or changing another's watchlists, journal or export | M | H | every query is scoped by canonical user id in shared services; short journal ids match only the caller's entries. `tests/test_multi_user_isolation_postgres_20261024.py`, `tests/test_privacy_requests_20261024.py`, `tests/test_telegram_workspace_commands_20261029.py` | Mitigated |
+| TM-36 | Wrong or partial account merge (data loss, or data moved to the wrong person) | L | H | owner-only apply, repeat-the-id confirmation, recent sign-in, one transaction, rows that would collide stay on the archived account, credentials and sessions never move. `tests/test_account_merge_postgres_20261027.py` | Mitigated; production data not exercised |
+| TM-37 | Kill-switch tampering or an unreadable switch store enabling execution | L | H | owner-only, confirmed and audited changes; an unreadable store blocks execution; switches only add blocks. `tests/test_scoped_kill_switch_20261027.py` | Mitigated |
+| TM-38 | Runaway AI spend (denial of wallet) or prompt-injected AI text | M | M | append-only ledger, budgets that refuse calls once exhausted, deduplicated alerts; AI output stays advisory (TM-16). `tests/test_ai_cost_ledger_budgets_20261028.py` | Mitigated once the owner sets budgets |
+| TM-39 | Silent engine stall (no signals, no alarm) | M | H | bounded database calls in the loop, a stall watchdog that exits a dedicated engine, owner alerts for stalled or silent engines and old queue items. `tests/test_engine_db_call_timeouts_20261029.py`, `tests/test_engine_stall_watchdog_20261028.py`, `tests/test_owner_alerts_20261029.py` | Mitigated; not deployed |
+| TM-40 | Secrets exposed in the public repository | L | H | no secret patterns found in tracked files on 29 Oct (false positives only); secrets live in Railway variables; logs and owner alerts carry no credentials | Mitigated; keep scanning before every push |
+| TM-41 | Known-vulnerable dependencies | M | M/H | 29 Oct: `pip-audit` on `requirements.lock` found 0 known vulnerabilities in 135 packages; `npm audit --omit=dev` found 0 | Mitigated at that date; repeat before each promotion |
+
+### 12.4 Open items (not fixed in this revision)
+
+- **Forwarded-address trust.** Route rate limits and the IP recorded in security events take the client address from a forwarding header. Sign-in and account emails now have per-account limits that do not depend on it. The general API limits and the recorded IP still do. The right fix depends on how the hosting edge sets that header, which must be confirmed on the deployed platform before changing it.
+- **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.
+- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.
+- **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.
+
+### 12.5 How this revision was verified
+
+- Local only: Windows 11, Python 3.13.7, an owned PostgreSQL 17 test cluster migrated to `0057`. Not CI, staging or production.
+- New tests: 17 across the four fixes, 5 of them on real PostgreSQL. 598 related tests pass.
+- The TLS claim in TM-28 was checked directly: a certificate valid only for `127.0.0.1` is refused when a pinned request names another host.
