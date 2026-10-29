@@ -7283,19 +7283,19 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 447,
+      "line_count": 457,
       "path": "docs/release/BRANCH_RECONCILIATION.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "86b05f8b3efb9de0cba352a44ad6b9184a859abe73a0e3913bb21470680f5efc",
-      "size_bytes": 94990
+      "sha256": "02657cde69bcdefc9c5d0cb9a70c9b4bcac2fa740f85997c1bdda079bca12317",
+      "size_bytes": 98201
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 353,
+      "line_count": 363,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "477095b93c1c8d0fd3151fad5c2115c281fcd20d0edad9df09ee8e652353646a",
-      "size_bytes": 38394
+      "sha256": "5c1722d65f52fb94ee9fe5c0971cd2031ee4ff1fcd9c59b4e934470ca4c41924",
+      "size_bytes": 41605
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7323,27 +7323,27 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 345,
+      "line_count": 355,
       "path": "docs/release/MASTER_EXECUTION_CONTRACT.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "08783aa12f79b6034079ae19bb7f7c6eed0f901864d78452c1bcb4bf8164686a",
-      "size_bytes": 36732
+      "sha256": "58af6b90523aca317e0f7483cc648ce5d248b94ce9c89a50af9909cce8bb71af",
+      "size_bytes": 39943
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 60,
+      "line_count": 67,
       "path": "docs/release/PRODUCTION_PROMOTION_PLAN_20261024.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "6148aa2cd745e3b0fae7e52dc918e33f9143c7e660947826c1eee29e189abea4",
-      "size_bytes": 7965
+      "sha256": "d7026d1d02ee83e480280bb78fb335ccec8002f6de6f10da3ae31aa71f3efe07",
+      "size_bytes": 8757
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 269,
+      "line_count": 279,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "db59de9ebf775dbd435aff0d8b5274ae69b1ad171edd56ad2bf2b3dee6a21e94",
-      "size_bytes": 34454
+      "sha256": "5c69d25b446b9ec8489eabfa92158b885cf0c3e2e3c8f726b491b2a02f51a45f",
+      "size_bytes": 37665
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7363,11 +7363,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 141,
+      "line_count": 188,
       "path": "docs/release/baseline.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "745e0552b50e16f004b7156f61bc04c981b7ffd1247af63560ee3d11b430bb15",
-      "size_bytes": 7411
+      "sha256": "db44dd600123bc9272094327dfad6be13f75bd4ab94ae898d06746715284dda3",
+      "size_bytes": 8946
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -9411,11 +9411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 3102,
+      "line_count": 3123,
       "path": "docs/release/evidence/continuation-20261024/cx_assessment.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "3a9e17ef36586505e6737975d148cb4c1fd6954ec9e115ff568c6c316c2a103e",
-      "size_bytes": 90877
+      "sha256": "400b3e0624b93b2a0f93f2efe4bff34c4d6041511b5660929380811447364143",
+      "size_bytes": 92079
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10227,11 +10227,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 526058,
+      "line_count": 526105,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "0b73ba4628f784ad28e3d79c91eaa9ee937ef590de0ff17e8e9867a76063bcad",
-      "size_bytes": 24451069
+      "sha256": "a9707f59dcf6fea6f880a960e1fe627248642ca63ce896a9aaff61dceac554b4",
+      "size_bytes": 24452698
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10254,7 +10254,7 @@
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "9c55fd36cdd7a31c9b94525d8634a582324364dcc4cb5375ede75ca3d1d188ac",
+      "sha256": "0df5dea63f3a251198ca5b0e5022b664e761a2d99e97189deffdea60481402fe",
       "size_bytes": 2986
     },
     {

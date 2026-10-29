@@ -147,6 +147,53 @@
         "qualification": "n >= 2 x EXPECTANCY_MIN_SAMPLE and lower 95% bound minus 0.05 R >= EXPECTANCY_MIN",
         "python_suite": "Full Python suite at `698a0191` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,258 passed, 2 failed, 2 skipped**; failures are V7 governance freshness (regenerated next) and the environmental `release_provenance[isolated_metadata]` case."
       }
+    },
+    "continuation_20261029": {
+      "branch": "feat/frontend-rebuild-and-stage1-hardening",
+      "commits": "b0bf1c78..82c35b66",
+      "production_authorized": false,
+      "live_trading_authorized": false,
+      "deployed": false,
+      "engine_db_call_timeouts": {
+        "setting": "ENGINE_DB_CALL_TIMEOUT_SECONDS (default 10, clamped 1-120)",
+        "previously_unbounded_calls": 5,
+        "corrects": "28 Oct docs said thirteen"
+      },
+      "owner_alerts": {
+        "events": [
+          "engine_stalled",
+          "engine_silent",
+          "queue_age",
+          "provider_outage"
+        ],
+        "settings": {
+          "OWNER_ALERTS_ENABLED": "default on",
+          "OWNER_ALERTS_INTERVAL_SECONDS": 120,
+          "OWNER_ALERT_ENGINE_SILENT_SECONDS": 900,
+          "OWNER_ALERT_QUEUE_AGE_SECONDS": 300
+        },
+        "telegram_delivery_exercised": false
+      },
+      "owner_web_screens": [
+        "scoped kill switches",
+        "account merge review",
+        "AI spend"
+      ],
+      "python_suite_on_branch": {
+        "commit": "82c35b66",
+        "passed": 4273,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (environmental isolated-metadata case only)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      },
+      "frontend_checks": {
+        "transport_tests": 71,
+        "presentation_tests": 38,
+        "tsc": "clean",
+        "eslint": "clean"
+      },
+      "local_stack_verification": "Owned PostgreSQL 17 test cluster, synthetic owner; not CI, staging or production"
     }
   },
   "inventory_is_verification": false,

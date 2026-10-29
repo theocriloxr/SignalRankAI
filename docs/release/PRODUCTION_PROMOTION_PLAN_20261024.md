@@ -50,7 +50,14 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 - Nixpacks gains a `[phases.build]` step writing `.build-timestamp` (`|| true`, cannot fail a build).
 - Dependency upgrades: Next.js 16.4.2 (public web only after repointing), aiohttp 3.14.5, certifi 2026.10.19, OpenTelemetry 1.45.1, Pillow 13.0.0.
 - New owner-only endpoints: scoped kill switches and reviewed account merges. HSTS (`max-age=31536000`, no subdomains) on HTTPS responses; `SECURITY_HSTS_ENABLED=0` turns it off on the API.
-- No new migration: the head is still `0055`.
+- Migrations `0056` and `0057` were added on 28 Oct (see Migrations above).
+
+## Changes added on 29 October that a promotion would also deploy
+
+- Engine database calls time out after `ENGINE_DB_CALL_TIMEOUT_SECONDS` (default 10 s); the exposure check refuses the trade on a timeout.
+- **New outward behaviour:** the worker sends owner Telegram alerts (`engine_silent`, `queue_age`) and the engine sends `engine_stalled`, using the existing `TELEGRAM_BOT_TOKEN` and `OWNER_IDS`. The first worker pass after promotion may alert about the engine if it is not cycling. `OWNER_ALERTS_ENABLED=0` on the worker turns the worker alerts off.
+- Owner web screens (scoped kill switches, account merges, AI spend) reach users only after the public web service is repointed (step 7).
+- No new migration: the head stays `0057_expectancy_shadow_index`.
 
 ## Known limits at promotion time
 

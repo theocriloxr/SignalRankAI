@@ -888,9 +888,10 @@
     "tests/test_unified_platform_identity.py",
     "services/platform/account_merge.py",
     "tests/test_account_merge_postgres_20261027.py",
-    "tools/complete_account_merge.py"
+    "tools/complete_account_merge.py",
+    "frontend/src/components/OwnerControls.tsx"
    ],
-   "note": "27 Oct: reviewed Telegram/web merges can now be completed (owner endpoint or CLI) without deleting data; previously they stayed in merge_review forever. Real-PostgreSQL tests. Not exercised against production data."
+   "note": "27 Oct: reviewed Telegram/web merges can now be completed (owner endpoint or CLI) without deleting data; previously they stayed in merge_review forever. Real-PostgreSQL tests. Not exercised against production data. 29 Oct: web review screen; merge exercised end to end on the owned local stack."
   },
   {
    "id": "CX-USER-03",
@@ -1972,9 +1973,11 @@
     "core/scoped_kill_switch.py",
     "tests/test_scoped_kill_switch_20261027.py",
     "services/mt5_signal_router.py",
-    "services/bybit_signal_router.py"
+    "services/bybit_signal_router.py",
+    "frontend/src/components/OwnerControls.tsx",
+    "frontend/scripts/owner-controls.test.mjs"
    ],
-   "note": "27 Oct: strategy, instrument and asset-class switches beside the global one; fail closed when unreadable; enforced at the MT5 and Bybit chokepoints; owner-only confirmed endpoint with bounded audit trail. Concurrent owner edits can lose an update (read-modify-write). No web UI yet. core/risk_authority.py (previous evidence) is not wired into runtime."
+   "note": "27 Oct: strategy, instrument and asset-class switches beside the global one; fail closed when unreadable; enforced at the MT5 and Bybit chokepoints; owner-only confirmed endpoint with bounded audit trail. Concurrent owner edits can lose an update (read-modify-write). No web UI yet. core/risk_authority.py (previous evidence) is not wired into runtime. 29 Oct: owner web screen to engage/release scoped switches with confirmation."
   },
   {
    "id": "CX-RISK-05",
@@ -2452,9 +2455,11 @@
     "engine/stall_watchdog.py",
     "tests/test_engine_stall_watchdog_20261028.py",
     "engine/expectancy_shadow.py",
-    "tests/test_expectancy_shadow_bootstrap_20261028.py"
+    "tests/test_expectancy_shadow_bootstrap_20261028.py",
+    "tests/test_engine_db_call_timeouts_20261029.py",
+    "observability/owner_alerts.py"
    ],
-   "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs. 28 Oct (read-only Railway logs): engine loop hung at 2026-10-22 08:08:30 UTC when Postgres restarted; process stayed Online. Stall watchdog added (not deployed)."
+   "note": "Engine not cycling in prod (heartbeat absent). 27 Oct: early cycle exits now publish a 'skipped' heartbeat with the reason, so readiness can tell a skipping engine from a stopped one once deployed. Root cause still needs Railway logs. 28 Oct (read-only Railway logs): engine loop hung at 2026-10-22 08:08:30 UTC when Postgres restarted; process stayed Online. Stall watchdog added (not deployed). 29 Oct: every engine-loop database call bounded; owner alerted on a stalled or silent engine. Not deployed."
   },
   {
    "id": "CX-SEC-01",
@@ -2603,9 +2608,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "observability/prometheus",
-    "core/telemetry.py"
+    "core/telemetry.py",
+    "observability/owner_alerts.py",
+    "tests/test_owner_alerts_20261029.py"
    ],
-   "note": "Alert routing unverified."
+   "note": "Alert routing unverified. 29 Oct: owner Telegram alerts for engine stall/silence, queue age and provider outages, each with a runbook; real Telegram delivery not exercised."
   },
   {
    "id": "CX-OBS-05",
@@ -2624,9 +2631,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "web/platform_api.py"
+    "web/platform_api.py",
+    "frontend/src/components/OwnerControls.tsx"
    ],
-   "note": "Operator overview and diagnostics; several listed tools CLI-only."
+   "note": "Operator overview and diagnostics; several listed tools CLI-only. 29 Oct: web owner screens for scoped kill switches, account merges and AI spend."
   },
   {
    "id": "CX-ADMIN-02",
@@ -2738,9 +2746,10 @@
    "evidence": [
     "services/ai_cost_ledger.py",
     "db/migrations/versions/0056_ai_usage_ledger.py",
-    "tests/test_ai_cost_ledger_budgets_20261028.py"
+    "tests/test_ai_cost_ledger_budgets_20261028.py",
+    "frontend/src/components/OwnerControls.tsx"
    ],
-   "note": "Only OpenAI token counters exist; no attribution/budgets. 28 Oct: append-only AI usage/cost ledger with per-provider/workload/user attribution and fail-closed budgets (real-PostgreSQL tests). Budgets not yet set by the owner; not deployed."
+   "note": "Only OpenAI token counters exist; no attribution/budgets. 28 Oct: append-only AI usage/cost ledger with per-provider/workload/user attribution and fail-closed budgets (real-PostgreSQL tests). Budgets not yet set by the owner; not deployed. 29 Oct: owner web spend view."
   },
   {
    "id": "CX-CAP-01",
@@ -3097,6 +3106,18 @@
     "CX-Q-05"
    ],
    "note": "Expectancy shadow evidence; local evidence only."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-ADMIN-01",
+    "CX-COST-01",
+    "CX-OBS-04",
+    "CX-Q-05",
+    "CX-RISK-04",
+    "CX-USER-02"
+   ],
+   "note": "Engine DB timeouts, owner alerts, owner web screens; local evidence only, statuses unchanged."
   }
  ]
 }
