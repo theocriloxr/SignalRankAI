@@ -2298,11 +2298,23 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
 
 @router.post("/auth/login")
 async def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
+    import asyncio
+
+    from services.platform import login_throttle
+
+    # Keyed on the account, not the client-supplied forwarded address.
+    if await asyncio.to_thread(login_throttle.is_locked, payload.email):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-in attempts. Wait 15 minutes, or sign in with an email link or reset your password.",
+            headers={"Retry-After": str(login_throttle.window_seconds())},
+        )
     try:
         async with get_session() as session:
             user_id = await authenticate_email_password(session, email=payload.email, password=payload.password)
             await session.commit()
     except (AuthenticationError, ValueError) as exc:
+        await asyncio.to_thread(login_throttle.record_failure, payload.email)
         raise HTTPException(status_code=401, detail="Invalid credentials") from exc
     return await _create_login_response(
         response,
