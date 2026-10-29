@@ -264,7 +264,7 @@
     "tests/test_secret_scan_documents.py",
     "tests/test_startup_selfcheck_secret_redaction.py"
    ],
-   "note": "Secret-scan tests pass locally; one-time API/webhook secrets kept in memory only."
+   "note": "Secret-scan tests pass locally; one-time API/webhook secrets kept in memory only. 29 Oct: secret-pattern scan of tracked files found only false positives."
   },
   {
    "id": "CX-HIST-01",
@@ -2229,9 +2229,12 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "frontend/src/styles/tokens.css",
-    "frontend/scripts/cinematic-contract.test.mjs"
+    "frontend/scripts/cinematic-contract.test.mjs",
+    "scripts/a11y_audit.py",
+    "frontend/scripts/accessibility.test.mjs",
+    "docs/release/evidence/continuation-20261029/a11y_audit.json"
    ],
-   "note": "Checked at 375/1024/1440 px; no automated axe audit run. 27 Oct: 320/375/414 px checks on 8 routes in the production build found the public Menu button off-screen at 320 px (fixed, regression test); basic a11y sweep (labels, names, headings, ids, autocomplete) clean on Settings, Signals, Login. axe not run (strict CSP)."
+   "note": "Checked at 375/1024/1440 px; no automated axe audit run. 27 Oct: 320/375/414 px checks on 8 routes in the production build found the public Menu button off-screen at 320 px (fixed, regression test); basic a11y sweep (labels, names, headings, ids, autocomplete) clean on Settings, Signals, Login. axe not run (strict CSP). 29 Oct: axe-core WCAG 2.2 A/AA on 40 pages, two themes, two widths, plus 320 px keyboard/reflow: 0 of 200 runs failing after fixes (128 of 140 before). Manual screen-reader checks pending."
   },
   {
    "id": "CX-WEB-03",
@@ -2473,9 +2476,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "docs/SECURITY_AND_IDENTITY.md"
+    "docs/SECURITY_AND_IDENTITY.md",
+    "docs/security/THREAT_MODEL.md"
    ],
-   "note": "Not a full STRIDE register."
+   "note": "Not a full STRIDE register. 29 Oct: section 12 extends the model to 0057 (TB-09..TB-13, TM-28..TM-41); still not an external review."
   },
   {
    "id": "CX-SEC-02",
@@ -2485,9 +2489,16 @@
    "evidence": [
     "frontend/src/proxy.ts",
     "tests/test_web_rate_limit_middleware.py",
-    "tests/test_auth_fail_closed_boundaries.py"
+    "tests/test_auth_fail_closed_boundaries.py",
+    "services/platform/webhooks.py",
+    "services/platform/login_throttle.py",
+    "signalrank_telegram/chat_scope.py",
+    "tests/test_webhook_ssrf_pinning_20261029.py",
+    "tests/test_login_account_throttle_20261029.py",
+    "tests/test_account_email_budget_20261029.py",
+    "tests/test_telegram_private_chat_scope_20261029.py"
    ],
-   "note": ""
+   "note": "29 Oct: webhook address pinning, per-account sign-in limit, account email cap, private-chat-only bot commands."
   },
   {
    "id": "CX-SEC-03",
@@ -2532,7 +2543,7 @@
     "frontend/package-lock.json",
     "requirements-market-data-sdk.lock"
    ],
-   "note": "CI blocked by billing so gates do not run on push. 27 Oct: npm audit 0 vulnerabilities after Next.js 16.3.8->16.4.2 (two critical RCE advisories) and zod; pip-audit found 49 advisories in aiohttp, certifi, opentelemetry-api and Pillow, all bumped (7-day release-age rule respected)."
+   "note": "CI blocked by billing so gates do not run on push. 27 Oct: npm audit 0 vulnerabilities after Next.js 16.3.8->16.4.2 (two critical RCE advisories) and zod; pip-audit found 49 advisories in aiohttp, certifi, opentelemetry-api and Pillow, all bumped (7-day release-age rule respected). 29 Oct: pip-audit (requirements.lock) and npm audit (production) both 0 known vulnerabilities."
   },
   {
    "id": "CX-SEC-07",
@@ -3133,6 +3144,17 @@
     "CX-TG-01"
    ],
    "note": "Telegram /watchlist and /journal on shared services; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-AUTH-04",
+    "CX-SEC-01",
+    "CX-SEC-02",
+    "CX-SEC-06",
+    "CX-WEB-02"
+   ],
+   "note": "Threat model revision, four security fixes, accessibility audit; local evidence only, statuses unchanged."
   }
  ]
 }

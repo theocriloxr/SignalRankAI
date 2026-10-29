@@ -58,6 +58,7 @@ Separately, `start.sh` runs `scripts/assert_release_source.py` on every Railway 
 - **New outward behaviour:** the worker sends owner Telegram alerts (`engine_silent`, `queue_age`) and the engine sends `engine_stalled`, using the existing `TELEGRAM_BOT_TOKEN` and `OWNER_IDS`. The first worker pass after promotion may alert about the engine if it is not cycling. `OWNER_ALERTS_ENABLED=0` on the worker turns the worker alerts off.
 - Owner web screens (scoped kill switches, account merges, AI spend) reach users only after the public web service is repointed (step 7).
 - New free Telegram commands `/watchlist` and `/journal` (private chats only); the bot's command menu updates on its next start. The web Watchlists page gains remove and delete controls (public web only after repointing).
+- Security behaviour after promotion: 10 failed passwords in 15 minutes lock password sign-in for that account (`LOGIN_MAX_FAILURES_PER_ACCOUNT`, `LOGIN_FAILURE_WINDOW_SECONDS`); sign-in-link and reset emails are capped at 5 per account per hour (`ACCOUNT_EMAIL_MAX_PER_HOUR`); bot account commands no longer answer in groups; webhook deliveries connect only to the validated address.
 - No new migration: the head stays `0057_expectancy_shadow_index`.
 
 ## Known limits at promotion time

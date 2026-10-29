@@ -219,6 +219,38 @@
           "result": "FAIL (environmental isolated-metadata case only)",
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
+      },
+      "threat_model_and_accessibility": {
+        "commits": "6360f648..28c0c39e",
+        "threat_model": "docs/security/THREAT_MODEL.md section 12 (TM-28..TM-41)",
+        "security_fixes": [
+          "webhook delivery pinned to the validated address",
+          "per-account failed sign-in limit",
+          "per-account sign-in-link and reset email cap",
+          "account bot commands private-chat only"
+        ],
+        "dependency_audit": {
+          "pip_audit_requirements_lock": "0 known vulnerabilities, 135 packages",
+          "npm_audit_production": "0 known vulnerabilities",
+          "date": "2026-10-29"
+        },
+        "accessibility": {
+          "tool": "axe-core via Playwright Chromium + 320 px keyboard/reflow checks",
+          "pages": 40,
+          "runs_before": 140,
+          "runs_failing_before": 128,
+          "runs_after": 200,
+          "runs_failing_after": 0,
+          "evidence": "docs/release/evidence/continuation-20261029/a11y_audit.json"
+        },
+        "python_suite_on_branch": {
+          "commit": "28c0c39e",
+          "passed": 4299,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
       }
     }
   },
