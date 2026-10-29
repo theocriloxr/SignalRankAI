@@ -2187,9 +2187,10 @@
     "tests/test_command_contracts.py",
     "tests/test_callback_contract.py",
     "tests/test_telegram_web_parity_20261028.py",
-    "tests/test_telegram_workspace_commands_20261029.py"
+    "tests/test_telegram_workspace_commands_20261029.py",
+    "tests/test_telegram_menu_limit_20261029.py"
    ],
-   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level. 29 Oct: /watchlist and /journal handlers tested against real PostgreSQL; deployed bot still unverified."
+   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level. 29 Oct: /watchlist and /journal handlers tested against real PostgreSQL; deployed bot still unverified. 29 Oct: owner/admin menus keep every operator command within Telegram's 100-command limit."
   },
   {
    "id": "CX-TG-02",
@@ -3165,6 +3166,13 @@
     "CX-SEC-02"
    ],
    "note": "Client address trust; local evidence only, status unchanged."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-TG-01"
+   ],
+   "note": "Owner Telegram menu; local evidence only, status unchanged."
   }
  ]
 }

@@ -266,6 +266,25 @@
           "result": "FAIL (environmental isolated-metadata case only)",
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
+      },
+      "owner_telegram_menu": {
+        "commits": "767e6e95..2f892415",
+        "menu_sizes": {
+          "FREE": 40,
+          "PREMIUM": 63,
+          "VIP": 68,
+          "ADMIN": 98,
+          "OWNER": 98
+        },
+        "operator_commands_in_owner_menu": "55 of 55",
+        "python_suite_on_branch": {
+          "commit": "2f892415",
+          "passed": 4319,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
       }
     }
   },
@@ -3220,7 +3239,7 @@
     },
     {
       "path": "docs/security/THREAT_MODEL.md",
-      "sha256_lf": "d3e1fbcc306302c49e9b77956dff6fffcd180756ae65f125be2095baf294a87e",
+      "sha256_lf": "ffb9923510080582387db56a631696f7b450448c3620ca617de7cad630d84c1f",
       "encoding": "utf-8-sig",
       "line_count": 382,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
@@ -249913,10 +249932,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "18184ae1719e3d19f9ce5e72f12553b16a921d7c5a56ed6ed0b29e5f99b531b6",
+      "source_sha256": "efe9901f123411c4e1c0990827bf51352ca9d26eeafa3744879ea85560681b14",
       "line_start": 360,
       "line_end": 366,
-      "text": "### 12.4 Open items (not fixed in this revision)\n\n- **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*\n- **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.\n- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.\n- **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.\n",
+      "text": "### 12.4 Open items (not fixed in this revision)\n\n- **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*\n- **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.\n- **Owner Telegram menu.** *Fixed later on 29 Oct:* the owner menu keeps every operator command (98 of 100). This was usability, not access control.\n- **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.\n",
       "clauses": [
         {
           "line": 360,
@@ -249932,7 +249951,7 @@
         },
         {
           "line": 364,
-          "text": "- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control."
+          "text": "- **Owner Telegram menu.** *Fixed later on 29 Oct:* the owner menu keeps every operator command (98 of 100). This was usability, not access control."
         },
         {
           "line": 365,

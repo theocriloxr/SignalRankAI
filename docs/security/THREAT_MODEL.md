@@ -361,7 +361,7 @@ it was changed in this revision.
 
 - **Forwarded-address trust.** *Resolved later on 29 Oct; see 12.6.*
 - **Webhook response text.** Delivery stores up to 500 characters of the receiver's reply. It is not exposed to users today; keep it that way, or redact it before exposing.
-- **Owner Telegram menu.** It shows 100 of 123 catalogue commands (a Telegram limit); `/help` lists all of them. This is usability, not access control.
+- **Owner Telegram menu.** *Fixed later on 29 Oct:* the owner menu keeps every operator command (98 of 100). This was usability, not access control.
 - **Everything in section 10**, plus: no staging environment, no exercised provider/broker/payment sandboxes, and GitHub Actions currently unavailable, so all evidence in this section is local.
 
 ### 12.5 How this revision was verified

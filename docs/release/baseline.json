@@ -256,6 +256,25 @@
         "result": "FAIL (environmental isolated-metadata case only)",
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       }
+    },
+    "owner_telegram_menu": {
+      "commits": "767e6e95..2f892415",
+      "menu_sizes": {
+        "FREE": 40,
+        "PREMIUM": 63,
+        "VIP": 68,
+        "ADMIN": 98,
+        "OWNER": 98
+      },
+      "operator_commands_in_owner_menu": "55 of 55",
+      "python_suite_on_branch": {
+        "commit": "2f892415",
+        "passed": 4319,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (environmental isolated-metadata case only)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      }
     }
   }
 }
