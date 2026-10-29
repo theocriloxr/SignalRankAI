@@ -1636,7 +1636,10 @@ def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200
 
 
 def _publish_engine_stall(details: dict[str, Any]) -> None:
-    """Heartbeat published by the stall watchdog; readiness treats ``stalled`` as not ready."""
+    """Heartbeat published by the stall watchdog; readiness treats ``stalled`` as not ready.
+
+    The owner is alerted here, before the watchdog exits the process.
+    """
     _publish_engine_cycle_state(
         {
             **details,
@@ -1645,6 +1648,12 @@ def _publish_engine_stall(details: dict[str, Any]) -> None:
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
     )
+    try:
+        from observability.owner_alerts import engine_stall_alert
+
+        engine_stall_alert(details)
+    except Exception:
+        logger.warning("[engine_stall] owner alert failed", exc_info=True)
 
 
 def _publish_engine_cycle_skip(cycle_no: int, reason: str, sleep_seconds: float) -> None:
@@ -1911,7 +1920,12 @@ def start_outage_alert_job():
                         )
                         if not claimed:
                             continue
-                        msg = f"🚨 Provider outage ({stage}): {name} has been down for {mins:.1f} minutes."
+                        from observability.owner_alerts import RUNBOOK
+
+                        msg = (
+                            f"🚨 Provider outage ({stage}): {name} has been down for {mins:.1f} minutes."
+                            f"\n\n{RUNBOOK['provider_outage']}"
+                        )
                         for admin_id in OWNER_IDS or []:
                             try:
                                 _requests.post(

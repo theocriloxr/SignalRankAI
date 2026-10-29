@@ -398,6 +398,33 @@ class RecoverableStream:
             "dead_letter_depth": int(await client.xlen(self.dead_letter_name)),
         }
 
+    async def oldest_unprocessed_age_seconds(self, now_ms: int | None = None) -> float | None:
+        """Age of the oldest message the group has not acknowledged; ``None`` when caught up.
+
+        Read-only: unlike ``metrics`` it never creates the stream or the group.
+        Covers both messages read but not acknowledged and messages not read yet.
+        """
+        client = await self._get_client()
+        if client is None:
+            return None
+        oldest_ids: list[str] = []
+        pending = await client.xpending(self.name, self.group)
+        if isinstance(pending, dict) and int(pending.get("pending") or 0) > 0 and pending.get("min"):
+            oldest_ids.append(str(pending["min"]))
+        last_delivered = None
+        for group in await client.xinfo_groups(self.name):
+            if str(group.get("name")) == self.group:
+                last_delivered = str(group.get("last-delivered-id") or "0-0")
+        if last_delivered is not None:
+            unread = await client.xrange(self.name, min=f"({last_delivered}", max="+", count=1)
+            if unread:
+                oldest_ids.append(str(unread[0][0]))
+        if not oldest_ids:
+            return None
+        oldest_ms = min(int(message_id.split("-", 1)[0]) for message_id in oldest_ids)
+        now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        return max(0.0, (now - oldest_ms) / 1000.0)
+
     async def close(self) -> None:
         client, self._client = self._client, None
         self._group_ready = False

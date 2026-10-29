@@ -259,6 +259,10 @@ class Worker:
         else:
             logger.info("[worker] ShadowOutcomeTracker disabled for this worker instance")
 
+        # Owner alerts for a silent engine and old queue items (observability/owner_alerts.py).
+        if _env_bool("OWNER_ALERTS_ENABLED", True):
+            _register_task("owner_alerts", lambda: self._owner_alerts_loop(), restart_on_failure=True)
+
         # Start market monitor for NO TRADE alerts
         if config.MARKET_MONITOR_ENABLED:
             try:
@@ -1237,6 +1241,23 @@ class Worker:
         finally:
             with contextlib.suppress(Exception):
                 await outcome_tracker.stop()
+
+    async def _owner_alerts_loop(self) -> None:
+        from observability.owner_alerts import run_checks_once
+
+        try:
+            interval = max(60.0, float(os.getenv("OWNER_ALERTS_INTERVAL_SECONDS", "120") or 120))
+        except ValueError:
+            interval = 120.0
+        while not self._stop.is_set():
+            try:
+                await run_checks_once()
+            except Exception as exc:
+                logger.warning("[worker] owner alert checks failed: %s", type(exc).__name__)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
     async def _shadow_outcome_tracker_loop(self, shadow_outcome_worker) -> None:
         await shadow_outcome_worker.start()
