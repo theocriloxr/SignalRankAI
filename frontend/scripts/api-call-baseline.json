@@ -92,6 +92,18 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/platform/operator/account-merges"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/operator/account-merges/{merge_id}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/v1/platform/operator/ai-spend"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/platform/operator/overview"
   },
   {
@@ -253,6 +265,14 @@
   {
    "method": "POST",
    "path": "/api/v1/platform/notifications/{notification_id}/read"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/operator/account-merges/{merge_id}/apply"
+  },
+  {
+   "method": "POST",
+   "path": "/api/v1/platform/operator/kill-switch/scoped"
   },
   {
    "method": "POST",

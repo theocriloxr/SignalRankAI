@@ -181,6 +181,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/operator/kill-switch/scoped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator Scoped Kill Switch
+         * @description Engage or release one strategy, instrument or asset-class execution switch.
+         */
+        post: operations["operator_scoped_kill_switch_api_v1_platform_operator_kill_switch_scoped_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/ai-spend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Ai Spend
+         * @description Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts.
+         */
+        get: operations["operator_ai_spend_api_v1_platform_operator_ai_spend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/account-merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Account Merges
+         * @description Telegram/web merges waiting for review (owners and admins).
+         */
+        get: operations["operator_account_merges_api_v1_platform_operator_account_merges_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/account-merges/{merge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operator Account Merge Preview
+         * @description Read-only preview of what a merge would move, keep and never move.
+         */
+        get: operations["operator_account_merge_preview_api_v1_platform_operator_account_merges__merge_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/account-merges/{merge_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator Account Merge Apply
+         * @description Complete a reviewed merge; owner only, confirmed, recent sign-in, single transaction.
+         */
+        post: operations["operator_account_merge_apply_api_v1_platform_operator_account_merges__merge_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/operator/maintenance": {
         parameters: {
             query?: never;
@@ -3067,6 +3167,16 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
         };
+        /** OperatorAccountMergeRequest */
+        OperatorAccountMergeRequest: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Confirm Merge Id */
+            confirm_merge_id: string;
+        };
         /** OperatorAdaptiveRequest */
         OperatorAdaptiveRequest: {
             /** Action */
@@ -3174,6 +3284,25 @@ export interface components {
              * @default dead_letter
              */
             target: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** OperatorScopedKillSwitchRequest */
+        OperatorScopedKillSwitchRequest: {
+            /** Action */
+            action: string;
+            /** Scope */
+            scope?: string | null;
+            /** Key */
+            key?: string | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
             /**
              * Confirm
              * @default false
@@ -4098,6 +4227,166 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OperatorKillSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_scoped_kill_switch_api_v1_platform_operator_kill_switch_scoped_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorScopedKillSwitchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_ai_spend_api_v1_platform_operator_ai_spend_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_account_merges_api_v1_platform_operator_account_merges_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    operator_account_merge_preview_api_v1_platform_operator_account_merges__merge_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                merge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operator_account_merge_apply_api_v1_platform_operator_account_merges__merge_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                merge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorAccountMergeRequest"];
             };
         };
         responses: {

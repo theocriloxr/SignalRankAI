@@ -24,6 +24,7 @@ import { BillingCenter } from "./BillingCenter";
 import { DeveloperAccess } from "./DeveloperAccess";
 import { PlanAndReferrals } from "./PlanAndReferrals";
 import { PrivacyCenter } from "./PrivacyCenter";
+import { OwnerControls } from "./OwnerControls";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import { Icon, type IconName } from "./ui/Icon";
 import { Badge, Card, DirectionBadge, Empty, KV, KVList, Notice, Skeleton, Stat, TableWrap, type Tone } from "./ui/primitives";
@@ -63,7 +64,7 @@ const descriptions: Record<Section, string> = {
   billing: "Plans, checkout, renewal and receipts from the billing service.",
   support: "Your support conversations with the SignalRankAI team.",
   settings: "Signal preferences, identity, security, plan, developer access and privacy.",
-  operations: "Owner-only, read-only release posture and execution controls.",
+  operations: "Owner-only release posture, execution controls, account merges and AI spend.",
 };
 
 export const workspaceTitles = titles;
@@ -284,7 +285,7 @@ function ResearchView({ data }: { data: Row }) {
 function OperationsView({ data }: { data: Row }) {
   const release=record(data.release),execution=record(data.execution);
   const flag=(value:unknown, dangerOn=false)=>value===true?<Badge tone={dangerOn?"warning":"positive"}>On</Badge>:value===false?<Badge tone={dangerOn?"positive":"neutral"}>Off</Badge>:<Badge>Unavailable</Badge>;
-  return <div className="ws-stack"><Notice tone="warning">Owner-authorized, read-only release posture. A healthy process is not evidence of trading readiness. No kill-switch or live-money state is changed here.</Notice>
+  return <div className="ws-stack"><Notice tone="warning">Owner-authorized release posture. A healthy process is not evidence of trading readiness. The controls below change only what they name, need confirmation, and never enable live-money trading.</Notice>
     <div className="ws-grid-2">
       <Card title="Deployed source" eyebrow="Runtime identity"><KVList><KV label="Environment" value={display(release.environment)}/><KV label="Branch" value={display(release.branch)}/><KV label="Commit" value={<span className="mono">{display(release.commit)}</span>}/></KVList></Card>
       <Card title="Execution controls" eyebrow="Safety posture"><KVList><KV label="Live financial features" value={flag(execution.live_financial_features_enabled,true)}/><KV label="Real execution" value={flag(execution.real_execution_enabled,true)}/><KV label="Automated execution" value={flag(execution.auto_execution_enabled,true)}/><KV label="Global kill switch" value={flag(execution.kill_switch)}/></KVList></Card>
@@ -353,7 +354,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="brokers"?<div className="ws-stack"><BrokerAccounts data={state.data} onChanged={refresh}/><DemoBrokerConnection onChanged={refresh}/></div>:
       section==="markets"?<div className="ws-stack"><MarketDirectory/><QualityView data={state.data}/></div>:
       section==="billing"?<BillingCenter data={state.data} onChanged={refresh}/>:
-      section==="operations"?<OperationsView data={state.data}/>:
+      section==="operations"?<div className="ws-stack"><OperationsView data={state.data}/><OwnerControls authority={display(state.data.authority,"")}/></div>:
       section==="notifications"?<div className="ws-stack"><NotificationCenter data={state.data} onChanged={refresh}/><NotificationPreferences/></div>:
       section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
       section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:

@@ -171,6 +171,8 @@
   position: sticky; top: 0;
 }
 .ui-table tbody th { font-weight: 600; color: var(--text); }
+.ui-table--compact { min-width: 0; width: 100%; }
+.ui-table--compact th, .ui-table--compact td { white-space: normal; overflow-wrap: anywhere; }
 .ui-table tbody td { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ui-table tbody tr:last-child > * { border-bottom: 0; }
 .ui-table tbody tr:hover > * { background: var(--surface-hover); }

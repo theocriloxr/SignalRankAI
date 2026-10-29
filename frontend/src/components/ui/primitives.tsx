@@ -79,9 +79,10 @@ export function Feedback({ error = false, children }: { error?: boolean; childre
   return <p className={error ? "ui-feedback ui-feedback--error" : "ui-feedback"} role={error ? "alert" : "status"}>{children}</p>;
 }
 
-export function TableWrap({ label, children, id }: { label: string; children: ReactNode; id?: string }) {
+/** ``compact`` drops the minimum width and lets cells wrap, for narrow two- or three-column tables. */
+export function TableWrap({ label, children, id, compact = false }: { label: string; children: ReactNode; id?: string; compact?: boolean }) {
   return <div className="ui-table-wrap" tabIndex={0} role="region" aria-label={label} id={id}>
-    <table className="ui-table">{children}</table>
+    <table className={compact ? "ui-table ui-table--compact" : "ui-table"}>{children}</table>
   </div>;
 }
 
