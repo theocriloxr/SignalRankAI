@@ -3879,6 +3879,16 @@ def _audit_handler(command_name: str, handler):
             await acknowledge_command(update, context)
         except Exception:
             pass
+        # Account and operator replies never go to a group (signalrank_telegram/chat_scope.py).
+        from signalrank_telegram.chat_scope import PRIVATE_ONLY_REPLY, allowed_in_this_chat
+
+        if not allowed_in_this_chat(str(command_name), update):
+            try:
+                if getattr(update, "message", None) is not None:
+                    await update.message.reply_text(PRIVATE_ONLY_REPLY)
+            except Exception:
+                pass
+            return
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
         # That would make start_command see the user as "not new" and prevent referral attribution.
