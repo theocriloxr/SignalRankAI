@@ -863,9 +863,12 @@
    "evidence": [
     "tests/test_final_cross_channel_parity_20260925.py",
     "tests/test_cross_channel_profile_parity.py",
-    "tests/test_account_merge_postgres_20261027.py"
+    "tests/test_account_merge_postgres_20261027.py",
+    "services/platform/watchlists.py",
+    "services/platform/journal.py",
+    "tests/test_telegram_workspace_commands_20261029.py"
    ],
-   "note": "27 Oct: bot-first users keep subscription, paper, watchlists and preferences after linking a web account via reviewed merge."
+   "note": "27 Oct: bot-first users keep subscription, paper, watchlists and preferences after linking a web account via reviewed merge. 29 Oct: watchlists and journal read and written by both channels through one service; cross-channel PostgreSQL tests."
   },
   {
    "id": "CX-USER-01",
@@ -2158,9 +2161,11 @@
    "evidence": [
     "tests/test_web_command_parity_redesign_20260928.py",
     "docs/release/TELEGRAM_WEB_PARITY_MATRIX.md",
-    "scripts/build_parity_matrix.py"
+    "scripts/build_parity_matrix.py",
+    "signalrank_telegram/workspace_commands.py",
+    "tests/test_telegram_workspace_commands_20261029.py"
    ],
-   "note": "28 Oct: matrix generated from code; gaps listed (watchlists, journal)."
+   "note": "28 Oct: matrix generated from code; gaps listed (watchlists, journal). 29 Oct: watchlists and journal gaps closed with /watchlist and /journal on shared services."
   },
   {
    "id": "CX-CHAN-02",
@@ -2181,9 +2186,10 @@
    "evidence": [
     "tests/test_command_contracts.py",
     "tests/test_callback_contract.py",
-    "tests/test_telegram_web_parity_20261028.py"
+    "tests/test_telegram_web_parity_20261028.py",
+    "tests/test_telegram_workspace_commands_20261029.py"
    ],
-   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level."
+   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level. 29 Oct: /watchlist and /journal handlers tested against real PostgreSQL; deployed bot still unverified."
   },
   {
    "id": "CX-TG-02",
@@ -3118,6 +3124,15 @@
     "CX-USER-02"
    ],
    "note": "Engine DB timeouts, owner alerts, owner web screens; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-CHAN-01",
+    "CX-PROD-03",
+    "CX-TG-01"
+   ],
+   "note": "Telegram /watchlist and /journal on shared services; local evidence only, statuses unchanged."
   }
  ]
 }

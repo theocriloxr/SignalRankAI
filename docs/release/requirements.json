@@ -193,7 +193,33 @@
         "tsc": "clean",
         "eslint": "clean"
       },
-      "local_stack_verification": "Owned PostgreSQL 17 test cluster, synthetic owner; not CI, staging or production"
+      "local_stack_verification": "Owned PostgreSQL 17 test cluster, synthetic owner; not CI, staging or production",
+      "telegram_workspace": {
+        "commits": "5b2ef71a..f591ceca",
+        "commands": {
+          "/watchlist": "FREE",
+          "/journal": "FREE"
+        },
+        "shared_services": [
+          "services/platform/watchlists.py",
+          "services/platform/journal.py"
+        ],
+        "private_chat_only": true,
+        "web_watchlist_controls": [
+          "remove instrument",
+          "delete list (second click)",
+          "symbols shown"
+        ],
+        "telegram_delivery_exercised": false,
+        "python_suite_on_branch": {
+          "commit": "f591ceca",
+          "passed": 4282,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
+      }
     }
   },
   "inventory_is_verification": false,
