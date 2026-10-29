@@ -207,7 +207,7 @@
       "API": 170,
       "WEB": 54,
       "MOBILE": 14,
-      "COMMAND": 194,
+      "COMMAND": 196,
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
@@ -507591,7 +507591,7 @@
     {
       "id": "SR-ENDPOINT-8bcef565c23b0642",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3420",
+      "source": "web/platform_api.py:3409",
       "requirement": "POST /api/v1/platform/watchlists",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_watchlist",
@@ -507609,7 +507609,7 @@
     {
       "id": "SR-ENDPOINT-66a151ae1cad7bdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3438",
+      "source": "web/platform_api.py:3427",
       "requirement": "POST /api/v1/platform/watchlists/{watchlist_id}/items",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_watchlist_item",
@@ -507627,7 +507627,7 @@
     {
       "id": "SR-ENDPOINT-9c7e5d4eea6db638",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3468",
+      "source": "web/platform_api.py:3446",
       "requirement": "GET /api/v1/platform/referrals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::referrals",
@@ -507645,7 +507645,7 @@
     {
       "id": "SR-ENDPOINT-aa34fc0b12956de4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3529",
+      "source": "web/platform_api.py:3507",
       "requirement": "GET /api/v1/platform/referrals/leaderboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::referral_leaderboard",
@@ -507663,7 +507663,7 @@
     {
       "id": "SR-ENDPOINT-89d4f145352246e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3584",
+      "source": "web/platform_api.py:3562",
       "requirement": "POST /api/v1/platform/account/telegram-link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_telegram_link",
@@ -507681,7 +507681,7 @@
     {
       "id": "SR-ENDPOINT-0c7c3eeabec8eef3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3627",
+      "source": "web/platform_api.py:3605",
       "requirement": "POST /api/v1/platform/push-devices",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::register_push_device",
@@ -507699,7 +507699,7 @@
     {
       "id": "SR-ENDPOINT-d2d4edff081bc48e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3667",
+      "source": "web/platform_api.py:3645",
       "requirement": "DELETE /api/v1/platform/push-devices/{push_device_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_push_device",
@@ -507717,7 +507717,7 @@
     {
       "id": "SR-ENDPOINT-cd5dab1dd55b10e1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3683",
+      "source": "web/platform_api.py:3661",
       "requirement": "GET /api/v1/platform/devices",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::devices",
@@ -507735,7 +507735,7 @@
     {
       "id": "SR-ENDPOINT-22a147ff977e1f84",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3703",
+      "source": "web/platform_api.py:3681",
       "requirement": "GET /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::get_notification_preferences",
@@ -507753,7 +507753,7 @@
     {
       "id": "SR-ENDPOINT-5c77e77f5fa8a532",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3719",
+      "source": "web/platform_api.py:3697",
       "requirement": "PUT /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_notification_preferences",
@@ -507771,7 +507771,7 @@
     {
       "id": "SR-ENDPOINT-1d09048484bf125b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3770",
+      "source": "web/platform_api.py:3748",
       "requirement": "GET /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::journal_entries",
@@ -507789,7 +507789,7 @@
     {
       "id": "SR-ENDPOINT-3b0de4f6ee646a0b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3795",
+      "source": "web/platform_api.py:3763",
       "requirement": "POST /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_journal_entry",
@@ -507807,7 +507807,7 @@
     {
       "id": "SR-ENDPOINT-4f8b8ea4cc6db48a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3830",
+      "source": "web/platform_api.py:3789",
       "requirement": "DELETE /api/v1/platform/journal/{journal_entry_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_journal_entry",
@@ -507825,7 +507825,7 @@
     {
       "id": "SR-ENDPOINT-4a4f3798430cfd3c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3846",
+      "source": "web/platform_api.py:3804",
       "requirement": "GET /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_api_keys",
@@ -507843,7 +507843,7 @@
     {
       "id": "SR-ENDPOINT-44332d24ba1ce67a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3867",
+      "source": "web/platform_api.py:3825",
       "requirement": "POST /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_api_key",
@@ -507861,7 +507861,7 @@
     {
       "id": "SR-ENDPOINT-b5379c1e047dfb41",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3908",
+      "source": "web/platform_api.py:3866",
       "requirement": "DELETE /api/v1/platform/api-keys/{key_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_api_key",
@@ -507879,7 +507879,7 @@
     {
       "id": "SR-ENDPOINT-f3447c293c3b2fee",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3925",
+      "source": "web/platform_api.py:3883",
       "requirement": "GET /api/v1/platform/professional/signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::professional_signal_feed",
@@ -507897,7 +507897,7 @@
     {
       "id": "SR-ENDPOINT-59dcdcfb549092f4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:3984",
+      "source": "web/platform_api.py:3942",
       "requirement": "GET /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::execution_webhook_status",
@@ -507915,7 +507915,7 @@
     {
       "id": "SR-ENDPOINT-2289d47c0388f504",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4007",
+      "source": "web/platform_api.py:3965",
       "requirement": "PUT /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_webhook",
@@ -507933,7 +507933,7 @@
     {
       "id": "SR-ENDPOINT-9dff6d6c84b98300",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4033",
+      "source": "web/platform_api.py:3991",
       "requirement": "DELETE /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::disable_execution_webhook",
@@ -507951,7 +507951,7 @@
     {
       "id": "SR-ENDPOINT-80687afced824d01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4047",
+      "source": "web/platform_api.py:4005",
       "requirement": "GET /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_webhooks",
@@ -507969,7 +507969,7 @@
     {
       "id": "SR-ENDPOINT-c78cf6b934b83579",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4068",
+      "source": "web/platform_api.py:4026",
       "requirement": "POST /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_webhook",
@@ -507987,7 +507987,7 @@
     {
       "id": "SR-ENDPOINT-b0fb4aafd337162f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4113",
+      "source": "web/platform_api.py:4071",
       "requirement": "DELETE /api/v1/platform/webhooks/{webhook_endpoint_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_webhook",
@@ -508005,7 +508005,7 @@
     {
       "id": "SR-ENDPOINT-7ab85c187acbcd38",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4133",
+      "source": "web/platform_api.py:4091",
       "requirement": "GET /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organizations",
@@ -508023,7 +508023,7 @@
     {
       "id": "SR-ENDPOINT-2d3938ab0cfc45a1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4155",
+      "source": "web/platform_api.py:4113",
       "requirement": "POST /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization",
@@ -508041,7 +508041,7 @@
     {
       "id": "SR-ENDPOINT-f4f7ac01e97aa554",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4196",
+      "source": "web/platform_api.py:4154",
       "requirement": "GET /api/v1/platform/support/tickets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_tickets",
@@ -508059,7 +508059,7 @@
     {
       "id": "SR-ENDPOINT-614e3eb664c31c1d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4221",
+      "source": "web/platform_api.py:4179",
       "requirement": "GET /api/v1/platform/account/export",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::export_account_data",
@@ -508077,7 +508077,7 @@
     {
       "id": "SR-ENDPOINT-6fbeb4b02ebb380b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4299",
+      "source": "web/platform_api.py:4257",
       "requirement": "POST /api/v1/platform/account/deletion-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::request_account_deletion",
@@ -508095,7 +508095,7 @@
     {
       "id": "SR-ENDPOINT-908f3924729f5e8f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4359",
+      "source": "web/platform_api.py:4317",
       "requirement": "POST /api/v1/platform/support/tickets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_support_ticket",
@@ -508113,7 +508113,7 @@
     {
       "id": "SR-ENDPOINT-3d22c3ae6cafb51c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4401",
+      "source": "web/platform_api.py:4359",
       "requirement": "POST /api/v1/platform/auth/mfa/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mfa_login_complete",
@@ -508129,7 +508129,7 @@
     {
       "id": "SR-ENDPOINT-b8c6319ffa679ac6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4433",
+      "source": "web/platform_api.py:4391",
       "requirement": "POST /api/v1/platform/auth/magic-link/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::magic_link_request",
@@ -508145,7 +508145,7 @@
     {
       "id": "SR-ENDPOINT-44861264be6d5472",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4445",
+      "source": "web/platform_api.py:4403",
       "requirement": "POST /api/v1/platform/auth/magic-link/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::magic_link_complete",
@@ -508161,7 +508161,7 @@
     {
       "id": "SR-ENDPOINT-7f7b9d81352e7d56",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4466",
+      "source": "web/platform_api.py:4424",
       "requirement": "POST /api/v1/platform/auth/password-reset/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::password_reset_request",
@@ -508177,7 +508177,7 @@
     {
       "id": "SR-ENDPOINT-246e2a00ab27ee48",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4477",
+      "source": "web/platform_api.py:4435",
       "requirement": "POST /api/v1/platform/auth/password-reset/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::password_reset_complete",
@@ -508193,7 +508193,7 @@
     {
       "id": "SR-ENDPOINT-375bcea1473f015b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4493",
+      "source": "web/platform_api.py:4451",
       "requirement": "POST /api/v1/platform/auth/email-verification/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::email_verification_request",
@@ -508211,7 +508211,7 @@
     {
       "id": "SR-ENDPOINT-fd024edc3244cfac",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4509",
+      "source": "web/platform_api.py:4467",
       "requirement": "POST /api/v1/platform/auth/email-verification/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::email_verification_complete",
@@ -508227,7 +508227,7 @@
     {
       "id": "SR-ENDPOINT-d6c4bfbd1bf1b4bf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4520",
+      "source": "web/platform_api.py:4478",
       "requirement": "GET /api/v1/platform/security/mfa",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::get_mfa_status",
@@ -508245,7 +508245,7 @@
     {
       "id": "SR-ENDPOINT-a3e262dba227446c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4528",
+      "source": "web/platform_api.py:4486",
       "requirement": "POST /api/v1/platform/security/mfa/setup",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::setup_mfa",
@@ -508263,7 +508263,7 @@
     {
       "id": "SR-ENDPOINT-656ef40c20d4008c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4547",
+      "source": "web/platform_api.py:4505",
       "requirement": "POST /api/v1/platform/security/mfa/enable",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_mfa",
@@ -508281,7 +508281,7 @@
     {
       "id": "SR-ENDPOINT-c9b91f3da244aa31",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4562",
+      "source": "web/platform_api.py:4520",
       "requirement": "POST /api/v1/platform/security/mfa/disable",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_mfa",
@@ -508299,7 +508299,7 @@
     {
       "id": "SR-ENDPOINT-34257204c37c6a4c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4573",
+      "source": "web/platform_api.py:4531",
       "requirement": "PATCH /api/v1/platform/profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_profile",
@@ -508317,7 +508317,7 @@
     {
       "id": "SR-ENDPOINT-90af573d24537fca",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4619",
+      "source": "web/platform_api.py:4577",
       "requirement": "GET /api/v1/platform/trading-profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::trading_profile",
@@ -508335,7 +508335,7 @@
     {
       "id": "SR-ENDPOINT-0c9d8f0d2d46fa3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4665",
+      "source": "web/platform_api.py:4623",
       "requirement": "PUT /api/v1/platform/trading-profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_trading_profile",
@@ -508353,7 +508353,7 @@
     {
       "id": "SR-ENDPOINT-fcf05c98b27af35d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4789",
+      "source": "web/platform_api.py:4747",
       "requirement": "POST /api/v1/platform/simulation",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delivered_signal_simulation",
@@ -508371,7 +508371,7 @@
     {
       "id": "SR-ENDPOINT-3f559640b321ae3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4881",
+      "source": "web/platform_api.py:4839",
       "requirement": "GET /api/v1/platform/elite-signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::elite_signal_feed",
@@ -508389,7 +508389,7 @@
     {
       "id": "SR-ENDPOINT-e9ff3062c1fbcaf3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4933",
+      "source": "web/platform_api.py:4891",
       "requirement": "GET /api/v1/platform/quality",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::quality_report",
@@ -508407,7 +508407,7 @@
     {
       "id": "SR-ENDPOINT-5ca442e3fb4f82fa",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4948",
+      "source": "web/platform_api.py:4906",
       "requirement": "GET /api/v1/platform/shadow-report",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::shadow_report",
@@ -508425,7 +508425,7 @@
     {
       "id": "SR-ENDPOINT-a2940687bfffb49f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5017",
+      "source": "web/platform_api.py:4975",
       "requirement": "GET /api/v1/platform/strategy-leaderboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::strategy_leaderboard",
@@ -508443,7 +508443,7 @@
     {
       "id": "SR-ENDPOINT-86fb1194e64aadac",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5051",
+      "source": "web/platform_api.py:5009",
       "requirement": "GET /api/v1/platform/broker/risk-presets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_risk_presets",
@@ -508461,7 +508461,7 @@
     {
       "id": "SR-ENDPOINT-7c3f8903f841e031",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5072",
+      "source": "web/platform_api.py:5030",
       "requirement": "GET /api/v1/platform/broker/platforms",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_platforms",
@@ -508479,7 +508479,7 @@
     {
       "id": "SR-ENDPOINT-00ecba61c2900fa4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5088",
+      "source": "web/platform_api.py:5046",
       "requirement": "GET /api/v1/platform/broker/connections",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_connections",
@@ -508497,7 +508497,7 @@
     {
       "id": "SR-ENDPOINT-1b1f9ed743540b01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5096",
+      "source": "web/platform_api.py:5054",
       "requirement": "POST /api/v1/platform/broker/exchange",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_exchange",
@@ -508515,7 +508515,7 @@
     {
       "id": "SR-ENDPOINT-316ecd2398684639",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5183",
+      "source": "web/platform_api.py:5141",
       "requirement": "GET /api/v1/platform/broker/metatrader/servers",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::search_broker_metatrader_servers",
@@ -508533,7 +508533,7 @@
     {
       "id": "SR-ENDPOINT-870b5c1400602f2a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5216",
+      "source": "web/platform_api.py:5174",
       "requirement": "POST /api/v1/platform/broker/metatrader",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_metatrader",
@@ -508551,7 +508551,7 @@
     {
       "id": "SR-ENDPOINT-bee7ad83c626fdb1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5290",
+      "source": "web/platform_api.py:5248",
       "requirement": "POST /api/v1/platform/broker/metatrader/secure-link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_broker_metatrader_secure_link",
@@ -508569,7 +508569,7 @@
     {
       "id": "SR-ENDPOINT-ed7b6d20e66f9d26",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5355",
+      "source": "web/platform_api.py:5313",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/demo-certification/prepare",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::prepare_broker_demo_certification",
@@ -508587,7 +508587,7 @@
     {
       "id": "SR-ENDPOINT-12753304a9b67866",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5389",
+      "source": "web/platform_api.py:5347",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_policy",
@@ -508605,7 +508605,7 @@
     {
       "id": "SR-ENDPOINT-34464c56a3584c3f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5405",
+      "source": "web/platform_api.py:5363",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/ledger",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_ledger",
@@ -508623,7 +508623,7 @@
     {
       "id": "SR-ENDPOINT-91c3d78111c80161",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5434",
+      "source": "web/platform_api.py:5392",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_broker_account_policy",
@@ -508641,7 +508641,7 @@
     {
       "id": "SR-ENDPOINT-2251b79adbcd8e3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5503",
+      "source": "web/platform_api.py:5461",
       "requirement": "POST /api/v1/platform/admin/broker/connections/{connection_id}/prop-certification",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::certify_broker_prop_policy",
@@ -508659,7 +508659,7 @@
     {
       "id": "SR-ENDPOINT-7391679969127546",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5558",
+      "source": "web/platform_api.py:5516",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/credentials/rotate",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::rotate_broker_connection_credential_envelope",
@@ -508677,7 +508677,7 @@
     {
       "id": "SR-ENDPOINT-30618e635acdcaa3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5595",
+      "source": "web/platform_api.py:5553",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/safety-freeze",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_safety_freeze",
@@ -508695,7 +508695,7 @@
     {
       "id": "SR-ENDPOINT-f497cda59a2bc6eb",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5632",
+      "source": "web/platform_api.py:5590",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/verify",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::verify_broker_connection",
@@ -508713,7 +508713,7 @@
     {
       "id": "SR-ENDPOINT-f9b6866aa8bada27",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5666",
+      "source": "web/platform_api.py:5624",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/execution",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::toggle_broker_connection_execution",
@@ -508731,7 +508731,7 @@
     {
       "id": "SR-ENDPOINT-5cc5492032763510",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5708",
+      "source": "web/platform_api.py:5666",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/default",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::set_broker_default",
@@ -508749,7 +508749,7 @@
     {
       "id": "SR-ENDPOINT-54e067952f750dba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5726",
+      "source": "web/platform_api.py:5684",
       "requirement": "DELETE /api/v1/platform/broker/connections/{connection_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_broker_connection",
@@ -508767,7 +508767,7 @@
     {
       "id": "SR-ENDPOINT-a36fb932636dfb7b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5743",
+      "source": "web/platform_api.py:5701",
       "requirement": "GET /api/v1/platform/broker",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_status",
@@ -508785,7 +508785,7 @@
     {
       "id": "SR-ENDPOINT-f0f9fc4cf1373891",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6194",
+      "source": "web/platform_api.py:6152",
       "requirement": "POST /api/v1/platform/broker/mt5",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_mt5",
@@ -508803,7 +508803,7 @@
     {
       "id": "SR-ENDPOINT-78aaabf4ac5be230",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6237",
+      "source": "web/platform_api.py:6195",
       "requirement": "POST /api/v1/platform/execution-terms/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_execution_terms",
@@ -508821,7 +508821,7 @@
     {
       "id": "SR-ENDPOINT-ba2d8eb55b7d6707",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6265",
+      "source": "web/platform_api.py:6223",
       "requirement": "PUT /api/v1/platform/execution-settings",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_settings",
@@ -508839,7 +508839,7 @@
     {
       "id": "SR-ENDPOINT-79eef13a479feaa6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6390",
+      "source": "web/platform_api.py:6348",
       "requirement": "DELETE /api/v1/platform/devices/{session_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_device_session",
@@ -508857,7 +508857,7 @@
     {
       "id": "SR-ENDPOINT-698e7065d9eccb15",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6402",
+      "source": "web/platform_api.py:6360",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_watchlist",
@@ -508875,7 +508875,7 @@
     {
       "id": "SR-ENDPOINT-e25d54e640fdd265",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6415",
+      "source": "web/platform_api.py:6372",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}/items/{instrument_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_watchlist_item",
@@ -508893,7 +508893,7 @@
     {
       "id": "SR-ENDPOINT-db93639fcbf12fba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6435",
+      "source": "web/platform_api.py:6388",
       "requirement": "GET /api/v1/platform/portfolio",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::portfolio",
@@ -508911,7 +508911,7 @@
     {
       "id": "SR-ENDPOINT-4c419a10037388e5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6487",
+      "source": "web/platform_api.py:6440",
       "requirement": "GET /api/v1/platform/performance",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::performance",
@@ -508929,7 +508929,7 @@
     {
       "id": "SR-ENDPOINT-db4ff5ace2cabb37",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6532",
+      "source": "web/platform_api.py:6485",
       "requirement": "GET /api/v1/platform/billing/products",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_products",
@@ -508947,7 +508947,7 @@
     {
       "id": "SR-ENDPOINT-d35820a5dabbb8c0",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6569",
+      "source": "web/platform_api.py:6522",
       "requirement": "POST /api/v1/platform/billing/checkout",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_billing_checkout",
@@ -508965,7 +508965,7 @@
     {
       "id": "SR-ENDPOINT-b1825e067dd404ea",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6624",
+      "source": "web/platform_api.py:6577",
       "requirement": "POST /api/v1/platform/billing/confirm",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_billing_checkout",
@@ -508983,7 +508983,7 @@
     {
       "id": "SR-ENDPOINT-49df927ec6c642e3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6694",
+      "source": "web/platform_api.py:6647",
       "requirement": "GET /api/v1/platform/billing",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing",
@@ -509001,7 +509001,7 @@
     {
       "id": "SR-ENDPOINT-5c5ca073b4d9c4e7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6746",
+      "source": "web/platform_api.py:6699",
       "requirement": "POST /api/v1/platform/billing/cancel-auto-renew",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::cancel_billing_auto_renew",
@@ -509019,7 +509019,7 @@
     {
       "id": "SR-ENDPOINT-674e316aeda299ba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6793",
+      "source": "web/platform_api.py:6746",
       "requirement": "POST /api/v1/platform/billing/refund-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_refund_request",
@@ -509037,7 +509037,7 @@
     {
       "id": "SR-ENDPOINT-67027cf38ee1c0e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6852",
+      "source": "web/platform_api.py:6805",
       "requirement": "GET /api/v1/platform/notifications",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::notification_center",
@@ -509055,7 +509055,7 @@
     {
       "id": "SR-ENDPOINT-fdefeb1022ff1bbd",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6879",
+      "source": "web/platform_api.py:6832",
       "requirement": "POST /api/v1/platform/notifications/{notification_id}/read",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mark_notification_read",
@@ -509073,7 +509073,7 @@
     {
       "id": "SR-ENDPOINT-3c1cd32628b7b5b7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6906",
+      "source": "web/platform_api.py:6859",
       "requirement": "GET /api/v1/platform/organizations/{organization_id}/members",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organization_members",
@@ -509091,7 +509091,7 @@
     {
       "id": "SR-ENDPOINT-3acf1f74fa43d703",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6929",
+      "source": "web/platform_api.py:6882",
       "requirement": "POST /api/v1/platform/organizations/{organization_id}/invitations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization_invitation",
@@ -509109,7 +509109,7 @@
     {
       "id": "SR-ENDPOINT-d4de9fdb8142fba5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6986",
+      "source": "web/platform_api.py:6939",
       "requirement": "POST /api/v1/platform/organizations/invitations/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_organization_invitation",
@@ -509127,7 +509127,7 @@
     {
       "id": "SR-ENDPOINT-bdc42b349a9081fc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7027",
+      "source": "web/platform_api.py:6980",
       "requirement": "GET /api/v1/platform/support/tickets/{ticket_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_ticket_detail",
@@ -509145,7 +509145,7 @@
     {
       "id": "SR-ENDPOINT-31a500340874efdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7062",
+      "source": "web/platform_api.py:7015",
       "requirement": "POST /api/v1/platform/support/tickets/{ticket_id}/messages",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_support_message",
@@ -509163,7 +509163,7 @@
     {
       "id": "SR-ENDPOINT-520729a67d5508a6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7099",
+      "source": "web/platform_api.py:7052",
       "requirement": "GET /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_alerts",
@@ -509181,7 +509181,7 @@
     {
       "id": "SR-ENDPOINT-8e1206fb0fa123cf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7120",
+      "source": "web/platform_api.py:7073",
       "requirement": "POST /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_alert",
@@ -509199,7 +509199,7 @@
     {
       "id": "SR-ENDPOINT-4c034f12b196e597",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7153",
+      "source": "web/platform_api.py:7106",
       "requirement": "DELETE /api/v1/platform/alerts/{alert_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_alert",
@@ -509217,7 +509217,7 @@
     {
       "id": "SR-ENDPOINT-7711087f0093e257",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7167",
+      "source": "web/platform_api.py:7120",
       "requirement": "POST /api/v1/platform/analytics/events",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::analytics_event",
@@ -519527,7 +519527,7 @@
     {
       "id": "SR-COMMAND-8b378522d62ecbdd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6644",
+      "source": "signalrank_telegram/bot.py:6648",
       "requirement": "/adaptive_pause",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_pause_command",
@@ -519541,7 +519541,7 @@
     {
       "id": "SR-COMMAND-340a99b8f9154a24",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6646",
+      "source": "signalrank_telegram/bot.py:6650",
       "requirement": "/adaptive_promote",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_promote_command",
@@ -519555,7 +519555,7 @@
     {
       "id": "SR-COMMAND-5d13a7e7fd4741f6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6645",
+      "source": "signalrank_telegram/bot.py:6649",
       "requirement": "/adaptive_resume",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_resume_command",
@@ -519569,7 +519569,7 @@
     {
       "id": "SR-COMMAND-635c656bc7c648a1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6648",
+      "source": "signalrank_telegram/bot.py:6652",
       "requirement": "/adaptive_rollback",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_rollback_command",
@@ -519583,7 +519583,7 @@
     {
       "id": "SR-COMMAND-ac4a0615ab254a43",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6642",
+      "source": "signalrank_telegram/bot.py:6646",
       "requirement": "/adaptive_status",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_status_command",
@@ -519597,7 +519597,7 @@
     {
       "id": "SR-COMMAND-2af07e19ac2c6da7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6647",
+      "source": "signalrank_telegram/bot.py:6651",
       "requirement": "/adaptive_suspend",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_suspend_command",
@@ -519611,7 +519611,7 @@
     {
       "id": "SR-COMMAND-8c6976e5b5410415",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6768",
+      "source": "signalrank_telegram/bot.py:6772",
       "requirement": "/admin",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -519625,7 +519625,7 @@
     {
       "id": "SR-COMMAND-e4e98a66ad16d8b2",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6770",
+      "source": "signalrank_telegram/bot.py:6774",
       "requirement": "/admin_broadcast",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_broadcast_command",
@@ -519639,7 +519639,7 @@
     {
       "id": "SR-COMMAND-66c5ba138e2eec55",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6769",
+      "source": "signalrank_telegram/bot.py:6773",
       "requirement": "/admin_dashboard",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_dashboard",
@@ -519653,7 +519653,7 @@
     {
       "id": "SR-COMMAND-fb0cae5ac4634300",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6626",
+      "source": "signalrank_telegram/bot.py:6630",
       "requirement": "/admin_feedback",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -519695,7 +519695,7 @@
     {
       "id": "SR-COMMAND-3db034b5e322a307",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6625",
+      "source": "signalrank_telegram/bot.py:6629",
       "requirement": "/admin_signal_lookup",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -519709,7 +519709,7 @@
     {
       "id": "SR-COMMAND-783e0579a5bc4b61",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6624",
+      "source": "signalrank_telegram/bot.py:6628",
       "requirement": "/admin_subscription_fix",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -519723,7 +519723,7 @@
     {
       "id": "SR-COMMAND-1995f1b608fd795b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6620",
+      "source": "signalrank_telegram/bot.py:6624",
       "requirement": "/admin_top_assets",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_top_assets_command",
@@ -519737,7 +519737,7 @@
     {
       "id": "SR-COMMAND-80ad7b1a2d884f90",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6621",
+      "source": "signalrank_telegram/bot.py:6625",
       "requirement": "/admin_top_strategies",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_top_strategies_command",
@@ -519751,7 +519751,7 @@
     {
       "id": "SR-COMMAND-4a647de78d0d1b74",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6623",
+      "source": "signalrank_telegram/bot.py:6627",
       "requirement": "/admin_user",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -519765,7 +519765,7 @@
     {
       "id": "SR-COMMAND-6c45ba4d82c12608",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6622",
+      "source": "signalrank_telegram/bot.py:6626",
       "requirement": "/admin_user_engagement",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_user_engagement_command",
@@ -519933,7 +519933,7 @@
     {
       "id": "SR-COMMAND-6c793695171e793d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6612",
+      "source": "signalrank_telegram/bot.py:6616",
       "requirement": "/apikey",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::apikey_command",
@@ -519989,7 +519989,7 @@
     {
       "id": "SR-COMMAND-8bf729ffe074caee",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6627",
+      "source": "signalrank_telegram/bot.py:6631",
       "requirement": "/assets",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::assets_command",
@@ -520073,7 +520073,7 @@
     {
       "id": "SR-COMMAND-b20d9eca8e484b61",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6772",
+      "source": "signalrank_telegram/bot.py:6776",
       "requirement": "/blast_terms",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::blast_terms_command",
@@ -520087,7 +520087,7 @@
     {
       "id": "SR-COMMAND-e88199c423228a45",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6667",
+      "source": "signalrank_telegram/bot.py:6671",
       "requirement": "/broadcast",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::broadcast_command",
@@ -520101,7 +520101,7 @@
     {
       "id": "SR-COMMAND-2374d91794b79f4f",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6711",
+      "source": "signalrank_telegram/bot.py:6715",
       "requirement": "/cancel",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::cancel_command",
@@ -520241,7 +520241,7 @@
     {
       "id": "SR-COMMAND-9b110f7030863fd4",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6697",
+      "source": "signalrank_telegram/bot.py:6701",
       "requirement": "/connect_broker",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -520269,7 +520269,7 @@
     {
       "id": "SR-COMMAND-030c8fdd2b7e4835",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6664",
+      "source": "signalrank_telegram/bot.py:6668",
       "requirement": "/correct_signal",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::correct_signal",
@@ -520311,7 +520311,7 @@
     {
       "id": "SR-COMMAND-1bad2caa98472c04",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6678",
+      "source": "signalrank_telegram/bot.py:6682",
       "requirement": "/dead_letter_replay",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dead_letter_replay_command",
@@ -520325,7 +520325,7 @@
     {
       "id": "SR-COMMAND-1306f916246a3a5a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6677",
+      "source": "signalrank_telegram/bot.py:6681",
       "requirement": "/dead_letter_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dead_letter_status_command",
@@ -520339,7 +520339,7 @@
     {
       "id": "SR-COMMAND-cae8f81e9deee7db",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6672",
+      "source": "signalrank_telegram/bot.py:6676",
       "requirement": "/dedup_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dedup_audit_command",
@@ -520381,7 +520381,7 @@
     {
       "id": "SR-COMMAND-c42ccca408de8054",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6659",
+      "source": "signalrank_telegram/bot.py:6663",
       "requirement": "/dev_force_signal",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_force_signal",
@@ -520395,7 +520395,7 @@
     {
       "id": "SR-COMMAND-a7eb0eb40bcac1b6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6661",
+      "source": "signalrank_telegram/bot.py:6665",
       "requirement": "/dev_invalidate",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_invalidate",
@@ -520409,7 +520409,7 @@
     {
       "id": "SR-COMMAND-375265cfe213bc2e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6657",
+      "source": "signalrank_telegram/bot.py:6661",
       "requirement": "/dev_pause",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_pause",
@@ -520423,7 +520423,7 @@
     {
       "id": "SR-COMMAND-091eeac2f03c4853",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6658",
+      "source": "signalrank_telegram/bot.py:6662",
       "requirement": "/dev_resume",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_resume",
@@ -520465,7 +520465,7 @@
     {
       "id": "SR-COMMAND-287942197469f9d7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6706",
+      "source": "signalrank_telegram/bot.py:6710",
       "requirement": "/drawdown",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::drawdown_command",
@@ -520521,7 +520521,7 @@
     {
       "id": "SR-COMMAND-a402c4336ebfd782",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6707",
+      "source": "signalrank_telegram/bot.py:6711",
       "requirement": "/execution",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::execution_command",
@@ -520577,7 +520577,7 @@
     {
       "id": "SR-COMMAND-e9745ed81d0cf9b5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6771",
+      "source": "signalrank_telegram/bot.py:6775",
       "requirement": "/force_market_scan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::force_market_scan_command",
@@ -520591,7 +520591,7 @@
     {
       "id": "SR-COMMAND-caa17d0368d18d9d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6660",
+      "source": "signalrank_telegram/bot.py:6664",
       "requirement": "/force_signal",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::dev_force_signal",
@@ -520729,9 +520729,23 @@
       "role_scope": "FREE"
     },
     {
+      "id": "SR-COMMAND-81dd6b775afcccb6",
+      "kind": "COMMAND",
+      "source": "signalrank_telegram/bot.py:6615",
+      "requirement": "/journal",
+      "current_implementation": "Registered command; minimum tier FREE; role FREE",
+      "responsible_component": "signalrank_telegram::journal_command",
+      "verification_method": "Registry/runtime match; positive/negative role and account scope; real dedicated-bot round trip.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "minimum_tier": "FREE",
+      "role_scope": "FREE"
+    },
+    {
       "id": "SR-COMMAND-0157ff8c94d8c93b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6685",
+      "source": "signalrank_telegram/bot.py:6689",
       "requirement": "/kill_switch",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::kill_switch_command",
@@ -520745,7 +520759,7 @@
     {
       "id": "SR-COMMAND-a4ef304ba42a200b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6613",
+      "source": "signalrank_telegram/bot.py:6617",
       "requirement": "/language",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::language_command",
@@ -520759,7 +520773,7 @@
     {
       "id": "SR-COMMAND-6a86dd616a5812d9",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6715",
+      "source": "signalrank_telegram/bot.py:6719",
       "requirement": "/leaderboard",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::leaderboard_command",
@@ -520773,7 +520787,7 @@
     {
       "id": "SR-COMMAND-96d4f63a1dc16eb6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6679",
+      "source": "signalrank_telegram/bot.py:6683",
       "requirement": "/ledger_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ledger_audit_command",
@@ -520857,7 +520871,7 @@
     {
       "id": "SR-COMMAND-220903792034ada4",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6683",
+      "source": "signalrank_telegram/bot.py:6687",
       "requirement": "/ml_candidate",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ml_candidate_command",
@@ -520871,7 +520885,7 @@
     {
       "id": "SR-COMMAND-d437f77e16f4299e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6684",
+      "source": "signalrank_telegram/bot.py:6688",
       "requirement": "/ml_candidate_promote",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ml_candidate_promote_command",
@@ -520899,7 +520913,7 @@
     {
       "id": "SR-COMMAND-7cc50a21f4fb6972",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6700",
+      "source": "signalrank_telegram/bot.py:6704",
       "requirement": "/mt5",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -520913,7 +520927,7 @@
     {
       "id": "SR-COMMAND-fa8e940cec5bcf44",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6696",
+      "source": "signalrank_telegram/bot.py:6700",
       "requirement": "/mt5_link",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -520927,7 +520941,7 @@
     {
       "id": "SR-COMMAND-f01d06c7183abe13",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6701",
+      "source": "signalrank_telegram/bot.py:6705",
       "requirement": "/mt5_status",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_status_command",
@@ -520941,7 +520955,7 @@
     {
       "id": "SR-COMMAND-eec7f1dd8727836a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6699",
+      "source": "signalrank_telegram/bot.py:6703",
       "requirement": "/mt5link",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -520969,7 +520983,7 @@
     {
       "id": "SR-COMMAND-61f1a9acd27f8b09",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6709",
+      "source": "signalrank_telegram/bot.py:6713",
       "requirement": "/mystats",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mystats_command",
@@ -520983,7 +520997,7 @@
     {
       "id": "SR-COMMAND-03fb92a8151f4d87",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6673",
+      "source": "signalrank_telegram/bot.py:6677",
       "requirement": "/notification_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::notification_audit_command",
@@ -521067,7 +521081,7 @@
     {
       "id": "SR-COMMAND-4c84304f13f872cd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6671",
+      "source": "signalrank_telegram/bot.py:6675",
       "requirement": "/outcome_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::outcome_audit_command",
@@ -521081,7 +521095,7 @@
     {
       "id": "SR-COMMAND-a44a4bcf1be1ac8d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6670",
+      "source": "signalrank_telegram/bot.py:6674",
       "requirement": "/outcome_rebuild",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::outcome_rebuild_command",
@@ -521095,7 +521109,7 @@
     {
       "id": "SR-COMMAND-1b77082aec18a120",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6663",
+      "source": "signalrank_telegram/bot.py:6667",
       "requirement": "/owner_revenue",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::owner_revenue",
@@ -521123,7 +521137,7 @@
     {
       "id": "SR-COMMAND-628eb93ff2000818",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6662",
+      "source": "signalrank_telegram/bot.py:6666",
       "requirement": "/owner_users",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::owner_users",
@@ -521151,7 +521165,7 @@
     {
       "id": "SR-COMMAND-4568189f847411ab",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6674",
+      "source": "signalrank_telegram/bot.py:6678",
       "requirement": "/paper_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::paper_audit_command",
@@ -521319,7 +521333,7 @@
     {
       "id": "SR-COMMAND-25876e364032b85e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6680",
+      "source": "signalrank_telegram/bot.py:6684",
       "requirement": "/payment_reconcile",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::payment_reconcile_command",
@@ -521347,7 +521361,7 @@
     {
       "id": "SR-COMMAND-d806cbbdc21e6063",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6669",
+      "source": "signalrank_telegram/bot.py:6673",
       "requirement": "/performance_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::performance_audit_command",
@@ -521361,7 +521375,7 @@
     {
       "id": "SR-COMMAND-e6a19e289522bbf1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6668",
+      "source": "signalrank_telegram/bot.py:6672",
       "requirement": "/performance_rebuild",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::performance_rebuild_command",
@@ -521501,7 +521515,7 @@
     {
       "id": "SR-COMMAND-0a0f5ec14769f489",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6665",
+      "source": "signalrank_telegram/bot.py:6669",
       "requirement": "/provider_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::provider_status_command",
@@ -521529,7 +521543,7 @@
     {
       "id": "SR-COMMAND-ac530dee51550f36",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6666",
+      "source": "signalrank_telegram/bot.py:6670",
       "requirement": "/qa_report",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::qa_report_command",
@@ -521557,7 +521571,7 @@
     {
       "id": "SR-COMMAND-1a6c7ae6cdebebcb",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6676",
+      "source": "signalrank_telegram/bot.py:6680",
       "requirement": "/queue_replay",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::queue_replay_command",
@@ -521571,7 +521585,7 @@
     {
       "id": "SR-COMMAND-20c7a4cba0d3bbf1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6675",
+      "source": "signalrank_telegram/bot.py:6679",
       "requirement": "/queue_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::queue_status_command",
@@ -521627,7 +521641,7 @@
     {
       "id": "SR-COMMAND-44574c4ba2ea74ad",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6710",
+      "source": "signalrank_telegram/bot.py:6714",
       "requirement": "/referral",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::referral_command",
@@ -521641,7 +521655,7 @@
     {
       "id": "SR-COMMAND-e08d9861f3f67a6a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6618",
+      "source": "signalrank_telegram/bot.py:6622",
       "requirement": "/referral_leaderboard",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::referral_leaderboard_command",
@@ -521655,7 +521669,7 @@
     {
       "id": "SR-COMMAND-e3eb08bdc038d5cd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6619",
+      "source": "signalrank_telegram/bot.py:6623",
       "requirement": "/referral_rewards",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::referral_rewards_command",
@@ -521711,7 +521725,7 @@
     {
       "id": "SR-COMMAND-ba141cc7f26d26e5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6682",
+      "source": "signalrank_telegram/bot.py:6686",
       "requirement": "/release_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::release_status_command",
@@ -521753,7 +521767,7 @@
     {
       "id": "SR-COMMAND-7f26104f77a7ce47",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6617",
+      "source": "signalrank_telegram/bot.py:6621",
       "requirement": "/reports",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::reports_command",
@@ -521767,7 +521781,7 @@
     {
       "id": "SR-COMMAND-66f62d1807d3821a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6643",
+      "source": "signalrank_telegram/bot.py:6647",
       "requirement": "/research",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::research_command",
@@ -521823,7 +521837,7 @@
     {
       "id": "SR-COMMAND-016b7459f11d5cd3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6703",
+      "source": "signalrank_telegram/bot.py:6707",
       "requirement": "/setlot",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::setlot_command",
@@ -521837,7 +521851,7 @@
     {
       "id": "SR-COMMAND-d5388a5d5c1e6262",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6704",
+      "source": "signalrank_telegram/bot.py:6708",
       "requirement": "/setrisk",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::setrisk_command",
@@ -521851,7 +521865,7 @@
     {
       "id": "SR-COMMAND-cde0fb0dec1400c5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6616",
+      "source": "signalrank_telegram/bot.py:6620",
       "requirement": "/settings",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::settings_command",
@@ -521865,7 +521879,7 @@
     {
       "id": "SR-COMMAND-34d001ae737a032b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6705",
+      "source": "signalrank_telegram/bot.py:6709",
       "requirement": "/setwebhook",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::setwebhook_command",
@@ -522047,7 +522061,7 @@
     {
       "id": "SR-COMMAND-82e770253d869a48",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6681",
+      "source": "signalrank_telegram/bot.py:6685",
       "requirement": "/system_health",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::system_health_command",
@@ -522075,7 +522089,7 @@
     {
       "id": "SR-COMMAND-db5c59b93f6cd5ed",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6708",
+      "source": "signalrank_telegram/bot.py:6712",
       "requirement": "/tiers",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::tiers_command",
@@ -522089,7 +522103,7 @@
     {
       "id": "SR-COMMAND-3962edee9c25c9b9",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6614",
+      "source": "signalrank_telegram/bot.py:6618",
       "requirement": "/timezone",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::timezone_command",
@@ -522103,7 +522117,7 @@
     {
       "id": "SR-COMMAND-8e59765c8e5c25ae",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6615",
+      "source": "signalrank_telegram/bot.py:6619",
       "requirement": "/travelmode",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::travelmode_command",
@@ -522117,7 +522131,7 @@
     {
       "id": "SR-COMMAND-787600ebe6d6c75b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6656",
+      "source": "signalrank_telegram/bot.py:6660",
       "requirement": "/unlock",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::unlock",
@@ -522145,7 +522159,7 @@
     {
       "id": "SR-COMMAND-272eb95449c9d2a8",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6702",
+      "source": "signalrank_telegram/bot.py:6706",
       "requirement": "/verifybroker",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::verifybroker_command",
@@ -522159,7 +522173,7 @@
     {
       "id": "SR-COMMAND-5ca4f3850ccc331a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6687",
+      "source": "signalrank_telegram/bot.py:6691",
       "requirement": "/version",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::version_command",
@@ -522169,6 +522183,20 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "minimum_tier": "OWNER",
       "role_scope": "OWNER"
+    },
+    {
+      "id": "SR-COMMAND-89b318f8766fe1c2",
+      "kind": "COMMAND",
+      "source": "signalrank_telegram/bot.py:6614",
+      "requirement": "/watchlist",
+      "current_implementation": "Registered command; minimum tier FREE; role FREE",
+      "responsible_component": "signalrank_telegram::watchlist_command",
+      "verification_method": "Registry/runtime match; positive/negative role and account scope; real dedicated-bot round trip.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "minimum_tier": "FREE",
+      "role_scope": "FREE"
     },
     {
       "id": "SR-COMMAND-1639954687d6df18",
@@ -522267,7 +522295,7 @@
     {
       "id": "SR-CALLBACK-19e83e418cf475e9",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7433",
+      "source": "signalrank_telegram/bot.py:7437",
       "requirement": "^broker_pick_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_broker_account_trade_callback",
@@ -522282,7 +522310,7 @@
         "pattern": "^broker_pick_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7433",
+        "source": "signalrank_telegram/bot.py:7437",
         "status": "IMPLEMENTED"
       }
     },
@@ -522333,7 +522361,7 @@
     {
       "id": "SR-CALLBACK-5edc62e9fc9cffcb",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7658",
+      "source": "signalrank_telegram/bot.py:7662",
       "requirement": "^check_outcome_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_check_outcome_callback",
@@ -522348,7 +522376,7 @@
         "pattern": "^check_outcome_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7658",
+        "source": "signalrank_telegram/bot.py:7662",
         "status": "IMPLEMENTED"
       }
     },
@@ -522443,7 +522471,7 @@
     {
       "id": "SR-CALLBACK-85708ed41242f5d5",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7129",
+      "source": "signalrank_telegram/bot.py:7133",
       "requirement": "^monitor_signal_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_monitor_callback",
@@ -522458,7 +522486,7 @@
         "pattern": "^monitor_signal_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7129",
+        "source": "signalrank_telegram/bot.py:7133",
         "status": "IMPLEMENTED"
       }
     },
@@ -522553,7 +522581,7 @@
     {
       "id": "SR-CALLBACK-0436d73e22def408",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7321",
+      "source": "signalrank_telegram/bot.py:7325",
       "requirement": "^mt5_trade_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_mt5_trade_callback",
@@ -522568,7 +522596,7 @@
         "pattern": "^mt5_trade_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7321",
+        "source": "signalrank_telegram/bot.py:7325",
         "status": "IMPLEMENTED"
       }
     },
@@ -522619,7 +522647,7 @@
     {
       "id": "SR-CALLBACK-481a8512b765abd6",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7489",
+      "source": "signalrank_telegram/bot.py:7493",
       "requirement": "^open_signal_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_open_signal_callback",
@@ -522634,7 +522662,7 @@
         "pattern": "^open_signal_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7489",
+        "source": "signalrank_telegram/bot.py:7493",
         "status": "IMPLEMENTED"
       }
     },
@@ -522663,7 +522691,7 @@
     {
       "id": "SR-CALLBACK-4d797f2234aa33f2",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7128",
+      "source": "signalrank_telegram/bot.py:7132",
       "requirement": "^sigmon_(?:continue|stop)_[12]_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_monitoring_action_callback",
@@ -522678,7 +522706,7 @@
         "pattern": "^sigmon_(?:continue|stop)_[12]_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7128",
+        "source": "signalrank_telegram/bot.py:7132",
         "status": "IMPLEMENTED"
       }
     },
@@ -522707,7 +522735,7 @@
     {
       "id": "SR-CALLBACK-72e0760528d8f1a5",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:6867",
+      "source": "signalrank_telegram/bot.py:6871",
       "requirement": "^signal_reaction_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_reaction_callback",
@@ -522722,7 +522750,7 @@
         "pattern": "^signal_reaction_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:6867",
+        "source": "signalrank_telegram/bot.py:6871",
         "status": "IMPLEMENTED"
       }
     },
