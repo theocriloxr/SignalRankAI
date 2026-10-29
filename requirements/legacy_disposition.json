@@ -1,5 +1,5 @@
 {
-  "file_count": 2648,
+  "file_count": 2649,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16107,11 +16107,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 199,
+      "line_count": 222,
       "path": "signalrank_telegram/command_catalog.py",
       "reason": "production/build source",
-      "sha256": "2521ed45743384358aacd684beb0908bc5164958a3d4e31ce3302a2bad2054ec",
-      "size_bytes": 13720
+      "sha256": "ff41ef0453ce66e507bff1626de2d70b7d18dcf81dda856951581df90df13108",
+      "size_bytes": 15198
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -20147,6 +20147,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 67,
+      "path": "tests/test_telegram_menu_limit_20261029.py",
+      "reason": "automated test evidence",
+      "sha256": "e6c1f311900fda582f5e1c8ff6bc3beec4778edf21506c890a051156e026f6ab",
+      "size_bytes": 2801
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 56,
       "path": "tests/test_telegram_private_chat_scope_20261029.py",
       "reason": "automated test evidence",
@@ -21200,6 +21208,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 873,
     "PRESERVE_BEHAVIOUR": 1356,
-    "TEST_ONLY": 418
+    "TEST_ONLY": 419
   }
 }
