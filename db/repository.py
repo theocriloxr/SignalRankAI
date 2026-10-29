@@ -836,17 +836,18 @@ async def list_recoverable_webhook_events(
     return list(rows.scalars().all())
 
 
-async def get_economic_events(session, hours_ahead: int = 168) -> List["EconomicEvent"]:
-    """Get upcoming medium/high-impact economic events from DB."""
+async def get_economic_events(session, hours_ahead: int = 168, hours_behind: int = 0) -> List["EconomicEvent"]:
+    """Medium/high-impact economic events from DB, optionally including the last ``hours_behind`` hours."""
     from db.models import EconomicEvent
 
     now = now_utc_naive()
     window_end = now + timedelta(hours=max(0, int(hours_ahead or 0)))
+    window_start = now - timedelta(hours=max(0, int(hours_behind or 0)))
     try:
         result = await session.execute(
             select(EconomicEvent)
             .where(
-                EconomicEvent.event_date >= now,
+                EconomicEvent.event_date >= window_start,
                 EconomicEvent.event_date <= window_end,
                 EconomicEvent.impact.in_(["high", "medium"]),
             )

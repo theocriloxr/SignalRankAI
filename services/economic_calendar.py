@@ -18,10 +18,11 @@ Usage::
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
+import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -34,7 +35,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _EVENTS_CACHE: list[dict] = []
 _CACHE_FETCHED_AT: Optional[datetime] = None
+_CACHE_IS_FALLBACK = False
 _CACHE_TTL_SECONDS = max(300, int(os.getenv("ECONOMIC_CALENDAR_CACHE_TTL_SECONDS", "3600") or 3600))
+# The static fallback has no event times, so it protects nothing; retry the live feeds soon.
+_FALLBACK_RETRY_SECONDS = 300
+# The engine calls the gate from an executor thread; a first fetch may wait on two providers.
+_SYNC_GATE_TIMEOUT_SECONDS = 20.0
+_GATE_WARNING_INTERVAL_SECONDS = 600.0
+_LAST_GATE_WARNING = 0.0
 _REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_SECONDS", "8") or 8))
 _FOREX_FACTORY_URL = (
     os.getenv("FOREX_FACTORY_CALENDAR_URL") or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -91,6 +99,13 @@ _USD_SENSITIVE_SYMBOLS = {
 # Pre-trade buffer: no new signals N minutes before and after a red event
 NO_TRADE_BUFFER_MINUTES = int(os.getenv("NO_TRADE_BUFFER_MINUTES", "30"))
 REDIS_EVENTS_KEY = "signalrankai:economic_events:v1"
+# The DB/Redis copies keep just-past events so the blackout after a release still applies.
+RECENT_EVENT_HOURS = 2
+
+
+def _normalize_symbol(symbol: str) -> str:
+    """``EUR/USD``, ``eur-usd`` and ``EURUSD`` are the same instrument for the gate."""
+    return re.sub(r"[^A-Z0-9]", "", str(symbol or "").upper())
 VOLATILITY_BUFFER_MULTIPLIER = float(os.getenv("NEWS_VOLATILITY_BUFFER_MULTIPLIER", "1.0") or 1.0)
 
 
@@ -106,8 +121,8 @@ async def _load_events_from_redis() -> list[dict]:
                 return []
             normalized = []
             for event in events:
-                if not isinstance(event, dict):
-                    continue
+                if not isinstance(event, dict) or event.get("source") == "fallback":
+                    continue  # an old cache may hold the timeless fallback; never reuse it
                 item = dict(event)
                 raw_time = item.get("event_time")
                 if isinstance(raw_time, str) and raw_time:
@@ -130,7 +145,7 @@ async def _load_events_from_db() -> list[dict]:
 
         async def _fetch() -> list[dict]:
             async with get_session(priority="background", label="economic_calendar_cache_read") as session:
-                events = await get_economic_events(session, hours_ahead=168)
+                events = await get_economic_events(session, hours_ahead=168, hours_behind=RECENT_EVENT_HOURS)
                 out = []
                 for event in events:
                     impact = str(getattr(event, "impact", "") or "").lower()
@@ -293,13 +308,14 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
     Results are cached for ``_CACHE_TTL_SECONDS`` seconds.  Pass
     ``force_refresh=True`` to bypass the cache.
     """
-    global _EVENTS_CACHE, _CACHE_FETCHED_AT
+    global _EVENTS_CACHE, _CACHE_FETCHED_AT, _CACHE_IS_FALLBACK
 
     now = datetime.now(tz=timezone.utc)
+    ttl = _FALLBACK_RETRY_SECONDS if _CACHE_IS_FALLBACK else _CACHE_TTL_SECONDS
     if (
         not force_refresh
         and _CACHE_FETCHED_AT is not None
-        and (now - _CACHE_FETCHED_AT).total_seconds() < _CACHE_TTL_SECONDS
+        and (now - _CACHE_FETCHED_AT).total_seconds() < ttl
         and _EVENTS_CACHE
     ):
         return _EVENTS_CACHE
@@ -309,14 +325,12 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
 
     events = await _load_events_from_redis()
     if events:
-        _EVENTS_CACHE = events
-        _CACHE_FETCHED_AT = now
+        _EVENTS_CACHE, _CACHE_FETCHED_AT, _CACHE_IS_FALLBACK = events, now, False
         return events
 
     events = await _load_events_from_db()
     if events:
-        _EVENTS_CACHE = events
-        _CACHE_FETCHED_AT = now
+        _EVENTS_CACHE, _CACHE_FETCHED_AT, _CACHE_IS_FALLBACK = events, now, False
         return events
 
     events = await _fetch_forex_factory(from_dt, to_dt)
@@ -329,12 +343,27 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
         # see there are events — callers check is_no_trade_zone() which will
         # gracefully return False for events without event_time.
         events = [{**e, "event_time": None, "source": "fallback"} for e in _FALLBACK_EVENTS]
+        # Kept in this process for a few minutes only and never shared through Redis:
+        # one failed fetch used to leave every process without news protection for an hour.
+        _EVENTS_CACHE, _CACHE_FETCHED_AT, _CACHE_IS_FALLBACK = events, now, True
+        return events
 
-    _EVENTS_CACHE = events
-    _CACHE_FETCHED_AT = now
+    _EVENTS_CACHE, _CACHE_FETCHED_AT, _CACHE_IS_FALLBACK = events, now, False
     _store_events_in_redis(events)
     logger.info(f"[economic_calendar] Cache refreshed: {len(events)} events")
     return events
+
+
+def calendar_status() -> dict[str, object]:
+    """Whether the news gate currently has real event times (``fallback`` means it blocks nothing)."""
+    sources = sorted({str(e.get("source") or "unknown") for e in _EVENTS_CACHE})
+    return {
+        "fallback": _CACHE_IS_FALLBACK,
+        "events": len(_EVENTS_CACHE),
+        "timed_events": sum(1 for e in _EVENTS_CACHE if e.get("event_time") is not None),
+        "sources": sources,
+        "fetched_at": _CACHE_FETCHED_AT.isoformat() if _CACHE_FETCHED_AT else None,
+    }
 
 
 async def is_no_trade_zone(
@@ -353,7 +382,7 @@ async def is_no_trade_zone(
         buffer_minutes: Override the buffer window.  Defaults to env
                         ``NO_TRADE_BUFFER_MINUTES`` (30).
     """
-    if str(symbol).upper() not in _USD_SENSITIVE_SYMBOLS:
+    if _normalize_symbol(symbol) not in _USD_SENSITIVE_SYMBOLS:
         return False
 
     now = dt or datetime.now(tz=timezone.utc)
@@ -434,21 +463,23 @@ def is_no_trade_zone_sync(
     dt: Optional[datetime] = None,
     buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
 ) -> bool:
-    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
+    """Synchronous wrapper for ``is_no_trade_zone``, safe from any thread.
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(
-                    asyncio.run,
-                    is_no_trade_zone(symbol, dt, buffer_minutes),
-                )
-                return future.result(timeout=6.0)
-        else:
-            return loop.run_until_complete(is_no_trade_zone(symbol, dt, buffer_minutes))
-    except Exception:
+    The engine loop runs in an executor thread, where ``asyncio.get_event_loop()``
+    raises; the old wrapper swallowed that and returned False, so the blackout
+    never applied there. The shared runner works from any thread and is bounded.
+    When the gate cannot be evaluated it still lets trading continue (existing
+    policy), but says so in the log instead of failing silently.
+    """
+    try:
+        from utils.async_runner import run_sync
+
+        return bool(run_sync(is_no_trade_zone(symbol, dt, buffer_minutes), timeout=_SYNC_GATE_TIMEOUT_SECONDS))
+    except Exception as exc:
+        global _LAST_GATE_WARNING
+        if time.monotonic() - _LAST_GATE_WARNING >= _GATE_WARNING_INTERVAL_SECONDS:
+            _LAST_GATE_WARNING = time.monotonic()
+            logger.warning("[economic_calendar] news gate unavailable, not blocking %s: %s", symbol, type(exc).__name__)
         return False
 
 

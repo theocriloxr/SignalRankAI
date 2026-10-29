@@ -69,7 +69,8 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
                 return result
 
             # Delete old events (older than 2 days) to keep table clean
-            cutoff = datetime.now(timezone.utc) - timedelta(days=2)
+            # event_date is a timestamp without time zone holding UTC; compare naive to naive.
+            cutoff = now_utc_naive() - timedelta(days=2)
             try:
                 await session.execute(delete(EconomicEvent).where(EconomicEvent.event_date < cutoff))
                 await session.commit()
@@ -85,7 +86,8 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
             for event_data in events[:MAX_EVENTS_PER_SYNC]:
                 try:
                     # Parse event data
-                    event_date = event_data.get("event_date") or event_data.get("datetime")
+                    # fetch_economic_events() names it event_time; older payloads used the others.
+                    event_date = event_data.get("event_time") or event_data.get("event_date") or event_data.get("datetime")
                     if isinstance(event_date, str):
                         try:
                             event_date = datetime.fromisoformat(event_date.replace("Z", "+00:00"))
@@ -98,9 +100,9 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
                     if event_date is None:
                         continue
 
-                    # Ensure timezone-aware
-                    if event_date.tzinfo is None:
-                        event_date = event_date.replace(tzinfo=timezone.utc)
+                    # Store naive UTC: the column has no time zone and asyncpg refuses aware values.
+                    if event_date.tzinfo is not None:
+                        event_date = event_date.astimezone(timezone.utc).replace(tzinfo=None)
 
                     currency = event_data.get("currency", "USD")[:8]
                     title = event_data.get("title", "")[:256]
@@ -156,11 +158,13 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
 
                     # Get all stored events for Redis
                     async with get_session() as redis_session:
-                        now = datetime.now(timezone.utc)
+                        now = now_utc_naive()
                         window_end = now + timedelta(days=7)
+                        # Keep just-past events so the blackout after a release still applies.
+                        window_start = now - timedelta(hours=2)
                         result_db = await redis_session.execute(
                             select(EconomicEvent).where(
-                                EconomicEvent.event_date >= now, EconomicEvent.event_date <= window_end
+                                EconomicEvent.event_date >= window_start, EconomicEvent.event_date <= window_end
                             )
                         )
                         redis_events = result_db.scalars().all()
@@ -169,7 +173,8 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
                                 "title": e.title,
                                 "currency": e.currency,
                                 "impact": e.impact,
-                                "event_time": e.event_date.isoformat() if e.event_date else None,
+                                "event_time": e.event_date.replace(tzinfo=timezone.utc).isoformat() if e.event_date else None,
+                                "source": e.source or "db",
                             }
                             for e in redis_events
                         ]
