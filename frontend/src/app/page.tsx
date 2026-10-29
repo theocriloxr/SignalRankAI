@@ -31,7 +31,7 @@ const proof: { icon: IconName; label: string }[] = [
 export default function Home() {
   return <main className="mk-page">
     <PublicNav/>
-    <section className="mk-hero" aria-labelledby="mk-hero-title">
+    <section className="mk-hero skip-target" id="page-content" tabIndex={-1} aria-labelledby="mk-hero-title">
       <div className="mk-container mk-hero-grid">
         <div className="mk-hero-copy">
           <span className="mk-pill"><b>EVIDENCE FIRST</b> Multi-asset trading intelligence</span>

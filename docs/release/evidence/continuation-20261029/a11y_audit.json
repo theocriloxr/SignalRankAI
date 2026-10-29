@@ -1,0 +1,1398 @@
+{
+ "date": "2026-10-29",
+ "tool": "axe-core 4.14.0 via Playwright Chromium (scripts/a11y_audit.py) plus 320 px keyboard/reflow checks",
+ "tags": [
+  "wcag2a",
+  "wcag2aa",
+  "wcag21a",
+  "wcag21aa",
+  "wcag22aa"
+ ],
+ "scope": "Owned local stack (Next.js production build + FastAPI on the owned PostgreSQL 17 test cluster), synthetic owner account; not CI, staging or production",
+ "before_fixes": {
+  "pages_audited": 35,
+  "runs": 140,
+  "runs_with_errors": 0,
+  "runs_with_violations": 128,
+  "violating_nodes_by_rule": {
+   "color-contrast": 1067,
+   "label-content-name-mismatch": 62
+  }
+ },
+ "after_fixes": {
+  "pages_audited": 40,
+  "runs": 200,
+  "runs_with_errors": 0,
+  "runs_with_violations": 0,
+  "violating_nodes_by_rule": {}
+ },
+ "fixed": [
+  "muted text colour tokens below 4.5:1 in both themes (color-contrast, 1,067 nodes)",
+  "menu summary accessible name did not contain its visible text (label-content-name-mismatch, 62 nodes)",
+  "public pages had no skip link (WCAG 2.4.1)",
+  "legal pages' credit link accessible name contained a mis-encoded '?' character"
+ ],
+ "not_covered": "Screen-reader, full keyboard-only journeys, 200% text zoom and real-device checks need a person; automated rules find roughly a third of WCAG issues.",
+ "runs": [
+  {
+   "path": "/",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/login",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/recover",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/magic-login",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/pricing",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/methodology",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/security",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/providers",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/status",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/docs",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/product",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/features",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/markets",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/strategies",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/ai",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/privacy",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/faq",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/contact",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/terms",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/cookies",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/billing-policy",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk-disclosure",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/accessibility",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/signals",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/markets",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/research",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/watchlists",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/alerts",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/notifications",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/paper",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/portfolio",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/performance",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/journal",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/brokers",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/billing",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/support",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/settings",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/operations",
+   "scheme": "light",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/login",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/recover",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/magic-login",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/pricing",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/methodology",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/security",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/providers",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/status",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/docs",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/product",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/features",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/markets",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/strategies",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/ai",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/privacy",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/faq",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/contact",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/terms",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/cookies",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/billing-policy",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk-disclosure",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/accessibility",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/signals",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/markets",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/research",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/watchlists",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/alerts",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/notifications",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/paper",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/portfolio",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/performance",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/journal",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/brokers",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/billing",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/support",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/settings",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/operations",
+   "scheme": "light",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/login",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/recover",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/magic-login",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/pricing",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/methodology",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/security",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/providers",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/status",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/docs",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/product",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/features",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/markets",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/strategies",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/ai",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/privacy",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/faq",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/contact",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/terms",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/cookies",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/billing-policy",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk-disclosure",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/accessibility",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/signals",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/markets",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/research",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/watchlists",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/alerts",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/notifications",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/paper",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/portfolio",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/performance",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/journal",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/brokers",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/billing",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/support",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/settings",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/operations",
+   "scheme": "dark",
+   "viewport": "desktop",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/login",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/recover",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/magic-login",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/pricing",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/methodology",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/security",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/providers",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/status",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/docs",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/product",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/features",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/markets",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/strategies",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/ai",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/privacy",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/faq",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/contact",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/terms",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/cookies",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/billing-policy",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/risk-disclosure",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/accessibility",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/signals",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/markets",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/research",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/watchlists",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/alerts",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/notifications",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/paper",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/portfolio",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/performance",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/journal",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/brokers",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/billing",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/support",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/settings",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/app/operations",
+   "scheme": "dark",
+   "viewport": "mobile",
+   "status": 200,
+   "violations": []
+  },
+  {
+   "path": "/",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/login",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/recover",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/magic-login",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/pricing",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/methodology",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/risk",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/security",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/providers",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/status",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/docs",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/product",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/features",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/markets",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/strategies",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/ai",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/privacy",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/faq",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/contact",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/terms",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/cookies",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/billing-policy",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/risk-disclosure",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/accessibility",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/signals",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/markets",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/research",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/watchlists",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/alerts",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/notifications",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/paper",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/portfolio",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/performance",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/journal",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/brokers",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/billing",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/support",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/settings",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  },
+  {
+   "path": "/app/operations",
+   "scheme": "light",
+   "viewport": "320px-keyboard",
+   "violations": []
+  }
+ ]
+}

@@ -48,7 +48,7 @@ export function ResponsiveDisclosure({
     if(el instanceof Element && el.closest("a[href]") && menu.current) menu.current.open=false;
   }
   return <details className={className} id={id} ref={menu} onKeyDown={onKeyDown} onClickCapture={onClick}>
-    <summary ref={summary} aria-label={label}><Icon name="menu"/><span>Menu</span></summary>
+    <summary ref={summary}><Icon name="menu"/><span>Menu</span><span className="visually-hidden">: {label}</span></summary>
     <div className="disclosure-panel">{children}</div>
   </details>;
 }

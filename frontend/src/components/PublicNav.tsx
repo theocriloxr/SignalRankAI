@@ -14,7 +14,8 @@ const links = [
 ] as const;
 
 export function PublicNav({ current }: { current?: string }) {
-  return <div className="mk-nav-wrap">
+  // The skip link targets #page-content, which every public page puts after this navigation.
+  return <><a className="skip-link" href="#page-content">Skip to content</a><div className="mk-nav-wrap">
     <nav className="mk-container mk-nav" aria-label="Public site navigation">
       <Link className="brand-mark" href="/" aria-label="SignalRankAI home"><Image src="/brand/icon.svg" alt="" width={30} height={30} unoptimized /><span className="brand-word">SignalRank<span>AI</span></span></Link>
       <div className="mk-nav-links">{links.map(([label,href])=><Link key={href} href={href} aria-current={current===href?"page":undefined}>{label}</Link>)}</div>
@@ -32,5 +33,5 @@ export function PublicNav({ current }: { current?: string }) {
         </ResponsiveDisclosure>
       </div>
     </nav>
-  </div>;
+  </div></>;
 }

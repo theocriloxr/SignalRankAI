@@ -43,7 +43,7 @@
   --border-strong: #2a3542;
   --text: #e9eef3;
   --text-2: #a5b0bd;
-  --text-3: #6d7a89;
+  --text-3: #8a95a1; /* 5.3:1 or better on every dark surface (WCAG AA) */
   --brand: #3ddc97;
   --brand-strong: #19c27e;
   --brand-ink: #03140d;
@@ -79,7 +79,7 @@
   --border-strong: #cdd5df;
   --text: #0c131b;
   --text-2: #475467;
-  --text-3: #778598;
+  --text-3: #5d6877; /* 4.8:1 or better on every light surface (WCAG AA) */
   --brand: #047857;
   --brand-strong: #065f46;
   --brand-ink: #ffffff;
@@ -115,7 +115,7 @@
     --border-strong: #cdd5df;
     --text: #0c131b;
     --text-2: #475467;
-    --text-3: #778598;
+    --text-3: #5d6877; /* 4.8:1 or better on every light surface (WCAG AA) */
     --brand: #047857;
     --brand-strong: #065f46;
     --brand-ink: #ffffff;

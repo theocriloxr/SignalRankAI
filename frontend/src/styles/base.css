@@ -62,6 +62,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
   background: var(--brand); color: var(--brand-ink); font-weight: 650;
 }
 .skip-link:focus { top: var(--space-4); }
+/* A skip-link destination takes focus programmatically; outlining the whole region adds nothing. */
+.skip-target:focus { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

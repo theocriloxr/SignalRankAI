@@ -27,7 +27,7 @@ export type EditorialPage = {
 export function PublicEditorial({ page, children }: { page: EditorialPage; children?: React.ReactNode }) {
   return <main className="mk-page">
     <PublicNav current={`/${page.slug}`} />
-    <div className="mk-container">
+    <div className="mk-container skip-target" id="page-content" tabIndex={-1}>
       <header className="mk-editorial-hero">
         <p className="ui-eyebrow ui-eyebrow--brand">{page.eyebrow}</p>
         <h1>{page.title}</h1>
