@@ -158,15 +158,38 @@ def normalized_tier(tier: str | None) -> str:
     return value if value in {"FREE", "PREMIUM", "VIP", "PROFESSIONAL", "INSTITUTIONAL", "ADMIN", "OWNER"} else "FREE"
 
 
+# Telegram Bot API supports at most 100 commands in a menu scope.
+MENU_LIMIT = 100
+# Customer onboarding, buying, referral and setup commands an operator rarely needs in the
+# menu. Without this, an owner's menu (123 commands) was cut in catalogue order and lost the
+# owner's own controls (kill_switch, system_health, queue_status, ...). /help still lists all.
+OPERATOR_MENU_OMIT = frozenset({
+    "start", "about", "app", "login_code", "link", "security", "privacy", "pricing", "upgrade", "tiers",
+    "invite", "referral_leaderboard", "referral_rewards", "referral", "faq", "disclaimer", "language",
+    "cancel", "paper_reset", "paper_close_all", "profile", "connect_broker", "mt5_link", "setlot", "early",
+})
+
+
 def visible_commands(tier: str | None, *, botfather_only: bool = False) -> list[CommandSpec]:
+    """Commands this tier may see; the Telegram menu (``botfather_only``) is capped at MENU_LIMIT."""
     current = normalized_tier(tier)
     current_rank = tier_rank(current)
+    operator_rank = tier_rank("ADMIN")
     specs = [
         spec for spec in COMMANDS
         if tier_rank(spec.tier) <= current_rank and (spec.botfather or not botfather_only)
     ]
-    # Telegram Bot API supports at most 100 commands in a scope.
-    return specs[:100]
+    if not botfather_only or len(specs) <= MENU_LIMIT:
+        return specs
+    if current_rank >= operator_rank:
+        specs = [spec for spec in specs if spec.name not in OPERATOR_MENU_OMIT]
+    if len(specs) > MENU_LIMIT:
+        # Still too many: operator commands first, then customer commands in catalogue order.
+        operator = [spec.name for spec in specs if tier_rank(spec.tier) >= operator_rank][:MENU_LIMIT]
+        customer = [spec.name for spec in specs if tier_rank(spec.tier) < operator_rank]
+        keep = set(operator) | set(customer[:max(0, MENU_LIMIT - len(operator))])
+        specs = [spec for spec in specs if spec.name in keep]
+    return specs
 
 
 def botfather_commands(tier: str | None) -> list[tuple[str, str]]:
@@ -194,6 +217,6 @@ def command_description(name: str) -> str:
 
 
 __all__ = [
-    "COMMANDS", "CommandSpec", "botfather_commands", "command_description",
+    "COMMANDS", "CommandSpec", "MENU_LIMIT", "OPERATOR_MENU_OMIT", "botfather_commands", "command_description",
     "grouped_help", "normalized_tier", "visible_commands",
 ]
