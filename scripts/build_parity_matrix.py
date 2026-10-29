@@ -75,7 +75,8 @@ def command_section(name: str, sections: list[str]) -> str | None:
 
 def route_commands(path: str, commands: list) -> list[str]:
     segments = {_norm(seg) for seg in re.split(r"[/{}]", path) if seg}
-    return [c.name for c in commands if _norm(c.name) in segments]
+    # A singular command serves its plural collection route (/watchlist -> /watchlists).
+    return [c.name for c in commands if _norm(c.name) in segments or _norm(c.name) + "s" in segments]
 
 
 def render() -> str:

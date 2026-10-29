@@ -497,6 +497,8 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "devices": Tier.FREE,
         "security": Tier.FREE,
         "privacy": Tier.FREE,
+        "watchlist": Tier.FREE,
+        "journal": Tier.FREE,
         "timezone": Tier.FREE,
         "travelmode": Tier.FREE,
         "settings": Tier.FREE,

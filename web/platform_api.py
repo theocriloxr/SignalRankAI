@@ -3396,42 +3396,31 @@ async def instrument_search(
 
 @router.get("/watchlists")
 async def list_watchlists(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    # Shared with the Telegram /watchlist command (services/platform/watchlists.py).
+    from services.platform import watchlists
+
     async with get_session() as session:
-        rows = (
-            (
-                await session.execute(
-                    text(
-                        "SELECT w.watchlist_id,w.name,w.is_default,w.created_at,w.updated_at,"
-                        "COALESCE(jsonb_agg(jsonb_build_object('instrument_id',wi.instrument_id)) FILTER (WHERE wi.instrument_id IS NOT NULL),'[]'::jsonb) AS items "
-                        "FROM watchlists w LEFT JOIN watchlist_items wi ON wi.watchlist_id=w.watchlist_id "
-                        "WHERE w.user_id=:uid GROUP BY w.watchlist_id ORDER BY w.is_default DESC,w.created_at"
-                    ),
-                    {"uid": int(user["id"])},
-                )
-            )
-            .mappings()
-            .all()
-        )
+        rows = await watchlists.list_watchlists(session, int(user["id"]))
         await session.rollback()
-    return {"watchlists": [dict(row) for row in rows]}
+    return {"watchlists": rows}
 
 
 @router.post("/watchlists", status_code=201)
 async def create_watchlist(
     payload: WatchlistCreateRequest, user: dict[str, Any] = Depends(current_user)
 ) -> dict[str, Any]:
-    watchlist_id = str(uuid4())
+    from services.platform import watchlists
+
     async with get_session() as session:
         try:
-            await session.execute(
-                text("INSERT INTO watchlists(watchlist_id,user_id,name) VALUES(:wid,:uid,:name)"),
-                {"wid": watchlist_id, "uid": int(user["id"]), "name": payload.name.strip()},
-            )
+            created = await watchlists.create_watchlist(session, int(user["id"]), payload.name)
             await session.commit()
-        except Exception as exc:
+        except watchlists.WatchlistError as exc:
             await session.rollback()
+            if str(exc) == "invalid_name":
+                raise HTTPException(status_code=422, detail="Watchlist name is required") from exc
             raise HTTPException(status_code=409, detail="Watchlist already exists") from exc
-    return {"watchlist_id": watchlist_id, "name": payload.name.strip()}
+    return created
 
 
 @router.post("/watchlists/{watchlist_id}/items", status_code=201)
@@ -3440,26 +3429,15 @@ async def add_watchlist_item(
     payload: WatchlistItemRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    from services.platform import watchlists
+
     async with get_session() as session:
-        owner = (
-            await session.execute(
-                text("SELECT 1 FROM watchlists WHERE watchlist_id=:wid AND user_id=:uid"),
-                {"wid": watchlist_id, "uid": int(user["id"])},
-            )
-        ).first()
-        if not owner:
-            raise HTTPException(status_code=404, detail="Watchlist not found")
-        instrument = (
-            await session.execute(
-                text("SELECT 1 FROM instruments WHERE instrument_id=:iid"), {"iid": payload.instrument_id}
-            )
-        ).first()
-        if not instrument:
-            raise HTTPException(status_code=404, detail="Instrument not found")
-        await session.execute(
-            text("INSERT INTO watchlist_items(watchlist_id,instrument_id) VALUES(:wid,:iid) ON CONFLICT DO NOTHING"),
-            {"wid": watchlist_id, "iid": payload.instrument_id},
-        )
+        try:
+            await watchlists.add_item(session, int(user["id"]), watchlist_id, payload.instrument_id)
+        except watchlists.WatchlistError as exc:
+            await session.rollback()
+            detail = "Watchlist not found" if str(exc) == "watchlist_not_found" else "Instrument not found"
+            raise HTTPException(status_code=404, detail=detail) from exc
         await session.commit()
     return {"added": True}
 
@@ -3772,23 +3750,13 @@ async def journal_entries(
     offset: int = Query(0, ge=0),
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    # Shared with the Telegram /journal command (services/platform/journal.py).
+    from services.platform import journal
+
     async with get_session() as session:
-        rows = (
-            (
-                await session.execute(
-                    text(
-                        "SELECT journal_entry_id,signal_id,paper_position_id,title,notes,emotion,mistake_category,"
-                        "plan_adherence,result_r,tags,occurred_at,created_at,updated_at "
-                        "FROM journal_entries WHERE user_id=:uid ORDER BY occurred_at DESC LIMIT :limit OFFSET :offset"
-                    ),
-                    {"uid": int(user["id"]), "limit": int(limit), "offset": int(offset)},
-                )
-            )
-            .mappings()
-            .all()
-        )
+        rows = await journal.list_entries(session, int(user["id"]), limit=int(limit), offset=int(offset))
         await session.rollback()
-    return {"entries": [dict(row) for row in rows]}
+    return {"entries": rows}
 
 
 @router.post("/journal", status_code=201)
@@ -3796,31 +3764,22 @@ async def create_journal_entry(
     payload: JournalEntryRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
-    entry_id = str(uuid4())
-    tags = sorted({str(value).strip()[:64] for value in payload.tags if str(value).strip()})
+    from services.platform import journal
+
     async with get_session() as session:
-        await session.execute(
-            text(
-                "INSERT INTO journal_entries("
-                "journal_entry_id,user_id,signal_id,paper_position_id,title,notes,emotion,mistake_category,"
-                "plan_adherence,result_r,tags,occurred_at"
-                ") VALUES(:entry_id,:uid,:signal_id,:position_id,:title,:notes,:emotion,:mistake,"
-                ":adherence,:result_r,CAST(:tags AS JSONB),COALESCE(:occurred_at,NOW()))"
-            ),
-            {
-                "entry_id": entry_id,
-                "uid": int(user["id"]),
-                "signal_id": payload.signal_id,
-                "position_id": payload.paper_position_id,
-                "title": payload.title,
-                "notes": payload.notes,
-                "emotion": payload.emotion,
-                "mistake": payload.mistake_category,
-                "adherence": payload.plan_adherence,
-                "result_r": payload.result_r,
-                "tags": json.dumps(tags, separators=(",", ":")),
-                "occurred_at": payload.occurred_at,
-            },
+        entry_id = await journal.create_entry(
+            session,
+            int(user["id"]),
+            notes=payload.notes,
+            title=payload.title,
+            signal_id=payload.signal_id,
+            paper_position_id=payload.paper_position_id,
+            emotion=payload.emotion,
+            mistake_category=payload.mistake_category,
+            plan_adherence=payload.plan_adherence,
+            result_r=payload.result_r,
+            tags=payload.tags,
+            occurred_at=payload.occurred_at,
         )
         await session.commit()
     return {"journal_entry_id": entry_id, "created": True}
@@ -3831,13 +3790,12 @@ async def delete_journal_entry(
     journal_entry_id: str,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    from services.platform import journal
+
     async with get_session() as session:
-        result = await session.execute(
-            text("DELETE FROM journal_entries WHERE journal_entry_id=:entry_id AND user_id=:uid"),
-            {"entry_id": journal_entry_id, "uid": int(user["id"])},
-        )
+        deleted = await journal.delete_entry(session, int(user["id"]), journal_entry_id)
         await session.commit()
-    if not result.rowcount:
+    if not deleted:
         raise HTTPException(status_code=404, detail="Journal entry not found")
     return {"deleted": True}
 
@@ -6400,13 +6358,12 @@ async def revoke_device_session(session_id: str, user: dict[str, Any] = Depends(
 
 @router.delete("/watchlists/{watchlist_id}")
 async def delete_watchlist(watchlist_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    from services.platform import watchlists
+
     async with get_session() as session:
-        result = await session.execute(
-            text("DELETE FROM watchlists WHERE watchlist_id=:id AND user_id=:uid"),
-            {"id": watchlist_id, "uid": int(user["id"])},
-        )
+        deleted = await watchlists.delete_watchlist(session, int(user["id"]), watchlist_id)
         await session.commit()
-    if not result.rowcount:
+    if not deleted:
         raise HTTPException(status_code=404, detail="Watchlist not found")
     return {"deleted": True}
 
@@ -6417,16 +6374,12 @@ async def remove_watchlist_item(
     instrument_id: str,
     user: dict[str, Any] = Depends(current_user),
 ) -> dict[str, Any]:
+    from services.platform import watchlists
+
     async with get_session() as session:
-        result = await session.execute(
-            text(
-                "DELETE FROM watchlist_items wi USING watchlists w WHERE wi.watchlist_id=w.watchlist_id "
-                "AND wi.watchlist_id=:watchlist_id AND wi.instrument_id=:instrument_id AND w.user_id=:uid"
-            ),
-            {"watchlist_id": watchlist_id, "instrument_id": instrument_id, "uid": int(user["id"])},
-        )
+        removed = await watchlists.remove_item(session, int(user["id"]), watchlist_id, instrument_id)
         await session.commit()
-    if not result.rowcount:
+    if not removed:
         raise HTTPException(status_code=404, detail="Watchlist item not found")
     return {"deleted": True}
 

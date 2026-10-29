@@ -51,6 +51,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("paper_settings", "Control automatic paper entries and risk", "FREE", "Paper trading"),
     CommandSpec("paper_close_all", "Close all virtual positions with confirmation", "FREE", "Paper trading"),
     CommandSpec("paper_reset", "Reset paper history with explicit confirmation", "FREE", "Paper trading"),
+    CommandSpec("watchlist", "Your watchlists, shared with the web app", "FREE", "Workspace"),
+    CommandSpec("journal", "Your private trade journal, shared with the web app", "FREE", "Workspace"),
     CommandSpec("invite", "Get your referral link", "FREE", "Referrals"),
     CommandSpec("referral_leaderboard", "View the referral leaderboard", "FREE", "Referrals"),
     CommandSpec("referral_rewards", "View your referral rewards", "FREE", "Referrals"),

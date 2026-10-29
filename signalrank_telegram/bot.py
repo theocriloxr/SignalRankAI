@@ -6609,6 +6609,10 @@ def run_bot() -> None:
     from .platform_parity_commands import account_merges_command, privacy_command
     application.add_handler(CommandHandler("privacy", _audit_handler("privacy", privacy_command)))
     application.add_handler(CommandHandler("account_merges", _audit_handler("account_merges", account_merges_command)))
+    # Same watchlists and journal as the web workspace (services/platform).
+    from .workspace_commands import journal_command, watchlist_command
+    application.add_handler(CommandHandler("watchlist", _audit_handler("watchlist", watchlist_command)))
+    application.add_handler(CommandHandler("journal", _audit_handler("journal", journal_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))

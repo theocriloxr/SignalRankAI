@@ -14,13 +14,13 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/app/signals` | — | `/feedback`, `/filter`, `/history`, `/outcome`, `/proof`, `/signal`, `/signals`, `/why_no_signal` |
 | `/app/markets` | `/quality` | `/analyze`, `/assets`, `/liveprice`, `/market`, `/quality`, `/risk` |
 | `/app/research` | `/strategy-leaderboard` | `/adaptive_status`, `/research` |
-| `/app/watchlists` | `/watchlists` | — |
+| `/app/watchlists` | `/watchlists` | `/watchlist` |
 | `/app/alerts` | `/alerts` | `/alerts` |
 | `/app/notifications` | `/notifications` | `/notify` |
 | `/app/paper` | `/paper` | `/paper_balance`, `/paper_close_all`, `/paper_history`, `/paper_performance`, `/paper_positions`, `/paper_reset`, `/paper_settings`, `/simulate` |
 | `/app/portfolio` | `/portfolio` | `/portfolio` |
 | `/app/performance` | `/performance` | `/mystats`, `/performance`, `/report`, `/stats` |
-| `/app/journal` | `/journal` | — |
+| `/app/journal` | `/journal` | `/journal` |
 | `/app/brokers` | `/broker/connections` | `/connect_broker`, `/execution`, `/mt5_link`, `/mt5_status`, `/setlot`, `/verifybroker` |
 | `/app/billing` | `/billing` | `/cancel`, `/early`, `/elite`, `/pricing`, `/tiers`, `/upgrade` |
 | `/app/support` | `/support/tickets` | `/disclaimer`, `/faq`, `/support` |
@@ -59,6 +59,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/paper_settings` | FREE | Paper trading | `/app/paper` |
 | `/paper_close_all` | FREE | Paper trading | `/app/paper` |
 | `/paper_reset` | FREE | Paper trading | `/app/paper` |
+| `/watchlist` | FREE | Workspace | `/app/watchlists` |
+| `/journal` | FREE | Workspace | `/app/journal` |
 | `/invite` | FREE | Referrals | `/app/settings` |
 | `/referral_leaderboard` | FREE | Referrals | `/app/settings` |
 | `/referral_rewards` | FREE | Referrals | `/app/settings` |
@@ -166,9 +168,9 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/alerts` | `/alerts` |
 | DELETE | `/alerts/{alert_id}` | `/alerts` |
 | POST | `/analytics/events` | — |
-| GET | `/api-keys` | — |
-| POST | `/api-keys` | — |
-| DELETE | `/api-keys/{key_id}` | — |
+| GET | `/api-keys` | `/apikey` |
+| POST | `/api-keys` | `/apikey` |
+| DELETE | `/api-keys/{key_id}` | `/apikey` |
 | POST | `/auth/email-verification/complete` | — |
 | POST | `/auth/email-verification/request` | — |
 | POST | `/auth/login` | — |
@@ -223,9 +225,9 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/execution-webhook` | — |
 | PUT | `/execution-webhook` | — |
 | GET | `/instruments/search` | — |
-| GET | `/journal` | — |
-| POST | `/journal` | — |
-| DELETE | `/journal/{journal_entry_id}` | — |
+| GET | `/journal` | `/journal` |
+| POST | `/journal` | `/journal` |
+| DELETE | `/journal/{journal_entry_id}` | `/journal` |
 | GET | `/live-price` | `/liveprice` |
 | GET | `/me` | — |
 | GET | `/notifications` | — |
@@ -265,23 +267,23 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | PUT | `/paper/settings` | `/settings` |
 | GET | `/performance` | `/performance` |
 | GET | `/portfolio` | `/portfolio` |
-| GET | `/professional/signals` | `/signals` |
+| GET | `/professional/signals` | `/signals`, `/signal` |
 | PATCH | `/profile` | `/profile` |
 | POST | `/push-devices` | — |
 | DELETE | `/push-devices/{push_device_id}` | — |
 | GET | `/quality` | `/quality` |
 | GET | `/recap` | — |
-| GET | `/referrals` | — |
-| GET | `/referrals/leaderboard` | — |
+| GET | `/referrals` | `/referral` |
+| GET | `/referrals/leaderboard` | `/referral` |
 | GET | `/security/mfa` | `/security` |
 | POST | `/security/mfa/disable` | `/security` |
 | POST | `/security/mfa/enable` | `/security` |
 | POST | `/security/mfa/setup` | `/security` |
 | GET | `/shadow-report` | — |
-| GET | `/signals` | `/signals` |
-| GET | `/signals/{signal_id}` | `/signals` |
-| POST | `/signals/{signal_id}/execute` | `/signals` |
-| POST | `/signals/{signal_id}/feedback` | `/signals`, `/feedback` |
+| GET | `/signals` | `/signals`, `/signal` |
+| GET | `/signals/{signal_id}` | `/signals`, `/signal` |
+| POST | `/signals/{signal_id}/execute` | `/signals`, `/signal` |
+| POST | `/signals/{signal_id}/feedback` | `/signals`, `/signal`, `/feedback` |
 | POST | `/simulation` | — |
 | GET | `/strategy-leaderboard` | — |
 | GET | `/support/tickets` | `/support` |
@@ -290,13 +292,13 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/support/tickets/{ticket_id}/messages` | `/support` |
 | GET | `/trading-profile` | — |
 | PUT | `/trading-profile` | — |
-| GET | `/watchlists` | — |
-| POST | `/watchlists` | — |
-| DELETE | `/watchlists/{watchlist_id}` | — |
-| POST | `/watchlists/{watchlist_id}/items` | — |
-| DELETE | `/watchlists/{watchlist_id}/items/{instrument_id}` | — |
+| GET | `/watchlists` | `/watchlist` |
+| POST | `/watchlists` | `/watchlist` |
+| DELETE | `/watchlists/{watchlist_id}` | `/watchlist` |
+| POST | `/watchlists/{watchlist_id}/items` | `/watchlist` |
+| DELETE | `/watchlists/{watchlist_id}/items/{instrument_id}` | `/watchlist` |
 | GET | `/webhooks` | — |
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 121 commands (46 without a web section), 16 web sections, 141 routes (99 without a name-matched command).
+Summary: 123 commands (46 without a web section), 16 web sections, 141 routes (86 without a name-matched command).
