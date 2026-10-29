@@ -78,12 +78,26 @@ async def _resolve_public_host(hostname: str) -> set[str]:
         raise ValueError("webhook_host_unresolved")
     for raw in addresses:
         ip = ipaddress.ip_address(raw)
-        if any((ip.is_private, ip.is_loopback, ip.is_link_local, ip.is_multicast, ip.is_reserved, ip.is_unspecified)):
+        # ``is_global`` also rejects shared (100.64/10 carrier NAT) and other
+        # non-routable ranges that ``is_private`` lets through.
+        if not ip.is_global or any(
+            (ip.is_private, ip.is_loopback, ip.is_link_local, ip.is_multicast, ip.is_reserved, ip.is_unspecified)
+        ):
             raise ValueError("webhook_private_address_blocked")
     return addresses
 
 
 async def validate_webhook_destination(url: str) -> str:
+    destination, _ = await resolve_webhook_destination(url)
+    return destination
+
+
+async def resolve_webhook_destination(url: str) -> tuple[str, set[str] | None]:
+    """Validated URL plus the public addresses it resolved to (``None`` for local test hosts).
+
+    Delivery connects to one of exactly these addresses, so a DNS answer that
+    changes after validation (rebinding) cannot redirect a delivery inward.
+    """
     parsed = urlparse(str(url).strip())
     environment = str(os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local").lower()
     local_ok = (
@@ -102,9 +116,25 @@ async def validate_webhook_destination(url: str) -> str:
     }
     if allowed_hosts and str(parsed.hostname).lower() not in allowed_hosts:
         raise ValueError("webhook_host_not_allowlisted")
-    if not local_ok:
-        await _resolve_public_host(str(parsed.hostname))
-    return parsed.geturl()
+    if local_ok:
+        return parsed.geturl(), None
+    return parsed.geturl(), await _resolve_public_host(str(parsed.hostname))
+
+
+def pinned_request(url: str, addresses: set[str] | None) -> tuple[str, dict[str, Any], dict[str, str]]:
+    """Request URL, httpx extensions and Host header that connect to a validated address.
+
+    The URL carries the IP literal; TLS still uses the real hostname for SNI and
+    certificate verification (httpcore ``sni_hostname``), and ``Host`` names it.
+    """
+    if not addresses:
+        return url, {}, {}
+    parsed = urlparse(url)
+    address = sorted(addresses, key=lambda value: (":" in value, value))[0]  # prefer IPv4
+    literal = f"[{address}]" if ":" in address else address
+    port = f":{parsed.port}" if parsed.port else ""
+    host = str(parsed.hostname)
+    return parsed._replace(netloc=literal + port).geturl(), {"sni_hostname": host}, {"Host": host + port}
 
 
 def webhook_signature(secret: str, timestamp: str, body: bytes) -> str:
@@ -192,7 +222,8 @@ async def _deliver_one(client: httpx.AsyncClient, item: Mapping[str, Any]) -> bo
     delivery_id = str(item["webhook_delivery_id"])
     attempts = int(item.get("attempt_count") or 1)
     try:
-        url = await validate_webhook_destination(str(item["url"]))
+        url, addresses = await resolve_webhook_destination(str(item["url"]))
+        request_url, extensions, host_header = pinned_request(url, addresses)
         secret = decrypt_secret(str(item.get("encrypted_secret") or ""))
         if not secret:
             raise ValueError("webhook_secret_unavailable")
@@ -212,8 +243,9 @@ async def _deliver_one(client: httpx.AsyncClient, item: Mapping[str, Any]) -> bo
             "X-SignalRank-Timestamp": timestamp,
             "X-SignalRank-Signature": webhook_signature(secret, timestamp, body),
             "Idempotency-Key": str(item["idempotency_key"]),
+            **host_header,
         }
-        response = await client.post(url, content=body, headers=headers)
+        response = await client.post(request_url, content=body, headers=headers, extensions=extensions)
         excerpt = response.text[:500] if response.text else None
         if 200 <= response.status_code < 300:
             await _store_result(
@@ -244,7 +276,10 @@ async def deliver_webhook_batch(limit: int | None = None) -> dict[str, int]:
     timeout = httpx.Timeout(float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10")), connect=5.0)
     concurrency = _env_int("WEBHOOK_CONCURRENCY", 5)
     semaphore = asyncio.Semaphore(concurrency)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+    # No keep-alive: connections are opened per pinned address and hostname, so one
+    # customer's delivery can never reuse a TLS session negotiated for another's host.
+    limits = httpx.Limits(max_keepalive_connections=0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, limits=limits) as client:
 
         async def run(item: Mapping[str, Any]) -> bool:
             async with semaphore:
@@ -257,7 +292,9 @@ async def deliver_webhook_batch(limit: int | None = None) -> dict[str, int]:
 
 __all__ = [
     "deliver_webhook_batch",
+    "pinned_request",
     "queue_user_webhook_event",
+    "resolve_webhook_destination",
     "validate_webhook_destination",
     "webhook_signature",
 ]
