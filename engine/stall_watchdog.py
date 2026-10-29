@@ -4,8 +4,10 @@ Production evidence (read-only Railway logs, 28 Oct 2026): the engine logged
 its last pipeline step at 2026-10-22 08:08:30 UTC, seconds before Postgres was
 redeployed and the engine's database connections broke. The process stayed up,
 so Railway kept reporting the service Online while no cycle ran for six days.
-Thirteen database calls in the loop go through ``run_sync`` without a timeout,
-so one call on a dead connection can block the loop thread forever.
+Five database calls in the loop then went through ``run_sync`` without a
+timeout, so one call on a dead connection could block the loop thread forever;
+they are bounded by ``ENGINE_DB_CALL_TIMEOUT_SECONDS`` since 29 Oct. The
+watchdog stays as the backstop for any other way the loop can stop.
 
 The watchdog cannot unblock a stuck thread. It records the loop's progress; when
 nothing has progressed for ``ENGINE_STALL_SECONDS`` it logs the loop thread's
