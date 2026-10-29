@@ -1,5 +1,5 @@
 {
-  "file_count": 2635,
+  "file_count": 2636,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11774,8 +11774,8 @@
       "line_count": 40,
       "path": "frontend/package.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "48465c4c173023d407d7312a1f1d900e4bccd608e35f9a281e2004117571356c",
-      "size_bytes": 1435
+      "sha256": "ec0acfa6a2d73bb994b56d0d9264acc6ba4fb77bc89e6172a578bf7d8a5cbb52",
+      "size_bytes": 1463
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11851,11 +11851,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 334,
+      "line_count": 342,
       "path": "frontend/scripts/api-call-baseline.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "dce23cb0c5699d30c029a04a5b8b9317a9e40e7b585dedb8a91ae5266d30d4bd",
-      "size_bytes": 6770
+      "sha256": "8a78ebddaba84c550a3d9395d6b9bc329e2aecfca431be4a1f7bc01b2fd16c9f",
+      "size_bytes": 6968
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11907,11 +11907,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 404,
+      "line_count": 407,
       "path": "frontend/scripts/presentation.test.mjs",
       "reason": "repository asset explicitly retained; no generated-state signature detected",
-      "sha256": "8d5f14b07a538e882280fb1eec15b9e495919270f1212ea65453e15eea57b7d3",
-      "size_bytes": 23766
+      "sha256": "ed4647840e38ae9c534aed318768a6cbde67c1b1ec5a5668594983ef75aa6476",
+      "size_bytes": 24115
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11936,6 +11936,14 @@
       "reason": "repository asset explicitly retained; no generated-state signature detected",
       "sha256": "0456385826b0efaf0cc017193c1ab2b94ea52bc15e52136c8418506cb813aadb",
       "size_bytes": 9020
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 22,
+      "path": "frontend/scripts/watchlists.test.mjs",
+      "reason": "repository asset explicitly retained; no generated-state signature detected",
+      "sha256": "2e53f6d87093bcbf2c4cf248a880d310203548648741b4e3a85c088ddca955c1",
+      "size_bytes": 1073
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12363,11 +12371,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 79,
+      "line_count": 111,
       "path": "frontend/src/components/WatchlistsView.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "22d9af4d6c60dc63d8e537bc30f287dcb6f50cb01d8d26c1dfe72e4e2a40a083",
-      "size_bytes": 4975
+      "sha256": "70b54c33405ffdb448c8a43e7190972fd3957d9237e7999e9ccf96034f74c6c7",
+      "size_bytes": 7215
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12515,11 +12523,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 268,
+      "line_count": 274,
       "path": "frontend/src/styles/ui.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b5fdabb8de57a6133710d8ae3fdc481c3137cd832942e953c5c9c208d0c98e13",
-      "size_bytes": 18331
+      "sha256": "da564adfa0542d57a63debf76356a988b730da755cd4a72b994834167332626b",
+      "size_bytes": 18744
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15795,11 +15803,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 179,
+      "line_count": 168,
       "path": "services/platform/watchlists.py",
       "reason": "production/build source",
-      "sha256": "e37f7651fa33c514bfc090f71ab2ba17ce71713face692d6edccaa44ec4c6089",
-      "size_bytes": 7163
+      "sha256": "fdc8d6fd98893f34b67ee7141bf12c98f711838643b75dbdaaefaa3f7dceefdf",
+      "size_bytes": 6860
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16291,11 +16299,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 239,
+      "line_count": 237,
       "path": "signalrank_telegram/workspace_commands.py",
       "reason": "production/build source",
-      "sha256": "a0813b76de64a139f7f4f328627aa59890187365ea120d3a5b8894e89ce1e843",
-      "size_bytes": 11501
+      "sha256": "b0a7354430489d8df1b5f804c59fcf68302478d40355cc8c258b3ff13ae10770",
+      "size_bytes": 11324
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21095,7 +21103,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 872,
-    "PRESERVE_BEHAVIOUR": 1349,
+    "PRESERVE_BEHAVIOUR": 1350,
     "TEST_ONLY": 413
   }
 }
