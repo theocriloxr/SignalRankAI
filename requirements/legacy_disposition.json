@@ -1,5 +1,5 @@
 {
-  "file_count": 2649,
+  "file_count": 2650,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14275,11 +14275,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 166,
+      "line_count": 261,
       "path": "scripts/backtest_zone_rejection.py",
       "reason": "production/build source",
-      "sha256": "9b842e4f33359a532fbbbeaa1b6969dda4ec5f0a769ac3d50e671d2b6483b1c6",
-      "size_bytes": 8110
+      "sha256": "b70efe69e3713322a03b2bdd9961e90f4ad5762718b36eccf83efbfccec65784",
+      "size_bytes": 14193
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17627,6 +17627,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 97,
+      "path": "tests/test_backtest_execution_realism_20261029.py",
+      "reason": "automated test evidence",
+      "sha256": "6fb5a8117cd1f45a563bec654ac27f0585dddf1fff4169cec2e8073d6ec4f773",
+      "size_bytes": 5022
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 54,
       "path": "tests/test_backtest_wfo.py",
       "reason": "automated test evidence",
@@ -17635,11 +17643,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 58,
+      "line_count": 60,
       "path": "tests/test_backtest_zone_rejection_harness_20261028.py",
       "reason": "automated test evidence",
-      "sha256": "930a04471a61b29c4d57ef555f5e0d7a9fcaef615a45980fd497b7014944ac14",
-      "size_bytes": 2671
+      "sha256": "60369d345b8e39849cd9890b85b174c75a7d1c133c85d0b1fea4bb3e7de8dded",
+      "size_bytes": 2765
     },
     {
       "disposition": "TEST_ONLY",
@@ -21208,6 +21216,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 873,
     "PRESERVE_BEHAVIOUR": 1356,
-    "TEST_ONLY": 419
+    "TEST_ONLY": 420
   }
 }
