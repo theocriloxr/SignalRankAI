@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -26,6 +27,8 @@ from sqlalchemy import text
 
 from utils.timeutils import now_utc_naive
 from services.security import decrypt_secret, encrypt_secret, is_encryption_available
+
+logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PASSWORD_PREFIX = "scrypt"
@@ -1221,6 +1224,31 @@ async def verify_email_challenge(session: Any, *, token: str, ip_address: str | 
     return int(user_id)
 
 
+async def _account_email_budget_spent(session: Any, *, user_id: int, purpose: str) -> bool:
+    """True when this account already received the hourly maximum of ``purpose`` emails.
+
+    Sign-in-link and reset requests are unauthenticated and the route limiter
+    keys on a client-supplied forwarded address, so without this cap anyone
+    could flood a person's inbox. The caller skips the email silently; the HTTP
+    reply is the same either way, so nothing about the account is revealed.
+    """
+    try:
+        limit = max(1, int(os.getenv("ACCOUNT_EMAIL_MAX_PER_HOUR", "5") or 5))
+    except ValueError:
+        limit = 5
+    recent = (
+        await session.execute(
+            text("SELECT COUNT(*) FROM login_challenges WHERE user_id=:uid AND purpose=:purpose "
+                 "AND created_at > NOW() - INTERVAL '1 hour'"),
+            {"uid": int(user_id), "purpose": str(purpose)},
+        )
+    ).scalar_one()
+    if int(recent or 0) >= limit:
+        logger.warning("[identity] %s email skipped: hourly limit %s reached for user %s", purpose, limit, user_id)
+        return True
+    return False
+
+
 async def request_magic_login(session: Any, *, email: str, base_url: str) -> AccountChallenge | None:
     value = canonical_email(email)
     row = (
@@ -1231,6 +1259,8 @@ async def request_magic_login(session: Any, *, email: str, base_url: str) -> Acc
     if not row:
         return None
     user_id = int(row[0])
+    if await _account_email_budget_spent(session, user_id=user_id, purpose="magic_login"):
+        return None
     challenge = await _create_account_challenge(session, purpose="magic_login", user_id=user_id, ttl_minutes=15)
     from services.platform.email_delivery import queue_account_email
 
@@ -1264,6 +1294,8 @@ async def request_password_reset(session: Any, *, email: str, base_url: str) -> 
     if not row:
         return None
     user_id = int(row[0])
+    if await _account_email_budget_spent(session, user_id=user_id, purpose="password_reset"):
+        return None
     challenge = await _create_account_challenge(session, purpose="password_reset", user_id=user_id, ttl_minutes=20)
     from services.platform.email_delivery import queue_account_email
 
