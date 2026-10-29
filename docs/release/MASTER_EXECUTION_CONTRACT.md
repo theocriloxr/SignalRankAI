@@ -1,5 +1,25 @@
 # SignalRankAI master execution contract
 
+## Continuation, 29 October 2026 — backtest execution realism (owner request)
+
+Commits `a062edd9` (harness) and `516b2023` (governance). Research tooling only; nothing deployed and no engine behaviour changed.
+
+- **Problem (CX-BT-01).** `scripts/backtest_zone_rejection.py` had four optimistic assumptions:
+  - it filled every trade at the signal bar's close, a price known only once that bar has closed;
+  - it filled targets on a touch;
+  - it ignored gaps through stops;
+  - it charged one flat round-trip percentage.
+- **New default execution (`--cost-model realistic`).** It follows the conventions of `engine/backtest_execution.py`:
+  - **Entry:** a market order at the next bar's open, paying half the spread plus slippage. An open already past the stop or target cancels the trade (`no_fill`).
+  - **Stops:** fill at the stop, or at the open on a gap, so losses can exceed 1R.
+  - **Targets:** limit orders that fill only when price trades through by half the spread, with no price improvement.
+  - **Fees and funding:** taker fees on market and stop fills, maker fees on targets, optional perpetual funding.
+  - **Reporting:** R stays the planned risk. Each trade reports its fills, `fees_r` and `friction_r`.
+
+  Defaults (5/2/2/3 bps) suit liquid crypto majors and are all flags. `--cost-model flat` reproduces the 28 Oct model for comparison.
+- **Verified:** 8 new tests with hand-computed fills, fees and funding; the command-line path was checked end to end on a 200-day synthetic random walk, where friction was 0.07–0.20R per trade. That is plumbing evidence, not strategy evidence: market-data hosts are still unreachable from this machine, so no real-data backtest has been run. Full suite at `516b2023` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,327 passed, 1 failed, 2 skipped**; the failure is the environmental `release_provenance[isolated_metadata]` case.
+- **Still not modelled:** order-book depth and market impact, partial fills, borrow costs and corporate actions.
+
 ## Continuation, 29 October 2026 — owner Telegram menu (owner request)
 
 Commits `767e6e95` (fix) and `2f892415` (governance). Nothing was deployed.

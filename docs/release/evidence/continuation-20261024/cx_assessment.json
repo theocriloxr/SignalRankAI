@@ -1690,9 +1690,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "engine/backtest_execution.py",
-    "tests/test_backtest_wfo.py"
+    "tests/test_backtest_wfo.py",
+    "scripts/backtest_zone_rejection.py",
+    "tests/test_backtest_execution_realism_20261029.py"
    ],
-   "note": "Funding/borrow, market impact and corporate actions not modelled."
+   "note": "Funding/borrow, market impact and corporate actions not modelled. 29 Oct: the zone-rejection harness now fills at the next open with spread, slippage, maker/taker fees, gap-aware stops, trade-through targets and optional funding; impact, partial fills, borrow and corporate actions still not modelled; no real-data run (hosts unreachable)."
   },
   {
    "id": "CX-BT-02",
@@ -3173,6 +3175,13 @@
     "CX-TG-01"
    ],
    "note": "Owner Telegram menu; local evidence only, status unchanged."
+  },
+  {
+   "date": "2026-10-29",
+   "ids": [
+    "CX-BT-01"
+   ],
+   "note": "Backtest execution realism; local evidence only, status unchanged."
   }
  ]
 }

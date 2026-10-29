@@ -285,6 +285,25 @@
           "result": "FAIL (environmental isolated-metadata case only)",
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
+      },
+      "backtest_execution_realism": {
+        "commits": "a062edd9..516b2023",
+        "default_cost_model": {
+          "taker_fee_bps": 5.0,
+          "maker_fee_bps": 2.0,
+          "spread_bps": 2.0,
+          "slippage_bps": 3.0,
+          "funding_bps_per_8h": 0.0
+        },
+        "real_data_backtest_run": false,
+        "python_suite_on_branch": {
+          "commit": "516b2023",
+          "passed": 4327,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
       }
     }
   },
