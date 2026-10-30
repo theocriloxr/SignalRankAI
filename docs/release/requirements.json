@@ -325,6 +325,20 @@
           "result": "FAIL (environmental isolated-metadata case only)",
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
+      },
+      "prop_dashboard": {
+        "commits": "9734fd2b..f89697eb",
+        "read_fix": "five broker-account reads raised DetachedInstanceError on PostgreSQL; fixed",
+        "objectives_display_only": true,
+        "firm_rules_invented": false,
+        "python_suite_on_branch": {
+          "commit": "f89697eb",
+          "passed": 4354,
+          "failed": 1,
+          "skipped": 2,
+          "result": "FAIL (environmental isolated-metadata case only)",
+          "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+        }
       }
     }
   },

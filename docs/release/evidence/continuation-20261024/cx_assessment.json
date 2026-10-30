@@ -2062,9 +2062,10 @@
    "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_multi_account_prop_policy.py"
+    "tests/test_multi_account_prop_policy.py",
+    "tests/test_account_policy_reads_postgres_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: evaluate_persisted_account_policy crashed on PostgreSQL whenever a policy existed (read after rollback); fixed and tested on PostgreSQL."
   },
   {
    "id": "CX-PROP-04",
@@ -2072,9 +2073,13 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "frontend/src/components/BrokerAccounts.tsx"
+    "frontend/src/components/BrokerAccounts.tsx",
+    "services/prop_dashboard.py",
+    "frontend/src/components/PropDashboard.tsx",
+    "tests/test_prop_dashboard_20261030.py",
+    "frontend/scripts/prop-dashboard.test.mjs"
    ],
-   "note": "Policy and ledger shown; target progress/trading-day widgets missing."
+   "note": "Policy and ledger shown; target progress/trading-day widgets missing. 30 Oct: trading-day and profit-target widgets added beside gate-equivalent loss/drawdown meters; objectives display-only; verified on the local stack, not with a real prop account."
   },
   {
    "id": "CX-PROP-05",
@@ -2526,9 +2531,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_multi_user_isolation_postgres_20261024.py",
-    "tests/test_broker_account_bola_idor.py"
+    "tests/test_broker_account_bola_idor.py",
+    "tests/test_account_policy_reads_postgres_20261030.py"
    ],
-   "note": "API+DB verified locally; worker/cache/notification layers partially."
+   "note": "API+DB verified locally; worker/cache/notification layers partially. 30 Oct: owner-scoped broker policy/ledger/reconciliation reads fixed on PostgreSQL; cross-account access to the prop dashboard refused (tested)."
   },
   {
    "id": "CX-SEC-05",
@@ -3193,6 +3199,15 @@
     "CX-SIG-22"
    ],
    "note": "Economic calendar and news blackout fixes; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-10-30",
+   "ids": [
+    "CX-PROP-03",
+    "CX-PROP-04",
+    "CX-SEC-04"
+   ],
+   "note": "Prop dashboard and broker-account read fix; local evidence only, statuses unchanged."
   }
  ]
 }
