@@ -5395,6 +5395,46 @@ async def broker_account_policy(
     return {"policy": policy, "reconciliation": reconciliation}
 
 
+class PropObjectivesRequest(BaseModel):
+    starting_balance: Decimal | None = Field(default=None, gt=0)
+    profit_target_pct: Decimal | None = Field(default=None, gt=0, le=1)
+    min_trading_days: int | None = Field(default=None, ge=0, le=365)
+
+
+@router.get("/broker/connections/{connection_id}/prop-dashboard")
+async def broker_prop_dashboard(
+    connection_id: str,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Limit usage, trading days and target progress from the account's own policy and ledger."""
+    _assert_feature(user, "broker_connection")
+    from services.prop_dashboard import prop_dashboard
+
+    try:
+        return await prop_dashboard(int(user["id"]), connection_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/broker/connections/{connection_id}/prop-objectives")
+async def update_broker_prop_objectives(
+    connection_id: str,
+    payload: PropObjectivesRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Display-only objectives from the firm's rules; the risk policy and certification are untouched."""
+    _assert_feature(user, "broker_connection")
+    from services.prop_dashboard import set_prop_objectives
+
+    try:
+        objectives = await set_prop_objectives(int(user["id"]), connection_id, payload.model_dump(exclude_none=True))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"objectives": objectives, "policy_changed": False}
+
+
 @router.get("/broker/connections/{connection_id}/ledger")
 async def broker_account_ledger(
     connection_id: str,
