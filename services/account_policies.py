@@ -171,10 +171,13 @@ async def get_account_policy(user_id: int, connection_id: str) -> dict[str, Any]
                 .limit(1)
             )
         ).scalar_one_or_none()
+        # Read before rollback: rollback expires loaded rows, and reading them after the
+        # session closes raised DetachedInstanceError whenever a policy existed.
+        result = public_account_policy(row) if row is not None else None
         await session.rollback()
-    if row is None:
+    if result is None:
         raise LookupError("account_policy_not_found")
-    return public_account_policy(row)
+    return result
 
 
 async def configure_account_policy(
@@ -482,8 +485,20 @@ async def reconciliation_snapshot(user_id: int, connection_id: str) -> dict[str,
     async with get_session(label="account_reconciliation.get", timeout_seconds=6.0) as session:
         await _owned_connection(session, user_id=int(user_id), connection_id=connection_id)
         row = await session.get(BrokerReconciliationState, str(connection_id))
+        # Read before rollback (see get_account_policy).
+        result = None if row is None else {
+            "connection_id": row.connection_id,
+            "user_id": row.user_id,
+            "status": row.status,
+            "ready": str(row.status).upper() in _RECONCILIATION_HEALTHY,
+            "discrepancy_code": row.discrepancy_code,
+            "details": dict(row.details or {}),
+            "last_reconciled_at": _iso(row.last_reconciled_at),
+            "frozen_at": _iso(row.frozen_at),
+            "updated_at": _iso(row.updated_at),
+        }
         await session.rollback()
-    if row is None:
+    if result is None:
         return {
             "connection_id": str(connection_id),
             "user_id": int(user_id),
@@ -491,17 +506,7 @@ async def reconciliation_snapshot(user_id: int, connection_id: str) -> dict[str,
             "ready": False,
             "discrepancy_code": "reconciliation_not_recorded",
         }
-    return {
-        "connection_id": row.connection_id,
-        "user_id": row.user_id,
-        "status": row.status,
-        "ready": str(row.status).upper() in _RECONCILIATION_HEALTHY,
-        "discrepancy_code": row.discrepancy_code,
-        "details": dict(row.details or {}),
-        "last_reconciled_at": _iso(row.last_reconciled_at),
-        "frozen_at": _iso(row.frozen_at),
-        "updated_at": _iso(row.updated_at),
-    }
+    return result
 
 
 async def record_reconciliation(
@@ -624,12 +629,15 @@ async def evaluate_persisted_account_policy(
             )
         ).scalar_one_or_none()
         reconciliation = await session.get(BrokerReconciliationState, str(connection_id))
+        # Read before rollback (see get_account_policy); this gate crashed whenever a policy existed.
+        policy = _domain_policy(row) if row is not None else None
+        reconciliation_status = str(reconciliation.status).upper() if reconciliation is not None else None
         await session.rollback()
-    if row is None:
+    if policy is None:
         return AccountPolicyDecision(False, "ACCOUNT_POLICY_BLOCKED", ("account_policy_missing",), 0)
-    if reconciliation is None or str(reconciliation.status).upper() != "HEALTHY":
+    if reconciliation_status != "HEALTHY":
         snapshot = AccountRiskSnapshot(**{**asdict(snapshot), "reconciliation_ready": False})
-    return evaluate_account_policy(_domain_policy(row), snapshot, execution_mode=execution_mode)
+    return evaluate_account_policy(policy, snapshot, execution_mode=execution_mode)
 
 
 async def record_execution_decision(

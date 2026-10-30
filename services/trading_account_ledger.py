@@ -298,41 +298,42 @@ async def list_account_ledger(
             .scalars()
             .all()
         )
+        # Read before rollback: rollback expires loaded rows (DetachedInstanceError afterwards).
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            result.append(
+                {
+                    "entry_id": row.entry_id,
+                    "connection_id": row.connection_id,
+                    "provider": row.provider,
+                    "entry_type": row.entry_type,
+                    "currency": row.currency,
+                    "source_event_id": row.source_event_id,
+                    "correlation_id": row.correlation_id,
+                    "order_ref": row.order_ref,
+                    "fill_ref": row.fill_ref,
+                    "position_ref": row.position_ref,
+                    "amount": str(row.amount) if row.amount is not None else None,
+                    "balance": str(row.balance) if row.balance is not None else None,
+                    "equity": str(row.equity) if row.equity is not None else None,
+                    "margin": str(row.margin) if row.margin is not None else None,
+                    "free_margin": str(row.free_margin) if row.free_margin is not None else None,
+                    "realized_pnl": (str(row.realized_pnl) if row.realized_pnl is not None else None),
+                    "unrealized_pnl": (str(row.unrealized_pnl) if row.unrealized_pnl is not None else None),
+                    "commission": str(row.commission) if row.commission is not None else None,
+                    "funding": str(row.funding) if row.funding is not None else None,
+                    "swap": str(row.swap) if row.swap is not None else None,
+                    "fees": str(row.fees) if row.fees is not None else None,
+                    "correction_of_entry_id": row.correction_of_entry_id,
+                    "provider_timestamp": (
+                        row.provider_timestamp.isoformat() if row.provider_timestamp is not None else None
+                    ),
+                    "metadata": dict(row.metadata_json or {}),
+                    "created_at": row.created_at.isoformat(),
+                }
+            )
         await session.rollback()
 
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        result.append(
-            {
-                "entry_id": row.entry_id,
-                "connection_id": row.connection_id,
-                "provider": row.provider,
-                "entry_type": row.entry_type,
-                "currency": row.currency,
-                "source_event_id": row.source_event_id,
-                "correlation_id": row.correlation_id,
-                "order_ref": row.order_ref,
-                "fill_ref": row.fill_ref,
-                "position_ref": row.position_ref,
-                "amount": str(row.amount) if row.amount is not None else None,
-                "balance": str(row.balance) if row.balance is not None else None,
-                "equity": str(row.equity) if row.equity is not None else None,
-                "margin": str(row.margin) if row.margin is not None else None,
-                "free_margin": str(row.free_margin) if row.free_margin is not None else None,
-                "realized_pnl": (str(row.realized_pnl) if row.realized_pnl is not None else None),
-                "unrealized_pnl": (str(row.unrealized_pnl) if row.unrealized_pnl is not None else None),
-                "commission": str(row.commission) if row.commission is not None else None,
-                "funding": str(row.funding) if row.funding is not None else None,
-                "swap": str(row.swap) if row.swap is not None else None,
-                "fees": str(row.fees) if row.fees is not None else None,
-                "correction_of_entry_id": row.correction_of_entry_id,
-                "provider_timestamp": (
-                    row.provider_timestamp.isoformat() if row.provider_timestamp is not None else None
-                ),
-                "metadata": dict(row.metadata_json or {}),
-                "created_at": row.created_at.isoformat(),
-            }
-        )
     return result
 
 
