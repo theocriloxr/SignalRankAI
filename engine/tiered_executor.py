@@ -157,7 +157,7 @@ def reset_daily_counter_if_needed(user) -> bool:  # type: ignore[valid-type]
     """
     if _is_new_day(user):
         user.daily_executions_today = 0
-        user.daily_executions_reset_at = datetime.now(tz=timezone.utc)
+        user.daily_executions_reset_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)  # naive UTC column
         return True
     return False
 
@@ -230,7 +230,7 @@ async def _record_execution(
             order_id=order_id,
             metaapi_account_id=account_id,
             status="pending",
-            executed_at=datetime.now(tz=timezone.utc),
+            executed_at=datetime.now(tz=timezone.utc).replace(tzinfo=None),  # naive UTC column
         )
         db.add(execution)
         await db.flush()

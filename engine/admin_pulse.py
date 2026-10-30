@@ -958,7 +958,8 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
             from db.session import get_session
             from sqlalchemy import text
 
-            since = datetime.now(timezone.utc) - timedelta(days=max(1, int(window_days or 7)))
+            # outcomes.closed_at is timestamp without time zone: bind naive UTC.
+            since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, int(window_days or 7)))
             async with get_session() as session:
                 row = (
                     await session.execute(

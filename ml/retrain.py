@@ -29,7 +29,8 @@ async def collect_training_data() -> list:
         from db.session import get_session
         from sqlalchemy import text
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=RETRAIN_LOOKBACK_DAYS)
+        # signals.created_at and ml_past_training_data.signal_created_at are naive UTC.
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=RETRAIN_LOOKBACK_DAYS)
 
         async with get_session() as session:
             await session.execute(

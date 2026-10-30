@@ -70,10 +70,11 @@ async def check_waitlist_capacity_job() -> None:
                 logger.debug("[waitlist] no pending entries")
                 return
 
-            user = (await session.execute(select(User).where(User.id == int(entry.user_id)))).scalars().first()
+            entry_user_id = int(entry.user_id)
+            user = (await session.execute(select(User).where(User.id == entry_user_id))).scalars().first()
             if user is None:
                 await session.rollback()
-                logger.warning("[waitlist] user %s not found", entry.user_id)
+                logger.warning("[waitlist] user %s not found", entry_user_id)
                 return
 
             now = now_utc_naive()

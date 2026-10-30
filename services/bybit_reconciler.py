@@ -69,12 +69,14 @@ async def _credentials(
 
         # Compatibility state is loaded only for pre-canonical records that
         # genuinely have no canonical application-managed credential.
-        state = None
+        legacy_value: dict = {}
         if canonical is None or not canonical.secret_encrypted:
             state = await session.get(
                 RuntimeState,
                 _state_key(int(telegram_user_id)),
             )
+            # rollback() expires loaded rows: copy the value first.
+            legacy_value = dict(getattr(state, "value", {}) or {}) if state is not None else {}
         await session.rollback()
 
     if canonical is not None and canonical.secret_encrypted:
@@ -98,7 +100,7 @@ async def _credentials(
             return None
         return BybitCredentials(key, secret, sandbox)
 
-    value = dict(getattr(state, "value", {}) or {}) if state is not None else {}
+    value = legacy_value
     key = decrypt_secret(str(value.get("api_key_enc") or ""))
     secret = decrypt_secret(str(value.get("api_secret_enc") or ""))
     if not key or not secret:

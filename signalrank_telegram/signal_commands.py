@@ -350,7 +350,8 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         from db.models import Signal, Outcome
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        # signals.created_at is timestamp without time zone: bind naive UTC.
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
         tp_statuses = {"tp", "tp1", "tp2", "tp3"}
         loss_statuses = {"sl"}
         

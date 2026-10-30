@@ -991,13 +991,15 @@ async def paystack_charge_create(
             product = await resolve_checkout_product(session, req.product_id, currency=req.currency)
         except ProductCatalogueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        # rollback() expires loaded rows: copy what checkout needs first.
+        account_id, account_email = int(account.id), str(account.primary_email)
         await session.rollback()
     try:
         return await initialize_paystack_checkout(
             product=product,
-            canonical_user_id=int(account.id),
+            canonical_user_id=account_id,
             telegram_user_id=int(telegram_user_id),
-            email=str(account.primary_email),
+            email=account_email,
         )
     except CheckoutInitializationError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -1296,10 +1298,11 @@ async def _check_waitlist_capacity_job() -> None:
                 logger.debug("[waitlist] no pending entries")
                 return
 
-            user = (await session.execute(select(User).where(User.id == int(entry.user_id)))).scalars().first()
+            entry_user_id = int(entry.user_id)
+            user = (await session.execute(select(User).where(User.id == entry_user_id))).scalars().first()
             if user is None:
                 await session.rollback()
-                logger.warning("[waitlist] user %s not found", entry.user_id)
+                logger.warning("[waitlist] user %s not found", entry_user_id)
                 return
 
             now = now_utc_naive()

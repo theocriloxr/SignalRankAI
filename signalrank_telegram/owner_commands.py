@@ -713,7 +713,7 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         from sqlalchemy import select, func
         from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
+        now = now_utc_naive()  # subscriptions.expires_at is timestamp without time zone
         async with get_session() as session:
             res_users = await session.execute(select(func.count(User.id)))
             total_users = int(res_users.scalar() or 0)

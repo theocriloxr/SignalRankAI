@@ -2750,7 +2750,7 @@ async def admin_top_strategies_command(update, context) -> None:
 		await update.message.reply_text("Database unavailable.")
 		return
 
-	cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+	cutoff = now_utc_naive() - timedelta(days=30)  # signals.created_at is naive UTC
 	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		res = await session.execute(
 			select(Signal.strategy_name, func.count(Signal.signal_id))
@@ -3887,7 +3887,8 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		from db.models import Signal, Outcome
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-		cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+		# signals.created_at is timestamp without time zone: bind naive UTC.
+		cutoff = now_utc_naive() - timedelta(days=30)
 		tp_statuses = {"tp", "tp1", "tp2", "tp3"}
 		loss_statuses = {"sl"}
 
@@ -7572,15 +7573,17 @@ async def verifybroker_command(update: Update, context: ContextTypes.DEFAULT_TYP
 					select(User).where(User.telegram_user_id == telegram_user_id).limit(1)
 				)
 			).scalar_one_or_none()
+			# rollback() expires loaded rows: copy the id first.
+			canonical_user_id = int(canonical_user.id) if canonical_user is not None else None
 			await session.rollback()
 
-		if canonical_user is None:
+		if canonical_user_id is None:
 			await update.message.reply_text(
 				"No account profile found. Send /start then try again."
 			)
 			return
 
-		connections = await list_connections(int(canonical_user.id))
+		connections = await list_connections(canonical_user_id)
 
 		def _supported(row: dict) -> bool:
 			connector = str(row.get("connector") or "").strip().lower()
@@ -7644,7 +7647,7 @@ async def verifybroker_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 		result = await asyncio.wait_for(
 			verify_broker_connection_read_only(
-				int(canonical_user.id),
+				canonical_user_id,
 				str(selected["connection_id"]),
 			),
 			timeout=35.0,

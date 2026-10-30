@@ -197,7 +197,7 @@ async def admin_top_strategies_command(update, context) -> None:
     if engine is None:
         await update.message.reply_text("Database unavailable.")
         return
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff = now_utc_naive() - timedelta(days=30)  # signals.created_at is naive UTC
     async with get_session() as session:
         res = await session.execute(
             select(Signal.strategy_name, func.count(Signal.signal_id))

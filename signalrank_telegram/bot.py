@@ -3460,28 +3460,29 @@ async def _refresh_signal_keyboards_for_all_recipients(signal_id: str, bot_obj) 
         counts = await _load_signal_engagement_counts(signal_id)
         keyboard = _build_signal_keyboard(signal_id, signal=payload, counts=counts)
 
+        # Read the targets, then release the session before calling Telegram: one
+        # edit per recipient held the only critical DB lane for the whole loop.
         async with get_session() as session:
-            rows = (
+            targets = (
                 await session.execute(
-                    select(ActiveSignalMessage).where(
+                    select(ActiveSignalMessage.chat_id, ActiveSignalMessage.message_id).where(
                         ActiveSignalMessage.signal_id == str(signal_id),
                         ActiveSignalMessage.is_active.is_(True),
                     )
                 )
-            ).scalars().all()
+            ).all()
+            await session.rollback()
 
-            for row in rows:
-                try:
-                    await bot_obj.edit_message_reply_markup(
-                        chat_id=int(row.chat_id),
-                        message_id=int(row.message_id),
-                        reply_markup=keyboard,
-                    )
-                except Exception as exc:
-                    if "message is not modified" not in str(exc).lower():
-                        logger.debug(f"[engagement] global keyboard refresh failed: {exc}")
-
-            await session.commit()
+        for chat_id, message_id in targets:
+            try:
+                await bot_obj.edit_message_reply_markup(
+                    chat_id=int(chat_id),
+                    message_id=int(message_id),
+                    reply_markup=keyboard,
+                )
+            except Exception as exc:
+                if "message is not modified" not in str(exc).lower():
+                    logger.debug(f"[engagement] global keyboard refresh failed: {exc}")
     except Exception as exc:
         logger.debug(f"[engagement] failed to refresh keyboards: {exc}")
 
@@ -5286,8 +5287,9 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                 
                 async def _get_best_signal():
                     from db.pg_features import get_highest_scoring_available_signal_for_user, record_signal_delivery
+                    sent_count = 0
+                    pending: list[tuple[str, dict]] = []
                     async with get_session() as session:
-                        sent_count = 0
                         for _ in range(min(extra_left, len(signals_list))):
                             best_sig = await get_highest_scoring_available_signal_for_user(
                                 session, int(user_id)
@@ -5344,37 +5346,45 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     "invalidation": getattr(best_sig, 'invalidation', None),
                                     "trade_logic": getattr(best_sig, 'trade_logic', None),
                                     "strategy": best_sig.strategy_name,
+                                    # Final-send freshness needs the stored age and profile; without them
+                                    # every pool delivery was blocked as missing_created_at.
+                                    "created_at": best_sig.created_at,
+                                    "expires_at": getattr(best_sig, "expires_at", None),
+                                    "trade_profile": getattr(best_sig, "trade_profile", None),
                                 }
-                                try:
-                                    # Determine display tier: VIP for owner/admin, PREMIUM otherwise
-                                    signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
-                                    await session.commit()
-                                    delivery_proof = await _deliver_or_update_signal_async(
-                                        bot,
-                                        telegram_user_id=int(user_id),
-                                        signal=sig_dict,
-                                        display_tier=signal_display_tier,
-                                    )
-                                    if await _mark_delivery_with_telegram_proof(
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(best_sig.signal_id),
-                                        proof=delivery_proof,
-                                        delivery_state="sent" if delivery_proof else "skipped",
-                                    ):
-                                        sent_count += 1
-                                        state.consume_extra_signals_sync(int(user_id), 1)
-                                except Exception as e:
-                                    await _mark_delivery_with_telegram_proof(
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(best_sig.signal_id),
-                                        proof=None,
-                                        error=str(e),
-                                        delivery_state="failed",
-                                    )
-                                    logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
-                                    pass
+                                pending.append((str(best_sig.signal_id), sig_dict))
                         await session.commit()
-                        return sent_count
+
+                    # Send only after releasing the reservation session: delivery opens
+                    # its own sessions, which waited on this one (one critical lane).
+                    # Determine display tier: VIP for owner/admin, PREMIUM otherwise
+                    signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
+                    for pending_id, sig_dict in pending:
+                        try:
+                            delivery_proof = await _deliver_or_update_signal_async(
+                                bot,
+                                telegram_user_id=int(user_id),
+                                signal=sig_dict,
+                                display_tier=signal_display_tier,
+                            )
+                            if await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=pending_id,
+                                proof=delivery_proof,
+                                delivery_state="sent" if delivery_proof else "skipped",
+                            ):
+                                sent_count += 1
+                                state.consume_extra_signals_sync(int(user_id), 1)
+                        except Exception as e:
+                            await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=pending_id,
+                                proof=None,
+                                error=str(e),
+                                delivery_state="failed",
+                            )
+                            logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
+                    return sent_count
                 
                 try:
                     await _get_best_signal()
@@ -5448,7 +5458,8 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                         return 0  # No signals available
                     
                     sent_count = 0
-                    # Send each signal
+                    pending: list[tuple[str, dict]] = []
+                    # Reserve each signal; sending happens after the session closes.
                     for sig in available_signals:
                         try:
                             _free_score = float(getattr(sig, 'score', 0) or 0)
@@ -5500,38 +5511,46 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 "invalidation": getattr(sig, 'invalidation', None),
                                 "trade_logic": getattr(sig, 'trade_logic', None),
                                 "strategy": sig.strategy_name,
+                                # Final-send freshness needs the stored age and profile; without them
+                                # every pool delivery was blocked as missing_created_at.
+                                "created_at": sig.created_at,
+                                "expires_at": getattr(sig, "expires_at", None),
+                                "trade_profile": getattr(sig, "trade_profile", None),
                             }
-                            try:
-                                # Determine display tier: VIP for owner/admin, FREE for others
-                                signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
-                                await session.commit()
-                                delivery_proof = await _deliver_or_update_signal_async(
-                                    bot,
-                                    telegram_user_id=int(user_id),
-                                    signal=sig_dict,
-                                    display_tier=signal_display_tier,
-                                )
-                                if not await _mark_delivery_with_telegram_proof(
-                                    telegram_user_id=int(user_id),
-                                    signal_id=str(sig.signal_id),
-                                    proof=delivery_proof,
-                                    delivery_state="sent" if delivery_proof else "skipped",
-                                ):
-                                    continue
-                                sent_count += 1
-                            except Exception as e:
-                                await _mark_delivery_with_telegram_proof(
-                                    telegram_user_id=int(user_id),
-                                    signal_id=str(sig.signal_id),
-                                    proof=None,
-                                    error=str(e),
-                                    delivery_state="failed",
-                                )
-                                logger.debug(f"[dispatch] Failed to deliver free signal: {e}")
-                                pass
+                            pending.append((str(sig.signal_id), sig_dict))
                     
                     await session.commit()
-                    return sent_count
+
+                # Send only after releasing the reservation session: delivery opens
+                # its own sessions, which waited on this one (one critical lane).
+                # Determine display tier: VIP for owner/admin, FREE for others
+                signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
+                for pending_id, sig_dict in pending:
+                    try:
+                        delivery_proof = await _deliver_or_update_signal_async(
+                            bot,
+                            telegram_user_id=int(user_id),
+                            signal=sig_dict,
+                            display_tier=signal_display_tier,
+                        )
+                        if not await _mark_delivery_with_telegram_proof(
+                            telegram_user_id=int(user_id),
+                            signal_id=pending_id,
+                            proof=delivery_proof,
+                            delivery_state="sent" if delivery_proof else "skipped",
+                        ):
+                            continue
+                        sent_count += 1
+                    except Exception as e:
+                        await _mark_delivery_with_telegram_proof(
+                            telegram_user_id=int(user_id),
+                            signal_id=pending_id,
+                            proof=None,
+                            error=str(e),
+                            delivery_state="failed",
+                        )
+                        logger.debug(f"[dispatch] Failed to deliver free signal: {e}")
+                return sent_count
 
             # In production, FREE delivery should be driven by queued scheduler jobs
             # (distribute_random_signals_to_free_users_job + resend job) to keep timing
@@ -7862,11 +7881,11 @@ def run_bot() -> None:
                                         _risk = abs(float(getattr(oc, "percent", 0) or 0))
                                     _ex.status = "sl"
                                     _ex.realized_pnl_pct = -abs(float(_risk or 0.0))
-                                    _ex.closed_at = datetime.now(timezone.utc)
+                                    _ex.closed_at = now_utc_naive()
                                 elif status in {"tp3", "tp"}:
                                     _ex.status = "tp3"
                                     _ex.realized_pnl_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
-                                    _ex.closed_at = datetime.now(timezone.utc)
+                                    _ex.closed_at = now_utc_naive()
                                 elif status == "tp2":
                                     _ex.status = "tp2"
                                 elif status in {"tp1", "partial_tp"}:
@@ -8519,7 +8538,8 @@ def run_bot() -> None:
             from db.models import User, MT5Execution
 
             async def _run() -> None:
-                now = datetime.now(timezone.utc)
+                # mt5_executions.executed_at is timestamp without time zone.
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 window_start = now - timedelta(hours=24)
                 async with get_session() as session:
                     users = (
@@ -8692,7 +8712,8 @@ def run_bot() -> None:
             stale_days = int(os.getenv("BROKER_RECONCILE_STALE_DAYS", "5") or 5)
 
             async def _run() -> None:
-                now = datetime.now(timezone.utc)
+                # executed_at/closed_at are timestamp without time zone: compare and store naive UTC.
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 cutoff = now - timedelta(days=stale_days)
                 grace_before = now - timedelta(minutes=grace_minutes)
 

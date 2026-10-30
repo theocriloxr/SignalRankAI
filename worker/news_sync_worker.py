@@ -156,8 +156,11 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
                     from core.redis_state import state
                     import json
 
-                    # Get all stored events for Redis
-                    async with get_session() as redis_session:
+                    # Get all stored events for Redis. Reuse this session: a nested
+                    # default session waited on it (one critical lane) and timed out,
+                    # so the cache was never refreshed.
+                    redis_session = session
+                    if redis_session is not None:
                         now = now_utc_naive()
                         window_end = now + timedelta(days=7)
                         # Keep just-past events so the blackout after a release still applies.
@@ -214,8 +217,8 @@ async def get_cached_high_impact_events(hours: int = 24) -> List[Dict[str, Any]]
             from datetime import timedelta
             from sqlalchemy import select, and_
 
-            # Get events in the next X hours
-            now = datetime.now(timezone.utc)
+            # Get events in the next X hours (event_date is stored as naive UTC)
+            now = now_utc_naive()
             window_end = now + timedelta(hours=hours)
 
             result = await session.execute(
@@ -235,6 +238,8 @@ async def get_cached_high_impact_events(hours: int = 24) -> List[Dict[str, Any]]
             return [
                 {
                     "event_date": e.event_date,
+                    # Consumers (data.providers -> news gate) read event_time/timestamp.
+                    "event_time": e.event_date.replace(tzinfo=timezone.utc) if e.event_date else None,
                     "currency": e.currency,
                     "title": e.title,
                     "impact": e.impact,

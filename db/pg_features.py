@@ -700,6 +700,30 @@ async def get_or_create_signal_impl(
     # different fingerprints to be generated.
     price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 2.0))
 
+    # A payload that already carries its stored identity is that signal, not a
+    # new candidate: the engine stores it once (store_signal_compat) and then
+    # reserves it per recipient. The suppression gates below match that very
+    # row, so without this every recipient was skipped (min_interval). Reuse it
+    # only while it is open and its levels are the payload's own.
+    known_signal_id = str(signal.get("signal_id") or "").strip()[:36]
+    if known_signal_id:
+        known: Signal | None = (
+            await session.execute(select(Signal).where(Signal.signal_id == known_signal_id))
+        ).scalar_one_or_none()
+        if known is not None:
+            if bool(getattr(known, "archived", False)) or bool(getattr(known, "expired", False)):
+                raise SignalDedupBlocked("signal_closed", signal_id=known_signal_id)
+            same_levels = (
+                str(known.asset or "").upper() == asset
+                and str(known.timeframe or "").lower() == timeframe
+                and str(known.direction or "").lower() == direction
+                and abs(float(known.entry or 0) - entry) <= 1e-9 * max(1.0, abs(entry))
+                and abs(float(known.stop_loss or 0) - stop_loss) <= 1e-9 * max(1.0, abs(stop_loss))
+            )
+            if not same_levels:
+                raise SignalDedupBlocked("signal_id_payload_mismatch", signal_id=known_signal_id)
+            return known
+
     active_signal_id: str | None = None
     try:
         from core.redis_state import state
@@ -4013,6 +4037,7 @@ async def _profile_and_integrity_filter_available_signals(
     """
     from core.production_integrity import evaluate_signal_freshness
     from core.signal_quality_gate import evaluate_signal_quality
+    from engine.delivery_freshness import evaluate_time_to_telegraph
     from services.user_intelligence import (
         get_user_trading_preferences,
         personalize_signal_for_preferences,
@@ -4038,6 +4063,10 @@ async def _profile_and_integrity_filter_available_signals(
             purpose="delivery",
         )
         if not freshness.ok:
+            continue
+        # Final send rejects a signal that waited past its time-to-telegraph
+        # budget, so picking one from the pool only wasted the user's delivery.
+        if not evaluate_time_to_telegraph(payload).ok:
             continue
         quality = evaluate_signal_quality(payload)
         if require_quality and (not bool(payload.get("quality_gate_passed")) or not quality.ok):
