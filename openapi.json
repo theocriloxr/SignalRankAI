@@ -4851,6 +4851,116 @@
         }
       }
     },
+    "/api/v1/platform/broker/connections/{connection_id}/prop-dashboard": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Broker Prop Dashboard",
+        "description": "Limit usage, trading days and target progress from the account's own policy and ledger.",
+        "operationId": "broker_prop_dashboard_api_v1_platform_broker_connections__connection_id__prop_dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Broker Prop Dashboard Api V1 Platform Broker Connections  Connection Id  Prop Dashboard Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/broker/connections/{connection_id}/prop-objectives": {
+      "put": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Update Broker Prop Objectives",
+        "description": "Display-only objectives from the firm's rules; the risk policy and certification are untouched.",
+        "operationId": "update_broker_prop_objectives_api_v1_platform_broker_connections__connection_id__prop_objectives_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropObjectivesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Broker Prop Objectives Api V1 Platform Broker Connections  Connection Id  Prop Objectives Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/broker/connections/{connection_id}/ledger": {
       "get": {
         "tags": [
@@ -9099,6 +9209,56 @@
         },
         "type": "object",
         "title": "ProfileUpdateRequest"
+      },
+      "PropObjectivesRequest": {
+        "properties": {
+          "starting_balance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starting Balance"
+          },
+          "profit_target_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Target Pct"
+          },
+          "min_trading_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Trading Days"
+          }
+        },
+        "type": "object",
+        "title": "PropObjectivesRequest"
       },
       "PropPolicyCertificationRequest": {
         "properties": {

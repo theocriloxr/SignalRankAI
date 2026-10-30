@@ -1796,6 +1796,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/broker/connections/{connection_id}/prop-dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Broker Prop Dashboard
+         * @description Limit usage, trading days and target progress from the account's own policy and ledger.
+         */
+        get: operations["broker_prop_dashboard_api_v1_platform_broker_connections__connection_id__prop_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/broker/connections/{connection_id}/prop-objectives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Broker Prop Objectives
+         * @description Display-only objectives from the firm's rules; the risk policy and certification are untouched.
+         */
+        put: operations["update_broker_prop_objectives_api_v1_platform_broker_connections__connection_id__prop_objectives_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/broker/connections/{connection_id}/ledger": {
         parameters: {
             query?: never;
@@ -3480,6 +3520,15 @@ export interface components {
             timezone_auto_update?: boolean | null;
             /** Marketing Consent */
             marketing_consent?: boolean | null;
+        };
+        /** PropObjectivesRequest */
+        PropObjectivesRequest: {
+            /** Starting Balance */
+            starting_balance?: number | string | null;
+            /** Profit Target Pct */
+            profit_target_pct?: number | string | null;
+            /** Min Trading Days */
+            min_trading_days?: number | null;
         };
         /** PropPolicyCertificationRequest */
         PropPolicyCertificationRequest: {
@@ -7391,6 +7440,76 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TradingAccountPolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_prop_dashboard_api_v1_platform_broker_connections__connection_id__prop_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_broker_prop_objectives_api_v1_platform_broker_connections__connection_id__prop_objectives_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PropObjectivesRequest"];
             };
         };
         responses: {

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import client from "../lib/client";
 import { brokerMode, display, moneyLabel, probabilityLabel, record, rows, statusText, timeLabel, type Row } from "../lib/presentation";
+import { PropDashboard } from "./PropDashboard";
 
 type Review={policy:Row|null;reconciliation:Row|null;entries:Row[]|null;error:string;ledgerError:string;loading:boolean};
 const initial:Review={policy:null,reconciliation:null,entries:null,error:"",ledgerError:"",loading:false};
@@ -150,6 +151,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
               {!policy&&!review.error&&<p>Policy data was not provided. Execution approval cannot be assumed.</p>}
               {Object.keys(recon||{}).length>0&&<p className="ui-notice ui-notice--neutral">Reconciliation is returned separately by the canonical account service. It must be verified against the provider before treating values as authoritative.</p>}
             </section>
+            {policy&&<PropDashboard key={selected} connectionId={selected}/>}
             <section className="ui-card"><h2>Broker ledger evidence</h2>
               <p>Only the backend&apos;s provider-attributed ledger rows are shown. Missing deposits, fees, funding or swap values are never inferred.</p>
               {review.ledgerError&&<p role="alert" className="ui-feedback ui-feedback--error">{review.ledgerError}</p>}

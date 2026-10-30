@@ -64,6 +64,10 @@
   },
   {
    "method": "GET",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/prop-dashboard"
+  },
+  {
+   "method": "GET",
    "path": "/api/v1/platform/broker/metatrader/servers"
   },
   {
@@ -325,6 +329,10 @@
   {
    "method": "POST",
    "path": "/api/v1/platform/webhooks"
+  },
+  {
+   "method": "PUT",
+   "path": "/api/v1/platform/broker/connections/{connection_id}/prop-objectives"
   },
   {
    "method": "PUT",
