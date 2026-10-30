@@ -203,6 +203,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/broker/connections/{connection_id}/ledger` | — |
 | GET | `/broker/connections/{connection_id}/policy` | — |
 | PUT | `/broker/connections/{connection_id}/policy` | — |
+| GET | `/broker/connections/{connection_id}/prop-dashboard` | — |
+| PUT | `/broker/connections/{connection_id}/prop-objectives` | — |
 | POST | `/broker/connections/{connection_id}/safety-freeze` | — |
 | POST | `/broker/connections/{connection_id}/verify` | — |
 | POST | `/broker/exchange` | — |
@@ -302,4 +304,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 123 commands (46 without a web section), 16 web sections, 142 routes (87 without a name-matched command).
+Summary: 123 commands (46 without a web section), 16 web sections, 144 routes (89 without a name-matched command).

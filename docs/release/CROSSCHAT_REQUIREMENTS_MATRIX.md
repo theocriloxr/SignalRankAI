@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 26928. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26915.
+Rows: 26932. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26919.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -26313,41 +26313,43 @@ Rows: 26928. Reviewed dispositions: 13. Unresolved applicability/acceptance: 269
 | SR-ENDPOINT-bee7ad83c626fdb1 | web/platform_api.py:5284  | INCOMPLETE |
 | SR-ENDPOINT-ed7b6d20e66f9d26 | web/platform_api.py:5349  | INCOMPLETE |
 | SR-ENDPOINT-12753304a9b67866 | web/platform_api.py:5383  | INCOMPLETE |
-| SR-ENDPOINT-34464c56a3584c3f | web/platform_api.py:5399  | INCOMPLETE |
-| SR-ENDPOINT-91c3d78111c80161 | web/platform_api.py:5428  | INCOMPLETE |
-| SR-ENDPOINT-2251b79adbcd8e3e | web/platform_api.py:5497  | INCOMPLETE |
-| SR-ENDPOINT-7391679969127546 | web/platform_api.py:5552  | INCOMPLETE |
-| SR-ENDPOINT-30618e635acdcaa3 | web/platform_api.py:5589  | INCOMPLETE |
-| SR-ENDPOINT-f497cda59a2bc6eb | web/platform_api.py:5626  | INCOMPLETE |
-| SR-ENDPOINT-f9b6866aa8bada27 | web/platform_api.py:5660  | INCOMPLETE |
-| SR-ENDPOINT-5cc5492032763510 | web/platform_api.py:5702  | INCOMPLETE |
-| SR-ENDPOINT-54e067952f750dba | web/platform_api.py:5720  | INCOMPLETE |
-| SR-ENDPOINT-a36fb932636dfb7b | web/platform_api.py:5737  | INCOMPLETE |
-| SR-ENDPOINT-f0f9fc4cf1373891 | web/platform_api.py:6188  | INCOMPLETE |
-| SR-ENDPOINT-78aaabf4ac5be230 | web/platform_api.py:6231  | INCOMPLETE |
-| SR-ENDPOINT-ba2d8eb55b7d6707 | web/platform_api.py:6259  | INCOMPLETE |
-| SR-ENDPOINT-79eef13a479feaa6 | web/platform_api.py:6384  | INCOMPLETE |
-| SR-ENDPOINT-698e7065d9eccb15 | web/platform_api.py:6396  | INCOMPLETE |
-| SR-ENDPOINT-e25d54e640fdd265 | web/platform_api.py:6408  | INCOMPLETE |
-| SR-ENDPOINT-db93639fcbf12fba | web/platform_api.py:6424  | INCOMPLETE |
-| SR-ENDPOINT-4c419a10037388e5 | web/platform_api.py:6476  | INCOMPLETE |
-| SR-ENDPOINT-db4ff5ace2cabb37 | web/platform_api.py:6521  | INCOMPLETE |
-| SR-ENDPOINT-d35820a5dabbb8c0 | web/platform_api.py:6558  | INCOMPLETE |
-| SR-ENDPOINT-b1825e067dd404ea | web/platform_api.py:6613  | INCOMPLETE |
-| SR-ENDPOINT-49df927ec6c642e3 | web/platform_api.py:6683  | INCOMPLETE |
-| SR-ENDPOINT-5c5ca073b4d9c4e7 | web/platform_api.py:6735  | INCOMPLETE |
-| SR-ENDPOINT-674e316aeda299ba | web/platform_api.py:6782  | INCOMPLETE |
-| SR-ENDPOINT-67027cf38ee1c0e4 | web/platform_api.py:6841  | INCOMPLETE |
-| SR-ENDPOINT-fdefeb1022ff1bbd | web/platform_api.py:6868  | INCOMPLETE |
-| SR-ENDPOINT-3c1cd32628b7b5b7 | web/platform_api.py:6895  | INCOMPLETE |
-| SR-ENDPOINT-3acf1f74fa43d703 | web/platform_api.py:6918  | INCOMPLETE |
-| SR-ENDPOINT-d4de9fdb8142fba5 | web/platform_api.py:6975  | INCOMPLETE |
-| SR-ENDPOINT-bdc42b349a9081fc | web/platform_api.py:7016  | INCOMPLETE |
-| SR-ENDPOINT-31a500340874efdc | web/platform_api.py:7051  | INCOMPLETE |
-| SR-ENDPOINT-520729a67d5508a6 | web/platform_api.py:7088  | INCOMPLETE |
-| SR-ENDPOINT-8e1206fb0fa123cf | web/platform_api.py:7109  | INCOMPLETE |
-| SR-ENDPOINT-4c034f12b196e597 | web/platform_api.py:7142  | INCOMPLETE |
-| SR-ENDPOINT-7711087f0093e257 | web/platform_api.py:7156  | INCOMPLETE |
+| SR-ENDPOINT-3e72a83839d89c97 | web/platform_api.py:5405  | INCOMPLETE |
+| SR-ENDPOINT-07a034d298d3b168 | web/platform_api.py:5420  | INCOMPLETE |
+| SR-ENDPOINT-34464c56a3584c3f | web/platform_api.py:5439  | INCOMPLETE |
+| SR-ENDPOINT-91c3d78111c80161 | web/platform_api.py:5468  | INCOMPLETE |
+| SR-ENDPOINT-2251b79adbcd8e3e | web/platform_api.py:5537  | INCOMPLETE |
+| SR-ENDPOINT-7391679969127546 | web/platform_api.py:5592  | INCOMPLETE |
+| SR-ENDPOINT-30618e635acdcaa3 | web/platform_api.py:5629  | INCOMPLETE |
+| SR-ENDPOINT-f497cda59a2bc6eb | web/platform_api.py:5666  | INCOMPLETE |
+| SR-ENDPOINT-f9b6866aa8bada27 | web/platform_api.py:5700  | INCOMPLETE |
+| SR-ENDPOINT-5cc5492032763510 | web/platform_api.py:5742  | INCOMPLETE |
+| SR-ENDPOINT-54e067952f750dba | web/platform_api.py:5760  | INCOMPLETE |
+| SR-ENDPOINT-a36fb932636dfb7b | web/platform_api.py:5777  | INCOMPLETE |
+| SR-ENDPOINT-f0f9fc4cf1373891 | web/platform_api.py:6228  | INCOMPLETE |
+| SR-ENDPOINT-78aaabf4ac5be230 | web/platform_api.py:6271  | INCOMPLETE |
+| SR-ENDPOINT-ba2d8eb55b7d6707 | web/platform_api.py:6299  | INCOMPLETE |
+| SR-ENDPOINT-79eef13a479feaa6 | web/platform_api.py:6424  | INCOMPLETE |
+| SR-ENDPOINT-698e7065d9eccb15 | web/platform_api.py:6436  | INCOMPLETE |
+| SR-ENDPOINT-e25d54e640fdd265 | web/platform_api.py:6448  | INCOMPLETE |
+| SR-ENDPOINT-db93639fcbf12fba | web/platform_api.py:6464  | INCOMPLETE |
+| SR-ENDPOINT-4c419a10037388e5 | web/platform_api.py:6516  | INCOMPLETE |
+| SR-ENDPOINT-db4ff5ace2cabb37 | web/platform_api.py:6561  | INCOMPLETE |
+| SR-ENDPOINT-d35820a5dabbb8c0 | web/platform_api.py:6598  | INCOMPLETE |
+| SR-ENDPOINT-b1825e067dd404ea | web/platform_api.py:6653  | INCOMPLETE |
+| SR-ENDPOINT-49df927ec6c642e3 | web/platform_api.py:6723  | INCOMPLETE |
+| SR-ENDPOINT-5c5ca073b4d9c4e7 | web/platform_api.py:6775  | INCOMPLETE |
+| SR-ENDPOINT-674e316aeda299ba | web/platform_api.py:6822  | INCOMPLETE |
+| SR-ENDPOINT-67027cf38ee1c0e4 | web/platform_api.py:6881  | INCOMPLETE |
+| SR-ENDPOINT-fdefeb1022ff1bbd | web/platform_api.py:6908  | INCOMPLETE |
+| SR-ENDPOINT-3c1cd32628b7b5b7 | web/platform_api.py:6935  | INCOMPLETE |
+| SR-ENDPOINT-3acf1f74fa43d703 | web/platform_api.py:6958  | INCOMPLETE |
+| SR-ENDPOINT-d4de9fdb8142fba5 | web/platform_api.py:7015  | INCOMPLETE |
+| SR-ENDPOINT-bdc42b349a9081fc | web/platform_api.py:7056  | INCOMPLETE |
+| SR-ENDPOINT-31a500340874efdc | web/platform_api.py:7091  | INCOMPLETE |
+| SR-ENDPOINT-520729a67d5508a6 | web/platform_api.py:7128  | INCOMPLETE |
+| SR-ENDPOINT-8e1206fb0fa123cf | web/platform_api.py:7149  | INCOMPLETE |
+| SR-ENDPOINT-4c034f12b196e597 | web/platform_api.py:7182  | INCOMPLETE |
+| SR-ENDPOINT-7711087f0093e257 | web/platform_api.py:7196  | INCOMPLETE |
 | SR-API-b0460ca0676f32df | openapi.json::paths::/  | INCOMPLETE |
 | SR-API-653912b7b73cf540 | openapi.json::paths::/api/v1/auth/tokens/current  | INCOMPLETE |
 | SR-API-a45404495f6913ec | openapi.json::paths::/api/v1/auth/tokens/revoke  | INCOMPLETE |
@@ -26396,6 +26398,8 @@ Rows: 26928. Reviewed dispositions: 13. Unresolved applicability/acceptance: 269
 | SR-API-29d7f4becdbfaf57 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/ledger  | INCOMPLETE |
 | SR-API-1bff1f280aa65da8 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/policy  | INCOMPLETE |
 | SR-API-bf15d89c536f6054 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/policy  | INCOMPLETE |
+| SR-API-62da232a5d89c766 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/prop-dashboard  | INCOMPLETE |
+| SR-API-86492aa7d19e6d56 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/prop-objectives  | INCOMPLETE |
 | SR-API-c568589943861ec1 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/safety-freeze  | INCOMPLETE |
 | SR-API-d4f92dd55098c0d7 | openapi.json::paths::/api/v1/platform/broker/connections/{connection_id}/verify  | INCOMPLETE |
 | SR-API-b87486e6837f4805 | openapi.json::paths::/api/v1/platform/broker/exchange  | INCOMPLETE |
