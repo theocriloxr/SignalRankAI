@@ -130,7 +130,7 @@ def evaluate_system_health() -> bool:
 
         from utils.async_runner import run_sync
 
-        return bool(run_sync(check()))
+        return bool(run_sync(check(), timeout=60))
     except Exception:
         logger.exception("Health check failed")
         return True

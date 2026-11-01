@@ -4473,7 +4473,7 @@ def get_signal_outcome_status(signal_id: str) -> dict | None:
                 terminal = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "time_stop"}
                 return {"reached": oc.status in terminal, "status": oc.status}
 
-        return run_sync(_check())
+        return run_sync(_check(), timeout=15)
     except Exception:
         return None
 

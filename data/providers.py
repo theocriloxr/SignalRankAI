@@ -436,7 +436,7 @@ def fetch_binance_ccxt_candles(symbol: str, timeframe: str, limit: int = 200) ->
             return []
 
     try:
-        res = run_sync(_call())
+        res = run_sync(_call(), timeout=30)
         if res:
             _set_candles_cache(symbol, timeframe, res)
         return res
@@ -706,7 +706,7 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
         )
 
     try:
-        hist = run_sync(_fetch_with_timeout())
+        hist = run_sync(_fetch_with_timeout(), timeout=60)
 
         if hist.empty:
             return []

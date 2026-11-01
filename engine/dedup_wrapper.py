@@ -93,7 +93,7 @@ def should_skip_signal(
     # Check 2: Active signal exists
     if active_signal_exists_for_asset is not None:
         try:
-            if run_sync(active_signal_exists_for_asset(asset_upper, direction_lower, tf)):
+            if run_sync(active_signal_exists_for_asset(asset_upper, direction_lower, tf), timeout=10):
                 return True, "active_signal_exists"
         except Exception as e:
             logger.warning("[dedup_wrapper] Active signal check blocked: %s", type(e).__name__)
@@ -103,7 +103,7 @@ def should_skip_signal(
     if _dedup is not None and signal_data is not None:
         try:
             entry = float(signal_data.get("entry") or signal_data.get("entry_price") or 0.0)
-            is_dup = run_sync(_dedup.is_duplicate(asset_upper, tf, direction_lower, entry))
+            is_dup = run_sync(_dedup.is_duplicate(asset_upper, tf, direction_lower, entry), timeout=10)
 
             if is_dup:
                 return True, "memory_duplicate"
@@ -148,7 +148,7 @@ def mark_signal_generated(
     if _dedup is not None and signal_data is not None:
         try:
             entry = float(signal_data.get("entry") or signal_data.get("entry_price") or 0.0)
-            run_sync(_dedup.register_signal(asset_upper, tf, direction_lower, entry))
+            run_sync(_dedup.register_signal(asset_upper, tf, direction_lower, entry), timeout=10)
         except Exception as e:
             logger.debug(f"[dedup_wrapper] Dedup mark failed: {e}")
 

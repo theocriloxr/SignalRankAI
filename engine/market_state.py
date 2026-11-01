@@ -92,7 +92,7 @@ async def get_market_state_async(asset: str, timeframes: Iterable[str], include_
 
 def get_market_state_sync(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
     """Sync wrapper for code that expects blocking call; runs async get_market_state safely."""
-    return run_sync(_get_market_state_async(asset, timeframes, include_ml=include_ml))
+    return run_sync(_get_market_state_async(asset, timeframes, include_ml=include_ml), timeout=60)
 
 
 # Backwards-compatible sync entrypoint used by tests and callers that import

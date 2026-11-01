@@ -39,7 +39,7 @@ def distribute_random_signals_to_free_users_job():
                 else:
                     logger.info("✅ All FREE users have reached daily limit or no new signals")
         
-        run_sync(_do_distribute())
+        run_sync(_do_distribute(), timeout=840)
         logger.info("✅ FREE signal distribution job completed")
         
     except Exception as e:

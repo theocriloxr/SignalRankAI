@@ -230,7 +230,7 @@ async def check_historical_similarity(signal: Dict[str, Any], max_age_days: int 
 def check_historical_similarity_sync(signal: Dict[str, Any], max_age_days: int = 180) -> Tuple[bool, float, int, str]:
     """Synchronous wrapper for historical similarity check."""
     try:
-        return run_sync(check_historical_similarity(signal, max_age_days))
+        return run_sync(check_historical_similarity(signal, max_age_days), timeout=30)
     except Exception as e:
         logger.debug(f"[similarity] Sync check failed: {e}")
         return True, 0.0, 0, f"error: {str(e)[:50]}"
@@ -305,7 +305,7 @@ def get_historical_winrate_sync(
 ) -> Tuple[float, int, int]:
     """Synchronous wrapper for historical win rate."""
     try:
-        return run_sync(get_historical_winrate(asset, direction, timeframe, regime, max_age_days))
+        return run_sync(get_historical_winrate(asset, direction, timeframe, regime, max_age_days), timeout=30)
     except Exception as e:
         logger.debug(f"[similarity] Win rate sync failed: {e}")
         return 0.0, 0, 0
@@ -400,7 +400,7 @@ async def get_similar_signals(signal: Dict[str, Any], limit: int = 20) -> List[D
 def get_similar_signals_sync(signal: Dict[str, Any], limit: int = 20) -> List[Dict[str, Any]]:
     """Synchronous wrapper for similar signals."""
     try:
-        return run_sync(get_similar_signals(signal, limit))
+        return run_sync(get_similar_signals(signal, limit), timeout=30)
     except Exception as e:
         logger.debug(f"[similarity] Similar signals sync failed: {e}")
         return []

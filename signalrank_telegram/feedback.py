@@ -65,7 +65,7 @@ class FeedbackStore:
                             )
                     await session.commit()
 
-            run_sync(_write())
+            run_sync(_write(), timeout=30)
         except Exception:
             # Keep feedback in memory for retry
             return

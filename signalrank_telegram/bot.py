@@ -2772,7 +2772,7 @@ def _deliver_or_update_signal_sync(
                     telegram_user_id=int(telegram_user_id),
                     signal=dict(signal or {}),
                     display_tier=str(display_tier),
-                )
+                ), timeout=240
             )
         )
         if ok:
@@ -3765,7 +3765,7 @@ def _send_signal_with_engagement_sync(
     except RuntimeError:
         return run_sync(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
-        ))
+        ), timeout=240)
     try:
         task = loop.create_task(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
@@ -3799,7 +3799,7 @@ def _send_message_sync(
                 str(text),
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
-            )
+            ), timeout=240
         )
         return
     # If we're already in an event loop, schedule it.
@@ -3866,7 +3866,7 @@ def _send_message_with_retry_sync(
         str(text),
         parse_mode=parse_mode,
         reply_markup=reply_markup,
-    ))
+    ), timeout=240)
 
 
 def _audit_handler(command_name: str, handler):
@@ -4142,7 +4142,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                         logger.warning(f"[notify] Failed to send feedback message to user {user_id}: {e}")
                         pass
             try:
-                run_sync(_notify_and_feedback())
+                run_sync(_notify_and_feedback(), timeout=240)
             except Exception as e:
                 logger.warning(f"[notify] Failed to run notify and feedback: {e}")
                 pass
@@ -4472,7 +4472,7 @@ def _count_signals_sent_today_sync(telegram_user_id: int) -> int:
                 await session.commit()
                 return int(v or 0)
 
-        return int(run_sync(_count()) or 0)
+        return int(run_sync(_count(), timeout=15) or 0)
     except Exception:
         return 0
 
@@ -4534,7 +4534,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 await session.commit()
             return reserved
 
-        recipients = run_sync(_reserve_recipients())
+        recipients = run_sync(_reserve_recipients(), timeout=30)
         if not recipients:
             return 0
 
@@ -4574,7 +4574,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                     logger.debug("[fomo_free] send failed user=%s err=%s", uid, exc)
             return confirmed_count
 
-        sent = int(run_sync(_dispatch_recipients()) or 0)
+        sent = int(run_sync(_dispatch_recipients(), timeout=600) or 0)
         if sent:
             logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
         return int(sent)
@@ -5629,7 +5629,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
 
 
 def dispatch_signals(strategy_signals, user_id, regime=None):
-    return run_sync(dispatch_signals_async(strategy_signals, user_id, regime=regime))
+    return run_sync(dispatch_signals_async(strategy_signals, user_id, regime=regime), timeout=240)
 
 
 def downgrade_expired_subscriptions_job():
@@ -5648,7 +5648,7 @@ def downgrade_expired_subscriptions_job():
                 else:
                     logger.info("\u2705 No expired subscriptions to downgrade")
 
-        run_sync(_do_downgrade())
+        run_sync(_do_downgrade(), timeout=1800)
     except Exception as e:
         logger.error(f"\u274C Error downgrading subscriptions: {e}")
 
@@ -5669,7 +5669,7 @@ def auto_delete_old_signals_job():
                 else:
                     logger.info("\u2705 No old signals to delete")
 
-        run_sync(_do_delete())
+        run_sync(_do_delete(), timeout=3600)
     except Exception as e:
         logger.error(f"\u274C Error deleting old signals: {e}")
 
@@ -5712,7 +5712,7 @@ def distribute_random_signals_to_free_users_job():
                 else:
                     logger.info("\u2705 All FREE users have reached daily limit or no new signals")
 
-        run_sync(_do_distribute())
+        run_sync(_do_distribute(), timeout=840)
     except Exception as e:
         # Foreground DB traffic intentionally outranks this best-effort job.
         # Deferral is normal backpressure, not a production error.
@@ -5991,7 +5991,7 @@ def refresh_active_signal_keyboards_once() -> None:
                 concurrency,
             )
 
-        run_sync(_run())
+        run_sync(_run(), timeout=1800)
     except Exception as exc:
         logger.warning("[keyboard_refresh] one-shot refresh failed: %s", exc)
 
@@ -7722,7 +7722,7 @@ def run_bot() -> None:
 
             for user_id in user_ids:
                 try:
-                    stats = run_sync(_fetch(int(user_id)))
+                    stats = run_sync(_fetch(int(user_id)), timeout=30)
                 except Exception:
                     stats = {"total": 0, "top_assets": [], "top_strategies": []}
                 total = int(stats.get("total") or 0)
@@ -7817,7 +7817,7 @@ def run_bot() -> None:
                     return out
 
             try:
-                pending = run_sync(_fetch())
+                pending = run_sync(_fetch(), timeout=60)
             except Exception:
                 logger.exception("[outcome_notify] pending snapshot failed")
                 pending = []
@@ -7893,7 +7893,7 @@ def run_bot() -> None:
 
                             await _sx.commit()
 
-                    run_sync(_sync_exec_rows())
+                    run_sync(_sync_exec_rows(), timeout=30)
                 except Exception as _mx:
                     logger.debug(f"[outcome] mt5 execution reconcile failed ref={ref[:8]} err={_mx}")
 
@@ -8040,7 +8040,7 @@ def run_bot() -> None:
                             candles = payload.get("candles") or []
                             return candles[-1].get("close") if candles else None
 
-                        current_market_price = run_sync(_fetch_market_price_once())
+                        current_market_price = run_sync(_fetch_market_price_once(), timeout=20)
                     except Exception as exc:
                         logger.debug("[outcome] bounded market price fallback unavailable asset=%s err=%s", asset, exc)
 
@@ -8276,7 +8276,7 @@ def run_bot() -> None:
                                     await session.commit()
                                     return int(row.id) if claimed else None
 
-                            notification_id = run_sync(_claim_notification())
+                            notification_id = run_sync(_claim_notification(), timeout=15)
                             if not notification_id:
                                 logger.debug(
                                     "[outcome] notification already claimed/delivered ref=%s user=%s status=%s",
@@ -8297,7 +8297,7 @@ def run_bot() -> None:
                                     await mark_outcome_notification_delivered(session, int(notification_id))
                                     await session.commit()
 
-                            run_sync(_mark_notification_delivered(int(notification_id)))
+                            run_sync(_mark_notification_delivered(int(notification_id)), timeout=15)
                             sent_count += 1
                             _cycle_sent += 1
                         except Exception as e:
@@ -8313,7 +8313,7 @@ def run_bot() -> None:
                                             )
                                             await session.commit()
 
-                                    run_sync(_mark_notification_failed(int(notification_id), str(e)))
+                                    run_sync(_mark_notification_failed(int(notification_id), str(e)), timeout=15)
                                 except Exception:
                                     pass
                             failed_count += 1
@@ -8340,7 +8340,7 @@ def run_bot() -> None:
                                 await mark_outcome_notified(session, int(oid))
                                 await session.commit()
 
-                        run_sync(_mark(int(getattr(oc, 'id'))))
+                        run_sync(_mark(int(getattr(oc, 'id'))), timeout=15)
                     except Exception as e:
                         logger.debug(f"[outcome] Failed to mark outcome as handled: {e}")
                 else:
@@ -8776,7 +8776,7 @@ def run_bot() -> None:
 
                     await session.commit()
 
-            run_sync(_run())
+            run_sync(_run(), timeout=300)
         except Exception as _br:
             logger.warning(f"[broker_reconcile] job failed: {_br}")
 
@@ -8823,7 +8823,7 @@ def run_bot() -> None:
                     )
                     await session.commit()
 
-            run_sync(_run())
+            run_sync(_run(), timeout=1800)
         except Exception as _oc:
             logger.warning(f"[orphan_cleanup] job failed: {_oc}")
 
@@ -8912,7 +8912,7 @@ def run_bot() -> None:
 
                     await session.commit()
 
-            run_sync(_run())
+            run_sync(_run(), timeout=1800)
         except Exception as _ib:
             logger.warning(f"[integrity_backfill] job failed: {_ib}")
 
@@ -8959,7 +8959,7 @@ def run_bot() -> None:
                     return list(dedup.values())
 
             try:
-                candidates = run_sync(_fetch_candidates())
+                candidates = run_sync(_fetch_candidates(), timeout=60)
             except Exception:
                 candidates = []
             if not candidates:
@@ -9036,7 +9036,7 @@ def run_bot() -> None:
                         async def _get_prev():
                             async with get_session() as session:
                                 return await get_outcome_for_signal(session, str(sig.signal_id))
-                        prev = run_sync(_get_prev())
+                        prev = run_sync(_get_prev(), timeout=15)
                         if prev:
                             prev_status = str(getattr(prev, 'status', '') or '').lower()
                     except Exception:
@@ -9137,7 +9137,7 @@ def run_bot() -> None:
                             )
                             await session.commit()
                     try:
-                        run_sync(_write())
+                        run_sync(_write(), timeout=30)
                     except Exception as e:
                         print(f"[DEBUG][outcome] Exception writing outcome: {e}", flush=True)
 
@@ -9216,7 +9216,7 @@ def run_bot() -> None:
                         return out
 
                 try:
-                    due = run_sync(_fetch_due())
+                    due = run_sync(_fetch_due(), timeout=60)
                     logger.info(f"\U0001F4EC Free queue check: {len(due)} user(s) with due signals")
                 except Exception as e:
                     logger.error(f"Error fetching due signals: {e}", exc_info=True)
@@ -9354,7 +9354,7 @@ def run_bot() -> None:
                     return len(actions)
 
                 try:
-                    action_count = int(run_sync(_deliver_due(due)) or 0)
+                    action_count = int(run_sync(_deliver_due(due), timeout=540) or 0)
                     logger.info(f"\U0001F4BE Applied {action_count} queue action(s)")
                 except Exception as e:
                     logger.error(f"Error delivering/applying free summary actions: {e}", exc_info=True)
@@ -9390,7 +9390,7 @@ def run_bot() -> None:
                 except Exception as e:
                     logger.error(f"\u274C ML retrain failed: {e}", exc_info=True)
 
-            run_sync(_retrain())
+            run_sync(_retrain(), timeout=7200)
         except Exception as e:
             logger.error(f"Error in ML retrain job: {e}", exc_info=True)
 
@@ -9412,7 +9412,7 @@ def run_bot() -> None:
                     used = await count_active_vip_users(session, exclude_telegram_user_ids=exclude)
                     return used
 
-            used = run_sync(_check())
+            used = run_sync(_check(), timeout=60)
             vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
             available = max(0, vip_limit - used)
             if available <= 0:
@@ -9474,7 +9474,7 @@ def run_bot() -> None:
                     row = rows.one_or_none()
                     return row
 
-            stats = run_sync(_fetch_vip_pnl())
+            stats = run_sync(_fetch_vip_pnl(), timeout=60)
             trades = int(getattr(stats, "trades", 0) or 0)
             total_pnl = float(getattr(stats, "total_pnl", 0.0) or 0.0)
             if trades == 0:
@@ -9698,7 +9698,7 @@ def run_bot() -> None:
 
                     return top_signals, top_vip, top_fantasy
 
-            top_signals, top_traders, top_fantasy = run_sync(_fetch_leaderboard())
+            top_signals, top_traders, top_fantasy = run_sync(_fetch_leaderboard(), timeout=60)
             if not top_signals and not top_traders and not top_fantasy:
                 return
 
@@ -9804,7 +9804,7 @@ def run_bot() -> None:
                     )
                     await session.commit()
 
-            run_sync(_expire())
+            run_sync(_expire(), timeout=1500)
         except Exception as exc:
             logger.debug(f"[expiry] expire_old_signals_job failed: {exc}")
 
@@ -10025,7 +10025,7 @@ def run_bot() -> None:
                         logger.debug("[ML] feature error: %s", fe)
                 return len(signals), approved, rejected, errors
 
-            total, approved, rejected, errors = run_sync(_scan())
+            total, approved, rejected, errors = run_sync(_scan(), timeout=840)
             threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
             logger.info(
                 "\U0001F916 [ML] Scan done \u2014 signals=%d  approved=%d  rejected=%d  "

@@ -543,7 +543,7 @@ def validate_signal_freshness_sync(signal: Dict[str, Any]) -> Tuple[bool, str, O
     """Synchronous wrapper around validate_signal_freshness."""
     from utils.async_runner import run_sync
 
-    return run_sync(validate_signal_freshness(signal))
+    return run_sync(validate_signal_freshness(signal), timeout=30)
 
 
 def get_validator() -> StaleSignalValidator:

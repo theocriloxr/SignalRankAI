@@ -29,7 +29,7 @@ def strategy_stats(strategy_name):
         try:
             from utils.async_runner import run_sync
 
-            perf = run_sync(_fetch())
+            perf = run_sync(_fetch(), timeout=30)
             win_rate = float(perf.get("win_rate", 0.0)) if perf else 0.0
             avg_rr = float(perf.get("avg_rr", 1.8)) if perf else 1.8
             return win_rate, avg_rr

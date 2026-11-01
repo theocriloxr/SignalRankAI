@@ -163,7 +163,7 @@ def refresh_active_proxy_pool_sync() -> list[str]:
     else:
         return []
     try:
-        active = run_sync(_fetch_active_proxies_from_db())
+        active = run_sync(_fetch_active_proxies_from_db(), timeout=30)
     except Exception:
         active = []
     if active:

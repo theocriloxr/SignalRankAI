@@ -811,7 +811,7 @@ def _persist_shadow_prediction(
                     schema_ok,
                 )
 
-        run_sync(_save())
+        run_sync(_save(), timeout=15)
     except Exception as exc:
         logger.warning("[ml-shadow] persist failed: %s", exc)
 

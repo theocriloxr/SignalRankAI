@@ -46,7 +46,7 @@ def resolve_user_tier(user_id):
     configured_role = "OWNER" if user_id_int in OWNER_IDS else ("ADMIN" if user_id_int in ADMIN_IDS else "")
     if configured_role and _resolve_user_tier_pg is not None:
         try:
-            db_tier = str(run_sync(_resolve_user_tier_pg(user_id_int)) or "FREE").upper()
+            db_tier = str(run_sync(_resolve_user_tier_pg(user_id_int), timeout=10) or "FREE").upper()
             resolved = "NONE" if db_tier == "NONE" else configured_role
             state.cache_set_sync(_tier_cache_key(user_id_int), resolved, ex=_tier_cache_ttl_seconds())
             return resolved
@@ -102,7 +102,7 @@ def resolve_user_tier(user_id):
         return "FREE"
 
     try:
-        tier = run_sync(_resolve_user_tier_pg(user_id_int))
+        tier = run_sync(_resolve_user_tier_pg(user_id_int), timeout=10)
         resolved = (tier or "FREE").strip().upper()
         try:
             state.cache_set_sync(_tier_cache_key(user_id_int), resolved, ex=_tier_cache_ttl_seconds())

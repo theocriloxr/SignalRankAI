@@ -121,11 +121,13 @@ class BybitV5Client:
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=self.timeout_seconds)
+        # Bybit verifies the signature against the query string it receives, so
+        # send exactly the string that was signed (httpx would reorder/re-encode).
+        url = f"{self.base_url}{path}" + (f"?{query}" if method == "GET" and query else "")
         try:
             response = await client.request(
                 method,
-                f"{self.base_url}{path}",
-                params=clean_params if method == "GET" else None,
+                url,
                 content=body_text if method != "GET" else None,
                 headers=headers,
             )
