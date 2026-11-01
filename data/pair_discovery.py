@@ -228,8 +228,12 @@ STABLECOIN_PAIRS: set[str] = {
 
 def _is_non_trading_quote_asset(symbol: str) -> bool:
     """Reject quote/stablecoin inventory mapped into synthetic USDT pairs."""
+    from core.pegged_assets import is_pegged_crypto
+
     value = str(symbol or "").upper().strip()
     base = value[:-4] if value.endswith("USDT") else value
+    if value.endswith("USDT") and is_pegged_crypto(value):
+        return True
     return (
         base in {"U", "UB"}
         or base.startswith("USD")

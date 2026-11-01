@@ -1,5 +1,15 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 1 November 2026 — pegged tokens excluded from scanning and training (server session)
+
+Production evidence (Contabo host, 1 Nov): no signal issued since 2026-10-11; the discovered crypto universe was mostly stablecoins and tokenized reserves with no usable candles, and the serving ML model scored USDS/PYUSD/RLUSD/PAXG/XAUT at 0.87–0.93 against 0.05–0.64 for real coins. See `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md`.
+
+- New `core/pegged_assets.py` recognises stablecoins, tokenized gold and tokenized treasuries by list and by naming pattern (bases starting or ending with `USD`, starting with `EUR`). Patterns apply only to crypto-quoted pairs, so forex (`USDJPY`, `EURUSD`) and commodities (`XAUUSD`) are untouched. `PEGGED_ASSET_FILTER_ENABLED=0` disables it and `PEGGED_ASSET_EXTRA_BASES` extends it without a release.
+- Applied in four places: pair discovery (`_is_non_trading_quote_asset`), the database registry universe, the engine's merged universe (managed + pinned + discovered), and ML training (`_exclude_pegged_assets`, recorded in `df.attrs["pegged_assets_excluded"]`).
+- Tests: `tests/test_pegged_assets_20261101.py` (42 cases); 89 existing universe/discovery/training tests pass (Linux, Python 3.11, no PostgreSQL).
+- This branch auto-deploys to production; no financial permission changed.
+
+
 ## Continuation, 30 October 2026 — whole-codebase database audit and the signal pipeline on PostgreSQL (owner request)
 
 Commits `71224344` (fixes and tests) and `3b90fa7d` (weekly report). Nothing was deployed.

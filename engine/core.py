@@ -3095,6 +3095,18 @@ def main_loop(DRY_RUN: bool = False):
             _allow_static_fallback,
         )
         assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
+        try:
+            from core.pegged_assets import filter_pegged
+
+            _before_pegged_filter = len(assets)
+            assets = filter_pegged(assets)
+            if len(assets) != _before_pegged_filter:
+                logger.info(
+                    "[engine] pegged_assets_excluded count=%s",
+                    _before_pegged_filter - len(assets),
+                )
+        except Exception as _pegged_filter_error:
+            logger.warning("[engine] pegged asset filter unavailable: %s", type(_pegged_filter_error).__name__)
         # Explicit staging-only opt-in. Restrict all merged sources (including
         # managed/user-pinned assets) before profile ranking or scan scheduling.
         # This does NOT authorize live execution or change broker account policy.

@@ -128,4 +128,6 @@ async def load_database_universe(
             remaining -= len(page)
         if len(page) < params["limit"]:
             break
-    return symbols
+    from core.pegged_assets import filter_pegged
+
+    return filter_pegged(symbols)

@@ -1424,6 +1424,8 @@ async def load_training_data(lookback_days: int = 90):
             logger.warning("Failed to load paper-execution training rows: %s", paper_err)
 
         df = pd.DataFrame(data)
+        df, pegged = _exclude_pegged_assets(df)
+        df.attrs["pegged_assets_excluded"] = pegged
         df, focus = _restrict_to_focused_universe(df)
         df.attrs["focused_universe"] = focus
         source_counts = (
@@ -1455,6 +1457,30 @@ async def load_training_data(lookback_days: int = 90):
         failed.attrs["read_status"] = "failed"
         failed.attrs["read_error"] = f"{type(e).__name__}: {e}"
         return failed
+
+
+def _exclude_pegged_assets(df):
+    """Drop stablecoin / tokenized-reserve rows: their outcomes say nothing about trends.
+
+    Production on 1 Nov 2026 showed the serving model ranking USDS, PYUSD, RLUSD
+    and PAXG at 0.87-0.93 and real coins at 0.05-0.64 because such rows dominated
+    the rejected-candidate evidence (core/pegged_assets.py).
+    """
+    from core.pegged_assets import is_pegged_crypto
+
+    if df is None or df.empty or "asset" not in df.columns:
+        return df, {"applied": False, "rows_removed": 0}
+    pegged = df["asset"].fillna("").astype(str).map(is_pegged_crypto)
+    removed = int(pegged.sum())
+    if removed == 0:
+        return df, {"applied": True, "rows_removed": 0}
+    kept = df[~pegged].copy()
+    kept.attrs.update(df.attrs)
+    return kept, {
+        "applied": True,
+        "rows_removed": removed,
+        "assets_removed": sorted(set(df.loc[pegged, "asset"].astype(str)))[:50],
+    }
 
 
 def _restrict_to_focused_universe(df, environment=None):
