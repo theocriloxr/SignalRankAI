@@ -154,3 +154,51 @@ async def test_cached_calendar_events_are_readable_by_the_news_gate(postgres_dat
     events = [e for e in await get_cached_high_impact_events(hours=6) if e["title"] == title]
     assert len(events) == 1
     assert events[0]["event_time"] == when.replace(tzinfo=timezone.utc)  # key the news gate reads
+
+
+@pytest.mark.asyncio
+async def test_weekly_report_counts_delivered_outcomes(postgres_database, monkeypatch):  # noqa: F811
+    """It held a session while the report opened its own (one critical lane), and bound an aware cutoff."""
+    import re
+
+    import requests
+
+    import config
+    from db.models import Outcome, Signal
+    from db.session import get_session
+    from engine import admin_pulse
+    from services import gemini_ml
+
+    signal_id = str(uuid4())
+    async with get_session() as session:
+        session.add(Signal(signal_id=signal_id, asset="WEEKLYUSDT", timeframe="1h", direction="long", entry=1.0,
+                           stop_loss=0.9, take_profit="[1.2]", score=80, strategy_name="weekly", strategy_group="weekly",
+                           strength=1, created_at=_naive_now() - timedelta(days=1)))
+        await session.flush()
+        session.add(Outcome(signal_id=signal_id, status="tp1", r_multiple=1.0, closed_at=_naive_now()))
+        await session.execute(text("DELETE FROM runtime_state WHERE key='admin_pulse_last_weekly_run'"))
+        await session.commit()
+
+    now = datetime.now(timezone.utc)
+    sent: list[dict] = []
+
+    async def no_ai_review(**kwargs):  # the AI provider is a network edge
+        return {"review": "synthetic review", "aggregate": {}}
+
+    monkeypatch.setenv("ADMIN_WEEKLY_REPORT_WEEKDAY", str(now.weekday()))
+    monkeypatch.setenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", str(now.hour))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "unit-test-placeholder")
+    monkeypatch.setenv("GEMINI_API_KEY", "unit-test-placeholder")
+    monkeypatch.setattr(config, "OWNER_IDS", {7_499_999_999})
+    monkeypatch.setattr(config, "ADMIN_IDS", set())
+    monkeypatch.setattr(gemini_ml, "run_gemini_review_pipeline", no_ai_review)
+    monkeypatch.setattr(requests, "post", lambda url, json=None, timeout=None: sent.append(json))
+
+    await admin_pulse._run_weekly_report_if_due()
+    assert len(sent) == 1 and sent[0]["chat_id"] == 7_499_999_999
+    total, wins = map(int, re.search(r"Delivered: total=(\d+) \| wins=(\d+)", sent[0]["text"]).groups())
+    assert total >= 1 and wins >= 1, sent[0]["text"]
+    async with get_session() as session:
+        marker = (await session.execute(text(
+            "SELECT 1 FROM runtime_state WHERE key='admin_pulse_last_weekly_run'"))).scalar()
+    assert marker == 1

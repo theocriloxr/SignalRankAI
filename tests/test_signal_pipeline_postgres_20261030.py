@@ -336,3 +336,33 @@ async def test_the_background_scan_tracks_a_delivered_signal(postgres_database, 
         lifecycle = (await session.execute(select(SignalLifecycle)
                                            .where(SignalLifecycle.signal_id == stored["signal_id"]))).scalar_one()
     assert lifecycle.entry_touched_at is not None and lifecycle.tp1_hit_at is not None, lifecycle.state
+
+
+@pytest.mark.asyncio
+async def test_an_untouched_entry_expires_as_missed_and_is_not_a_loss(postgres_database, network_edges):  # noqa: F811
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    import signalrank_telegram.bot as bot
+    from db.models import Outcome, Signal
+    from db.session import get_session
+    from engine.realtime_outcome_tracker import reconcile_signal_now
+
+    telegram_id = await _vip_user()
+    asset = f"M{uuid4().hex[:6].upper()}USDT"
+    network_edges.prices[asset] = 100.0
+    stored = await _stored(_signal(asset))
+    assert await bot.dispatch_signals_async([dict(stored)], telegram_id) == 1
+    network_edges.prices[asset] = 103.5  # ran away from a long entry at 100 without touching it
+    past = datetime.now(timezone.utc).replace(tzinfo=None)
+    async with get_session() as session:  # time passes: the entry window closes
+        await session.execute(update(Signal).where(Signal.signal_id == stored["signal_id"])
+                              .values(created_at=past - timedelta(hours=3), expires_at=past - timedelta(minutes=1)))
+        await session.commit()
+    await reconcile_signal_now(stored["signal_id"])
+    await reconcile_signal_now(stored["signal_id"])
+    async with get_session() as session:
+        outcome = (await session.execute(select(Outcome).where(Outcome.signal_id == stored["signal_id"]))).scalar_one()
+    assert str(outcome.status).lower() in {"missed_entry", "expired"}, outcome.status
+    assert outcome.r_multiple is None  # never a realized loss or win

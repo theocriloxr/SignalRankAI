@@ -1066,6 +1066,56 @@ async def _claim_pulse_slot(interval_seconds: int) -> bool:
     return await asyncio.to_thread(_claim)
 
 
+async def _run_weekly_report_if_due() -> None:
+    """Weekly filter-efficacy report: run once per configured weekday/hour."""
+    try:
+        # Default weekday env not set -> use current weekday (no-op); recommend ADMIN_WEEKLY_REPORT_WEEKDAY=6 for Sunday
+        report_weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", "6"))
+        report_hour = int(os.getenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", "9"))
+        now = datetime.now(timezone.utc)
+        if now.weekday() == report_weekday and now.hour == report_hour:
+            # Avoid duplicate runs by checking runtime_state key
+            try:
+                from db.session import get_session
+                from sqlalchemy import text
+
+                async with get_session() as session:
+                    row = (
+                        await session.execute(
+                            text("SELECT value FROM runtime_state WHERE key = :k"),
+                            {"k": "admin_pulse_last_weekly_run"},
+                        )
+                    ).first()
+                    await session.rollback()
+                last = None
+                if row and row[0]:
+                    last = str(row[0])
+                # If last run is today, skip
+                if last and str(now.date()) in last:
+                    pass
+                else:
+                    # Run the report with no session held: it opens its own, which
+                    # waited on this one (one critical lane) and came back empty.
+                    try:
+                        await send_weekly_filter_efficacy_via_telegram(window_days=7)
+                    except Exception:
+                        logger.exception("[admin_pulse] weekly report failed")
+                    # persist last run
+                    val = json.dumps(now.isoformat())
+                    async with get_session() as session:
+                        await session.execute(
+                            text(
+                                "INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+                            ),
+                            {"k": "admin_pulse_last_weekly_run", "v": val},
+                        )
+                        await session.commit()
+            except Exception:
+                logger.debug("[admin_pulse] weekly run check failed", exc_info=True)
+    except Exception:
+        logger.debug("[admin_pulse] weekly scheduling check error", exc_info=True)
+
+
 async def start_pulse_loop(interval_seconds: int = None) -> None:
     interval = (
         int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600)
@@ -1083,49 +1133,5 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
                 logger.info("[admin_pulse] duplicate replica pulse skipped")
         except Exception:
             logger.exception("[admin_pulse] loop send failed")
-        # Weekly filter-efficacy report: run once per configured weekday/hour
-        try:
-            # Default weekday env not set -> use current weekday (no-op); recommend ADMIN_WEEKLY_REPORT_WEEKDAY=6 for Sunday
-            report_weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", "6"))
-            report_hour = int(os.getenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", "9"))
-            now = datetime.now(timezone.utc)
-            if now.weekday() == report_weekday and now.hour == report_hour:
-                # Avoid duplicate runs by checking runtime_state key
-                try:
-                    from db.session import get_session
-                    from sqlalchemy import text
-
-                    async with get_session() as session:
-                        row = (
-                            await session.execute(
-                                text("SELECT value FROM runtime_state WHERE key = :k"),
-                                {"k": "admin_pulse_last_weekly_run"},
-                            )
-                        ).first()
-                        last = None
-                        if row and row[0]:
-                            last = str(row[0])
-                        # If last run is today, skip
-                        if last and str(now.date()) in last:
-                            pass
-                        else:
-                            # run weekly report
-                            try:
-                                await send_weekly_filter_efficacy_via_telegram(window_days=7)
-                            except Exception:
-                                logger.exception("[admin_pulse] weekly report failed")
-                            # persist last run
-                            val = json.dumps(now.isoformat())
-                            await session.execute(
-                                text(
-                                    "INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
-                                ),
-                                {"k": "admin_pulse_last_weekly_run", "v": val},
-                            )
-                            await session.commit()
-                except Exception:
-                    logger.debug("[admin_pulse] weekly run check failed", exc_info=True)
-        except Exception:
-            logger.debug("[admin_pulse] weekly scheduling check error", exc_info=True)
-
+        await _run_weekly_report_if_due()
         await asyncio.sleep(max(60, int(interval)))
