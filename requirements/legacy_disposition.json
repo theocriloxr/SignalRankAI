@@ -1,5 +1,5 @@
 {
-  "file_count": 2660,
+  "file_count": 2661,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -9448,6 +9448,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "18feda5e2783b0088ae3c05026f4fe771963e7b25d0e878596e19ee047f6e4fe",
       "size_bytes": 24677
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 145,
+      "path": "docs/release/evidence/continuation-20261030/codebase_db_audit.json",
+      "reason": "documentation/specification/evidence",
+      "sha256": "1de02db7cce70e453b1d692eb90cf38433afa3c25d7e1868e24773a0c69f6a78",
+      "size_bytes": 8452
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -21294,7 +21302,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 873,
+    "DOCUMENTATION_ONLY": 874,
     "PRESERVE_BEHAVIOUR": 1359,
     "TEST_ONLY": 427
   }

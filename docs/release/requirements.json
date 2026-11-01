@@ -368,9 +368,9 @@
   "inventory_is_verification": false,
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
-    "documents": 393,
-    "requirements_and_source_sections": 10022,
-    "source_clauses": 60091,
+    "documents": 394,
+    "requirements_and_source_sections": 10029,
+    "source_clauses": 60198,
     "interfaces": {
       "ENDPOINT": 185,
       "API": 173,
@@ -3127,6 +3127,14 @@
       "sha256_lf": "edf2dba8ba0e96d2e1756b2b294591c6a0a8af9faa81dd111c59b5cefd3050b0",
       "encoding": "utf-8-sig",
       "line_count": 72,
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "section_count": 7
+    },
+    {
+      "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
+      "sha256_lf": "8dc90d74452d265e10a3ae94dc33001aa7682eb821564f27d5c1cece43775b9f",
+      "encoding": "utf-8-sig",
+      "line_count": 127,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 7
     },
@@ -235221,6 +235229,574 @@
         {
           "line": 72,
           "text": "Adding a provider, broker, mailbox or payment credential must never implicitly enable real execution, auto execution, copy trading, payouts or transfers. Those are separate fail-closed activation gates."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-5324b5b53cc533a7",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:1",
+      "requirement": "Server operations handoff — 1 Nov 2026",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "14c5589388a6282e6fa785669f6ef93fdf71f54ecccd12662974e2acc01494a7",
+      "line_start": 1,
+      "line_end": 8,
+      "text": "# Server operations handoff — 1 Nov 2026\n\nWritten by the server-side Claude session that migrated SignalRank and NATA off Railway and now operates\nthe production server. Read this before changing deployment, environment, data or ML behaviour, so the\ndesktop Claude Code session and the server session do not undo each other's work.\n\nAll figures below were read from production on 1 Nov 2026 (UTC) unless a date is given.\n",
+      "clauses": [
+        {
+          "line": 1,
+          "text": "# Server operations handoff — 1 Nov 2026"
+        },
+        {
+          "line": 3,
+          "text": "Written by the server-side Claude session that migrated SignalRank and NATA off Railway and now operates"
+        },
+        {
+          "line": 4,
+          "text": "the production server. Read this before changing deployment, environment, data or ML behaviour, so the"
+        },
+        {
+          "line": 5,
+          "text": "desktop Claude Code session and the server session do not undo each other's work."
+        },
+        {
+          "line": 7,
+          "text": "All figures below were read from production on 1 Nov 2026 (UTC) unless a date is given."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-f947b4de9325ad29",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:9",
+      "requirement": "1. Where production runs now",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "44fb626157fb3ee276b8a798063f7219303619aaea983bc4847d9455ec5fc770",
+      "line_start": 9,
+      "line_end": 28,
+      "text": "## 1. Where production runs now\n\n- **Host:** one Contabo VPS (Ubuntu 24.04, 11 GiB RAM), public IP `157.173.99.72`. Railway application\n  services are stopped; Railway's SignalRank Postgres/PgBouncer/Redis are still running only as a stale\n  fallback (no writes since the 29 Oct cutover).\n- **Containers (Docker Compose project `signalrank`):** `bot`, `worker`, `engine`, `analytics` (one backend\n  image built from this branch), `web` (Next.js from `frontend/`), `postgres:18`, `redis-a`, `redis-b`,\n  `caddy`.\n- **Public names (Caddy, automatic HTTPS):**\n  - `www.signalrank.criloxsolutions.com` and `signalrank.criloxsolutions.com` → Next.js website; the paths\n    `/telegram*`, `/webhook*`, `/webhooks/*`, `/paystack/*`, `/healthz`, `/readyz`, `/livez` go straight to\n    the bot.\n  - Telegram webhook: `https://www.signalrank.criloxsolutions.com/telegram/webhook`.\n  - `157-173-99-72.sslip.io` → bot (the website's `SIGNALRANK_PLATFORM_API_ORIGIN`);\n    `web.157-173-99-72.sslip.io` → website.\n  - Caddy sets `X-Real-IP` from the real client and trusts forwarded addresses only from the Docker\n    network; `SIGNALRANK_CLIENT_IP_SECRET` is shared by the website and the backend.\n- **NATA** runs on the same server (Compose project `nata`), live at `https://api.natalagoscouncil.com.ng`\n  since 1 Nov.\n",
+      "clauses": [
+        {
+          "line": 9,
+          "text": "## 1. Where production runs now"
+        },
+        {
+          "line": 11,
+          "text": "- **Host:** one Contabo VPS (Ubuntu 24.04, 11 GiB RAM), public IP `157.173.99.72`. Railway application"
+        },
+        {
+          "line": 12,
+          "text": "  services are stopped; Railway's SignalRank Postgres/PgBouncer/Redis are still running only as a stale"
+        },
+        {
+          "line": 13,
+          "text": "  fallback (no writes since the 29 Oct cutover)."
+        },
+        {
+          "line": 14,
+          "text": "- **Containers (Docker Compose project `signalrank`):** `bot`, `worker`, `engine`, `analytics` (one backend"
+        },
+        {
+          "line": 15,
+          "text": "  image built from this branch), `web` (Next.js from `frontend/`), `postgres:18`, `redis-a`, `redis-b`,"
+        },
+        {
+          "line": 16,
+          "text": "  `caddy`."
+        },
+        {
+          "line": 17,
+          "text": "- **Public names (Caddy, automatic HTTPS):**"
+        },
+        {
+          "line": 18,
+          "text": "  - `www.signalrank.criloxsolutions.com` and `signalrank.criloxsolutions.com` → Next.js website; the paths"
+        },
+        {
+          "line": 19,
+          "text": "    `/telegram*`, `/webhook*`, `/webhooks/*`, `/paystack/*`, `/healthz`, `/readyz`, `/livez` go straight to"
+        },
+        {
+          "line": 20,
+          "text": "    the bot."
+        },
+        {
+          "line": 21,
+          "text": "  - Telegram webhook: `https://www.signalrank.criloxsolutions.com/telegram/webhook`."
+        },
+        {
+          "line": 22,
+          "text": "  - `157-173-99-72.sslip.io` → bot (the website's `SIGNALRANK_PLATFORM_API_ORIGIN`);"
+        },
+        {
+          "line": 23,
+          "text": "    `web.157-173-99-72.sslip.io` → website."
+        },
+        {
+          "line": 24,
+          "text": "  - Caddy sets `X-Real-IP` from the real client and trusts forwarded addresses only from the Docker"
+        },
+        {
+          "line": 25,
+          "text": "    network; `SIGNALRANK_CLIENT_IP_SECRET` is shared by the website and the backend."
+        },
+        {
+          "line": 26,
+          "text": "- **NATA** runs on the same server (Compose project `nata`), live at `https://api.natalagoscouncil.com.ng`"
+        },
+        {
+          "line": 27,
+          "text": "  since 1 Nov."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-8575d305b6aa6621",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:29",
+      "requirement": "2. How code reaches production",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "db8f6972d89f882c0ec211a60ce459d7e2b5149eb6d7bbbfbe7f2c9231b215a0",
+      "line_start": 29,
+      "line_end": 47,
+      "text": "## 2. How code reaches production\n\n- **Auto-deploy follows this branch** (`feat/frontend-rebuild-and-stage1-hardening`), checked every\n  3 minutes.\n  - **Backend:** a new commit is built, a database backup is taken, `scripts/controlled_migrate.py`\n    runs, and the bot is health-checked. It rolls back automatically if the new version is unhealthy and\n    the schema did not change.\n  - **Website:** it is rebuilt only when `frontend/` or `Dockerfile.frontend` changed.\n  - **Commits that change nothing that runs** (`docs/`, `requirements/`, `tests/`, `frontend/` for the\n    backend, `*.md`…) are skipped, so governance-only commits do not restart production.\n  - **A commit whose deploy failed is not retried**; the next commit is.\n- **Build notes:** the server builds the backend from a simplified copy of `Dockerfile`, using the same\n  builder steps without the minimal-runtime stage. **If you change the builder stage or the requirement\n  files list in `Dockerfile`, mention it in a commit message.** The tooling copies `Dockerfile`'s builder\n  stage but should be checked.\n- **Release identity:** each deploy sets `RAILWAY_GIT_COMMIT_SHA`, `EXPECTED_RELEASE_COMMIT` and\n  `EXPECTED_RELEASE_BRANCH` to the deployed commit, so `assert_release_source.py` and\n  `controlled_migrate.py` pass for exactly that commit.\n",
+      "clauses": [
+        {
+          "line": 29,
+          "text": "## 2. How code reaches production"
+        },
+        {
+          "line": 31,
+          "text": "- **Auto-deploy follows this branch** (`feat/frontend-rebuild-and-stage1-hardening`), checked every"
+        },
+        {
+          "line": 32,
+          "text": "  3 minutes."
+        },
+        {
+          "line": 33,
+          "text": "  - **Backend:** a new commit is built, a database backup is taken, `scripts/controlled_migrate.py`"
+        },
+        {
+          "line": 34,
+          "text": "    runs, and the bot is health-checked. It rolls back automatically if the new version is unhealthy and"
+        },
+        {
+          "line": 35,
+          "text": "    the schema did not change."
+        },
+        {
+          "line": 36,
+          "text": "  - **Website:** it is rebuilt only when `frontend/` or `Dockerfile.frontend` changed."
+        },
+        {
+          "line": 37,
+          "text": "  - **Commits that change nothing that runs** (`docs/`, `requirements/`, `tests/`, `frontend/` for the"
+        },
+        {
+          "line": 38,
+          "text": "    backend, `*.md`…) are skipped, so governance-only commits do not restart production."
+        },
+        {
+          "line": 39,
+          "text": "  - **A commit whose deploy failed is not retried**; the next commit is."
+        },
+        {
+          "line": 40,
+          "text": "- **Build notes:** the server builds the backend from a simplified copy of `Dockerfile`, using the same"
+        },
+        {
+          "line": 41,
+          "text": "  builder steps without the minimal-runtime stage. **If you change the builder stage or the requirement"
+        },
+        {
+          "line": 42,
+          "text": "  files list in `Dockerfile`, mention it in a commit message.** The tooling copies `Dockerfile`'s builder"
+        },
+        {
+          "line": 43,
+          "text": "  stage but should be checked."
+        },
+        {
+          "line": 44,
+          "text": "- **Release identity:** each deploy sets `RAILWAY_GIT_COMMIT_SHA`, `EXPECTED_RELEASE_COMMIT` and"
+        },
+        {
+          "line": 45,
+          "text": "  `EXPECTED_RELEASE_BRANCH` to the deployed commit, so `assert_release_source.py` and"
+        },
+        {
+          "line": 46,
+          "text": "  `controlled_migrate.py` pass for exactly that commit."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-9134d17429bac28b",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:48",
+      "requirement": "3. Production settings changed on the server today",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "f00e0509dfb11dfef0b7abd2e80d14709ce4b36a73237a4213f1eeb69f4a653a",
+      "line_start": 48,
+      "line_end": 69,
+      "text": "## 3. Production settings changed on the server today\n\nThese are server-side overrides (`sr env-set`, stored in `/opt/signalrank/env/overrides.json`); they are\n**not** in Railway and not in this repository.\n\n| Setting | Value | Services | Why |\n|---|---|---|---|\n| `EXPECTANCY_HARD_BLOCK_ENABLED` | `0` | backend | Was `1`: with no delivered outcomes every candidate is refused and evidence can never form (documented in `engine/expectancy_shadow.py`). No signal had been issued since **2026-10-11 10:49 UTC**. `0` is the code default. |\n| `EMAIL_DELIVERY_ENABLED` | `1` | worker | Was `0` in the worker, the only role that runs `_email_delivery_loop`, so no email was ever sent. SMTP login to `smtp.go54mail.com:587` was verified. One stale `magic_login` from 11 Oct was marked `failed`, not sent. |\n| `ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED`, `ML_ADAPTIVE_THRESHOLD_MAX_DELTA`, `ML_PROB_THRESHOLD` | `1`, `0.14`, `0.70` | engine | Owner asked for a 0.70 ML pass mark. Effective raw threshold is now 0.70 (it was the artifact's certified 0.84). |\n| `CRYPTO_PAIRS`, `FX_PAIRS`, `STOCK_TICKERS`, `INDEX_TICKERS`, `COMMODITY_TICKERS`, `TRADABLE_ASSETS`, `ASSET_DISCOVERY_MODE=manual`, `DYNAMIC_UNIVERSE_ENABLED=0` | see below | backend | Owner wants a fixed universe of the top 10 + 5 extra per class. The database registry universe was mostly stablecoins and illiquid tokens with no candles. |\n\nUniverse now pinned (`TRADABLE_ASSETS`):\n\n- **Crypto:** BTC, ETH, XRP, BNB, SOL, DOGE, TRX, ADA, LINK, AVAX, TON, SUI, DOT, LTC, BCH (USDT pairs).\n- **Forex:** EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD, EURJPY, GBPJPY, EURGBP, AUDJPY,\n  EURCHF, EURCAD, CADJPY, CHFJPY.\n- **Stocks:** NVDA, MSFT, AAPL, AMZN, GOOGL, META, AVGO, TSLA, JPM, LLY, V, NFLX, AMD, ORCL, WMT.\n- **Indices** (only 10 are mapped in `services/asset_mapper.py`): US500, NAS100, US30, GER40, UK100, JP225,\n  FRA40, EU50, AUS200, HK50.\n- **Commodities** (only 4 are mapped): XAUUSD, XAGUSD, WTI, BRENT.\n",
+      "clauses": [
+        {
+          "line": 48,
+          "text": "## 3. Production settings changed on the server today"
+        },
+        {
+          "line": 50,
+          "text": "These are server-side overrides (`sr env-set`, stored in `/opt/signalrank/env/overrides.json`); they are"
+        },
+        {
+          "line": 51,
+          "text": "**not** in Railway and not in this repository."
+        },
+        {
+          "line": 53,
+          "text": "| Setting | Value | Services | Why |"
+        },
+        {
+          "line": 55,
+          "text": "| `EXPECTANCY_HARD_BLOCK_ENABLED` | `0` | backend | Was `1`: with no delivered outcomes every candidate is refused and evidence can never form (documented in `engine/expectancy_shadow.py`). No signal had been issued since **2026-10-11 10:49 UTC**. `0` is the code default. |"
+        },
+        {
+          "line": 56,
+          "text": "| `EMAIL_DELIVERY_ENABLED` | `1` | worker | Was `0` in the worker, the only role that runs `_email_delivery_loop`, so no email was ever sent. SMTP login to `smtp.go54mail.com:587` was verified. One stale `magic_login` from 11 Oct was marked `failed`, not sent. |"
+        },
+        {
+          "line": 57,
+          "text": "| `ML_ALLOW_ADAPTIVE_THRESHOLD_AROUND_CERTIFIED`, `ML_ADAPTIVE_THRESHOLD_MAX_DELTA`, `ML_PROB_THRESHOLD` | `1`, `0.14`, `0.70` | engine | Owner asked for a 0.70 ML pass mark. Effective raw threshold is now 0.70 (it was the artifact's certified 0.84). |"
+        },
+        {
+          "line": 58,
+          "text": "| `CRYPTO_PAIRS`, `FX_PAIRS`, `STOCK_TICKERS`, `INDEX_TICKERS`, `COMMODITY_TICKERS`, `TRADABLE_ASSETS`, `ASSET_DISCOVERY_MODE=manual`, `DYNAMIC_UNIVERSE_ENABLED=0` | see below | backend | Owner wants a fixed universe of the top 10 + 5 extra per class. The database registry universe was mostly stablecoins and illiquid tokens with no candles. |"
+        },
+        {
+          "line": 60,
+          "text": "Universe now pinned (`TRADABLE_ASSETS`):"
+        },
+        {
+          "line": 62,
+          "text": "- **Crypto:** BTC, ETH, XRP, BNB, SOL, DOGE, TRX, ADA, LINK, AVAX, TON, SUI, DOT, LTC, BCH (USDT pairs)."
+        },
+        {
+          "line": 63,
+          "text": "- **Forex:** EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD, EURJPY, GBPJPY, EURGBP, AUDJPY,"
+        },
+        {
+          "line": 64,
+          "text": "  EURCHF, EURCAD, CADJPY, CHFJPY."
+        },
+        {
+          "line": 65,
+          "text": "- **Stocks:** NVDA, MSFT, AAPL, AMZN, GOOGL, META, AVGO, TSLA, JPM, LLY, V, NFLX, AMD, ORCL, WMT."
+        },
+        {
+          "line": 66,
+          "text": "- **Indices** (only 10 are mapped in `services/asset_mapper.py`): US500, NAS100, US30, GER40, UK100, JP225,"
+        },
+        {
+          "line": 67,
+          "text": "  FRA40, EU50, AUS200, HK50."
+        },
+        {
+          "line": 68,
+          "text": "- **Commodities** (only 4 are mapped): XAUUSD, XAGUSD, WTI, BRENT."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-096113fe4f5e6e95",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:70",
+      "requirement": "4. Findings from production (evidence)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "821fcd4bed7c0f0387115fe73d5fae67b48bddb2ca2d0e8fa279de90f5dbf22a",
+      "line_start": 70,
+      "line_end": 99,
+      "text": "## 4. Findings from production (evidence)\n\n1. **No signals since 11 Oct.** Last 24 h of `decision_log`: `risk/expectancy_unavailable` 120,747,\n   `no_usable_candles` 95,934, `risk/volatility` 17,577, many `validation:SL too wide … (max 8.0% for crypto)`.\n   No `signal_deliveries` in 21 days.\n2. **Expectancy shadow evidence never matures:** 93,297 `decision_log` rows with `meta.layer='expectancy'`\n   since 30 Oct, **0** with `shadow_r`. The shadow outcome follow-up is not running for these rows, so\n   `EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED` could never open the gate either.\n3. **ML model inverted for current markets.**\n   - The serving model was trained 29 Sep and certifies a raw threshold of 0.84.\n   - Stablecoin-like assets (USDS, PYUSD, RLUSD, PAXG, XAUT) score 0.87–0.91. Real coins score\n     0.05–0.64 raw (e.g. BCH 0.58, ETC 0.64, DOGE 0.11, NEAR 0.06).\n   - Starvation recovery declines everything (`score_below_recovery_floor`,\n     `raw_probability_below_recovery_floor`).\n   - At 0.70, real coins still rarely pass; retraining is required.\n4. **ADX sometimes invalid** → `Weak trend (ADX 10) | Low directional efficiency (0.00) | Tight range`\n   rejections on assets that are trending.\n5. **Degenerate levels:** `validation:LONG: Entry (3876.1) must be above SL (3876.1)` (also 283.53): a\n   strategy emits SL equal to entry.\n6. **External credentials:**\n   - OpenAI startup probe returns HTTP 401 (key rejected), so AI features fall back to local.\n   - MetaAPI probe reports `provider_unavailable`; the owner will replace the key.\n7. **Database pressure in analytics:**\n   - `[db_admission_timeout] label=adaptive.monitor` with capacity 2.\n   - `[continuous_improvement] scheduled review failed` ends in asyncpg `TimeoutError`.\n   - Postgres cancels parallel scans on `ml_rejected_signals`. That table grows by 50k–110k rows/day\n     because of the stablecoin universe; it should slow down now that the universe is fixed.\n8. **Users:** 12 (8 free, 4 owner). All have `execution_mode=manual`, one broker connection has saved\n   credentials, 6 paper accounts. `GLOBAL_EXECUTION_KILL_SWITCH=1`.\n",
+      "clauses": [
+        {
+          "line": 70,
+          "text": "## 4. Findings from production (evidence)"
+        },
+        {
+          "line": 72,
+          "text": "1. **No signals since 11 Oct.** Last 24 h of `decision_log`: `risk/expectancy_unavailable` 120,747,"
+        },
+        {
+          "line": 73,
+          "text": "   `no_usable_candles` 95,934, `risk/volatility` 17,577, many `validation:SL too wide … (max 8.0% for crypto)`."
+        },
+        {
+          "line": 74,
+          "text": "   No `signal_deliveries` in 21 days."
+        },
+        {
+          "line": 75,
+          "text": "2. **Expectancy shadow evidence never matures:** 93,297 `decision_log` rows with `meta.layer='expectancy'`"
+        },
+        {
+          "line": 76,
+          "text": "   since 30 Oct, **0** with `shadow_r`. The shadow outcome follow-up is not running for these rows, so"
+        },
+        {
+          "line": 77,
+          "text": "   `EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED` could never open the gate either."
+        },
+        {
+          "line": 78,
+          "text": "3. **ML model inverted for current markets.**"
+        },
+        {
+          "line": 79,
+          "text": "   - The serving model was trained 29 Sep and certifies a raw threshold of 0.84."
+        },
+        {
+          "line": 80,
+          "text": "   - Stablecoin-like assets (USDS, PYUSD, RLUSD, PAXG, XAUT) score 0.87–0.91. Real coins score"
+        },
+        {
+          "line": 81,
+          "text": "     0.05–0.64 raw (e.g. BCH 0.58, ETC 0.64, DOGE 0.11, NEAR 0.06)."
+        },
+        {
+          "line": 82,
+          "text": "   - Starvation recovery declines everything (`score_below_recovery_floor`,"
+        },
+        {
+          "line": 83,
+          "text": "     `raw_probability_below_recovery_floor`)."
+        },
+        {
+          "line": 84,
+          "text": "   - At 0.70, real coins still rarely pass; retraining is required."
+        },
+        {
+          "line": 85,
+          "text": "4. **ADX sometimes invalid** → `Weak trend (ADX 10) | Low directional efficiency (0.00) | Tight range`"
+        },
+        {
+          "line": 86,
+          "text": "   rejections on assets that are trending."
+        },
+        {
+          "line": 87,
+          "text": "5. **Degenerate levels:** `validation:LONG: Entry (3876.1) must be above SL (3876.1)` (also 283.53): a"
+        },
+        {
+          "line": 88,
+          "text": "   strategy emits SL equal to entry."
+        },
+        {
+          "line": 89,
+          "text": "6. **External credentials:**"
+        },
+        {
+          "line": 90,
+          "text": "   - OpenAI startup probe returns HTTP 401 (key rejected), so AI features fall back to local."
+        },
+        {
+          "line": 91,
+          "text": "   - MetaAPI probe reports `provider_unavailable`; the owner will replace the key."
+        },
+        {
+          "line": 92,
+          "text": "7. **Database pressure in analytics:**"
+        },
+        {
+          "line": 93,
+          "text": "   - `[db_admission_timeout] label=adaptive.monitor` with capacity 2."
+        },
+        {
+          "line": 94,
+          "text": "   - `[continuous_improvement] scheduled review failed` ends in asyncpg `TimeoutError`."
+        },
+        {
+          "line": 95,
+          "text": "   - Postgres cancels parallel scans on `ml_rejected_signals`. That table grows by 50k–110k rows/day"
+        },
+        {
+          "line": 96,
+          "text": "     because of the stablecoin universe; it should slow down now that the universe is fixed."
+        },
+        {
+          "line": 97,
+          "text": "8. **Users:** 12 (8 free, 4 owner). All have `execution_mode=manual`, one broker connection has saved"
+        },
+        {
+          "line": 98,
+          "text": "   credentials, 6 paper accounts. `GLOBAL_EXECUTION_KILL_SWITCH=1`."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-81028c3c62b59902",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:100",
+      "requirement": "5. Owner requests (1 Nov 2026), verbatim in substance",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "43a3a4930e15145774f71615ffc81e611ddadd8ae1c1587447c1fc52ce4fb45d",
+      "line_start": 100,
+      "line_end": 113,
+      "text": "## 5. Owner requests (1 Nov 2026), verbatim in substance\n\n- ML pass mark 0.70 (done, §3).\n- Retrain the model on all past data, and learn from every rejected candidate and every candidate that\n  fails any phase, including stablecoin exclusion.\n- Keep improving accuracy, outcome tracking and OHLC fetching continuously; a recurring review by Claude.\n- Live auto-trading available so users can opt in. **Server session position:** build and test the opt-in\n  path on paper and demo accounts first. Real-money enablement only after the retrained model shows\n  positive forward results. AGENTS.md also forbids enabling real-money trading as part of recovery.\n- Owner replaces the MetaAPI key (account linking and broker real-time prices).\n- Improve strategy creation and backtesting, and everything else in the ecosystem.\n- Five asset classes, top 10 + 5 extra each, real-time data where available. Five more indices and eleven\n  more commodities need mapper/provider entries.\n",
+      "clauses": [
+        {
+          "line": 100,
+          "text": "## 5. Owner requests (1 Nov 2026), verbatim in substance"
+        },
+        {
+          "line": 102,
+          "text": "- ML pass mark 0.70 (done, §3)."
+        },
+        {
+          "line": 103,
+          "text": "- Retrain the model on all past data, and learn from every rejected candidate and every candidate that"
+        },
+        {
+          "line": 104,
+          "text": "  fails any phase, including stablecoin exclusion."
+        },
+        {
+          "line": 105,
+          "text": "- Keep improving accuracy, outcome tracking and OHLC fetching continuously; a recurring review by Claude."
+        },
+        {
+          "line": 106,
+          "text": "- Live auto-trading available so users can opt in. **Server session position:** build and test the opt-in"
+        },
+        {
+          "line": 107,
+          "text": "  path on paper and demo accounts first. Real-money enablement only after the retrained model shows"
+        },
+        {
+          "line": 108,
+          "text": "  positive forward results. AGENTS.md also forbids enabling real-money trading as part of recovery."
+        },
+        {
+          "line": 109,
+          "text": "- Owner replaces the MetaAPI key (account linking and broker real-time prices)."
+        },
+        {
+          "line": 110,
+          "text": "- Improve strategy creation and backtesting, and everything else in the ecosystem."
+        },
+        {
+          "line": 111,
+          "text": "- Five asset classes, top 10 + 5 extra each, real-time data where available. Five more indices and eleven"
+        },
+        {
+          "line": 112,
+          "text": "  more commodities need mapper/provider entries."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-8753b01820edf11a",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:114",
+      "requirement": "6. Split of work (proposal — edit this table if you take something)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "0ecddec2613b28df23ed98eba82792afdd446e540ad4131bab1ad52c009d41fb",
+      "line_start": 114,
+      "line_end": 127,
+      "text": "## 6. Split of work (proposal — edit this table if you take something)\n\n| Area | Taken by |\n|---|---|\n| Server, deploys, environment, data copy, monitoring relay | server session |\n| Fix shadow outcome tracking for expectancy and ML-rejected rows | server session |\n| Exclude stablecoins and pegged tokens in discovery and in training data | server session |\n| ADX validity bug and `entry == stop` level bug | server session |\n| Asset mapper: 5 more indices and 11 more commodities with provider symbols | server session |\n| Retraining pipeline that learns from rejected and shadow outcomes (champion/challenger, no auto-promotion without evidence) | server session, review by desktop |\n| Strategy builder, backtesting UX, frontend, Telegram UX | desktop session |\n\nBoth sessions commit to this branch. Pull and rebase before every push, keep commits small, and follow\n`AGENTS.md` (tests, governance regeneration, release documents).",
+      "clauses": [
+        {
+          "line": 114,
+          "text": "## 6. Split of work (proposal — edit this table if you take something)"
+        },
+        {
+          "line": 116,
+          "text": "| Area | Taken by |"
+        },
+        {
+          "line": 118,
+          "text": "| Server, deploys, environment, data copy, monitoring relay | server session |"
+        },
+        {
+          "line": 119,
+          "text": "| Fix shadow outcome tracking for expectancy and ML-rejected rows | server session |"
+        },
+        {
+          "line": 120,
+          "text": "| Exclude stablecoins and pegged tokens in discovery and in training data | server session |"
+        },
+        {
+          "line": 121,
+          "text": "| ADX validity bug and `entry == stop` level bug | server session |"
+        },
+        {
+          "line": 122,
+          "text": "| Asset mapper: 5 more indices and 11 more commodities with provider symbols | server session |"
+        },
+        {
+          "line": 123,
+          "text": "| Retraining pipeline that learns from rejected and shadow outcomes (champion/challenger, no auto-promotion without evidence) | server session, review by desktop |"
+        },
+        {
+          "line": 124,
+          "text": "| Strategy builder, backtesting UX, frontend, Telegram UX | desktop session |"
+        },
+        {
+          "line": 126,
+          "text": "Both sessions commit to this branch. Pull and rebase before every push, keep commits small, and follow"
+        },
+        {
+          "line": 127,
+          "text": "`AGENTS.md` (tests, governance regeneration, release documents)."
         }
       ]
     },
