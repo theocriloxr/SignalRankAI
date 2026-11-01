@@ -329,6 +329,29 @@
         "result": "FAIL (environmental isolated-metadata case only)",
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       }
+    },
+    "codebase_db_audit": {
+      "commits": [
+        "71224344",
+        "3b90fa7d"
+      ],
+      "python_files_scanned": 770,
+      "lines_scanned": 227508,
+      "evidence": "docs/release/evidence/continuation-20261030/codebase_db_audit.json",
+      "engine_signal_delivery_regression": "fixed; branch-only since 2 Oct, origin/main unaffected",
+      "left_for_owner_decision": [
+        "smart_exit_guard_job (fix would enable automatic broker close orders)",
+        "PUT /execution-settings live MetaTrader switch starves its account lookup (fix would let users enable live broker mode)"
+      ],
+      "python_suite_on_branch": {
+        "commit": "71224344",
+        "passed": 4367,
+        "failed": 2,
+        "skipped": 2,
+        "result": "FAIL (V7 governance freshness, regenerated next; environmental isolated-metadata case)",
+        "follow_up_commit": "3b90fa7d verified with 18 targeted PostgreSQL tests and 164 related tests",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      }
     }
   }
 }

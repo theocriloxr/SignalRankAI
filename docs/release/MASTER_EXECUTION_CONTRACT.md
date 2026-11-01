@@ -1,5 +1,57 @@
 # SignalRankAI master execution contract
 
+## Continuation, 30 October 2026 — whole-codebase database audit and the signal pipeline on PostgreSQL (owner request)
+
+Commits `71224344` (fixes and tests) and `3b90fa7d` (weekly report). Nothing was deployed.
+
+The owner asked for the whole codebase to be accounted for, including signal generation, delivery and outcome tracking, not only the listed items. Two steps:
+
+1. Every non-test Python file (770 files, 227,508 lines) was scanned for this week's bug classes, and each candidate was read by hand.
+2. The pipeline was run end to end on a migrated PostgreSQL 17 database, with only the Telegram Bot API and the market-data providers replaced.
+
+The method, coverage and outcome of every finding are in `docs/release/evidence/continuation-20261030/codebase_db_audit.json`.
+
+- **Engine signals reached no recipient (CX-SIG-41, CX-MU-03); fixed.** This regression exists only on this branch; `main` is unaffected. Promoting the branch before this fix would have stopped engine signal delivery.
+  - Cause: the engine stores a signal, then reserves it for each user through `get_or_create_signal`. Since commits `908f6cb3` and `21eec11f` (2 October), the minimum-interval duplicate check matched that same stored row and blocked every reservation.
+  - Fix: a payload that carries its stored `signal_id` now reuses that row, but only while the signal is open and its levels match the payload.
+  - New candidates are still suppressed, so no duplicate rule was loosened.
+- **Free-pool and extra-signal delivery (CX-MU-03); fixed.**
+  - The payload was built from the stored row without its creation time, so the final freshness check blocked every send.
+  - The send also ran while holding the reservation session. With one critical database slot, the sender's own sessions waited on it and timed out after 5 seconds.
+  - The pool now skips signals past their time-to-telegraph limit, which final send rejects anyway. No limit was changed.
+  - Refreshing engagement buttons no longer holds a session across one Telegram edit per recipient.
+- **Time zones (CX-NOTIF-01, CX-CAL-03, CX-SIG-50).** 304 of the 313 timestamp columns have no time zone, and asyncpg refuses time-zone-aware values for them. Most callers swallowed that error into an empty result. Fixed:
+  - `/proof` reported 0 outcomes;
+  - `/strategies` (two copies) and owner `/users`;
+  - the weekly filter report;
+  - the cached calendar fallback, which also returned a field name the news gate does not read;
+  - execution bookkeeping, the drawdown circuit breaker and broker reconciliation.
+
+  Left unchanged for an owner decision: the smart-exit job still fails, because fixing it would let it send automatic broker close orders.
+- **Rows read after a rollback; fixed.** `/verifybroker` failed for every existing user. Also fixed: legacy Bybit credentials, the legacy `/paystack/charge` and waitlist logging.
+- **A session held while another was opened.** By default one session at a time gets the critical database slot, so a second session opened inside the first waits 5 seconds and fails.
+  - Fixed: the weekly owner report ran inside the session that checked its schedule, so its own query failed and it reported 0 delivered outcomes.
+  - Left for the owner: switching to live MetaTrader mode (`PUT /execution-settings`) looks up the account in a second session. On default settings that lookup fails, so the switch is likely refused. Fixing it would let users turn on live broker mode.
+  - The Bybit execution router has the same pattern and was not changed.
+- **Recorded, not changed:**
+  - Three paths still hold a session during Telegram sends: the startup message refresh (off by default), the owner correction notifier and the legacy engine notifier (off by default).
+  - The unused legacy ML collector also leaves out `tp3` wins. The live trainer includes them.
+  - The news worker writes a Redis key that nothing reads.
+  - 117 `run_sync` calls have no timeout. They are listed but were not reviewed one by one.
+  - 203 broad exception handlers return a fixed boolean. The 19 in gate functions were reviewed: each matches an owner decision or fails closed.
+- **Verified:**
+  - 7 pipeline tests and 6 read-regression tests on PostgreSQL. The 12 that reproduce a bug each fail on the previous code; the missed-entry expiry case found none. The pipeline tests cover:
+    - delivery once;
+    - entry → TP1 → TP2 → TP3 at 3R, with the recipient notified once and `/proof` counting it;
+    - a losing short to two recipients;
+    - a free-pool send;
+    - the background tracker scan;
+    - an untouched entry expiring as missed, with no R.
+  - Two static guards over every non-test Python file, which list every fixed site when run on the old code, plus a live-schema check of which tables store time zones.
+  - 675 related tests pass. Full Python suite at `71224344` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,367 passed, 2 failed, 2 skipped**. The failures are V7 governance freshness (regenerated next) and the environmental `release_provenance[isolated_metadata]` case. `3b90fa7d` was verified with 18 targeted PostgreSQL tests and 164 related tests.
+
+  Signal generation from live market data was not run: the pipeline tests start from a stored, quality-gated signal.
+
 ## Continuation, 30 October 2026 — prop dashboard, and a broker-account read crash (owner request)
 
 Commits `9734fd2b` (read fix), `7eb0d9f5` (dashboard data), `01fbd61a` (web view) and `f89697eb` (governance). Nothing was deployed.

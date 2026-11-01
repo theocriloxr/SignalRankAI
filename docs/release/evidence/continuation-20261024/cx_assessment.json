@@ -1261,9 +1261,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "services/economic_calendar.py"
+    "services/economic_calendar.py",
+    "tests/test_postgres_read_regressions_20261030.py"
    ],
-   "note": "Licensed calendar feed unverified."
+   "note": "Licensed calendar feed unverified. 30 Oct: cached calendar fallback read with naive UTC and returns event_time for the news gate."
   },
   {
    "id": "CX-SIG-01",
@@ -1275,9 +1276,11 @@
     "tests/test_pipeline.py",
     "engine/expectancy_gate.py",
     "engine/expectancy_shadow.py",
-    "tests/test_expectancy_shadow_bootstrap_20261028.py"
+    "tests/test_expectancy_shadow_bootstrap_20261028.py",
+    "tests/test_signal_pipeline_postgres_20261030.py",
+    "docs/release/evidence/continuation-20261030/codebase_db_audit.json"
    ],
-   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending. 28 Oct (owner decision): shadow evidence for the expectancy gate built; recording on, admission behind EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED with a stricter bar; not deployed."
+   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending. 28 Oct (owner decision): shadow evidence for the expectancy gate built; recording on, admission behind EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED with a stricter bar; not deployed. 30 Oct: stored signal -> delivery -> lifecycle -> outcome -> notification -> /proof run end to end on PostgreSQL (network edges replaced); generation from live data not run."
   },
   {
    "id": "CX-SIG-02",
@@ -1381,9 +1384,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_signal_dedup_authority.py",
-    "tests/test_signal_lock_contract.py"
+    "tests/test_signal_lock_contract.py",
+    "tests/test_signal_pipeline_postgres_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: engine-stored signals were blocked by their own min-interval match (branch regression since 2 Oct); stored identity now reused only while open with matching levels; new candidates still suppressed."
   },
   {
    "id": "CX-SIG-42",
@@ -1402,9 +1406,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "tests/test_signal_deduplicator.py"
+    "tests/test_signal_deduplicator.py",
+    "tests/test_signal_pipeline_postgres_20261030.py"
    ],
-   "note": "Cross-worker restart cases not run against real Redis."
+   "note": "Cross-worker restart cases not run against real Redis. 30 Oct: identity reuse, payload mismatch, closed signal and new-candidate suppression tested on PostgreSQL."
   },
   {
    "id": "CX-SIG-44",
@@ -1422,9 +1427,11 @@
    "status": "IMPLEMENTED_NOT_VERIFIED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "core/signal_lifecycle.py"
+    "core/signal_lifecycle.py",
+    "tests/test_signal_pipeline_postgres_20261030.py",
+    "tests/test_db_binding_guards_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: entry/TP1/TP2/TP3 and SL transitions driven through the shared writer and the worker scan on PostgreSQL."
   },
   {
    "id": "CX-SIG-51",
@@ -2286,9 +2293,11 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "services/dead_letter_queue.py",
-    "tests/test_v131_notification_delivery_integrity.py"
+    "tests/test_v131_notification_delivery_integrity.py",
+    "tests/test_signal_pipeline_postgres_20261030.py",
+    "tests/test_postgres_read_regressions_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: one outcome notification per recipient on PostgreSQL; /proof, /strategies, /users and weekly report no longer fail on aware timestamps."
   },
   {
    "id": "CX-NOTIF-02",
@@ -2335,9 +2344,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_delivery_fanout_planner.py",
-    "tests/test_class_fair_scheduler_contract.py"
+    "tests/test_class_fair_scheduler_contract.py",
+    "tests/test_signal_pipeline_postgres_20261030.py"
    ],
-   "note": ""
+   "note": "30 Oct: two recipients of one stored signal each delivered once; free-pool sends no longer blocked (missing created_at) or starved (session held)."
   },
   {
    "id": "CX-MU-04",
@@ -3208,6 +3218,19 @@
     "CX-SEC-04"
    ],
    "note": "Prop dashboard and broker-account read fix; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-10-30",
+   "ids": [
+    "CX-CAL-03",
+    "CX-MU-03",
+    "CX-NOTIF-01",
+    "CX-SIG-01",
+    "CX-SIG-41",
+    "CX-SIG-43",
+    "CX-SIG-50"
+   ],
+   "note": "Whole-codebase database audit and PostgreSQL pipeline tests; local evidence only, statuses unchanged."
   }
  ]
 }

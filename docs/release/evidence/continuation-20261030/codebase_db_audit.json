@@ -1,0 +1,145 @@
+{
+ "title": "Codebase-wide database audit and the signal pipeline on PostgreSQL",
+ "date": "2026-10-30",
+ "requested_by": "owner: account for every file, including outcome tracking, signal generation and signal delivery",
+ "tested_revision": "71224344 (fixes) and the follow-up commit (weekly report)",
+ "environment": "owned local PostgreSQL 17.6 on 127.0.0.1:55434, databases migrated to 0057_expectancy_shadow_index; APP_ENV=test; no production access",
+ "scope": {
+  "files": "git ls-files '*.py' excluding tests/, docs/, tests_sdk/",
+  "python_files_scanned": 770,
+  "lines_scanned": 227508,
+  "parse_errors": 0,
+  "method": "AST scans for each bug class, every candidate read by hand; then end-to-end runs on PostgreSQL with only the Telegram Bot API and market-data quote providers replaced",
+  "live_schema": "313 timestamp columns: 304 timestamp without time zone, 9 with time zone (event_outbox, research_dataset_snapshots, research_market_inputs)"
+ },
+ "classes": [
+  {
+   "class": "time-zone-aware datetime bound to a timestamp-without-time-zone column (asyncpg DataError)",
+   "candidates": 31,
+   "confirmed_and_fixed": [
+    "signalrank_telegram/commands.py proof_command (/proof showed 0 outcomes)",
+    "signalrank_telegram/signal_commands.py proof_command (unregistered duplicate)",
+    "signalrank_telegram/commands.py and admin_commands.py admin_top_strategies_command (/strategies)",
+    "signalrank_telegram/owner_commands.py owner_users (/users)",
+    "engine/admin_pulse.py send_weekly_filter_efficacy_via_telegram (delivered counts always 0)",
+    "worker/news_sync_worker.py get_cached_high_impact_events (also returned event_date where the news gate reads event_time)",
+    "ml/retrain.py collect_training_data (unused legacy collector)",
+    "signalrank_telegram/bot.py outcome execution-row sync, drawdown_circuit_breaker_job, broker_reconciliation_job",
+    "engine/tiered_executor.py execution bookkeeping"
+   ],
+   "left_for_owner_decision": [
+    "signalrank_telegram/bot.py smart_exit_guard_job: still fails on PostgreSQL; fixing it lets the job send automatic broker close orders"
+   ],
+   "false_positives": [
+    "engine/adaptive/dataset_snapshot.py (column is timestamptz)",
+    "engine/public_track_record.py (in-memory records)"
+   ],
+   "guard": "tests/test_db_binding_guards_20261030.py::test_no_aware_datetime_is_bound_to_a_naive_column"
+  },
+  {
+   "class": "ORM row read after session.rollback() (DetachedInstanceError)",
+   "candidates": 25,
+   "confirmed_and_fixed": [
+    "signalrank_telegram/commands.py verifybroker_command (/verifybroker failed for every existing user)",
+    "services/bybit_reconciler.py _credentials (legacy Bybit credentials)",
+    "web/app.py paystack_charge_create (legacy /paystack/charge)",
+    "services/waitlist_jobs.py and web/app.py waitlist job logging"
+   ],
+   "false_positives": "rows expunged before rollback, dataclass or dict results, rollback followed by return",
+   "guard": "tests/test_db_binding_guards_20261030.py::test_no_orm_row_is_read_after_rollback"
+  },
+  {
+   "class": "signal delivery path (found by the end-to-end run, not by a scan)",
+   "confirmed_and_fixed": [
+    "db/pg_features.py get_or_create_signal_impl: a payload carrying its stored signal_id was blocked by the min-interval gate matching that same row, so engine-stored signals reached no recipient (branch regression from 908f6cb3 and 21eec11f, 2 Oct; origin/main still reuses the row)",
+    "signalrank_telegram/bot.py free random pool and extra-signal sends: payload lacked created_at, so final-send freshness blocked every one",
+    "signalrank_telegram/bot.py same paths sent while holding their reservation session; the sender's own sessions waited on it (one critical lane) and timed out after 5 s",
+    "db/pg_features.py pool selection now skips candidates past their time-to-telegraph budget, which final send rejects anyway (no gate loosened)",
+    "signalrank_telegram/bot.py _refresh_signal_keyboards_for_all_recipients held a session across one Telegram edit per recipient"
+   ]
+  },
+  {
+   "class": "session held across network sends or nested default sessions",
+   "candidates": 11,
+   "confirmed_and_fixed": [
+    "free pool and extra-signal sends",
+    "engagement keyboard refresh",
+    "worker/news_sync_worker.py nested session (it only fed a Redis key nothing reads)",
+    "engine/admin_pulse.py weekly report ran inside the session that checked its schedule, so its own query starved and reported 0 delivered outcomes (now _run_weekly_report_if_due)"
+   ],
+   "recorded_not_changed": [
+    "signalrank_telegram/bot.py _refresh_active_signal_messages_on_startup (off by default: ACTIVE_SIGNAL_KEYBOARD_REFRESH_ENABLED)",
+    "engine/signal_validator.py notify_signal_correction (owner command)",
+    "engine/core.py legacy outcome notifier (off by default: LEGACY_TRADE_TRACKER_ENABLED)",
+    "signalrank_telegram/bot.py single messages inside smart-exit, drawdown, kill-switch and feedback jobs"
+   ],
+   "left_for_owner_decision": [
+    "web/platform_api.py PUT /execution-settings: switching to live MetaTrader mode looks up the account in a second critical session while holding one; on default lane sizes the lookup starves and the switch is refused. Fixing it lets users enable live broker mode.",
+    "services/bybit_signal_router.py: the Bybit execution router resolves the connection in a second critical session while holding one (execution path, not changed)"
+   ],
+   "method_note": "second scan: a held default (critical) session awaiting any function that opens its own critical session; name collisions read by hand"
+  },
+  {
+   "class": "silent broad except returning a boolean in a gate",
+   "candidates": 203,
+   "reviewed": "19 gate-named functions read by hand: news gate fail-open matches the owner decision of 30 Oct; signal lock, duplicate check, signal controller, payment verification and scheduler lease fail closed; cooldown fail-open is an owner-locked behaviour",
+   "changed": 0
+  },
+  {
+   "class": "asyncio.get_event_loop in sync wrappers",
+   "candidates": 6,
+   "changed": 0,
+   "note": "called inside running coroutines, an import fallback, or unused code (db/pg_features.py _get_signal_with_retry)"
+  },
+  {
+   "class": "client-controlled headers",
+   "candidates": 3,
+   "changed": 0,
+   "note": "x-forwarded-proto only adds HSTS; the other two are the operator request-identity diagnostic"
+  },
+  {
+   "class": "run_sync without timeout",
+   "candidates": 117,
+   "changed": 0,
+   "note": "listed, not reviewed one by one"
+  }
+ ],
+ "tests": {
+  "tests/test_signal_pipeline_postgres_20261030.py": [
+   "a stored signal is delivered once, tracked entry -> TP1 -> TP2 -> TP3 (3R), the recipient is notified once and /proof reports it",
+   "a losing short reaches both recipients once each (-1R)",
+   "an engine-stored signal is delivered to each recipient",
+   "a stored identity is reused only for its own open levels; new candidates stay suppressed",
+   "a free user receives one pool signal without a session-admission timeout",
+   "the worker's background scan advances a delivered signal",
+   "an untouched entry expires as missed, with no R (no bug found)"
+  ],
+  "tests/test_postgres_read_regressions_20261030.py": [
+   "/verifybroker",
+   "legacy Bybit credentials",
+   "legacy checkout",
+   "owner /users and both /strategies",
+   "cached calendar events",
+   "weekly report counts delivered outcomes (0 with the old nesting, even with naive UTC)"
+  ],
+  "failing_on_previous_code": "all 12 bug-reproducing PostgreSQL tests fail with the previous source (the expiry test found no bug); both static guards list every fixed site"
+ },
+ "not_covered": [
+  "signal generation from live market data: strategies were not run against real candles; the pipeline tests start from a stored, quality-gated signal",
+  "real Telegram, broker and payment calls (replaced at the network edge)",
+  "frontend (no frontend change)",
+  "production data and configuration (not accessed)"
+ ],
+ "full_suite": {
+  "commit": "71224344",
+  "passed": 4367,
+  "failed": 2,
+  "skipped": 2,
+  "duration": "1:16:12",
+  "failures": [
+   "test_release_provenance[isolated_metadata] (environmental, seen in every run)",
+   "test_generated_v7_governance_is_current (governance regenerated in the following commit)"
+  ],
+  "environment": "Windows 11, Python 3.13.7, PostgreSQL 17.6 migrated from empty to 0057, SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1"
+ }
+}
