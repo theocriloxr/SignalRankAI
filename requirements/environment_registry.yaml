@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1392,
+  "variable_count": 1394,
   "variables": [
     {
       "declared_defaults": {},
@@ -1079,12 +1079,12 @@
       "name": "ALLOW_STATIC_ASSET_FALLBACK",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1130",
-        "data/pair_discovery.py:1185",
-        "data/pair_discovery.py:1269",
+        "data/pair_discovery.py:1000",
+        "data/pair_discovery.py:1134",
+        "data/pair_discovery.py:1189",
+        "data/pair_discovery.py:1273",
         "data/pair_discovery.py:37",
-        "data/pair_discovery.py:833",
-        "data/pair_discovery.py:996",
+        "data/pair_discovery.py:837",
         "services/asset_registry.py:205"
       ],
       "required_by_code": true,
@@ -1461,7 +1461,7 @@
         "db/migration_environment.py:9",
         "engine/admin_pulse.py:1040",
         "engine/core.py:1265",
-        "engine/core.py:5911",
+        "engine/core.py:5923",
         "payments/paystack_policy.py:45",
         "railway_main.py:1191",
         "signalrank_telegram/bot.py:1822",
@@ -1675,9 +1675,9 @@
       "name": "ASSET_DISCOVERY_MIN_QUOTE_VOLUME_USD",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:445",
-        "data/pair_discovery.py:480",
-        "data/pair_discovery.py:538"
+        "data/pair_discovery.py:449",
+        "data/pair_discovery.py:484",
+        "data/pair_discovery.py:542"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1687,8 +1687,8 @@
       "name": "ASSET_DISCOVERY_MODE",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1047",
-        "data/pair_discovery.py:823"
+        "data/pair_discovery.py:1051",
+        "data/pair_discovery.py:827"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1833,7 +1833,7 @@
       "name": "ASSET_UNIVERSE_BACKGROUND_REFRESH_ENABLED",
       "production_example_default": "0",
       "read_locations": [
-        "data/pair_discovery.py:1285"
+        "data/pair_discovery.py:1289"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1903,7 +1903,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6767",
+        "engine/core.py:6779",
         "services/automated_analyst.py:24"
       ],
       "required_by_code": true,
@@ -1926,8 +1926,8 @@
       "name": "AUTO_DISCOVERY_ALL_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1268",
-        "data/pair_discovery.py:890"
+        "data/pair_discovery.py:1272",
+        "data/pair_discovery.py:894"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2833,7 +2833,7 @@
       "name": "CONFLUENCE_GATE_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4081",
+        "engine/core.py:4093",
         "engine/threshold_optimizer.py:100"
       ],
       "required_by_code": true,
@@ -3186,7 +3186,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:6187"
+        "engine/core.py:6199"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3225,7 +3225,7 @@
         "data/fetcher.py:2137",
         "data/get_live_price.py:255",
         "data/get_live_price.py:588",
-        "data/pair_discovery.py:384",
+        "data/pair_discovery.py:388",
         "engine/price_fetcher.py:303"
       ],
       "required_by_code": true,
@@ -3246,7 +3246,7 @@
       "name": "CRYPTO_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:254"
+        "data/pair_discovery.py:258"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3257,9 +3257,9 @@
       "production_example_default": null,
       "read_locations": [
         "data/fetcher.py:2231",
-        "data/pair_discovery.py:1267",
-        "data/pair_discovery.py:349",
-        "data/pair_discovery.py:801",
+        "data/pair_discovery.py:1271",
+        "data/pair_discovery.py:353",
+        "data/pair_discovery.py:805",
         "data/startup_selfcheck.py:204",
         "data/ws_ingest.py:186"
       ],
@@ -3322,7 +3322,7 @@
       "name": "CRYPTO_PAIRS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:816"
+        "data/pair_discovery.py:820"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3356,7 +3356,7 @@
       "name": "CRYPTO_TRENDING_TOP_N",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1007"
+        "data/pair_discovery.py:1011"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3366,7 +3366,7 @@
       "name": "CRYPTO_UNIVERSE_TOP_N",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1007"
+        "data/pair_discovery.py:1011"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4164,7 +4164,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4943"
+        "engine/core.py:4955"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4195,7 +4195,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/core.py:1969",
-        "engine/core.py:4692"
+        "engine/core.py:4704"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4256,7 +4256,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5909",
+        "engine/core.py:5921",
         "payments/paystack_policy.py:71",
         "railway_main.py:2816",
         "railway_main.py:2931",
@@ -6264,7 +6264,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:79",
-        "data/pair_discovery.py:958",
+        "data/pair_discovery.py:962",
         "data/startup_selfcheck.py:136"
       ],
       "required_by_code": true,
@@ -6275,8 +6275,8 @@
       "name": "FX_UNIVERSE_TOP_N",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:981",
-        "data/pair_discovery.py:990"
+        "data/pair_discovery.py:985",
+        "data/pair_discovery.py:994"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6467,7 +6467,7 @@
         "engine/admin_pulse.py:344",
         "engine/core.py:1646",
         "engine/core.py:1671",
-        "engine/core.py:3349",
+        "engine/core.py:3361",
         "engine/shadow_outcome_worker.py:91",
         "railway_main.py:3138",
         "railway_main.py:3240",
@@ -6739,7 +6739,7 @@
       "name": "INDEX_TICKERS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1139"
+        "data/pair_discovery.py:1143"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6749,8 +6749,8 @@
       "name": "INDEX_TRENDING_TOP_N",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1017",
-        "data/pair_discovery.py:1206"
+        "data/pair_discovery.py:1021",
+        "data/pair_discovery.py:1210"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7403,7 +7403,7 @@
       "read_locations": [
         "data/get_live_price.py:119",
         "data/get_live_price.py:632",
-        "data/pair_discovery.py:575"
+        "data/pair_discovery.py:579"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7413,7 +7413,7 @@
       "name": "METAAPI_SYMBOL_CACHE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:582"
+        "data/pair_discovery.py:586"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7427,7 +7427,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:115",
-        "data/pair_discovery.py:571",
+        "data/pair_discovery.py:575",
         "railway_main.py:2904",
         "railway_main.py:585",
         "railway_main.py:622",
@@ -7448,7 +7448,7 @@
       "read_locations": [
         "data/get_live_price.py:118",
         "data/get_live_price.py:631",
-        "data/pair_discovery.py:574",
+        "data/pair_discovery.py:578",
         "signalrank_telegram/admin_commands.py:255",
         "signalrank_telegram/commands.py:2811"
       ],
@@ -7495,7 +7495,7 @@
       "read_locations": [
         "data/get_live_price.py:117",
         "data/get_live_price.py:630",
-        "data/pair_discovery.py:573"
+        "data/pair_discovery.py:577"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7527,7 +7527,7 @@
       "name": "META_API_REGION",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:580",
+        "data/pair_discovery.py:584",
         "services/mt5_client.py:224"
       ],
       "required_by_code": true,
@@ -7539,7 +7539,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:115",
-        "data/pair_discovery.py:571",
+        "data/pair_discovery.py:575",
         "railway_main.py:2904",
         "railway_main.py:585",
         "railway_main.py:622",
@@ -8069,7 +8069,7 @@
       "name": "ML_HARD_FILTER_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4385"
+        "engine/core.py:4397"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8079,7 +8079,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4930"
+        "engine/core.py:4942"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8163,7 +8163,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4932"
+        "engine/core.py:4944"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8409,7 +8409,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4931"
+        "engine/core.py:4943"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8419,7 +8419,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4935"
+        "engine/core.py:4947"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8429,7 +8429,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4933"
+        "engine/core.py:4945"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10331,7 +10331,7 @@
       "read_locations": [
         "data/get_live_price.py:111",
         "data/get_live_price.py:647",
-        "engine/core.py:5928",
+        "engine/core.py:5940",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
         "railway_main.py:587"
@@ -11116,6 +11116,26 @@
     },
     {
       "declared_defaults": {},
+      "name": "PEGGED_ASSET_EXTRA_BASES",
+      "production_example_default": null,
+      "read_locations": [
+        "core/pegged_assets.py:52"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "PEGGED_ASSET_FILTER_ENABLED",
+      "production_example_default": null,
+      "read_locations": [
+        "core/pegged_assets.py:97"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
       "name": "PENDING_ENTRY",
       "production_example_default": null,
       "read_locations": [
@@ -11323,7 +11343,7 @@
         "data/get_live_price.py:1289",
         "data/get_live_price.py:131",
         "data/get_live_price.py:340",
-        "data/pair_discovery.py:1096",
+        "data/pair_discovery.py:1100",
         "data/providers.py:464"
       ],
       "required_by_code": true,
@@ -12078,7 +12098,7 @@
         "engine/admin_pulse.py:230",
         "engine/core.py:1647",
         "engine/core.py:1672",
-        "engine/core.py:3350",
+        "engine/core.py:3362",
         "engine/shadow_outcome_worker.py:90",
         "railway_main.py:1194",
         "web/app.py:557"
@@ -12096,10 +12116,10 @@
         "core/tier_constants.py:147",
         "data/fetcher_router.py:31",
         "data/market_data.py:772",
-        "data/pair_discovery.py:831",
+        "data/pair_discovery.py:835",
         "engine/core.py:1264",
         "engine/core.py:2742",
-        "engine/core.py:3267",
+        "engine/core.py:3279",
         "payments/paystack_policy.py:44",
         "railway_main.py:1190",
         "signalrank_telegram/admin_commands.py:233",
@@ -12135,7 +12155,7 @@
         "core/execution_claims.py:34",
         "data/fetcher_router.py:30",
         "data/market_data.py:771",
-        "data/pair_discovery.py:831",
+        "data/pair_discovery.py:835",
         "engine/core.py:1263",
         "payments/paystack_policy.py:43",
         "railway_main.py:1189",
@@ -12171,7 +12191,7 @@
         "engine/admin_pulse.py:344",
         "engine/core.py:1646",
         "engine/core.py:1671",
-        "engine/core.py:3349",
+        "engine/core.py:3361",
         "engine/shadow_outcome_worker.py:91",
         "railway_main.py:3138",
         "railway_main.py:3240",
@@ -12227,10 +12247,10 @@
       "read_locations": [
         "config.py:87",
         "core/tier_constants.py:147",
-        "data/pair_discovery.py:830",
+        "data/pair_discovery.py:834",
         "db/session.py:26",
         "engine/core.py:2742",
-        "engine/core.py:3267",
+        "engine/core.py:3279",
         "railway_main.py:1449",
         "railway_main.py:1525",
         "signalrank_telegram/admin_commands.py:233",
@@ -13917,7 +13937,7 @@
       "production_example_default": null,
       "read_locations": [
         "core/redis_state.py:224",
-        "data/pair_discovery.py:1283"
+        "data/pair_discovery.py:1287"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14657,7 +14677,7 @@
       "name": "STOCK_DISCOVERY_MIN_DAILY_VOLUME",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1107"
+        "data/pair_discovery.py:1111"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14688,7 +14708,7 @@
       "name": "STOCK_TICKERS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1038"
+        "data/pair_discovery.py:1042"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14698,7 +14718,7 @@
       "name": "STOCK_TRENDING_TOP_N",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:1010"
+        "data/pair_discovery.py:1014"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15712,7 +15732,7 @@
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
         "data/get_live_price.py:935",
-        "data/pair_discovery.py:607",
+        "data/pair_discovery.py:611",
         "data/providers.py:546"
       ],
       "required_by_code": true,
@@ -15736,8 +15756,8 @@
       "name": "TWELVEDATA_REFERENCE_CACHE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:616",
-        "data/pair_discovery.py:681"
+        "data/pair_discovery.py:620",
+        "data/pair_discovery.py:685"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15750,7 +15770,7 @@
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
         "data/get_live_price.py:935",
-        "data/pair_discovery.py:607",
+        "data/pair_discovery.py:611",
         "data/providers.py:546"
       ],
       "required_by_code": true,
@@ -15945,7 +15965,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4706"
+        "engine/core.py:4718"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15955,7 +15975,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4708"
+        "engine/core.py:4720"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15965,7 +15985,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4709"
+        "engine/core.py:4721"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16423,7 +16443,7 @@
       "name": "YAHOO_REFERENCE_CACHE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/pair_discovery.py:742"
+        "data/pair_discovery.py:746"
       ],
       "required_by_code": true,
       "sensitive": false
