@@ -70,7 +70,7 @@ def test_ml_promotion_requires_calibration_in_deployed_runtime() -> None:
 
 def test_outcome_notification_budget_starts_after_database_snapshot() -> None:
     source = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
-    pending_pos = source.index("pending = run_sync(_fetch())")
+    pending_pos = source.index("pending = run_sync(_fetch(), timeout=60)")
     deadline_pos = source.index(
         "_outcome_deadline = time.monotonic() + _outcome_budget_seconds",
         pending_pos,

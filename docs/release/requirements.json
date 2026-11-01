@@ -363,6 +363,36 @@
           "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
         }
       }
+    },
+    "continuation_20261101": {
+      "commits": [
+        "028fc0c3",
+        "43aa34e8"
+      ],
+      "evidence": "docs/release/evidence/continuation-20261101/coverage_gaps_closed.json",
+      "engine_cycle_on_local_postgres": "one EMA Trend signal generated, stored and delivered with Telegram proof (network edges replaced)",
+      "run_sync": {
+        "reviewed": 117,
+        "bounded_now": 55,
+        "bounded_inside": 51,
+        "by_design": 6,
+        "owner_decision": 5
+      },
+      "bybit_signature_fix": true,
+      "production_observation": {
+        "git_sha": "376fe90b",
+        "git_branch": "feat/frontend-rebuild-and-stage1-hardening",
+        "host": "self-hosted (Caddy/uvicorn), Railway service offline",
+        "pushes_held": "commits after 376fe90b pending owner confirmation"
+      },
+      "python_suite_on_branch": {
+        "commit": "43aa34e8",
+        "passed": 4385,
+        "failed": 3,
+        "skipped": 2,
+        "result": "FAIL (V7 freshness, regenerated next; environmental isolated-metadata; source-text test updated to the bounded call)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      }
     }
   },
   "inventory_is_verification": false,

@@ -1,5 +1,41 @@
 # Release blockers and exact continuation
 
+## Continuation, 1 November 2026 — engine cycle, external contracts, frontend, unbounded waits and production (owner request)
+
+Commits `028fc0c3` (time limits, Bybit signature, contract tests) and `43aa34e8` (engine cycle harness). Not pushed: see the production correction below.
+
+The owner asked for the gaps left on 30 October to be covered. Method, results and every finding: `docs/release/evidence/continuation-20261101/coverage_gaps_closed.json`.
+
+- **Production correction.** On 1 November, read-only public requests showed production running this branch at `376fe90b`, the last pushed commit.
+  - The domain is served by Caddy and uvicorn on a separate server (`157.173.99.72`). Railway shows the `SignalRankAI` service offline, with no active deployment.
+  - The 30 October entries say "Nothing was deployed". That was checked on Railway only, and pushes to this branch now appear to reach production.
+  - Later commits are held locally until the owner confirms how that server deploys.
+- **A real engine cycle (CX-SIG-01).** `scripts/engine_cycle_harness.py` runs `engine.core.main_loop` for one batch on local PostgreSQL.
+  - All outbound connections are blocked. Synthetic candles go into the PostgreSQL candle cache, which the real data layer falls back to.
+  - Only network edges are replaced: the live quote, the external AI reviewer, the Redis active-trade snapshot and Telegram.
+  - Result: 13 strategy signals passed through every gate into one stored EMA Trend signal (score 85.75). Every VIP test user received it with Telegram proof, in three repeated runs.
+  - About 60 other synthetic price paths were rejected by the real gates (quality, stop width, ML, EMA distance, trend strength, volatility).
+- **Engine findings left for the owner:**
+  - A cycle with no candidates skips the end-of-cycle pause, so the engine scans back to back. Changing it would alter signal timing.
+  - The ATR stop repair in `SignalController` has never run: it imports from the wrong module and passes a function where a coroutine is expected. Fixing it would start rewriting generated stops and targets.
+  - Without Redis, without the AI reviewers, or without a live quote, candidates or deliveries are refused. All three fail closed by design.
+- **Unbounded waits (117 reviewed).** A `run_sync` with no time limit waits forever, and a hung scheduler job never runs again.
+  - 55 calls now have a limit sized below their job interval.
+  - 44 data-connector calls are bounded by their HTTP timeouts, and 7 are bounded sleeps.
+  - Left unbounded by design: the forever engine loop and command-line entry points.
+  - Left for the owner: the jobs that place or cancel broker orders or switch execution modes.
+  - A guard test enforces this list.
+- **External contracts, offline (CX-BRK-04, CX-TG-01).** No real messages, orders or charges were made.
+  - **Bybit; fixed.** Requests were signed over a sorted query but sent in insertion order, so order-status and closed-P&L reads would fail "error sign" on a real key. A request now sends exactly the string it signed. Contract tests recompute every signature from the request as sent.
+  - **Telegram.** Every tier's message, the delivery path's messages with hostile text, and all buttons meet the Bot API's HTML, length and callback-data rules. No violations were found.
+  - **Paystack.** The webhook signature and the checkout payload match the provider's documented contract.
+  - Broker conformance on a real sandbox account still needs credentials (CX-BRK-04 unchanged).
+- **Frontend (CX-WEB-01).**
+  - All frontend unit suites, lint, type check and the production build pass.
+  - Headless Chromium on the local stack visited 24 public pages and 16 workspace sections while signed in. It found no HTTP, console, page or API errors.
+  - Rewrites to the backend are computed at build time. The production Dockerfile and the Railway web service both supply the origin, so production is unaffected.
+- **Verified:** 8 Bybit contract tests (3 fail on the previous code), 8 Telegram contract tests and the time-limit guard test. 870 related tests pass. Full Python suite at `43aa34e8` (Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to `0057`, `SIGNALRANK_POSTGRES_INTEGRATION_REQUIRED=1`): **4,385 passed, 3 failed, 2 skipped**. The failures are V7 governance freshness (regenerated next), the environmental `release_provenance[isolated_metadata]` case, and a source-text test that looked for the old unbounded `run_sync(_fetch())` line. That test was updated to the new line, and its file now passes (13 tests).
+
 ## Continuation, 30 October 2026 — whole-codebase database audit and the signal pipeline on PostgreSQL (owner request)
 
 Commits `71224344` (fixes and tests) and `3b90fa7d` (weekly report). Nothing was deployed.

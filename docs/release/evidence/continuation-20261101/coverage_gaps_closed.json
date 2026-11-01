@@ -1,0 +1,49 @@
+{
+ "title": "Closing the 30 Oct coverage gaps: engine cycle, external contracts, frontend, unbounded waits, production observation",
+ "date": "2026-11-01",
+ "requested_by": "owner: cover signal generation from market data; real Telegram, broker and payment calls; the frontend; production; the 117 unbounded waits",
+ "commits": ["028fc0c3 (run_sync bounds, Bybit signature, contract tests)", "43aa34e8 (engine cycle harness)"],
+ "environment": "owned local PostgreSQL 17.6 on 127.0.0.1:55434 (migrated to 0057); APP_ENV=test; outbound network blocked in the engine harness",
+ "engine_cycle": {
+  "tool": "scripts/engine_cycle_harness.py",
+  "method": "engine.core.main_loop for one batch; synthetic 15m random walk aggregated to 1h/4h seeded into the PostgreSQL candle cache; outbound sockets refused except loopback; replaced edges: live quote (synthetic last price), external AI reviewer (fixed approval marked synthetic), Redis active-trade snapshot (empty), Telegram Bot",
+  "result": "seed 2, trend 0.00012, vol 0.002: 13 strategy signals -> gates -> one EMA Trend long (score 85.75) stored, live quote accepted, delivered to every VIP harness user with Telegram proof (state CONFIRMED); repeated three times",
+  "sweep": "about 60 other synthetic paths were rejected by the real gates (quality score < 80, stop > 2.5 %, ML < 0.62, price > 3 ATR from EMA50, weak ADX, volatility)",
+  "findings_for_owner": [
+   "engine/core.py: a cycle with no candidates continues straight to the next one and skips the end-of-cycle pause (cycles ran every few seconds with providers failing fast); changing pacing alters signal timing",
+   "engine/signal_controller.py _normalize_signal: the ATR stop repair has never run (imports fetch_market_data from the wrong module, then passes a function to run_sync); fixing it would start rewriting generated stops and targets",
+   "without Redis every candidate is rejected (active_positions_unavailable): admission requires a complete active-trade snapshot, by design",
+   "with the external AI reviewers unreachable, candidates that clear quality are rejected by the local fallback review (external_review_unavailable), by design",
+   "with no live quote, delivery is refused before any recipient (prefilter_quote_unavailable), by design"
+  ]
+ },
+ "run_sync_review": {
+  "total_unbounded_calls": 117,
+  "now_bounded": 55,
+  "bounded_inside_coroutine": "44 data-connector calls (each adapter sets an HTTP client timeout) and 7 asyncio.sleep/wait_for",
+  "unbounded_by_design": ["engine/loop.py start_engine_loop (forever loop)", "ml/train_model.py, scripts/purge_excluded_signals.py, scripts/test_run_sync.py (CLI)", "engine/core.py _refresh_runtime_thresholds fallback branch"],
+  "left_for_owner_decision": ["bot.py _auto_execute_signal_if_enabled", "bot.py smart_exit_guard_job", "bot.py drawdown_circuit_breaker_job", "bot.py killswitch_close_all_watchdog_job", "engine/signal_controller.py _normalize_signal"],
+  "sizing": "below each scheduler job's interval; single Telegram sends 240 s (RetryAfter waits up to 180 s); per-call DB/price steps 15-60 s",
+  "correction": "db/session.py and init_db.py call SQLAlchemy's conn.run_sync(fn), which is not utils.async_runner.run_sync and forwards keywords to fn; left unchanged",
+  "guard": "tests/test_run_sync_bounds_20261101.py"
+ },
+ "external_contracts": {
+  "bybit": "BUG FIXED: GET requests signed a sorted query but httpx sent insertion order, so order status (get_order) and closed P&L were rejected ('error sign') on a real key; now the exact signed string is sent. tests/test_bybit_signature_contract_20261101.py recomputes HMAC-SHA256(timestamp+key+recv_window+payload) from the wire request for every authenticated call; fails on the previous code",
+  "telegram": "tests/test_telegram_message_contract_20261101.py validates every tier's signal message, the delivery path's messages (signal, readiness note, outcome, /proof) with hostile text, and keyboards against the Bot API HTML subset, the 4096-character limit and 64-byte callback data: no violations",
+  "paystack": "webhook HMAC-SHA512 over the raw body already tested (tests/test_paystack_webhook.py); checkout initialize sends integer kobo, currency, email and a trusted callback (reviewed)",
+  "not_done": "no real Telegram message, broker order or payment was made: no credentials in this environment, and the rules forbid broker and billing operations against production"
+ },
+ "frontend": {
+  "unit": "test:transport 81/81, test:presentation 41/41, test:dependencies 3/3, eslint and tsc clean, next build ok",
+  "browser": "headless Chromium on the local stack: 24 public pages and 16 workspace sections signed in; no HTTP errors, console errors, uncaught page errors or failed API calls",
+  "finding": "rewrites to backend routes (legal pages, webhooks, health) are computed at build time: a build without SIGNALRANK_PLATFORM_API_ORIGIN serves those paths as 404 pages. Dockerfile.frontend declares the build ARG and the Railway web service defines it, so production builds are not affected"
+ },
+ "production_observation": {
+  "scope": "unauthenticated public GET only, as any visitor; no sign-in, writes, tests, migrations, broker or billing calls",
+  "observed_at": "2026-11-01T12:00Z",
+  "routes": {"/": 200, "/healthz": 200, "/version": 200, "/frontend_health": 200, "/terms": 200, "/app": 200},
+  "version": {"git_sha": "376fe90b113beff3133924a80c8a64a00f2510a0", "git_branch": "feat/frontend-rebuild-and-stage1-hardening", "schema_head": "0057_expectancy_shadow_index"},
+  "hosting": "www.signalrank.criloxsolutions.com resolves to 157.173.99.72 and answers with 'Server: uvicorn', 'Via: 1.1 Caddy'; Railway reports the SignalRankAI service offline with no active deployment",
+  "implication": "production runs this branch at 376fe90b, the last pushed commit (uptime started about 14 minutes after that push). Earlier release notes saying 'nothing was deployed' were based on Railway only. Commits after 376fe90b are not pushed pending the owner's confirmation of how that server deploys."
+ }
+}

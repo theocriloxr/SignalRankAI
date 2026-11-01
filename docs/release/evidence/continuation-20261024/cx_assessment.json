@@ -137,9 +137,10 @@
    "acceptance_class": "partially verified",
    "evidence": [
     "tests/test_engine_heartbeat_probe_20261024.py",
-    "tests/test_provider_region_restriction_20261024.py"
+    "tests/test_provider_region_restriction_20261024.py",
+    "tests/test_run_sync_bounds_20261101.py"
    ],
-   "note": "Each fix this session has a regression test."
+   "note": "Each fix this session has a regression test. 1 Nov: 117 unbounded run_sync calls reviewed; 55 bounded; guard test lists the rest with reasons."
   },
   {
    "id": "CX-OPS-04",
@@ -1278,9 +1279,11 @@
     "engine/expectancy_shadow.py",
     "tests/test_expectancy_shadow_bootstrap_20261028.py",
     "tests/test_signal_pipeline_postgres_20261030.py",
-    "docs/release/evidence/continuation-20261030/codebase_db_audit.json"
+    "docs/release/evidence/continuation-20261030/codebase_db_audit.json",
+    "scripts/engine_cycle_harness.py",
+    "docs/release/evidence/continuation-20261101/coverage_gaps_closed.json"
    ],
-   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending. 28 Oct (owner decision): shadow evidence for the expectancy gate built; recording on, admission behind EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED with a stricter bar; not deployed. 30 Oct: stored signal -> delivery -> lifecycle -> outcome -> notification -> /proof run end to end on PostgreSQL (network edges replaced); generation from live data not run."
+   "note": "Execution leg disabled by policy. 28 Oct: expectancy hard block plus zero delivered outcomes refuses every crypto candidate (lockout); owner decision pending. 28 Oct (owner decision): shadow evidence for the expectancy gate built; recording on, admission behind EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED with a stricter bar; not deployed. 30 Oct: stored signal -> delivery -> lifecycle -> outcome -> notification -> /proof run end to end on PostgreSQL (network edges replaced); generation from live data not run. 1 Nov: one real engine cycle on local PostgreSQL generated, stored and delivered a signal (network edges replaced)."
   },
   {
    "id": "CX-SIG-02",
@@ -2155,9 +2158,11 @@
    "status": "BLOCKED_CREDENTIALS_OR_ACCESS",
    "acceptance_class": "blocked",
    "evidence": [
-    "services/demo_certification.py"
+    "services/demo_certification.py",
+    "tests/test_bybit_signature_contract_20261101.py",
+    "docs/release/evidence/continuation-20261101/coverage_gaps_closed.json"
    ],
-   "note": "Needs demo broker credentials."
+   "note": "Needs demo broker credentials. 1 Nov: Bybit V5 signatures verified offline against the wire request (query-order bug fixed); sandbox conformance still needs credentials."
   },
   {
    "id": "CX-BRK-05",
@@ -2205,9 +2210,10 @@
     "tests/test_callback_contract.py",
     "tests/test_telegram_web_parity_20261028.py",
     "tests/test_telegram_workspace_commands_20261029.py",
-    "tests/test_telegram_menu_limit_20261029.py"
+    "tests/test_telegram_menu_limit_20261029.py",
+    "tests/test_telegram_message_contract_20261101.py"
    ],
-   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level. 29 Oct: /watchlist and /journal handlers tested against real PostgreSQL; deployed bot still unverified. 29 Oct: owner/admin menus keep every operator command within Telegram's 100-command limit."
+   "note": "Unit-level only; deployed bot unverified. 28 Oct: /quality, /privacy, /feedback, /account_merges parity tested at unit level. 29 Oct: /watchlist and /journal handlers tested against real PostgreSQL; deployed bot still unverified. 29 Oct: owner/admin menus keep every operator command within Telegram's 100-command limit. 1 Nov: messages and keyboards checked against the Bot API HTML, length and callback-data rules, including hostile text."
   },
   {
    "id": "CX-TG-02",
@@ -2236,9 +2242,10 @@
    "status": "PARTIALLY_IMPLEMENTED",
    "acceptance_class": "partially verified",
    "evidence": [
-    "frontend/src/components/WorkspaceLive.tsx"
+    "frontend/src/components/WorkspaceLive.tsx",
+    "docs/release/evidence/continuation-20261101/coverage_gaps_closed.json"
    ],
-   "note": "All routes render loading/empty/error states against mock API; not run against a real backend deployment."
+   "note": "All routes render loading/empty/error states against mock API; not run against a real backend deployment. 1 Nov: 40 pages (24 public, 16 signed-in sections) smoke-run in headless Chromium on the local stack with no HTTP, console, page or API errors."
   },
   {
    "id": "CX-WEB-02",
@@ -3231,6 +3238,17 @@
     "CX-SIG-50"
    ],
    "note": "Whole-codebase database audit and PostgreSQL pipeline tests; local evidence only, statuses unchanged."
+  },
+  {
+   "date": "2026-11-01",
+   "ids": [
+    "CX-BRK-04",
+    "CX-OPS-03",
+    "CX-SIG-01",
+    "CX-TG-01",
+    "CX-WEB-01"
+   ],
+   "note": "Engine cycle, external contracts, frontend smoke and run_sync review; local evidence only, statuses unchanged."
   }
  ]
 }

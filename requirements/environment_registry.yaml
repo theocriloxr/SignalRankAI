@@ -2489,7 +2489,7 @@
       "name": "BYBIT_ORDER_CONFIRM_ATTEMPTS",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_client.py:345"
+        "services/bybit_client.py:347"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2499,7 +2499,7 @@
       "name": "BYBIT_ORDER_CONFIRM_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_client.py:346"
+        "services/bybit_client.py:348"
       ],
       "required_by_code": true,
       "sensitive": false
