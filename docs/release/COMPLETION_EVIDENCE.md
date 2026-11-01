@@ -1,5 +1,10 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 1 November 2026 (evening) — duplicate suppression no longer logged as a storage error (server session)
+
+`db/pg_compat.store_signal_compat` logged `SignalDedupBlocked` (expected `min_interval` suppression) with a full traceback at ERROR, which made production error summaries report signal-storage failures that were not failures. It now logs `dedup_suppressed` at INFO and re-raises unchanged. Test: `tests/test_store_signal_dedup_log_20261101.py`. Operations notes for the same evening: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §7.
+
+
 ## Continuation, 1 November 2026 — pegged tokens excluded from scanning and training (server session)
 
 Production evidence (Contabo host, 1 Nov): no signal issued since 2026-10-11; the discovered crypto universe was mostly stablecoins and tokenized reserves with no usable candles, and the serving ML model scored USDS/PYUSD/RLUSD/PAXG/XAUT at 0.87–0.93 against 0.05–0.64 for real coins. See `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md`.

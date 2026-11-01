@@ -125,3 +125,26 @@ Universe now pinned (`TRADABLE_ASSETS`):
 
 Both sessions commit to this branch. Pull and rebase before every push, keep commits small, and follow
 `AGENTS.md` (tests, governance regeneration, release documents).
+
+## 7. Later on 1 Nov (evening)
+
+- **Asset discovery is back on `ASSET_DISCOVERY_MODE=auto`**, with `CRYPTO_TRENDING_TOP_N`, `CRYPTO_UNIVERSE_TOP_N`,
+  `STOCK_TRENDING_TOP_N` and `INDEX_TRENDING_TOP_N` set to `15`.
+  - `manual` made `/readyz` report `provider_coverage.ok=false`, because manual symbols are not provider-backed.
+    The deploy health check then failed and rolled back `cc1ffc8`; it was redeployed after the fix.
+  - Pinned `TRADABLE_ASSETS` and `DYNAMIC_UNIVERSE_ENABLED=0` remain.
+- **1-minute timeframes removed** (`*_TIMEFRAMES=5m,15m,1h,4h,24h`).
+  - 1m signals expired before dispatch (`opportunity_decayed ... max=2.0m`), so users received few of them.
+  - The ones they did receive often ended as `missed_entry`, because entry was not touched before the very short
+    expiry ("entry not triggered" messages).
+- **Owner replaced the MetaAPI key:** `metaapi_startup_probe status=PASS`. The OpenAI key is still rejected (401);
+  the owner is replacing it.
+- **Retraining, found while running `python -m ml.train_model` on the server:**
+  - The 90-day shadow-rejected load fails at `DB_COMMAND_TIMEOUT=45` s. `ml_rejected_signals` is a **view** over
+    `decision_log` (2.6 GB, 1.9 M rows).
+  - Without those rows the dataset is 60–392 rows, below `ML_MIN_TRAIN_ROWS` (667), so training is skipped.
+  - A one-off run with longer timeouts was started; the result will be recorded here.
+- **`[store_signal] failed … SignalDedupBlocked min_interval`** was logged at ERROR for normal duplicate
+  suppression; it is now logged at INFO (`db/pg_compat.py`).
+- **Daily review:** a scheduled cloud session reviews production every day at 06:37 Lagos time and writes
+  `reports/YYYY-MM-DD.md` on the `reports` branch of the private ops repo.

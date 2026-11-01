@@ -139,6 +139,19 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
     try:
         return _run(_impl(), timeout=timeout_s)
     except Exception as exc:
+        from db.pg_features import SignalDedupBlocked
+
+        if isinstance(exc, SignalDedupBlocked):
+            # Expected duplicate suppression (already logged as a warning by the
+            # dedup guard); not a storage failure and must not page as an error.
+            logger.info(
+                "[store_signal] dedup_suppressed asset=%s direction=%s timeframe=%s reason=%s",
+                ctx.get("asset"),
+                ctx.get("direction"),
+                ctx.get("timeframe"),
+                str(exc),
+            )
+            raise
         logger.exception(
             "[store_signal] failed asset=%s direction=%s timeframe=%s score=%s fingerprint=%s entry=%s stop_loss=%s tp1=%s store_stage=store_signal_compat timeout_seconds=%s exception_type=%s message=%s",
             ctx.get("asset"),
