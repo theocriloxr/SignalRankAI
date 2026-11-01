@@ -4616,6 +4616,28 @@ def main_loop(DRY_RUN: bool = False):
                         _adaptive_multiplier = max(0.70, min(1.25, _adaptive_multiplier))
                         sig["base_score_before_adaptive"] = score
                         score = max(0.0, min(100.0, score * _adaptive_multiplier))
+                        # Per-asset strategy scorecard learned from every tracked issued
+                        # and shadow outcome (services/strategy_scorecard.py). Bounded,
+                        # evidence-gated, and only changes the score in apply mode.
+                        try:
+                            from services.strategy_scorecard import scorecard_adjustment
+
+                            _scorecard = scorecard_adjustment(sig, asset)
+                            sig["strategy_scorecard"] = {
+                                "mode": _scorecard.get("mode"),
+                                "scope": _scorecard.get("scope"),
+                                "multiplier": _scorecard.get("multiplier"),
+                                "reason": _scorecard.get("reason"),
+                                "n": int(((_scorecard.get("cell") or {}).get("n")) or 0),
+                                "win_rate": (_scorecard.get("cell") or {}).get("win_rate"),
+                                "avg_r": (_scorecard.get("cell") or {}).get("avg_r"),
+                                "applied": bool(_scorecard.get("applied")),
+                            }
+                            if _scorecard.get("applied"):
+                                sig["score_before_strategy_scorecard"] = score
+                                score = max(0.0, min(100.0, score * float(_scorecard["multiplier"])))
+                        except Exception as _scorecard_err:
+                            logger.debug("[engine] strategy scorecard unavailable: %s", _scorecard_err)
                         sig["score"] = score
                         sig.setdefault("confidence", min(1.0, score / 100.0))
 

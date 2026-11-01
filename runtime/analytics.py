@@ -411,6 +411,7 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
     stop=stop_event or asyncio.Event()
     tasks=[]
     shadow=None
+    expectancy_shadow=None
     stop_task=None
     try:
         from engine.adaptive.lifecycle import adaptive_learning_loop, profile_health_loop
@@ -424,6 +425,15 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             from engine.shadow_outcome_worker import shadow_outcome_worker
             shadow=shadow_outcome_worker
             await shadow.start()
+        if _enabled("EXPECTANCY_SHADOW_TRACKING_ENABLED", True) and _enabled("SHADOW_TRACKING_ENABLED", True):
+            # Candidates refused only for missing expectancy evidence must also be
+            # followed forward, or that evidence never forms (handoff 1 Nov 2026).
+            from engine.shadow_outcome_worker import expectancy_shadow_worker
+            await expectancy_shadow_worker.start()
+            expectancy_shadow = expectancy_shadow_worker
+        if _enabled("STRATEGY_SCORECARD_ENABLED", True):
+            from services.strategy_scorecard import strategy_scorecard_loop
+            tasks.append(asyncio.create_task(strategy_scorecard_loop(stop), name="strategy-scorecard"))
         if _enabled("ASSET_LEARNING_ENABLED", True):
             from worker.asset_learning_worker import asset_learning_worker
             tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
@@ -495,6 +505,8 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
         await asyncio.gather(*cleanup, return_exceptions=True)
         if shadow is not None:
             await shadow.stop()
+        if expectancy_shadow is not None:
+            await expectancy_shadow.stop()
 
 def run() -> None: asyncio.run(run_async())
 start=run

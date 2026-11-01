@@ -148,3 +148,21 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
   suppression; it is now logged at INFO (`db/pg_compat.py`).
 - **Daily review:** a scheduled cloud session reviews production every day at 06:37 Lagos time and writes
   `reports/YYYY-MM-DD.md` on the `reports` branch of the private ops repo.
+
+## 8. 2 Nov 2026 (night): learning from every outcome
+
+- **Retrain with all rejected evidence** (`ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO=50`, 45-day lookback, long DB
+  timeouts) trained on 231,747 rows and was **rejected by the quality gate**: accuracy 0.69 vs majority
+  baseline 0.82, AUC 0.62, expected R −0.17 on the validation slice. The 29 Sep model stays in service. The
+  rejected-setup population is dominated by losers (SL 139k vs TP 42k), and the current features cannot yet
+  separate the winners. More delivered outcomes and the per-asset scorecard below are the next levers.
+- **Expectancy shadow tracking now runs in analytics** (`runtime/analytics.py`). It was registered only in the
+  worker, where `SHADOW_OUTCOME_TRACKER_ENABLED=0`, so expectancy-layer rows were never followed forward.
+- **Per-asset strategy scorecard** (`services/strategy_scorecard.py`):
+  - analytics rebuilds it every 3 h from issued outcomes (weight 3) plus every shadow-tracked rejected setup;
+  - cells per asset × timeframe × strategy × direction, with fallback to asset, asset class × timeframe, and
+    asset class;
+  - the engine multiplies the score by at most 0.85–1.15, and only when the cell's Wilson 95 % win-rate
+    interval is clearly above or below the cell's own break-even win rate (≥ 40 outcomes);
+  - `STRATEGY_SCORECARD_MODE=off|shadow|apply` (code default `shadow`: annotate `sig["strategy_scorecard"]`
+    only). It never creates a signal or bypasses a gate.

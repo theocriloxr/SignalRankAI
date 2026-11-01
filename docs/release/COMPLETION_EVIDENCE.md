@@ -1,5 +1,12 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 — per-asset strategy scorecard and expectancy shadow tracking (server session)
+
+- `services/strategy_scorecard.py` learns, per asset × timeframe × strategy × direction, from issued outcomes and from every shadow-tracked rejected setup, and publishes a scorecard to Redis every 3 h from the analytics role. The engine applies at most a 0.85–1.15 score multiplier, only when a cell has ≥ 40 outcomes and its Wilson 95 % win-rate interval clears the cell's own break-even win rate; `STRATEGY_SCORECARD_MODE` defaults to `shadow` (annotation only). It cannot create a signal or bypass a gate.
+- `runtime/analytics.py` now also starts the expectancy-layer shadow tracker, which was registered only in the worker where production disables shadow tracking; 93k expectancy rows had never been followed forward.
+- Production retrain with all rejected evidence (231,747 rows) was rejected by the quality gate (accuracy 0.69 vs majority baseline 0.82, expected R −0.17); the serving model was preserved.
+- Tests: `tests/test_strategy_scorecard_20261102.py` (8) plus 536 existing engine/analytics/runtime tests pass locally. Operations notes: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §8.
+
 ## Continuation, 1 November 2026 (evening) — duplicate suppression no longer logged as a storage error (server session)
 
 `db/pg_compat.store_signal_compat` logged `SignalDedupBlocked` (expected `min_interval` suppression) with a full traceback at ERROR, which made production error summaries report signal-storage failures that were not failures. It now logs `dedup_suppressed` at INFO and re-raises unchanged. Test: `tests/test_store_signal_dedup_log_20261101.py`. Operations notes for the same evening: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §7.
