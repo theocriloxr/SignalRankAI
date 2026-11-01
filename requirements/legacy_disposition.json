@@ -1,5 +1,5 @@
 {
-  "file_count": 2664,
+  "file_count": 2665,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4483,11 +4483,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 156,
+      "line_count": 169,
       "path": "db/pg_compat.py",
       "reason": "production/build source",
-      "sha256": "9cdd3f4e804f3ea43ebb3e3f3ebb75a893ea4ab56ddbddcb6846ad3f98d683ee",
-      "size_bytes": 5814
+      "sha256": "6cc0752200c27c1035d02df75320328924f2ebe8af6f6b48afc4a798dc6228f6",
+      "size_bytes": 6368
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7187,11 +7187,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 127,
+      "line_count": 150,
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "8dc90d74452d265e10a3ae94dc33001aa7682eb821564f27d5c1cece43775b9f",
-      "size_bytes": 9079
+      "sha256": "d686370b3661aecb7cc94161013a1e5d0b69b33cdcd9c7aaf0135f1dedc2d899",
+      "size_bytes": 10835
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7315,11 +7315,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 538,
+      "line_count": 543,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "9f1734f663043bc08998b5061cf7d1d54ab9c4999d872dcc31ee4029758ea398",
-      "size_bytes": 64877
+      "sha256": "4fa1919b7ca4f3d810ed519729573876bb832bf5c09d79c9cc38fdb865d30106",
+      "size_bytes": 65447
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -20219,6 +20219,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 21,
+      "path": "tests/test_store_signal_dedup_log_20261101.py",
+      "reason": "automated test evidence",
+      "sha256": "2b146c983c9f2b2639df26c1911f7aa7d9a778183f2be6a929f70819dd921f07",
+      "size_bytes": 854
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 30,
       "path": "tests/test_strategies.py",
       "reason": "automated test evidence",
@@ -21328,6 +21336,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
     "PRESERVE_BEHAVIOUR": 1360,
-    "TEST_ONLY": 428
+    "TEST_ONLY": 429
   }
 }

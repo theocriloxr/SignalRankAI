@@ -369,8 +369,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 394,
-    "requirements_and_source_sections": 10029,
-    "source_clauses": 60198,
+    "requirements_and_source_sections": 10030,
+    "source_clauses": 60219,
     "interfaces": {
       "ENDPOINT": 185,
       "API": 173,
@@ -3132,11 +3132,11 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "8dc90d74452d265e10a3ae94dc33001aa7682eb821564f27d5c1cece43775b9f",
+      "sha256_lf": "d686370b3661aecb7cc94161013a1e5d0b69b33cdcd9c7aaf0135f1dedc2d899",
       "encoding": "utf-8-sig",
-      "line_count": 127,
+      "line_count": 150,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 7
+      "section_count": 8
     },
     {
       "path": "docs/operations/automatic-production-releases.md",
@@ -235749,10 +235749,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "0ecddec2613b28df23ed98eba82792afdd446e540ad4131bab1ad52c009d41fb",
+      "source_sha256": "6255a4c787b7ad648943e222857d3849c27b9a98e7e4bb6b7034d178d274a5d9",
       "line_start": 114,
-      "line_end": 127,
-      "text": "## 6. Split of work (proposal — edit this table if you take something)\n\n| Area | Taken by |\n|---|---|\n| Server, deploys, environment, data copy, monitoring relay | server session |\n| Fix shadow outcome tracking for expectancy and ML-rejected rows | server session |\n| Exclude stablecoins and pegged tokens in discovery and in training data | server session |\n| ADX validity bug and `entry == stop` level bug | server session |\n| Asset mapper: 5 more indices and 11 more commodities with provider symbols | server session |\n| Retraining pipeline that learns from rejected and shadow outcomes (champion/challenger, no auto-promotion without evidence) | server session, review by desktop |\n| Strategy builder, backtesting UX, frontend, Telegram UX | desktop session |\n\nBoth sessions commit to this branch. Pull and rebase before every push, keep commits small, and follow\n`AGENTS.md` (tests, governance regeneration, release documents).",
+      "line_end": 128,
+      "text": "## 6. Split of work (proposal — edit this table if you take something)\n\n| Area | Taken by |\n|---|---|\n| Server, deploys, environment, data copy, monitoring relay | server session |\n| Fix shadow outcome tracking for expectancy and ML-rejected rows | server session |\n| Exclude stablecoins and pegged tokens in discovery and in training data | server session |\n| ADX validity bug and `entry == stop` level bug | server session |\n| Asset mapper: 5 more indices and 11 more commodities with provider symbols | server session |\n| Retraining pipeline that learns from rejected and shadow outcomes (champion/challenger, no auto-promotion without evidence) | server session, review by desktop |\n| Strategy builder, backtesting UX, frontend, Telegram UX | desktop session |\n\nBoth sessions commit to this branch. Pull and rebase before every push, keep commits small, and follow\n`AGENTS.md` (tests, governance regeneration, release documents).\n",
       "clauses": [
         {
           "line": 114,
@@ -235797,6 +235797,110 @@
         {
           "line": 127,
           "text": "`AGENTS.md` (tests, governance regeneration, release documents)."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-7ab021129112b3c4",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:129",
+      "requirement": "7. Later on 1 Nov (evening)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "7ba7fd8c6da26cad2bed086057d9fe6632cde2e2b9f7843f3ffd76987d444fea",
+      "line_start": 129,
+      "line_end": 150,
+      "text": "## 7. Later on 1 Nov (evening)\n\n- **Asset discovery is back on `ASSET_DISCOVERY_MODE=auto`**, with `CRYPTO_TRENDING_TOP_N`, `CRYPTO_UNIVERSE_TOP_N`,\n  `STOCK_TRENDING_TOP_N` and `INDEX_TRENDING_TOP_N` set to `15`.\n  - `manual` made `/readyz` report `provider_coverage.ok=false`, because manual symbols are not provider-backed.\n    The deploy health check then failed and rolled back `cc1ffc8`; it was redeployed after the fix.\n  - Pinned `TRADABLE_ASSETS` and `DYNAMIC_UNIVERSE_ENABLED=0` remain.\n- **1-minute timeframes removed** (`*_TIMEFRAMES=5m,15m,1h,4h,24h`).\n  - 1m signals expired before dispatch (`opportunity_decayed ... max=2.0m`), so users received few of them.\n  - The ones they did receive often ended as `missed_entry`, because entry was not touched before the very short\n    expiry (\"entry not triggered\" messages).\n- **Owner replaced the MetaAPI key:** `metaapi_startup_probe status=PASS`. The OpenAI key is still rejected (401);\n  the owner is replacing it.\n- **Retraining, found while running `python -m ml.train_model` on the server:**\n  - The 90-day shadow-rejected load fails at `DB_COMMAND_TIMEOUT=45` s. `ml_rejected_signals` is a **view** over\n    `decision_log` (2.6 GB, 1.9 M rows).\n  - Without those rows the dataset is 60–392 rows, below `ML_MIN_TRAIN_ROWS` (667), so training is skipped.\n  - A one-off run with longer timeouts was started; the result will be recorded here.\n- **`[store_signal] failed … SignalDedupBlocked min_interval`** was logged at ERROR for normal duplicate\n  suppression; it is now logged at INFO (`db/pg_compat.py`).\n- **Daily review:** a scheduled cloud session reviews production every day at 06:37 Lagos time and writes\n  `reports/YYYY-MM-DD.md` on the `reports` branch of the private ops repo.",
+      "clauses": [
+        {
+          "line": 129,
+          "text": "## 7. Later on 1 Nov (evening)"
+        },
+        {
+          "line": 131,
+          "text": "- **Asset discovery is back on `ASSET_DISCOVERY_MODE=auto`**, with `CRYPTO_TRENDING_TOP_N`, `CRYPTO_UNIVERSE_TOP_N`,"
+        },
+        {
+          "line": 132,
+          "text": "  `STOCK_TRENDING_TOP_N` and `INDEX_TRENDING_TOP_N` set to `15`."
+        },
+        {
+          "line": 133,
+          "text": "  - `manual` made `/readyz` report `provider_coverage.ok=false`, because manual symbols are not provider-backed."
+        },
+        {
+          "line": 134,
+          "text": "    The deploy health check then failed and rolled back `cc1ffc8`; it was redeployed after the fix."
+        },
+        {
+          "line": 135,
+          "text": "  - Pinned `TRADABLE_ASSETS` and `DYNAMIC_UNIVERSE_ENABLED=0` remain."
+        },
+        {
+          "line": 136,
+          "text": "- **1-minute timeframes removed** (`*_TIMEFRAMES=5m,15m,1h,4h,24h`)."
+        },
+        {
+          "line": 137,
+          "text": "  - 1m signals expired before dispatch (`opportunity_decayed ... max=2.0m`), so users received few of them."
+        },
+        {
+          "line": 138,
+          "text": "  - The ones they did receive often ended as `missed_entry`, because entry was not touched before the very short"
+        },
+        {
+          "line": 139,
+          "text": "    expiry (\"entry not triggered\" messages)."
+        },
+        {
+          "line": 140,
+          "text": "- **Owner replaced the MetaAPI key:** `metaapi_startup_probe status=PASS`. The OpenAI key is still rejected (401);"
+        },
+        {
+          "line": 141,
+          "text": "  the owner is replacing it."
+        },
+        {
+          "line": 142,
+          "text": "- **Retraining, found while running `python -m ml.train_model` on the server:**"
+        },
+        {
+          "line": 143,
+          "text": "  - The 90-day shadow-rejected load fails at `DB_COMMAND_TIMEOUT=45` s. `ml_rejected_signals` is a **view** over"
+        },
+        {
+          "line": 144,
+          "text": "    `decision_log` (2.6 GB, 1.9 M rows)."
+        },
+        {
+          "line": 145,
+          "text": "  - Without those rows the dataset is 60–392 rows, below `ML_MIN_TRAIN_ROWS` (667), so training is skipped."
+        },
+        {
+          "line": 146,
+          "text": "  - A one-off run with longer timeouts was started; the result will be recorded here."
+        },
+        {
+          "line": 147,
+          "text": "- **`[store_signal] failed … SignalDedupBlocked min_interval`** was logged at ERROR for normal duplicate"
+        },
+        {
+          "line": 148,
+          "text": "  suppression; it is now logged at INFO (`db/pg_compat.py`)."
+        },
+        {
+          "line": 149,
+          "text": "- **Daily review:** a scheduled cloud session reviews production every day at 06:37 Lagos time and writes"
+        },
+        {
+          "line": 150,
+          "text": "  `reports/YYYY-MM-DD.md` on the `reports` branch of the private ops repo."
         }
       ]
     },
