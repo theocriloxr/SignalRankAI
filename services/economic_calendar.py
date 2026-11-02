@@ -47,6 +47,11 @@ _REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_S
 _FOREX_FACTORY_URL = (
     os.getenv("FOREX_FACTORY_CALENDAR_URL") or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 ).strip()
+# The weekly feed stops at Saturday; over the weekend Monday's releases are only in
+# next week's feed, so a Sunday scan would otherwise see no upcoming news at all.
+_FOREX_FACTORY_NEXT_WEEK_URL = (
+    os.getenv("FOREX_FACTORY_NEXT_WEEK_URL") or "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
+).strip()
 
 # ---------------------------------------------------------------------------
 # Known high-impact USD events (month, day pattern matching)
@@ -235,17 +240,30 @@ async def _fetch_forex_factory(from_dt: datetime, to_dt: datetime) -> list[dict]
     if not _FOREX_FACTORY_URL:
         return []
     try:
+        payload: list = []
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True) as client:
             response = await client.get(
                 _FOREX_FACTORY_URL,
                 headers={"User-Agent": "SignalRankAI/1.0 economic-calendar"},
             )
             response.raise_for_status()
-            payload = response.json()
-        if not isinstance(payload, list):
-            return []
+            first = response.json()
+            if not isinstance(first, list):
+                return []
+            payload.extend(first)
+            if _FOREX_FACTORY_NEXT_WEEK_URL:
+                try:
+                    nxt = await client.get(
+                        _FOREX_FACTORY_NEXT_WEEK_URL,
+                        headers={"User-Agent": "SignalRankAI/1.0 economic-calendar"},
+                    )
+                    if nxt.status_code == 200 and isinstance(nxt.json(), list):
+                        payload.extend(nxt.json())
+                except Exception as exc:  # the current week remains authoritative
+                    logger.info("[economic_calendar] next-week feed unavailable: %s", type(exc).__name__)
 
         events: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
         for raw in payload:
             if not isinstance(raw, dict):
                 continue
@@ -262,6 +280,10 @@ async def _fetch_forex_factory(from_dt: datetime, to_dt: datetime) -> list[dict]
                 continue
             if event_time < from_dt or event_time > to_dt:
                 continue
+            key = (str(raw.get("title") or ""), str(raw.get("country") or ""), event_time.isoformat())
+            if key in seen:
+                continue
+            seen.add(key)
             events.append(
                 {
                     "title": str(raw.get("title") or raw.get("event") or "Economic event"),

@@ -14011,11 +14011,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16519,
+      "line_count": 16529,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "cc38e366f40271e9ddca4b70062b816c9189ff94dd1ccae08453b4aba9439609",
-      "size_bytes": 483427
+      "sha256": "dba0f8525658115e0fffbaa003d3226929acc349c01ba1e9701d09ad3296a273",
+      "size_bytes": 483693
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15683,11 +15683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 535,
+      "line_count": 557,
       "path": "services/economic_calendar.py",
       "reason": "production/build source",
-      "sha256": "572c0486d24ae977003c452efc31d21413501867ea20d7aba6ce827e7de553d6",
-      "size_bytes": 21230
+      "sha256": "1f2a9d9101f89272b2c30453f6f07e7c911630369330aeec4f2ce73268477773",
+      "size_bytes": 22432
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
