@@ -41,6 +41,9 @@ PROP_HARD_RULE_TYPES = frozenset(
         "restricted_instruments",
         "restricted_asset_classes",
         "max_open_positions",
+        # Firm preset from core/prop_rules.py: daily and overall floors with
+        # worst-case headroom over open positions, flat-by, weekend and news rules.
+        "prop_preset",
     }
 )
 
@@ -230,9 +233,22 @@ class AccountRiskSnapshot:
     loss_baselines_verified: bool = False
     weekly_baseline_verified: bool = False
     evaluated_at_utc: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Worst-case exposure: what open positions lose if they all hit their stops,
+    # as a fraction of current equity (open_risk_pct) and in money (open_risk_amount).
+    open_risk_pct: Decimal = Decimal("0")
+    open_risk_amount: Decimal = Decimal("0")
+    initial_balance: Decimal = Decimal("0")
+    day_start_balance: Decimal = Decimal("0")
+    highest_eod_balance: Decimal = Decimal("0")
+    consecutive_losses: int = 0
 
     def __post_init__(self) -> None:
         for name in (
+            "open_risk_pct",
+            "open_risk_amount",
+            "initial_balance",
+            "day_start_balance",
+            "highest_eod_balance",
             "current_equity",
             "day_start_equity",
             "peak_equity",
@@ -267,6 +283,10 @@ class AccountPolicyDecision:
     effective_daily_loss_limit: Decimal | None = None
     effective_weekly_loss_limit: Decimal | None = None
     effective_drawdown_limit: Decimal | None = None
+    # Largest new-trade risk (fraction of equity) that keeps every limit intact
+    # even if all open positions and the new trade hit their stops.
+    max_allowed_risk_pct: Decimal | None = None
+    prop_headroom: Mapping[str, Any] | None = None
 
 
 def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[dict[str, Any], ...]:
@@ -317,6 +337,27 @@ def validate_prop_rule_config(extra_rules: Mapping[str, Any] | None) -> tuple[di
             if not values:
                 raise ValueError(f"invalid_prop_hard_rule_values:{rule_id}")
             rule["values"] = list(values)
+        elif rule_type == "prop_preset":
+            from core.prop_rules import PROP_PRESETS
+
+            name = str(rule.get("preset") or "").strip().lower()
+            if name not in PROP_PRESETS:
+                raise ValueError(f"invalid_prop_preset:{rule_id}")
+            rule["preset"] = name
+            overrides = rule.get("overrides") or {}
+            if not isinstance(overrides, Mapping):
+                raise ValueError(f"invalid_prop_preset_overrides:{rule_id}")
+            rule["overrides"] = dict(overrides)
+            buffer = _decimal(rule.get("safety_buffer_pct"), field_name=f"prop_rule_{rule_id}", default="0.005")
+            if buffer < 0 or buffer > Decimal("0.05"):
+                raise ValueError(f"invalid_prop_preset_buffer:{rule_id}")
+            rule["safety_buffer_pct"] = str(buffer)
+            if rule.get("initial_balance") not in (None, ""):
+                initial = _decimal(rule.get("initial_balance"), field_name=f"prop_rule_{rule_id}")
+                if initial <= 0:
+                    raise ValueError(f"invalid_prop_preset_initial_balance:{rule_id}")
+                rule["initial_balance"] = str(initial)
+            rule["funded"] = bool(rule.get("funded"))
         elif rule_type == "max_open_positions":
             raw_value = rule.get("value")
             if raw_value is None:
@@ -401,7 +442,36 @@ def _evaluate_prop_hard_rules(
             if snapshot.open_positions >= int(rule["value"]):
                 reasons.append(f"{prefix}:max_open_positions")
 
+        elif rule_type == "prop_preset":
+            headroom = prop_preset_headroom(rule, snapshot)
+            reasons.extend(f"{prefix}:{reason}" for reason in headroom.reasons)
+
     return reasons
+
+
+def prop_preset_headroom(rule: Mapping[str, Any], snapshot: AccountRiskSnapshot):
+    """Worst-case floors for one ``prop_preset`` rule (see core/prop_rules.py)."""
+    from core.prop_rules import PropAccountState, evaluate_headroom, preset
+
+    rules = {**preset(str(rule["preset"])), **dict(rule.get("overrides") or {})}
+    initial = Decimal(str(rule.get("initial_balance") or snapshot.initial_balance or 0))
+    state = PropAccountState(
+        initial_balance=initial,
+        day_start_balance=snapshot.day_start_balance or snapshot.day_start_equity,
+        current_equity=snapshot.current_equity,
+        highest_eod_balance=snapshot.highest_eod_balance or snapshot.peak_equity,
+        open_risk_amount=snapshot.open_risk_amount or (snapshot.open_risk_pct * snapshot.current_equity),
+        evaluated_at_utc=snapshot.evaluated_at_utc,
+    )
+    return evaluate_headroom(
+        rules,
+        state,
+        proposed_risk_amount=snapshot.proposed_risk_pct * snapshot.current_equity,
+        safety_buffer_pct=rule.get("safety_buffer_pct") or "0.005",
+        weekend_hold_expected=snapshot.weekend_hold_expected,
+        high_impact_news_window=snapshot.high_impact_news_window,
+        funded=bool(rule.get("funded")),
+    )
 
 
 def _parse_clock(value: Any) -> time | None:
@@ -545,6 +615,7 @@ def evaluate_account_policy(
     if drawdown_limit is None:
         reasons.append("invalid_drawdown_buffer")
 
+    max_allowed_risk: Decimal | None = None
     if snapshot.current_equity <= 0 or snapshot.day_start_equity <= 0 or snapshot.peak_equity <= 0:
         reasons.append("account_equity_unavailable")
     else:
@@ -577,6 +648,18 @@ def evaluate_account_policy(
                 reasons.append("weekly_loss_limit")
         if drawdown_limit is not None and total_drawdown >= drawdown_limit:
             reasons.append("total_drawdown_limit")
+        # Worst case: every open position and the new order stop out now.
+        exposure = max(Decimal("0"), snapshot.open_risk_pct) + max(Decimal("0"), snapshot.proposed_risk_pct)
+        rooms = [policy.max_risk_per_trade_pct]
+        if daily_limit is not None:
+            rooms.append(daily_limit - daily_loss - max(Decimal("0"), snapshot.open_risk_pct))
+            if daily_loss < daily_limit and daily_loss + exposure > daily_limit:
+                reasons.append("daily_loss_headroom")
+        if drawdown_limit is not None:
+            rooms.append(drawdown_limit - total_drawdown - max(Decimal("0"), snapshot.open_risk_pct))
+            if total_drawdown < drawdown_limit and total_drawdown + exposure > drawdown_limit:
+                reasons.append("drawdown_headroom")
+        max_allowed_risk = max(Decimal("0"), min(rooms))
 
     if snapshot.proposed_risk_pct < 0 or snapshot.proposed_risk_pct > policy.max_risk_per_trade_pct:
         reasons.append("risk_per_trade_limit")
@@ -608,7 +691,12 @@ def evaluate_account_policy(
         reasons.append("news_trading_blocked")
     if snapshot.weekend_hold_expected and not policy.weekend_holding_allowed:
         reasons.append("weekend_holding_blocked")
+    streak_limit = int((policy.extra_rules or {}).get("max_consecutive_losses") or 0)
+    if streak_limit > 0 and int(snapshot.consecutive_losses) >= streak_limit:
+        # Loss-streak pause until the next reset or a winning trade.
+        reasons.append("loss_streak_pause")
 
+    prop_headroom_view: dict[str, Any] | None = None
     if policy.account_mode == "PROP":
         reasons.extend(
             _evaluate_prop_hard_rules(
@@ -617,6 +705,16 @@ def evaluate_account_policy(
                 execution_mode=execution_mode,
             )
         )
+        try:
+            for rule in validate_prop_rule_config(policy.extra_rules):
+                if rule["type"] == "prop_preset":
+                    view = prop_preset_headroom(rule, snapshot)
+                    prop_headroom_view = view.as_dict()
+                    if max_allowed_risk is not None:
+                        max_allowed_risk = min(max_allowed_risk, view.max_new_risk_pct)
+                    break
+        except Exception:
+            prop_headroom_view = None
 
     if reasons:
         return AccountPolicyDecision(
@@ -627,6 +725,8 @@ def evaluate_account_policy(
             effective_daily_loss_limit=daily_limit,
             effective_weekly_loss_limit=weekly_limit,
             effective_drawdown_limit=drawdown_limit,
+            max_allowed_risk_pct=max_allowed_risk,
+            prop_headroom=prop_headroom_view,
         )
     return AccountPolicyDecision(
         allowed=True,
@@ -636,6 +736,8 @@ def evaluate_account_policy(
         effective_daily_loss_limit=daily_limit,
         effective_weekly_loss_limit=weekly_limit,
         effective_drawdown_limit=drawdown_limit,
+        max_allowed_risk_pct=max_allowed_risk,
+        prop_headroom=prop_headroom_view,
     )
 
 

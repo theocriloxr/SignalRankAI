@@ -202,3 +202,21 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
   through `all_profiles`): matches explicit flip setups and any 15m–4h setup whose best target pays ≥ 3R. It never
   changes position size or risk per trade.
 - First-generation specs (no style) are retired as `superseded_by_style_research` on the next run.
+
+## 11. 2 Nov 2026: loss control and prop-rule protection for automated execution
+
+- `core/account_policy.evaluate_account_policy` now checks **worst-case headroom**: today's loss + the risk still
+  open in positions (to their stops) + the new order must stay within the daily and drawdown limits
+  (`daily_loss_headroom`, `drawdown_headroom`). The decision reports `max_allowed_risk_pct`, the largest new-trade
+  risk that keeps every limit intact. Optional `extra_rules.max_consecutive_losses` pauses an account
+  (`loss_streak_pause`).
+- `core/prop_rules.py`: firm presets (FTMO 2-Step/1-Step, FundedNext Stellar 2-Step/1-Step/Lite/Instant, Topstep
+  50K/100K/150K) with their daily-loss base, static or end-of-day trailing max loss (with lock), flat-by time,
+  weekend and funded-news rules, each with its source and check date. A `prop_preset` hard rule enforces both
+  floors in money with a safety buffer (default 0.5 % of the initial balance) over all open positions.
+- `services/mt5_signal_router.py` passes open-position risk (positions without a usable stop are charged the
+  account's max risk per trade), the day-start balance, the highest end-of-day balance and the loss streak.
+- API: `GET /broker/prop-presets`, `PUT /broker/connections/{id}/prop-preset` (configures a PROP policy from a
+  preset; execution stays `SIGNALS_ONLY` until certification).
+- No execution flag, kill switch, live-trading permission or payout setting changed. TradingView market data is
+  not used: its terms forbid scraping; TradingView alerts can be received by webhook instead.

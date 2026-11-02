@@ -205,6 +205,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | PUT | `/broker/connections/{connection_id}/policy` | — |
 | GET | `/broker/connections/{connection_id}/prop-dashboard` | — |
 | PUT | `/broker/connections/{connection_id}/prop-objectives` | — |
+| GET | `/broker/prop-presets` | — |
+| PUT | `/broker/connections/{connection_id}/prop-preset` | — |
 | POST | `/broker/connections/{connection_id}/safety-freeze` | — |
 | POST | `/broker/connections/{connection_id}/verify` | — |
 | POST | `/broker/exchange` | — |

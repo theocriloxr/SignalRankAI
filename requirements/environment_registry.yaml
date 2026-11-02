@@ -1948,7 +1948,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/tiered_executor.py:47",
-        "services/mt5_signal_router.py:1718",
+        "services/mt5_signal_router.py:1739",
         "signalrank_telegram/commands.py:7822"
       ],
       "required_by_code": true,
@@ -4653,7 +4653,7 @@
       "name": "DEMO_EXECUTION_REQUIRES_LIVE_INTEGRITY",
       "production_example_default": null,
       "read_locations": [
-        "services/mt5_signal_router.py:1367"
+        "services/mt5_signal_router.py:1388"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5706,7 +5706,7 @@
       "name": "EXECUTION_TERMS_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:6279"
+        "web/platform_api.py:6337"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7337,7 +7337,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/mt5_bridge.py:271",
-        "services/mt5_signal_router.py:1712"
+        "services/mt5_signal_router.py:1733"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7435,7 +7435,7 @@
         "web/platform_api.py:5184",
         "web/platform_api.py:5220",
         "web/platform_api.py:5289",
-        "web/platform_api.py:6239",
+        "web/platform_api.py:6297",
         "worker/worker.py:342"
       ],
       "required_by_code": true,
@@ -7549,7 +7549,7 @@
         "web/platform_api.py:5184",
         "web/platform_api.py:5220",
         "web/platform_api.py:5289",
-        "web/platform_api.py:6239",
+        "web/platform_api.py:6297",
         "worker/worker.py:342"
       ],
       "required_by_code": true,
@@ -10834,7 +10834,7 @@
       "read_locations": [
         "payments/checkout.py:98",
         "payments/paystack.py:10",
-        "web/platform_api.py:6667"
+        "web/platform_api.py:6725"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11003,7 +11003,7 @@
         "services/subscription_cancellation.py:25",
         "web/app.py:1031",
         "web/app.py:1066",
-        "web/platform_api.py:6663"
+        "web/platform_api.py:6721"
       ],
       "required_by_code": true,
       "sensitive": true

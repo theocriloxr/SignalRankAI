@@ -1218,7 +1218,28 @@ class MT5SignalRouter:
                         if risk_distance > 0:
                             expected_rr = abs(Decimal(str(targets[0])) - entry_decimal) / risk_distance
 
+                    # Worst-case exposure of what is already open (core/prop_rules.py):
+                    # positions without a usable stop are charged the max risk per trade.
+                    from core.prop_rules import open_risk_amount as _open_risk_amount
+
+                    open_risk_money, _unknown_stops = _open_risk_amount(
+                        reconciliation.get("positions") or [],
+                        equity=current_equity,
+                        fallback_risk_pct=account_policy.max_risk_per_trade_pct,
+                    )
+                    open_risk_fraction = (
+                        open_risk_money / current_equity if current_equity > 0 else Decimal("0")
+                    )
                     policy_snapshot = AccountRiskSnapshot(
+                        open_risk_pct=open_risk_fraction,
+                        open_risk_amount=open_risk_money,
+                        day_start_balance=Decimal(
+                            str(account_info_map.get("day_start_balance") or day_start_equity)
+                        ),
+                        highest_eod_balance=Decimal(
+                            str(account_info_map.get("highest_eod_balance") or peak_equity)
+                        ),
+                        consecutive_losses=int(account_info_map.get("consecutive_losses") or 0),
                         current_equity=current_equity,
                         day_start_equity=day_start_equity,
                         peak_equity=peak_equity,

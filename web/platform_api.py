@@ -5395,6 +5395,64 @@ async def broker_account_policy(
     return {"policy": policy, "reconciliation": reconciliation}
 
 
+@router.get("/broker/prop-presets")
+async def broker_prop_presets(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Published prop-firm rule presets (core/prop_rules.py) with their source and check date."""
+    _assert_feature(user, "broker_connection")
+    from core.prop_rules import list_presets
+
+    return {"presets": list_presets(), "verify_against_firm_dashboard": True}
+
+
+class PropPresetRequest(BaseModel):
+    preset: str = Field(min_length=3, max_length=64)
+    initial_balance: Decimal = Field(gt=0)
+    phase: str | None = Field(default=None, max_length=32)
+    funded: bool = False
+    safety_buffer_pct: Decimal = Field(default=Decimal("0.005"), ge=0, le=Decimal("0.05"))
+    max_risk_per_trade_pct: Decimal = Field(default=Decimal("0.005"), gt=0, le=Decimal("0.02"))
+    max_open_positions: int = Field(default=3, ge=1, le=20)
+    reset_timezone: str = "UTC"
+    confirm: bool = False
+
+
+@router.put("/broker/connections/{connection_id}/prop-preset")
+async def apply_broker_prop_preset(
+    connection_id: str,
+    payload: PropPresetRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Configure a PROP account from a firm preset. Execution stays disabled until certification."""
+    _assert_feature(user, "broker_connection")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=422, detail="Explicit confirmation is required")
+    from core.prop_rules import policy_fields_from_preset
+    from services.account_policies import configure_account_policy
+
+    try:
+        fields = policy_fields_from_preset(
+            payload.preset,
+            initial_balance=payload.initial_balance,
+            phase=payload.phase,
+            funded=payload.funded,
+            safety_buffer_pct=payload.safety_buffer_pct,
+        )
+        policy = await configure_account_policy(
+            int(user["id"]),
+            connection_id,
+            execution_permission="SIGNALS_ONLY",
+            reset_timezone=payload.reset_timezone,
+            max_risk_per_trade_pct=payload.max_risk_per_trade_pct,
+            max_open_positions=payload.max_open_positions,
+            **fields,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"policy": policy, "execution_remains_disabled": True, "prop_certification_required": True}
+
+
 class PropObjectivesRequest(BaseModel):
     starting_balance: Decimal | None = Field(default=None, gt=0)
     profit_target_pct: Decimal | None = Field(default=None, gt=0, le=1)

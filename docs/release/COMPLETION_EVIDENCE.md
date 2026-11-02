@@ -1,5 +1,10 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 (midday) — worst-case loss headroom and prop-firm presets (server session)
+
+- Account policy evaluation adds worst-case daily/drawdown headroom over open-position risk, `max_allowed_risk_pct`, and an optional loss-streak pause. `core/prop_rules.py` adds sourced, dated presets for FTMO, FundedNext and Topstep programs and a `prop_preset` hard rule that keeps equity above both firm floors plus a buffer even if every open position and the new order stop out; the MT5 router supplies open-position risk. New routes `GET /broker/prop-presets` and `PUT /broker/connections/{id}/prop-preset` (parity matrix updated). Only restrictions were added; no permission, kill switch or live-trading setting changed.
+- Tests: `tests/test_prop_rules_20261102.py` (14) plus 659 API, router, policy and parity tests pass locally (94 skipped). Notes: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §11.
+
 ## Continuation, 2 November 2026 (later morning) — trading styles, intraday and volume research, account-flipper profile (server session)
 
 - Strategy discovery researches 5m/15m/1h/4h/1d once per trading style (scalp, day, swing, position, flip) with style-specific exits and time stops, adds three volume-confirmed rule families (skipped without real volume), and tags every spec and candidate with `trade_profile`.
