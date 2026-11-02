@@ -86,3 +86,16 @@ def test_missing_scorecard_is_neutral(monkeypatch):
     monkeypatch.setenv("STRATEGY_SCORECARD_MODE", "apply")
     result = sc.scorecard_adjustment({"asset": "BTCUSDT", "timeframe": "1h", "strategy_name": "X", "direction": "long"})
     assert result["multiplier"] == 1.0 and result["applied"] is False
+
+
+def test_market_breaker_scope_defaults_to_crypto(monkeypatch):
+    from engine import core as engine_core
+
+    monkeypatch.delenv("MARKET_CIRCUIT_BREAKER_SCOPE", raising=False)
+    assert engine_core._market_breaker_scope() == "crypto"
+    monkeypatch.setenv("MARKET_CIRCUIT_BREAKER_SCOPE", "all")
+    assert engine_core._market_breaker_scope() == "all"
+    assert engine_core._is_crypto_symbol("BTCUSDT")
+    assert not engine_core._is_crypto_symbol("EURUSD")
+    src = open(engine_core.__file__, encoding="utf-8").read()
+    assert "assets = [a for a in assets if not _is_crypto_symbol(a)]" in src

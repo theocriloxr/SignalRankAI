@@ -10947,11 +10947,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 6996,
+      "line_count": 7026,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "592631e2aad72f5779a57a50f07ad67694b89204fabb3482d5897fbab52ee2ad",
-      "size_bytes": 347533
+      "sha256": "83fc0ee1a2d015b1c5b29eec092963ed11619d2eb7840868d263f508ecfb1663",
+      "size_bytes": 349070
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14003,11 +14003,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16509,
+      "line_count": 16519,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "3147f5a959a7764e80471b1b5a42ffddd1295750b5e354eddc8f7c59b1ffd420",
-      "size_bytes": 483172
+      "sha256": "f7738242045e1955b14923eaa299c1835c4d4a8042c46bb6f12e88c0ef10ce8e",
+      "size_bytes": 483424
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -20315,11 +20315,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 88,
+      "line_count": 101,
       "path": "tests/test_strategy_scorecard_20261102.py",
       "reason": "automated test evidence",
-      "sha256": "016f35f381020d22b03e39fc6da1c9d128282708fa62bc2722979d6e95f64ae2",
-      "size_bytes": 4556
+      "sha256": "927e12b982cacad1b792e7223946d53bd2ab8ec7e20b293fcfbb8feba87b2b63",
+      "size_bytes": 5158
     },
     {
       "disposition": "TEST_ONLY",

@@ -33,6 +33,21 @@ logger = logging.getLogger(__name__)
 _GEMINI_REVIEW_LOCK = threading.Lock()
 _GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
 _GEMINI_CIRCUIT_REASON = ""
+
+
+def _market_breaker_scope() -> str:
+    """``crypto`` (default): a BTC crash pauses crypto only. ``all``: pause every class."""
+    value = str(os.getenv("MARKET_CIRCUIT_BREAKER_SCOPE") or "crypto").strip().lower()
+    return value if value in {"crypto", "all"} else "crypto"
+
+
+def _is_crypto_symbol(symbol: object) -> bool:
+    try:
+        from services.asset_mapper import classify_asset
+
+        return str(classify_asset(str(symbol)) or "").lower() == "crypto"
+    except Exception:
+        return str(symbol or "").upper().endswith(("USDT", "USDC", "PERP"))
 _GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
 _GEMINI_REVIEW_WINDOW_CALLS = 0
 
@@ -2884,6 +2899,7 @@ def main_loop(DRY_RUN: bool = False):
 
         # === PHASE 3 FIX: Circuit Breaker Health Check ===
         # Check market health before starting the cycle - if flash crash detected, skip this cycle
+        _crypto_breaker_halt = False
         try:
             # ``run_engine_loop`` is intentionally executed in a worker
             # thread by Railway's coordinated monolith. Calling
@@ -2901,19 +2917,29 @@ def main_loop(DRY_RUN: bool = False):
                 )
             )
             logger.info("[engine] Market Health Check: is_healthy=%s", is_healthy)
+            _crypto_breaker_halt = False
             if not is_healthy:
-                logger.warning("[engine] Circuit breaker activated - skipping cycle due to market flash crash")
-                _publish_engine_cycle_skip(cycle_no, "circuit_breaker_active", max(5, cycle_sleep_seconds))
-                time.sleep(max(5, cycle_sleep_seconds))
-                continue
+                # The breaker watches a BTC crash. By default it pauses crypto only;
+                # forex, stocks, indices and commodities keep scanning (scope=all
+                # restores the old whole-engine pause).
+                if _market_breaker_scope() == "all":
+                    logger.warning("[engine] Circuit breaker activated - skipping cycle due to market flash crash")
+                    _publish_engine_cycle_skip(cycle_no, "circuit_breaker_active", max(5, cycle_sleep_seconds))
+                    time.sleep(max(5, cycle_sleep_seconds))
+                    continue
+                _crypto_breaker_halt = True
+                logger.warning("[engine] Circuit breaker activated - crypto paused, other classes continue")
         except Exception as cb_err:
+            _crypto_breaker_halt = _market_breaker_scope() != "all" and _env_bool(
+                "MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True
+            )
             logger.warning(
                 "[engine] circuit breaker check failed err_type=%s err=%s",
                 type(cb_err).__name__,
                 cb_err,
                 exc_info=True,
             )
-            if _env_bool("MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True):
+            if _market_breaker_scope() == "all" and _env_bool("MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True):
                 _publish_engine_cycle_skip(
                     cycle_no, f"circuit_breaker_check_failed:{type(cb_err).__name__}", max(5, cycle_sleep_seconds)
                 )
@@ -3107,6 +3133,10 @@ def main_loop(DRY_RUN: bool = False):
                 )
         except Exception as _pegged_filter_error:
             logger.warning("[engine] pegged asset filter unavailable: %s", type(_pegged_filter_error).__name__)
+        if _crypto_breaker_halt:
+            _before_breaker = len(assets)
+            assets = [a for a in assets if not _is_crypto_symbol(a)]
+            logger.info("[engine] crypto_paused_by_circuit_breaker skipped=%s", _before_breaker - len(assets))
         # Explicit staging-only opt-in. Restrict all merged sources (including
         # managed/user-pinned assets) before profile ranking or scan scheduling.
         # This does NOT authorize live execution or change broker account policy.
