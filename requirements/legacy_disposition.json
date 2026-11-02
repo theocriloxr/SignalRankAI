@@ -1,5 +1,5 @@
 {
-  "file_count": 2678,
+  "file_count": 2680,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7379,11 +7379,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10828,
+      "line_count": 10829,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "5f5572c547564bea2d47f5f531d99d0b725373ae338daaba9d25dc81eba6d510",
-      "size_bytes": 4918144
+      "sha256": "a83aac175d80b2e364c26f2b1218cb4db8aec6348fecefff670616cbf81a9d8c",
+      "size_bytes": 4918623
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10275,11 +10275,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 528262,
+      "line_count": 528326,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "e4436a9eeb923f2d9807f23a2b19be6ea2eabc0720f82c20d0534507553457e6",
-      "size_bytes": 24581926
+      "sha256": "f4c498edc8e1a7d8359ed25ff45617d92f4ff53be27d1815163031e6c91609dc",
+      "size_bytes": 24586033
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15443,6 +15443,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 301,
+      "path": "services/binance_futures_client.py",
+      "reason": "production/build source",
+      "sha256": "8dcad3f7765c8f54a0da30ba3f91a1e8cd5cb9131436070dbaa09b29ef10a7b0",
+      "size_bytes": 15940
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 393,
       "path": "services/broadcaster.py",
       "reason": "production/build source",
@@ -17752,6 +17760,14 @@
       "reason": "automated test evidence",
       "sha256": "60369d345b8e39849cd9890b85b174c75a7d1c133c85d0b1fea4bb3e7de8dded",
       "size_bytes": 2765
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 154,
+      "path": "tests/test_binance_futures_client_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "337af094453e952e4da74c4a423861b26ce2a413da2106756d86a96d741a7404",
+      "size_bytes": 8305
     },
     {
       "disposition": "TEST_ONLY",
@@ -21439,7 +21455,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
-    "PRESERVE_BEHAVIOUR": 1366,
-    "TEST_ONLY": 436
+    "PRESERVE_BEHAVIOUR": 1367,
+    "TEST_ONLY": 437
   }
 }
