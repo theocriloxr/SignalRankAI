@@ -1,5 +1,5 @@
 {
-  "file_count": 2680,
+  "file_count": 2681,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12211,11 +12211,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 186,
+      "line_count": 188,
       "path": "frontend/src/components/BrokerAccounts.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "d033d30177347050054ec74191acfa93939d78e24dbe5b211b93f53b09646b0f",
-      "size_bytes": 13229
+      "sha256": "7a8351587de7d0fdc28e23e4f781996f961bb5f99976646971edfc42c7e6fc56",
+      "size_bytes": 13308
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12619,11 +12619,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 221,
+      "line_count": 229,
       "path": "frontend/src/styles/workspace.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a569b785950c99fab59d4a9dc59931a1ffdb5dbdf0a986dbcc43ceb481b04b74",
-      "size_bytes": 16853
+      "sha256": "620de9064d5298af7d61a14ec46ef8bd4e3dc395309e45844b502ea5ce2bbe3d",
+      "size_bytes": 17673
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19923,6 +19923,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 47,
+      "path": "tests/test_retention_pk_bound_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "352fb8941d13664d1c8ce18a9ddd9fcfa0132d8363a305cd66784d822331db10",
+      "size_bytes": 1184
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 98,
       "path": "tests/test_risk_advice_fail_closed.py",
       "reason": "automated test evidence",
@@ -21456,6 +21464,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
     "PRESERVE_BEHAVIOUR": 1367,
-    "TEST_ONLY": 437
+    "TEST_ONLY": 438
   }
 }

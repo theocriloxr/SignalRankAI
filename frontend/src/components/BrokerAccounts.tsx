@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import client from "../lib/client";
 import { brokerMode, display, moneyLabel, probabilityLabel, record, rows, statusText, timeLabel, type Row } from "../lib/presentation";
 import { PropDashboard } from "./PropDashboard";
+import { SupportedBrokers } from "./SupportedBrokers";
 
 type Review={policy:Row|null;reconciliation:Row|null;entries:Row[]|null;error:string;ledgerError:string;loading:boolean};
 const initial:Review={policy:null,reconciliation:null,entries:null,error:"",ledgerError:"",loading:false};
@@ -98,6 +99,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
   const recon=review.reconciliation;
   return <div className="ws-stack">
     <p className="ui-notice ui-notice--neutral">Every account is evaluated independently. A connected broker is NOT approval for live, prop or automated execution. Missing provider margin, currency, permission and ledger data remain unavailable.</p>
+    <SupportedBrokers/>
     {!connections.length&&<div className="ui-empty"><strong>No entitled broker connections returned.</strong>
       <p>Connect a demo account in the certified provider workflow before attempting any live integration. No account balance has been assumed.</p></div>}
     {connections.length>0&&<div className="ws-split">
