@@ -370,7 +370,7 @@
   "summary": {
     "documents": 394,
     "requirements_and_source_sections": 10036,
-    "source_clauses": 60305,
+    "source_clauses": 60307,
     "interfaces": {
       "ENDPOINT": 187,
       "API": 173,
@@ -3132,9 +3132,9 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
+      "sha256_lf": "4bb31a2ac1cd49035c7ea43dafd7dcf58274ccbd31fe909ce171e5c57ca6ae85",
       "encoding": "utf-8-sig",
-      "line_count": 248,
+      "line_count": 251,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 14
     },
@@ -236305,10 +236305,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "25ff1b8c10854230d9d374d831fa960bac9ee6b69b606a739ebab905413cd614",
+      "source_sha256": "c0022ee406fb1ad50ca4a4738b4d2c9d7547ca5139c447b87eb7ad3705220332",
       "line_start": 234,
-      "line_end": 248,
-      "text": "## 13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace\n\n- Daily loss limits were already per user (`services/execution_quota.py`) and per account (account policy). The\n  only engine-wide halt was the BTC flash-crash breaker; it now pauses crypto only\n  (`MARKET_CIRCUIT_BREAKER_SCOPE=crypto`, `all` restores the old behaviour). `admin/auto_kill.py` (global) is not\n  wired anywhere.\n- `services/broker_symbols.py`: every MT4/MT5 account's own symbol names are resolved (Exness `EURUSDm`/`XAUUSDm`,\n  `US500.cash`, `USTEC`, `XTIUSD`...); the MT5 catalog lists popular brokers (Exness, AssexMarkets, IC Markets,\n  Pepperstone, FTMO, FundedNext) with server hints.\n- Signal detail returns stored candles; `frontend/src/components/SignalChart.tsx` draws them with entry/stop/target.\n- **Web workspace:** production ran `SIGNALRANK_WORKSPACE_MODE=legacy`, so `/app` and `/login` showed the old\n  `web/platform_app` SPA (the owner's screenshots of overlapping chart labels, collapsed-rail appearance controls and\n  misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace.\n  Its sign-in page gained a \"From Telegram\" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot\n  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy.",
+      "line_end": 251,
+      "text": "## 13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace\n\n- Daily loss limits were already per user (`services/execution_quota.py`) and per account (account policy). The\n  only engine-wide halt was the BTC flash-crash breaker; it now pauses crypto only\n  (`MARKET_CIRCUIT_BREAKER_SCOPE=crypto`, `all` restores the old behaviour). `admin/auto_kill.py` (global) is not\n  wired anywhere.\n- `services/broker_symbols.py`: every MT4/MT5 account's own symbol names are resolved (Exness `EURUSDm`/`XAUUSDm`,\n  `US500.cash`, `USTEC`, `XTIUSD`...); the MT5 catalog lists popular brokers (Exness, AssexMarkets, IC Markets,\n  Pepperstone, FTMO, FundedNext) with server hints.\n- Signal detail returns stored candles; `frontend/src/components/SignalChart.tsx` draws them with entry/stop/target.\n- **Web workspace:** production ran `SIGNALRANK_WORKSPACE_MODE=legacy`, so `/app` and `/login` showed the old\n  `web/platform_app` SPA (the owner's screenshots of overlapping chart labels, collapsed-rail appearance controls and\n  misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace.\n  Its sign-in page gained a \"From Telegram\" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot\n  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy.\n- The strategy scorecard now counts a shadow setup once per bar (asset × timeframe × strategy × direction); re-scans had turned\n  one 4h bar into thousands of identical outcomes (XAGUSD 4h EMA Trend: 3,470 rows, almost all on 30 Oct).\n",
       "clauses": [
         {
           "line": 234,
@@ -236365,6 +236365,14 @@
         {
           "line": 248,
           "text": "  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy."
+        },
+        {
+          "line": 249,
+          "text": "- The strategy scorecard now counts a shadow setup once per bar (asset × timeframe × strategy × direction); re-scans had turned"
+        },
+        {
+          "line": 250,
+          "text": "  one 4h bar into thousands of identical outcomes (XAGUSD 4h EMA Trend: 3,470 rows, almost all on 30 Oct)."
         }
       ]
     },

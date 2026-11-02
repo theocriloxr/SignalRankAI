@@ -1,5 +1,5 @@
 {
-  "file_count": 2677,
+  "file_count": 2678,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7195,11 +7195,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 248,
+      "line_count": 251,
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
-      "size_bytes": 19222
+      "sha256": "4bb31a2ac1cd49035c7ea43dafd7dcf58274ccbd31fe909ce171e5c57ca6ae85",
+      "size_bytes": 19461
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7323,11 +7323,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 573,
+      "line_count": 579,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f8af88216a75f3ddfb4911c89d6ed3209e08237bfba7a1e84dcfdd905888d24e",
-      "size_bytes": 70775
+      "sha256": "32a413add616a7e7cb20ddb40681ca776ae548b10e87c2043bf8ef1ccbd80284",
+      "size_bytes": 71796
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -15987,11 +15987,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 491,
+      "line_count": 528,
       "path": "services/strategy_scorecard.py",
       "reason": "production/build source",
-      "sha256": "1af5888da812bd2814a5e0343b53f070a237ef20036eda41e2988c781107078e",
-      "size_bytes": 19248
+      "sha256": "1704c07d42386039e6471f51dec8ef6780471349be40e86d75491a47f069b5c7",
+      "size_bytes": 20972
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17824,6 +17824,14 @@
       "reason": "automated test evidence",
       "sha256": "4528a342d01c0c1d629854d9d08fed9d2d9972bd1728d9be8ebef7363ec6a8b4",
       "size_bytes": 638
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 43,
+      "path": "tests/test_calendar_next_week_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "918bd88dcf87e1c88a15dcf88ca904a2650cfaa6093ac5deb02cf9e3b231fb76",
+      "size_bytes": 1409
     },
     {
       "disposition": "TEST_ONLY",
@@ -20355,11 +20363,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 101,
+      "line_count": 133,
       "path": "tests/test_strategy_scorecard_20261102.py",
       "reason": "automated test evidence",
-      "sha256": "927e12b982cacad1b792e7223946d53bd2ab8ec7e20b293fcfbb8feba87b2b63",
-      "size_bytes": 5158
+      "sha256": "8e8669998a36e4cebc218a226e5a2580a601aaab66585039cc562771a53204af",
+      "size_bytes": 6611
     },
     {
       "disposition": "TEST_ONLY",
@@ -21432,6 +21440,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
     "PRESERVE_BEHAVIOUR": 1366,
-    "TEST_ONLY": 435
+    "TEST_ONLY": 436
   }
 }
