@@ -154,3 +154,18 @@ async def test_a_bar_read_in_several_windows_counts_once(postgres_database):  # 
         snapshot = await se.compute_snapshot(session)
         await session.rollback()
     assert snapshot["segments"][se.segment_key(strategy, "1d", "long")] == {"n": 1, "wins": 0}
+
+
+def test_the_quality_gate_does_not_restore_the_ml_veto_in_advisory_mode():
+    from engine.core import _production_quality_gate
+
+    def candidate(**extra):
+        return {"asset": "BTCUSDT", "timeframe": "1h", "direction": "long", "entry": 100.0, "stop_loss": 98.5,
+                "take_profit": [103.5, 104.5, 105.5], "score": 96.0, "_preview_score": 96.0,
+                "ml_recovery_structural_score": 96.0, "ml_probability": 0.12, "ml_probability_raw": 0.12,
+                "ml_recovery_mode": True, "confluence": 80, "adx": 30.0, **extra}
+
+    recovery_ok, recovery_reason = _production_quality_gate(candidate(ml_recovery_reason="starvation"))
+    advisory_ok, advisory_reason = _production_quality_gate(candidate(ml_recovery_reason="ml_advisory_mode"))
+    assert not recovery_ok and recovery_reason.startswith("quality_recovery_ml"), recovery_reason
+    assert not advisory_reason.startswith(("quality_recovery_ml", "quality_ml")), advisory_reason

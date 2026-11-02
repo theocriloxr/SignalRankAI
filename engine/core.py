@@ -1478,7 +1478,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class}{profile_suffix})"
     if rr_cap_value - rr_epsilon > max_rr:
         return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
-    if recovery_mode:
+    if str(signal.get("ml_recovery_reason") or "") == "ml_advisory_mode":
+        # Owner decision (2 Nov): the ML model scores but does not veto; the
+        # setup-evidence filter decides. An ML floor here would restore the veto.
+        pass
+    elif recovery_mode:
         recovery_raw = _safe_float(
             signal.get("ml_probability_raw") or signal.get("ml_recovery_champion_raw_probability"),
             0.0,
