@@ -13,8 +13,8 @@ import os
 import secrets
 import time
 from decimal import Decimal
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Mapping
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -2761,6 +2761,7 @@ async def signal_detail(
             .mappings()
             .all()
         )
+        chart = await _signal_chart_candles(session, row)
         await session.rollback()
     channel = str(row.get("delivery_channel") or "telegram")
     telegram_proven = bool(
@@ -2785,6 +2786,56 @@ async def signal_detail(
             "delivery_confirmed_at": row.get("delivery_confirmed_at"),
             "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
         },
+        "chart": chart,
+    }
+
+
+_CHART_TF_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000,
+                "4h": 14_400_000, "1d": 86_400_000}
+
+
+async def _signal_chart_candles(session: Any, row: Mapping[str, Any]) -> dict[str, Any]:
+    """Stored candles around one delivered signal for the website chart (read only, best effort).
+
+    Up to 120 bars before the signal and the bars after it until closure or now,
+    at most 300, from ``market_candles``. Levels come from the signal itself.
+    """
+    timeframe = str(row.get("timeframe") or "").lower()
+    timeframe = {"24h": "1d", "1day": "1d", "60m": "1h"}.get(timeframe, timeframe)
+    bar_ms = _CHART_TF_MS.get(timeframe)
+    created = row.get("created_at")
+    if not bar_ms or created is None:
+        return {"candles": [], "timeframe": timeframe, "reason": "timeframe_unsupported"}
+    try:
+        created_ms = int(created.replace(tzinfo=timezone.utc).timestamp() * 1000) if created.tzinfo is None else int(
+            created.timestamp() * 1000)
+        closed = row.get("lifecycle_closed_at") or row.get("outcome_closed_at")
+        end_ms = (int(closed.replace(tzinfo=timezone.utc).timestamp() * 1000) if closed else
+                  int(datetime.now(timezone.utc).timestamp() * 1000)) + 10 * bar_ms
+        start_ms = created_ms - 120 * bar_ms
+        end_ms = min(end_ms, start_ms + 300 * bar_ms)
+        candles = (
+            await session.execute(
+                text(
+                    "SELECT open_time_ms,open,high,low,close FROM market_candles "
+                    "WHERE symbol=:s AND timeframe=:tf AND open_time_ms BETWEEN :a AND :b "
+                    "ORDER BY open_time_ms LIMIT 300"
+                ),
+                {"s": str(row.get("asset") or "").upper(), "tf": timeframe, "a": start_ms, "b": end_ms},
+            )
+        ).all()
+    except Exception as exc:
+        logger.info("[platform_signal_chart] unavailable type=%s", type(exc).__name__)
+        return {"candles": [], "timeframe": timeframe, "reason": "candles_unavailable"}
+    return {
+        "timeframe": timeframe,
+        "signal_time_ms": created_ms,
+        "candles": [
+            {"t": int(c[0]), "o": float(c[1]), "h": float(c[2]), "l": float(c[3]), "c": float(c[4])}
+            for c in candles
+            if c[1] is not None and c[4] is not None
+        ],
+        "source": "signalrank_market_candles",
     }
 
 

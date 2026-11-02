@@ -203,3 +203,19 @@
 /* ---------- Search bar ---------- */
 .ws-searchbar { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr) auto auto; align-items: end; }
 @media (max-width: 760px) { .ws-searchbar { grid-template-columns: minmax(0, 1fr); } }
+
+/* Signal price chart (components/SignalChart.tsx) */
+.ws-chart { margin: 0; display: grid; gap: var(--space-2); }
+.ws-chart svg { width: 100%; height: clamp(220px, 42vw, 360px); display: block; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.ws-candle line { stroke-width: 1; vector-effect: non-scaling-stroke; }
+.ws-candle--up line, .ws-candle--up rect { stroke: var(--positive); fill: var(--positive); }
+.ws-candle--down line, .ws-candle--down rect { stroke: var(--negative); fill: var(--negative); }
+.ws-chart-after { fill: var(--brand-soft); }
+.ws-chart-level line { stroke-dasharray: 6 4; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.ws-chart-level text, .ws-chart-tick { font: 500 11px var(--font-mono); fill: var(--text-2); }
+.ws-chart-level--entry line { stroke: var(--text); }
+.ws-chart-level--stop line { stroke: var(--negative); }
+.ws-chart-level--stop text { fill: var(--negative); }
+.ws-chart-level--target line { stroke: var(--positive); }
+.ws-chart-level--target text { fill: var(--positive); }
+@media (prefers-reduced-motion: no-preference) { .ws-candle rect { transition: opacity var(--duration) var(--ease); } }

@@ -1,5 +1,5 @@
 {
-  "file_count": 2672,
+  "file_count": 2674,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -10275,11 +10275,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 528099,
+      "line_count": 528126,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "c981c5a7a85272fd96dd23e91ad6dc71e39e7357fcc2b1e734c20cd322597cb5",
-      "size_bytes": 24572413
+      "sha256": "6391cb191bd86996f6f391151831c7717bace4588251b016bd633744bd5e0fd7",
+      "size_bytes": 24573381
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -12467,11 +12467,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 367,
+      "line_count": 368,
       "path": "frontend/src/components/WorkspaceLive.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "62836482b584edfee7fabead8f6de017f87e69e221e0cce8a00eb0a5da3f7613",
-      "size_bytes": 28640
+      "sha256": "4284a86de20c34a6e476678ffb2af24a14970c3e1fd6970c9028d28a7b24b06d",
+      "size_bytes": 28712
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12611,11 +12611,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 205,
+      "line_count": 221,
       "path": "frontend/src/styles/workspace.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "336e1905598794852a513f1ece61b1fe6728567a5479dd1777746def18601f73",
-      "size_bytes": 15657
+      "sha256": "a569b785950c99fab59d4a9dc59931a1ffdb5dbdf0a986dbcc43ceb481b04b74",
+      "size_bytes": 16853
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14006,7 +14006,7 @@
       "line_count": 16519,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "20ab4f9b22ea9674e814cd9be8d63227bbbc5ad3f35b43ffe344b8d8568495c8",
+      "sha256": "19421edaaebb104f82d01b6eecb3ef1550bcd148b17df649f199fac4526d4c4a",
       "size_bytes": 483424
     },
     {
@@ -15480,6 +15480,14 @@
       "reason": "production/build source",
       "sha256": "f4e3e044e53920bdac682323f238ce58ffd523fc8980a3cbdfbe0af22777205c",
       "size_bytes": 7826
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 134,
+      "path": "services/broker_symbols.py",
+      "reason": "production/build source",
+      "sha256": "424946a02aa7b70a66353332f52229be64e035c6b0202098bb2ad37e763951c9",
+      "size_bytes": 5365
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17792,6 +17800,14 @@
       "reason": "automated test evidence",
       "sha256": "06c1cc25a0dad03431c71abcea9888e4e185910dde0bfa58a1a7824611bb1731",
       "size_bytes": 4742
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 33,
+      "path": "tests/test_broker_symbols_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "fa2b077c7819a659eded2db130001a5e849206de20e3ec38fffe36ff09172009",
+      "size_bytes": 1571
     },
     {
       "disposition": "TEST_ONLY",
@@ -21163,11 +21179,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7283,
+      "line_count": 7334,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "47143084f85e5ba65252b8b74a0dbc75da9c473e810c88b18e0f254c3f731a6e",
-      "size_bytes": 303210
+      "sha256": "c70e73636b1dfddaae4d40e0f6e256f8aa03de8cd3fe633f71471b143103f76a",
+      "size_bytes": 305700
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21391,7 +21407,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
-    "PRESERVE_BEHAVIOUR": 1364,
-    "TEST_ONLY": 432
+    "PRESERVE_BEHAVIOUR": 1365,
+    "TEST_ONLY": 433
   }
 }

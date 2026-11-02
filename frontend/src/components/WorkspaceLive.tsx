@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { AccountCreation } from "./AccountCreation";
+import { SignalChart } from "./SignalChart";
 import { SignalEvidence } from "./SignalEvidence";
 import { SignalFeedback } from "./SignalFeedback";
 import { NotificationCenter } from "./NotificationCenter";
@@ -148,7 +149,7 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
     return <div className="ws-stack">
       <Link className="ui-link" href="/app/signals"><Icon name="arrowLeft"/> All delivered signals</Link>
       <Notice tone="warning">Detail is delivered for your account only. <strong>A signal is not broker authorization or an order.</strong></Notice>
-      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} detail /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} /></> : <Empty title="No entitled signal detail was returned." icon="signals"/>}
+      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} detail /><SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} /></> : <Empty title="No entitled signal detail was returned." icon="signals"/>}
     </div>;
   }
   const items = rows(data.signals);
