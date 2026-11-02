@@ -1748,7 +1748,9 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         snapshot = await segment_evidence.load_snapshot(session)
         await session.rollback()
     if not segment_evidence.snapshot_is_current(snapshot):
-        if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+        # With the ML veto advisory this filter is the evidence guard: no current
+        # evidence means no signal, not an unchecked one.
+        if _ml_gate_advisory() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
             return False, "segment_evidence_unavailable"
         logger.warning("[segment_evidence] snapshot missing or stale; setup filter not applied")
         return True, "segment_evidence_unavailable"
@@ -2375,6 +2377,13 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
 
 def _current_min_score_threshold() -> float:
     return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
+
+
+def _ml_gate_advisory() -> bool:
+    """Advisory by owner decision (2 Nov 2026): the model scores every candidate
+    but does not veto; the setup-evidence filter decides. ML_GATE_MODE=enforce
+    restores the veto."""
+    return str(os.getenv("ML_GATE_MODE", "advisory") or "advisory").strip().lower() != "enforce"
 
 
 def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
@@ -4301,6 +4310,34 @@ def main_loop(DRY_RUN: bool = False):
                                 _ml_log_err,
                             )
 
+                    if not approved and _ml_gate_advisory():
+                        # Owner decision (2 Nov 2026): the serving model rated
+                        # stablecoins 0.9 and real coins below its 0.84 cut-off, so
+                        # it observes instead of blocking. The candidate is still
+                        # logged exactly as an ML rejection: that stream is the
+                        # shadow evidence the setup filter (segment_evidence) reads.
+                        # It stays paper-only for execution, like a recovery signal.
+                        _log_decision(
+                            "rejected",
+                            sig,
+                            reason="ml_filter",
+                            meta={
+                                "ml_probability": prob,
+                                "ml_raw_probability": raw_prob,
+                                "ml_threshold_raw": threshold,
+                                "ml_features": (features if isinstance(features, dict) else {}),
+                                "ml_challenger": challenger,
+                                "ml_gate_mode": "advisory",
+                            },
+                        )
+                        sig["ml_recovery_mode"] = True
+                        sig["ml_recovery_reason"] = "ml_advisory_mode"
+                        sig["ml_recovery_live_execution_allowed"] = False
+                        sig["ml_recovery_champion_raw_probability"] = raw_prob
+                        sig["ml_recovery_certified_threshold"] = float(threshold)
+                        sig["ml_advisory"] = "below_threshold_advisory"
+                        pipeline_stats["ml_advisory_passed"] = int(pipeline_stats.get("ml_advisory_passed") or 0) + 1
+                        approved = True
                     if not approved:
                         recovery_ok, recovery_details = _ml_starvation_recovery_decision(
                             sig,
@@ -5404,10 +5441,12 @@ def main_loop(DRY_RUN: bool = False):
                                 timeout=max(1.0, _env_float("SEGMENT_QUARANTINE_TIMEOUT_SECONDS", 4.0)),
                             )
                         except TimeoutError:
-                            _segment_ok, _segment_reason = True, "segment_quarantine_deferred:timeout"
-                            logger.info("[segment_quarantine] deferred asset=%s reason=timeout", _asset_name)
+                            # The evidence filter is the guard while ML is advisory.
+                            _segment_ok = not _ml_gate_advisory()
+                            _segment_reason = "segment_quarantine_deferred:timeout"
+                            logger.info("[segment_quarantine] timeout asset=%s allowed=%s", _asset_name, _segment_ok)
                         except Exception as _segment_exc:
-                            if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+                            if _ml_gate_advisory() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
                                 _segment_ok, _segment_reason = (
                                     False,
                                     f"segment_quarantine_error:{type(_segment_exc).__name__}",

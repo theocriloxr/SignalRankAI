@@ -79,3 +79,34 @@ async def test_worker_snapshot_drives_the_engine_gate(postgres_database):  # noq
     assert allowed, reason
     blocked, reason = await _segment_quarantine_gate(_signal(strategy_name=f"Unproven {uuid4().hex[:6]}"))
     assert not blocked and "0/0" in reason
+
+
+def test_ml_is_advisory_by_default_and_enforce_restores_the_veto(monkeypatch):
+    from engine.core import _ml_gate_advisory
+
+    monkeypatch.delenv("ML_GATE_MODE", raising=False)
+    assert _ml_gate_advisory()
+    monkeypatch.setenv("ML_GATE_MODE", "enforce")
+    assert not _ml_gate_advisory()
+
+
+def test_advisory_signals_stay_paper_only_and_say_why():
+    from signalrank_telegram.tier_signal_formatter import _execution_status_line
+
+    line = _execution_status_line({"ml_recovery_mode": True, "ml_recovery_reason": "ml_advisory_mode"})
+    assert "PAPER ONLY" in line and "setup-evidence filter" in line and "advisory" in line
+
+
+@pytest.mark.asyncio
+async def test_without_current_evidence_the_filter_blocks_while_ml_is_advisory(postgres_database, monkeypatch):  # noqa: F811
+    from sqlalchemy import text
+
+    from db.session import get_session
+    from engine.core import _segment_quarantine_gate
+
+    monkeypatch.delenv("ML_GATE_MODE", raising=False)
+    async with get_session() as session:
+        await session.execute(text("DELETE FROM runtime_state WHERE key = :k"), {"k": se.SNAPSHOT_KEY})
+        await session.commit()
+    allowed, reason = await _segment_quarantine_gate(_signal())
+    assert not allowed and reason == "segment_evidence_unavailable"

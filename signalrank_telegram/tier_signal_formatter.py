@@ -551,6 +551,11 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
 
 def _execution_status_line(signal: DictType[str, Any]) -> str:
     if bool(signal.get("ml_recovery_mode")):
+        if str(signal.get("ml_recovery_reason") or "") == "ml_advisory_mode":
+            return (
+                "Execution: PAPER ONLY — passed the setup-evidence filter; the ML model "
+                "is advisory, so live broker execution is disabled"
+            )
         return (
             "Execution: PAPER ONLY — serving-model recovery signal; "
             "live broker execution is disabled"
