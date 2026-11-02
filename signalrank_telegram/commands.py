@@ -7939,7 +7939,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		from sqlalchemy import select, text
 
 		args = [str(a).strip().lower() for a in (context.args or []) if str(a).strip()]
-		provider_values = {"auto", "mt5", "bybit"}
+		provider_values = {"auto", "mt5", "bybit", "binance"}
 
 		async with _gs(label="execution.command", timeout_seconds=8.0) as session:
 			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()

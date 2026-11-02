@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1397,
+  "variable_count": 1401,
   "variables": [
     {
       "declared_defaults": {},
@@ -2072,6 +2072,16 @@
       "sensitive": true
     },
     {
+      "declared_defaults": {},
+      "name": "BINANCE_FUTURES_DEMO_URL",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:66"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         ".env.example": "0",
         "RAILWAY_ENV_UPDATED.env.example": "0",
@@ -2095,6 +2105,26 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "BINANCE_ORDER_CONFIRM_ATTEMPTS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:272"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "BINANCE_REQUIRE_IP_BINDING",
+      "production_example_default": null,
+      "read_locations": [
+        "web/platform_api.py:5210"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -2223,8 +2253,8 @@
       "read_locations": [
         "signalrank_telegram/commands.py:4719",
         "signalrank_telegram/commands.py:8274",
-        "web/platform_api.py:3576",
-        "web/platform_api.py:3681"
+        "web/platform_api.py:3585",
+        "web/platform_api.py:3690"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2442,36 +2472,6 @@
       "sensitive": true
     },
     {
-      "declared_defaults": {},
-      "name": "BYBIT_MAX_ENTRY_DEVIATION_PCT",
-      "production_example_default": null,
-      "read_locations": [
-        "services/bybit_signal_router.py:355"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "BYBIT_MAX_NOTIONAL_MULTIPLIER",
-      "production_example_default": null,
-      "read_locations": [
-        "services/bybit_signal_router.py:371"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
-      "declared_defaults": {},
-      "name": "BYBIT_MAX_QUOTE_AGE_SECONDS",
-      "production_example_default": null,
-      "read_locations": [
-        "services/bybit_signal_router.py:348"
-      ],
-      "required_by_code": true,
-      "sensitive": false
-    },
-    {
       "declared_defaults": {
         "RAILWAY_ENV_UPDATED.env.example": "1",
         "configs/env/hermetic-test.env.example": "1",
@@ -2509,7 +2509,7 @@
       "name": "BYBIT_RECONCILIATION_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_reconciler.py:413"
+        "services/bybit_reconciler.py:427"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2519,7 +2519,7 @@
       "name": "BYBIT_RECONCILIATION_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_reconciler.py:412"
+        "services/bybit_reconciler.py:426"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2530,8 +2530,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/broker_verification.py:78",
-        "services/bybit_signal_router.py:319",
-        "web/platform_api.py:5186"
+        "web/platform_api.py:5195"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5706,7 +5705,7 @@
       "name": "EXECUTION_TERMS_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:6388"
+        "web/platform_api.py:6412"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7017,7 +7016,7 @@
       "name": "LIVE_MAX_RISK_PER_TRADE_PCT",
       "production_example_default": null,
       "read_locations": [
-        "services/bybit_signal_router.py:366"
+        "services/bybit_signal_router.py:380"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7060,6 +7059,16 @@
       "production_example_default": "1",
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "LOT_SIZE",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:166"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -7258,6 +7267,16 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {},
+      "name": "MARKET_LOT_SIZE",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:166"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {
         ".env.example": "1"
       },
@@ -7452,10 +7471,10 @@
         "railway_main.py:585",
         "railway_main.py:622",
         "services/broker_connections.py:206",
-        "web/platform_api.py:5235",
-        "web/platform_api.py:5271",
-        "web/platform_api.py:5340",
-        "web/platform_api.py:6348",
+        "web/platform_api.py:5259",
+        "web/platform_api.py:5295",
+        "web/platform_api.py:5364",
+        "web/platform_api.py:6372",
         "worker/worker.py:342"
       ],
       "required_by_code": true,
@@ -7566,10 +7585,10 @@
         "services/broker_connections.py:206",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2810",
-        "web/platform_api.py:5235",
-        "web/platform_api.py:5271",
-        "web/platform_api.py:5340",
-        "web/platform_api.py:6348",
+        "web/platform_api.py:5259",
+        "web/platform_api.py:5295",
+        "web/platform_api.py:5364",
+        "web/platform_api.py:6372",
         "worker/worker.py:342"
       ],
       "required_by_code": true,
@@ -7581,6 +7600,16 @@
       "production_example_default": null,
       "read_locations": [
         "data/dynamic_symbol_assign.py:346"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "MIN_NOTIONAL",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:168"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10854,7 +10883,7 @@
       "read_locations": [
         "payments/checkout.py:98",
         "payments/paystack.py:10",
-        "web/platform_api.py:6776"
+        "web/platform_api.py:6800"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11023,7 +11052,7 @@
         "services/subscription_cancellation.py:25",
         "web/app.py:1031",
         "web/app.py:1066",
-        "web/platform_api.py:6772"
+        "web/platform_api.py:6796"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -11640,6 +11669,16 @@
         "data/cryptocompare_ws.py:111",
         "data/cryptocompare_ws.py:130",
         "data/get_live_price.py:606"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "PRICE_FILTER",
+      "production_example_default": null,
+      "read_locations": [
+        "services/binance_futures_client.py:167"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12511,7 +12550,7 @@
         "db/pg_features.py:3303",
         "db/pg_features.py:3437",
         "db/pg_features.py:3641",
-        "web/platform_api.py:3578"
+        "web/platform_api.py:3587"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12524,7 +12563,7 @@
         "db/pg_features.py:3304",
         "db/pg_features.py:3438",
         "db/pg_features.py:3642",
-        "web/platform_api.py:3589"
+        "web/platform_api.py:3598"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14281,7 +14320,7 @@
       "production_example_default": "10",
       "read_locations": [
         "signalrank_telegram/commands.py:6783",
-        "web/platform_api.py:4856"
+        "web/platform_api.py:4865"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14296,7 +14335,7 @@
       "production_example_default": "2000",
       "read_locations": [
         "signalrank_telegram/commands.py:6817",
-        "web/platform_api.py:4895"
+        "web/platform_api.py:4904"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14924,8 +14963,8 @@
       "name": "TELEGRAM_BOT_USERNAME",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:3576",
-        "web/platform_api.py:3681"
+        "web/platform_api.py:3585",
+        "web/platform_api.py:3690"
       ],
       "required_by_code": true,
       "sensitive": false

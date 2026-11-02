@@ -212,6 +212,7 @@ class SafetyFlags:
     copy_trade_enabled: bool = False
     mt5_live_accounts_enabled: bool = False
     bybit_execution_enabled: bool = False
+    binance_execution_enabled: bool = False
     real_payouts_enabled: bool = False
     payments_enabled: bool = False
     telegram_rich_messages_enabled: bool = False
@@ -227,6 +228,7 @@ class SafetyFlags:
             copy_trade_enabled=env_bool("COPY_TRADE_ENABLED", False),
             mt5_live_accounts_enabled=env_bool("MT5_ALLOW_LIVE_ACCOUNTS", False),
             bybit_execution_enabled=env_bool("BYBIT_EXECUTION_ENABLED", False),
+            binance_execution_enabled=env_bool("BINANCE_EXECUTION_ENABLED", False),
             real_payouts_enabled=env_bool("REAL_PAYOUTS_ENABLED", False),
             payments_enabled=env_bool("PAYMENTS_ENABLED", False),
             telegram_rich_messages_enabled=env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False),
@@ -249,6 +251,7 @@ class SafetyFlags:
             or self.copy_trade_enabled
             or self.mt5_live_accounts_enabled
             or self.bybit_execution_enabled
+            or self.binance_execution_enabled
         ) and not self.real_execution_enabled:
             violations.append("broker_execution_requires_REAL_EXECUTION_ENABLED")
         if self.real_payouts_enabled and not self.payments_enabled:

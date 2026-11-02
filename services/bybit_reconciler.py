@@ -27,8 +27,8 @@ _TERMINAL_ORDER_REJECTS = {"rejected", "cancelled", "deactivated"}
 _FILLED_ORDER_STATES = {"filled", "partiallyfilled"}
 
 
-def _state_key(telegram_user_id: int) -> str:
-    return f"broker_exchange:{int(telegram_user_id)}:bybit"
+def _state_key(telegram_user_id: int, provider: str = "bybit") -> str:
+    return f"broker_exchange:{int(telegram_user_id)}:{provider}"
 
 
 def _as_float(value: Any) -> float:
@@ -49,6 +49,7 @@ async def _credentials(
     user_id: int,
     telegram_user_id: int,
     connection_id: str | None,
+    provider: str = "bybit",
 ) -> BybitCredentials | None:
     canonical: BrokerConnection | None = None
     async with get_session(label="bybit.reconcile.credentials", timeout_seconds=6.0) as session:
@@ -59,7 +60,7 @@ async def _credentials(
                     .where(
                         BrokerConnection.user_id == int(user_id),
                         BrokerConnection.connection_id == str(connection_id),
-                        BrokerConnection.platform == "bybit",
+                        BrokerConnection.platform == provider,
                     )
                     .limit(1)
                 )
@@ -73,7 +74,7 @@ async def _credentials(
         if canonical is None or not canonical.secret_encrypted:
             state = await session.get(
                 RuntimeState,
-                _state_key(int(telegram_user_id)),
+                _state_key(int(telegram_user_id), provider),
             )
             # rollback() expires loaded rows: copy the value first.
             legacy_value = dict(getattr(state, "value", {}) or {}) if state is not None else {}
@@ -152,6 +153,7 @@ async def _mark(
     realized_pnl_pct: float | None = None,
     closed: bool = False,
     account_ledger_events: list[dict[str, Any]] | None = None,
+    provider: str = "bybit",
 ) -> None:
     async with get_session(label="bybit.reconcile.write", timeout_seconds=8.0) as session:
         row = (
@@ -190,14 +192,14 @@ async def _mark(
                     session,
                     user_id=int(row.user_id),
                     connection_id=str(row.connection_id),
-                    provider="bybit",
+                    provider=provider,
                     **event,
                 )
         await session.commit()
 
 
-async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]:
-    """Reconcile non-terminal Bybit executions; all uncertainty remains fail-closed."""
+async def reconcile_bybit_executions_once(*, limit: int = 100, provider: str = "bybit") -> dict[str, int]:
+    """Reconcile non-terminal Bybit (or Binance) executions; all uncertainty remains fail-closed."""
     stats = {"fetched": 0, "open": 0, "closed": 0, "rejected": 0, "errors": 0}
     async with get_session(label="bybit.reconcile.scan", timeout_seconds=8.0) as session:
         rows = (
@@ -205,7 +207,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                 select(BrokerExecution, User.telegram_user_id)
                 .join(User, User.id == BrokerExecution.user_id)
                 .where(
-                    BrokerExecution.provider == "bybit",
+                    BrokerExecution.provider == provider,
                     BrokerExecution.status.in_(
                         ("reserved", "submitting", "ambiguous", "confirmed", "open", "reconciliation_pending")
                     ),
@@ -222,12 +224,19 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                 int(execution.user_id),
                 int(telegram_user_id),
                 str(execution.connection_id or "") or None,
+                provider,
             )
             if creds is None:
-                await _mark(int(execution.id), status=str(execution.status), error="credentials_unavailable")
+                await _mark(int(execution.id), status=str(execution.status), error="credentials_unavailable",
+                            provider=provider)
                 stats["errors"] += 1
                 continue
-            client = BybitV5Client(creds)
+            if provider == "binance":
+                from services.binance_futures_client import BinanceUsdmClient
+
+                client = BinanceUsdmClient(creds)
+            else:
+                client = BybitV5Client(creds)
             order = await client.get_order(
                 symbol=str(execution.symbol),
                 order_id=str(execution.provider_order_id or "") or None,
@@ -235,7 +244,8 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             )
             order_status = str((order or {}).get("orderStatus") or "").strip().lower()
             if order_status in _TERMINAL_ORDER_REJECTS:
-                await _mark(int(execution.id), status=order_status, error=f"bybit_order_{order_status}", closed=True)
+                await _mark(int(execution.id), status=order_status, error=f"{provider}_order_{order_status}", closed=True,
+                            provider=provider)
                 await release_user_execution_quota(int(execution.user_id))
                 stats["rejected"] += 1
                 continue
@@ -246,6 +256,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                 position_event_time = str(active.get("updatedTime") or active.get("createdTime") or "").strip()
                 await _mark(
                     int(execution.id),
+                    provider=provider,
                     status="open",
                     meta={
                         "order_status": order_status or None,
@@ -293,6 +304,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             if order_status not in _FILLED_ORDER_STATES and str(execution.status) != "open":
                 await _mark(
                     int(execution.id),
+                    provider=provider,
                     status=str(execution.status),
                     meta={"order_status": order_status or None, "last_reconciled_at": now_utc_naive().isoformat()},
                 )
@@ -314,6 +326,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
             if closed is None:
                 await _mark(
                     int(execution.id),
+                    provider=provider,
                     status="reconciliation_pending",
                     meta={"order_status": order_status or None, "last_reconciled_at": now_utc_naive().isoformat()},
                 )
@@ -386,6 +399,7 @@ async def reconcile_bybit_executions_once(*, limit: int = 100) -> dict[str, int]
                 )
             await _mark(
                 int(execution.id),
+                provider=provider,
                 status="closed",
                 realized_pnl_pct=pnl_pct,
                 closed=True,
@@ -414,9 +428,10 @@ async def bybit_reconciliation_loop(stop_event: asyncio.Event) -> None:
     logger.info("[bybit_reconciler] started interval=%ss batch=%s", interval, batch)
     while not stop_event.is_set():
         try:
-            stats = await reconcile_bybit_executions_once(limit=batch)
-            if stats["fetched"]:
-                logger.info("[bybit_reconciler] %s", stats)
+            for provider in ("bybit", "binance"):
+                stats = await reconcile_bybit_executions_once(limit=batch, provider=provider)
+                if stats["fetched"]:
+                    logger.info("[exchange_reconciler] provider=%s %s", provider, stats)
         except Exception:
             logger.exception("[bybit_reconciler] iteration failed")
         try:

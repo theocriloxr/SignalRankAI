@@ -88,6 +88,15 @@ async def _resources_available() -> bool:
         return False
 
 
+def _exchange_client(provider: str, credentials: BybitCredentials):
+    """Same interface for both exchanges (services/binance_futures_client.py)."""
+    if provider == "binance":
+        from services.binance_futures_client import BinanceUsdmClient
+
+        return BinanceUsdmClient(credentials)
+    return BybitV5Client(credentials)
+
+
 async def _route_signal_to_bybit_for_identity(
     signal: Mapping[str, Any],
     principal_id: int,
@@ -95,7 +104,10 @@ async def _route_signal_to_bybit_for_identity(
     *,
     user_identity: str,
     connection_id: str | None = None,
+    provider: str = "bybit",
 ) -> BybitRouteResult:
+    provider = "binance" if str(provider or "").strip().lower() == "binance" else "bybit"
+    exchange_label = provider.title()
     identity = str(user_identity or "").strip().lower()
     if identity not in {"telegram", "platform"}:
         return BybitRouteResult(False, "Unsupported execution identity", error="unsupported_execution_identity")
@@ -107,7 +119,9 @@ async def _route_signal_to_bybit_for_identity(
             reason = "live_integrity_blocked:" + ",".join(integrity.reasons)
             return BybitRouteResult(False, reason, error=reason)
     if not _asset_supported(signal):
-        return BybitRouteResult(False, "Bybit execution supports USDT crypto signals only", error="unsupported_asset")
+        return BybitRouteResult(
+            False, f"{exchange_label} execution supports USDT crypto signals only", error="unsupported_asset"
+        )
     from core.focused_universe import focused_admission
 
     admitted, admission_reason = focused_admission(signal.get("asset") or signal.get("symbol"))
@@ -143,7 +157,7 @@ async def _route_signal_to_bybit_for_identity(
         try:
             connection = await resolve_execution_connection(
                 int(user.id),
-                platform="bybit",
+                platform=provider,
                 connection_id=connection_id,
             )
         except (LookupError, PermissionError) as exc:
@@ -217,7 +231,7 @@ async def _route_signal_to_bybit_for_identity(
                 error="profile_manual_confirmation_disabled",
             )
         configured_provider = str(profile_prefs.execution_provider or "auto").strip().lower()
-        if configured_provider not in {"auto", "bybit"}:
+        if configured_provider not in {"auto", provider}:
             return BybitRouteResult(
                 False, "User profile selected a different execution provider", error="profile_provider_mismatch"
             )
@@ -311,12 +325,12 @@ async def _route_signal_to_bybit_for_identity(
         and not permissions.get("internal_transfer")
     )
 
-    client = BybitV5Client(BybitCredentials(str(api_key or ""), str(api_secret or ""), sandbox))
+    client = _exchange_client(provider, BybitCredentials(str(api_key or ""), str(api_secret or ""), sandbox))
     permission_info: dict[str, Any] = {}
     if account_ready:
         try:
             permission_info = await client.verify_trade_only_key(
-                require_ip_binding=str(os.getenv("BYBIT_REQUIRE_IP_BINDING", "1")).strip().lower()
+                require_ip_binding=str(os.getenv(f"{provider.upper()}_REQUIRE_IP_BINDING", "1")).strip().lower()
                 in {"1", "true", "yes", "on"}
             )
             account_ready = (
@@ -345,14 +359,14 @@ async def _route_signal_to_bybit_for_identity(
         quote_age = max(0.0, time.time() - (provider_time_ms / 1000.0)) if provider_time_ms > 0 else float("inf")
         max_quote_age = max(
             1.0,
-            float(os.getenv("BYBIT_MAX_QUOTE_AGE_SECONDS", "10") or 10),
+            float(os.getenv(f"{provider.upper()}_MAX_QUOTE_AGE_SECONDS", "10") or 10),
         )
         wallet_ok = wallet_equity > 0
         quote_ok = (
             quote_value > 0
             and math.isfinite(quote_age)
             and quote_age <= max_quote_age
-            and abs(quote_value - entry) / entry <= float(os.getenv("BYBIT_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
+            and abs(quote_value - entry) / entry <= float(os.getenv(f"{provider.upper()}_MAX_ENTRY_DEVIATION_PCT", "1.0")) / 100.0
         )
         positions = await client.get_positions(symbol=symbol) if account_ready else []
         reconciliation_ok = isinstance(positions, list)
@@ -368,7 +382,7 @@ async def _route_signal_to_bybit_for_identity(
     risk_amount = wallet_equity * risk_pct / 100.0
     stop_distance = abs(entry - stop)
     quantity = risk_amount / stop_distance if stop_distance > 0 else 0.0
-    max_notional = wallet_equity * float(os.getenv("BYBIT_MAX_NOTIONAL_MULTIPLIER", "1.0"))
+    max_notional = wallet_equity * float(os.getenv(f"{provider.upper()}_MAX_NOTIONAL_MULTIPLIER", "1.0"))
     if quantity * entry > max_notional > 0:
         quantity = max_notional / entry
     risk_allowed = math.isfinite(quantity) and quantity > 0 and wallet_ok and not has_open_position
@@ -395,7 +409,7 @@ async def _route_signal_to_bybit_for_identity(
             status=reconciliation_status,
             discrepancy_code=None if reconciliation_ok else "provider_reconciliation_pending",
             details={
-                "provider": "bybit",
+                "provider": provider,
                 "positions_count": len(positions) if isinstance(positions, list) else None,
                 "checked_at": (
                     datetime.fromtimestamp(
@@ -573,7 +587,7 @@ async def _route_signal_to_bybit_for_identity(
         broker_healthy=bool(account_ready and wallet_ok and quote_ok),
         resources_available=await _resources_available(),
         reconciliation_ready=reconciliation_ok,
-        broker_provider="bybit",
+        broker_provider=provider,
         user_identity=identity,
         canonical_user_id=int(user.id),
         account_classification=account_classification(connection),
@@ -641,7 +655,7 @@ async def _route_signal_to_bybit_for_identity(
         try:
             current = await resolve_execution_connection(
                 int(user.id),
-                platform="bybit",
+                platform=provider,
                 connection_id=connection.connection_id,
             )
         except (LookupError, PermissionError) as exc:
@@ -654,7 +668,7 @@ async def _route_signal_to_bybit_for_identity(
                 await session.execute(
                     select(BrokerExecution)
                     .where(
-                        BrokerExecution.provider == "bybit",
+                        BrokerExecution.provider == provider,
                         BrokerExecution.idempotency_key == idempotency_key,
                     )
                     .with_for_update()
@@ -686,7 +700,7 @@ async def _route_signal_to_bybit_for_identity(
             row = BrokerExecution(
                 user_id=int(user.id),
                 signal_id=signal_id,
-                provider="bybit",
+                provider=provider,
                 connection_id=connection.connection_id,
                 account_ref=connection.connection_id,
                 idempotency_key=idempotency_key,
@@ -733,7 +747,7 @@ async def _route_signal_to_bybit_for_identity(
                     await session.execute(
                         select(BrokerExecution)
                         .where(
-                            BrokerExecution.provider == "bybit",
+                            BrokerExecution.provider == provider,
                             BrokerExecution.idempotency_key == idempotency_key,
                         )
                         .with_for_update()
@@ -753,7 +767,7 @@ async def _route_signal_to_bybit_for_identity(
                 await session.execute(
                     select(BrokerExecution)
                     .where(
-                        BrokerExecution.provider == "bybit",
+                        BrokerExecution.provider == provider,
                         BrokerExecution.idempotency_key == idempotency_key,
                     )
                     .with_for_update()
@@ -780,7 +794,7 @@ async def _route_signal_to_bybit_for_identity(
                 row = (
                     await session.execute(
                         select(BrokerExecution)
-                        .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                        .where(BrokerExecution.provider == provider, BrokerExecution.idempotency_key == idempotency_key)
                         .with_for_update()
                     )
                 ).scalar_one()
@@ -797,7 +811,7 @@ async def _route_signal_to_bybit_for_identity(
                 row = (
                     await session.execute(
                         select(BrokerExecution)
-                        .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                        .where(BrokerExecution.provider == provider, BrokerExecution.idempotency_key == idempotency_key)
                         .with_for_update()
                     )
                 ).scalar_one()
@@ -817,7 +831,7 @@ async def _route_signal_to_bybit_for_identity(
             row = (
                 await session.execute(
                     select(BrokerExecution)
-                    .where(BrokerExecution.provider == "bybit", BrokerExecution.idempotency_key == idempotency_key)
+                    .where(BrokerExecution.provider == provider, BrokerExecution.idempotency_key == idempotency_key)
                     .with_for_update()
                 )
             ).scalar_one()
@@ -838,7 +852,7 @@ async def _route_signal_to_bybit_for_identity(
                 session,
                 user_id=int(user.id),
                 connection_id=str(connection.connection_id),
-                provider="bybit",
+                provider=provider,
                 entry_type="order",
                 source_event_id=f"order:{str(provider_result['order_id'])}",
                 correlation_id=idempotency_key,
@@ -861,9 +875,9 @@ async def _route_signal_to_bybit_for_identity(
 
     result = await gate.execute(gate_request, submit)
     if result.accepted:
-        return BybitRouteResult(True, "Bybit order confirmed", result.order_id, result.status)
+        return BybitRouteResult(True, f"{exchange_label} order confirmed", result.order_id, result.status)
     return BybitRouteResult(
-        False, "Bybit execution blocked", status=result.status, error=result.error or ",".join(result.decision.reasons)
+        False, f"{exchange_label} execution blocked", status=result.status, error=result.error or ",".join(result.decision.reasons)
     )
 
 
@@ -901,8 +915,37 @@ async def route_platform_signal_to_bybit(
     )
 
 
+async def route_signal_to_binance(
+    signal: Mapping[str, Any],
+    telegram_user_id: int,
+    execution_mode: str = "auto",
+    *,
+    connection_id: str | None = None,
+) -> BybitRouteResult:
+    """Binance USDⓈ-M futures through the same admission, policy and ledger path as Bybit."""
+    return await _route_signal_to_bybit_for_identity(
+        signal, int(telegram_user_id), execution_mode, user_identity="telegram",
+        connection_id=connection_id, provider="binance",
+    )
+
+
+async def route_platform_signal_to_binance(
+    signal: Mapping[str, Any],
+    user_id: int,
+    execution_mode: str = "manual_confirmed",
+    *,
+    connection_id: str | None = None,
+) -> BybitRouteResult:
+    return await _route_signal_to_bybit_for_identity(
+        signal, int(user_id), execution_mode, user_identity="platform",
+        connection_id=connection_id, provider="binance",
+    )
+
+
 __all__ = [
     "BybitRouteResult",
-    "route_signal_to_bybit",
+    "route_platform_signal_to_binance",
     "route_platform_signal_to_bybit",
+    "route_signal_to_binance",
+    "route_signal_to_bybit",
 ]

@@ -70,10 +70,10 @@ _PLATFORM_CATALOG: tuple[dict[str, Any], ...] = (
         "connector": "binance",
         "asset_classes": ["crypto"],
         "connection_modes": ["api_key"],
-        "execution_adapter": "integration",
+        "execution_adapter": "ready",
         "demo_supported": True,
         "live_supported": True,
-        "note": "Connection supported; execution stays disabled until provider-side permissions and the Binance execution adapter are certified.",
+        "note": "USDⓈ-M perpetual futures with exchange-side stop and target orders. Keys must not allow withdrawals or transfers and live keys must be IP-restricted. Live execution stays off until BINANCE_EXECUTION_ENABLED and the live allow-lists are set by the owner.",
     },
     {
         "platform": "binanceus",

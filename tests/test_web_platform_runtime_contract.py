@@ -206,7 +206,7 @@ def test_web_execution_settings_resolve_saved_provider_before_live_validation():
     ]
     assert "effective_provider" in section
     assert "current.execution_provider" in section
-    assert 'effective_provider != "bybit"' in section
+    assert 'effective_provider not in {\"bybit\", \"binance\"}' in section
 
 
 

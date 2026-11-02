@@ -249,3 +249,16 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
 - The strategy scorecard now counts a shadow setup once per bar (asset × timeframe × strategy × direction); re-scans had turned
   one 4h bar into thousands of identical outcomes (XAGUSD 4h EMA Trend: 3,470 rows, almost all on 30 Oct).
 
+
+## 14. 2 Nov 2026: Binance USDⓈ-M futures execution adapter
+
+- `services/binance_futures_client.py` implements the Bybit client interface for Binance USDⓈ-M perpetuals: signed
+  REST, exchange filters, confirmation of the market order, then STOP_MARKET and TAKE_PROFIT_MARKET (`closePosition`)
+  through `POST /fapi/v1/algoOrder`; if either protective order fails the position is closed at market. Keys must
+  not allow withdrawals/transfers and live keys must be IP-restricted (`/sapi/v1/account/apiRestrictions`). Demo keys
+  use `BINANCE_FUTURES_DEMO_URL` (default `https://demo-fapi.binance.com`).
+- `services/bybit_signal_router.py` takes `provider="bybit"|"binance"` (same admission, account policy, quota,
+  idempotency and ledger path); `services/bybit_reconciler.py` reconciles both; the broker dispatcher, web manual
+  execution, execution settings and Telegram `/execution` accept `binance`.
+- The execution gate refuses live Binance orders unless `BINANCE_EXECUTION_ENABLED=1` (default off) on top of
+  `REAL_EXECUTION_ENABLED` and the live account/provider/symbol allow-lists. Nothing was enabled.

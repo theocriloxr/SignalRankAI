@@ -141,7 +141,7 @@ class ExecutionGate:
         if identity == "platform" and request.canonical_user_id != request.user_id:
             reasons.append("canonical_user_identity_mismatch")
         provider = str(request.broker_provider or "").strip().lower()
-        if provider not in {"mt4", "mt5", "bybit"}:
+        if provider not in {"mt4", "mt5", "bybit", "binance"}:
             reasons.append("unsupported_broker_provider")
         classification = str(request.account_classification or "").strip().upper()
         if not classification:
@@ -259,6 +259,8 @@ class ExecutionGate:
                 reasons.append("METATRADER_LIVE_ACCOUNTS_DISABLED")
             if provider == "bybit" and not self.safety_flags.bybit_execution_enabled:
                 reasons.append("BYBIT_EXECUTION_DISABLED")
+            if provider == "binance" and not self.safety_flags.binance_execution_enabled:
+                reasons.append("BINANCE_EXECUTION_DISABLED")
         if not request.quote_trusted:
             reasons.append("trusted_quote_required")
         try:

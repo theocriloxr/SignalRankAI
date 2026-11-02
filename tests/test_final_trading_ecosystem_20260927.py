@@ -31,7 +31,7 @@ def test_broker_catalogue_is_explicit_about_execution_readiness():
     rows={row["platform"]: row for row in platform_catalog("PREMIUM")}
     assert rows["mt5"]["execution_adapter"] == "ready"
     assert rows["bybit"]["execution_adapter"] == "ready"
-    assert rows["binance"]["execution_adapter"] == "integration"
+    assert rows["binance"]["execution_adapter"] == "ready"  # USDⓈ-M adapter added 2 Nov 2026 (services/binance_futures_client.py)
     assert rows["binanceus"]["execution_adapter"] == "integration"
     assert rows["okx"]["execution_adapter"] == "connection_only"
     assert rows["coinbase"]["execution_adapter"] == "connection_only"

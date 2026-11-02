@@ -399,7 +399,7 @@ class TradingProfileUpdateRequest(BaseModel):
 
 class SignalExecutionRequest(BaseModel):
     confirm: bool
-    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5|bybit)$")
+    provider: str = Field(default="mt5", pattern=r"^(mt4|mt5|bybit|binance)$")
     connection_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
@@ -519,7 +519,7 @@ class ExecutionSettingsUpdateRequest(BaseModel):
         pattern=r"^(signals_only|none|manual|manual_confirmed|semi_auto|auto|copy|copy_trade)$",
     )
     trading_mode: str | None = Field(default=None, pattern=r"^(paper|live|both)$")
-    execution_provider: str | None = Field(default=None, pattern=r"^(auto|mt4|mt5|bybit)$")
+    execution_provider: str | None = Field(default=None, pattern=r"^(auto|mt4|mt5|bybit|binance)$")
     fixed_lot_size: float | None = Field(default=None, ge=0.001, le=1.0)
     auto_signals_daily_limit: int | None = Field(default=None, ge=-1, le=100)
 
@@ -2906,7 +2906,16 @@ async def execute_signal_from_platform(
     signal["evidence_signal_id"] = ref
     signal["execution_source"] = "web_manual_confirmed"
 
-    if payload.provider == "bybit":
+    if payload.provider == "binance":
+        from services.bybit_signal_router import route_platform_signal_to_binance
+
+        result = await route_platform_signal_to_binance(
+            signal,
+            uid,
+            execution_mode="manual_confirmed",
+            connection_id=payload.connection_id,
+        )
+    elif payload.provider == "bybit":
         from services.bybit_signal_router import route_platform_signal_to_bybit
 
         result = await route_platform_signal_to_bybit(
@@ -5191,6 +5200,21 @@ async def link_broker_exchange(
             verification_note = "Provider-side read/trade permissions verified; execution remains separately disabled."
         except (BybitPermissionError, BybitError) as exc:
             raise HTTPException(status_code=422, detail=f"Bybit credential verification failed: {exc}") from exc
+    elif provider == "binance":
+        from services.binance_futures_client import BinanceUsdmClient
+        from services.bybit_client import BybitCredentials, BybitError
+
+        try:
+            verifier = BinanceUsdmClient(BybitCredentials(payload.api_key, payload.api_secret, bool(payload.sandbox)))
+            verified = await verifier.verify_trade_only_key(
+                require_ip_binding=str(os.getenv("BINANCE_REQUIRE_IP_BINDING") or "1").lower()
+                in {"1", "true", "yes", "on"}
+            )
+            permissions.update(dict(verified or {}))
+            permissions_verified = True
+            verification_note = "Binance futures trade permission verified (no withdrawals or transfers); execution remains separately disabled."
+        except BybitError as exc:
+            raise HTTPException(status_code=422, detail=f"Binance credential verification failed: {exc}") from exc
 
     credential_payload = {
         "provider": provider,
@@ -6426,7 +6450,7 @@ async def update_execution_settings(
             str(values.get("execution_provider") or current.execution_provider or "auto").strip().lower()
         )
         effective_trading_mode = str(trading_mode or current.trading_mode or "paper").strip().lower()
-        if effective_trading_mode in {"live", "both"} and effective_provider != "bybit":
+        if effective_trading_mode in {"live", "both"} and effective_provider not in {"bybit", "binance"}:
             from services.mt5_client import get_platform_metatrader_connection
 
             platform_filter = effective_provider if effective_provider in {"mt4", "mt5"} else None
