@@ -131,13 +131,29 @@ def evaluate(signal: Mapping[str, Any], segments: Mapping[str, Any]) -> SegmentD
     return SegmentDecision(False, f"segment_evidence {key}: {detail}", key, trades, wins, lower, breakeven)
 
 
+# The engine re-logs the same rejected setup on every scan (one bar could yield
+# thousands of identical rows), so shadow evidence counts one setup per asset,
+# timeframe, strategy, direction and bar: the first logged row of that bar.
 EVIDENCE_SQL = """
+WITH shadow AS (
+    SELECT DISTINCT ON (asset, tf, strategy, direction, bar) strategy, tf, direction, outcome
+    FROM (
+        SELECT asset, lower(timeframe) AS tf, lower(features->>'strategy_name') AS strategy,
+               lower(direction) AS direction, lower(actual_outcome) AS outcome, created_at,
+               floor(extract(epoch FROM created_at) / CASE lower(timeframe)
+                   WHEN '1m' THEN 60 WHEN '3m' THEN 180 WHEN '5m' THEN 300 WHEN '15m' THEN 900
+                   WHEN '30m' THEN 1800 WHEN '1h' THEN 3600 WHEN '2h' THEN 7200 WHEN '4h' THEN 14400
+                   WHEN '6h' THEN 21600 WHEN '8h' THEN 28800 WHEN '12h' THEN 43200 WHEN '1d' THEN 86400
+                   WHEN '24h' THEN 86400 WHEN '1w' THEN 604800 ELSE 3600 END) AS bar
+        FROM ml_rejected_signals
+        WHERE created_at >= :since AND lower(actual_outcome) IN ('sl','tp1','tp2','tp3')
+    ) AS rows
+    ORDER BY asset, tf, strategy, direction, bar, created_at
+)
 SELECT strategy, timeframe, direction, SUM(n) AS n, SUM(wins) AS wins FROM (
-    SELECT lower(features->>'strategy_name') AS strategy, lower(timeframe) AS timeframe, lower(direction) AS direction,
-           COUNT(*) AS n, COUNT(*) FILTER (WHERE lower(actual_outcome) IN ('tp1','tp2','tp3')) AS wins
-    FROM ml_rejected_signals
-    WHERE created_at >= :since AND lower(actual_outcome) IN ('sl','tp1','tp2','tp3')
-    GROUP BY 1, 2, 3
+    SELECT strategy, tf AS timeframe, direction, COUNT(*) AS n,
+           COUNT(*) FILTER (WHERE outcome IN ('tp1','tp2','tp3')) AS wins
+    FROM shadow GROUP BY 1, 2, 3
     UNION ALL
     SELECT lower(s.strategy_name), lower(s.timeframe), lower(s.direction),
            COUNT(*), COUNT(*) FILTER (WHERE lower(o.status) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win_be'))

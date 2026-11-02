@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -67,12 +68,12 @@ async def test_worker_snapshot_drives_the_engine_gate(postgres_database):  # noq
 
     strategy = f"Proven {uuid4().hex[:6]}"
     async with get_session() as session:
-        for i in range(60):  # 57 of 60 shadow candidates reached TP1 (written as the rejection tracker does)
+        for i in range(55):  # one candidate per daily bar; 52 of 55 reached TP1 (written as the tracker does)
             session.add(DecisionLog(asset="BTCUSDT", timeframe="1d", decision="rejected", reason="ml",
-                                    created_at=now_utc_naive(),
+                                    created_at=now_utc_naive() - timedelta(days=i),
                                     meta={"layer": "ml", "direction": "short", "entry": 100, "stop_loss": 102,
                                           "features": {"strategy_name": strategy},
-                                          "actual_outcome": "tp1" if i < 57 else "sl"}))
+                                          "actual_outcome": "tp1" if i < 52 else "sl"}))
         await session.commit()
     assert await se.refresh_once() >= 1
     allowed, reason = await _segment_quarantine_gate(_signal(strategy_name=strategy))
@@ -110,3 +111,24 @@ async def test_without_current_evidence_the_filter_blocks_while_ml_is_advisory(p
         await session.commit()
     allowed, reason = await _segment_quarantine_gate(_signal())
     assert not allowed and reason == "segment_evidence_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_a_setup_logged_on_every_scan_counts_once_per_bar(postgres_database):  # noqa: F811
+    from db.models import DecisionLog
+    from db.session import get_session
+    from utils.timeutils import now_utc_naive
+
+    strategy = f"Rescanned {uuid4().hex[:6]}"
+    bar_start = now_utc_naive().replace(minute=0, second=0, microsecond=0)
+    async with get_session() as session:
+        for i in range(500):  # one 1h bar, re-logged on every scan
+            session.add(DecisionLog(asset="BTCUSDT", timeframe="1h", decision="rejected", reason="ml",
+                                    created_at=bar_start.replace(second=i % 60), meta={
+                                        "layer": "ml", "direction": "short", "features": {"strategy_name": strategy},
+                                        "actual_outcome": "tp1"}))
+        await session.commit()
+    async with get_session() as session:
+        snapshot = await se.compute_snapshot(session)
+        await session.rollback()
+    assert snapshot["segments"][se.segment_key(strategy, "1h", "short")] == {"n": 1, "wins": 1}
