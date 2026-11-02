@@ -183,3 +183,8 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
 - `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.
   `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow
   tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.
+- **First run (2 Nov 04:21 UTC, 493 s):** 59 assets × 3 timeframes, 340 rules each; 72 specs survived and were
+  published in `shadow` (crypto 21, stocks 27, indices 18, commodities 4, forex 1, GBPJPY 4h). Almost all are
+  long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward
+  record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was
+  recorded two minutes after publishing.
