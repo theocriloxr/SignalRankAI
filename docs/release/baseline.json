@@ -383,5 +383,42 @@
       "result": "FAIL (V7 freshness, regenerated next; environmental isolated-metadata; source-text test updated to the bounded call)",
       "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
     }
+  },
+  "continuation_20261102": {
+    "commits": [
+      "e68eab8f",
+      "f117be00",
+      "cb2be103",
+      "78cca12b"
+    ],
+    "owner_push_approval": "Yes, push and watch",
+    "setup_evidence_filter": {
+      "rule": "wilson_lower_bound(tp1_or_better) > 1/(1 + tp1_close_fraction * rr_tp1)",
+      "confidence_env": "SEGMENT_EVIDENCE_CONFIDENCE (default 0.95)",
+      "lookback_days": 60,
+      "shadow_dedupe": "one row per asset x timeframe x strategy x direction x bar",
+      "production_replay_read_only": {
+        "allowed": {
+          "setups": 34614,
+          "tp1_rate": 0.419,
+          "r_floor": 0.023
+        },
+        "blocked": {
+          "setups": 70567,
+          "tp1_rate": 0.312,
+          "r_floor": -0.376
+        }
+      }
+    },
+    "ml_gate_mode_default": "advisory (below-threshold signals are paper-only; live execution disabled)",
+    "python_suite_on_branch": {
+      "commit": "78cca12b",
+      "passed": 4506,
+      "failed": 1,
+      "skipped": 2,
+      "result": "FAIL (1 environmental: isolated python -I cannot import the user-site alembic; same as 43aa34e8)",
+      "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+    },
+    "frontend": "tsc, eslint, test:transport, test:presentation exit 0"
   }
 }

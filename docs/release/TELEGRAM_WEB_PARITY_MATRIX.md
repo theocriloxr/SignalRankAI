@@ -205,7 +205,6 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | PUT | `/broker/connections/{connection_id}/policy` | — |
 | GET | `/broker/connections/{connection_id}/prop-dashboard` | — |
 | PUT | `/broker/connections/{connection_id}/prop-objectives` | — |
-| GET | `/broker/prop-presets` | — |
 | PUT | `/broker/connections/{connection_id}/prop-preset` | — |
 | POST | `/broker/connections/{connection_id}/safety-freeze` | — |
 | POST | `/broker/connections/{connection_id}/verify` | — |
@@ -215,6 +214,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/broker/metatrader/servers` | — |
 | POST | `/broker/mt5` | — |
 | GET | `/broker/platforms` | — |
+| GET | `/broker/prop-presets` | — |
 | GET | `/broker/risk-presets` | — |
 | GET | `/capabilities` | — |
 | GET | `/command-catalog` | — |
@@ -306,4 +306,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 123 commands (46 without a web section), 16 web sections, 144 routes (89 without a name-matched command).
+Summary: 123 commands (46 without a web section), 16 web sections, 146 routes (91 without a name-matched command).

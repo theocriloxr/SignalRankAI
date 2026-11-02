@@ -393,6 +393,43 @@
         "result": "FAIL (V7 freshness, regenerated next; environmental isolated-metadata; source-text test updated to the bounded call)",
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       }
+    },
+    "continuation_20261102": {
+      "commits": [
+        "e68eab8f",
+        "f117be00",
+        "cb2be103",
+        "78cca12b"
+      ],
+      "owner_push_approval": "Yes, push and watch",
+      "setup_evidence_filter": {
+        "rule": "wilson_lower_bound(tp1_or_better) > 1/(1 + tp1_close_fraction * rr_tp1)",
+        "confidence_env": "SEGMENT_EVIDENCE_CONFIDENCE (default 0.95)",
+        "lookback_days": 60,
+        "shadow_dedupe": "one row per asset x timeframe x strategy x direction x bar",
+        "production_replay_read_only": {
+          "allowed": {
+            "setups": 34614,
+            "tp1_rate": 0.419,
+            "r_floor": 0.023
+          },
+          "blocked": {
+            "setups": 70567,
+            "tp1_rate": 0.312,
+            "r_floor": -0.376
+          }
+        }
+      },
+      "ml_gate_mode_default": "advisory (below-threshold signals are paper-only; live execution disabled)",
+      "python_suite_on_branch": {
+        "commit": "78cca12b",
+        "passed": 4506,
+        "failed": 1,
+        "skipped": 2,
+        "result": "FAIL (1 environmental: isolated python -I cannot import the user-site alembic; same as 43aa34e8)",
+        "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
+      },
+      "frontend": "tsc, eslint, test:transport, test:presentation exit 0"
     }
   },
   "inventory_is_verification": false,
@@ -510866,7 +510903,7 @@
     {
       "id": "SR-ENDPOINT-db4ff5ace2cabb37",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6694",
+      "source": "web/platform_api.py:6728",
       "requirement": "GET /api/v1/platform/billing/products",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_products",
@@ -510884,7 +510921,7 @@
     {
       "id": "SR-ENDPOINT-d35820a5dabbb8c0",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6731",
+      "source": "web/platform_api.py:6765",
       "requirement": "POST /api/v1/platform/billing/checkout",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_billing_checkout",
@@ -510902,7 +510939,7 @@
     {
       "id": "SR-ENDPOINT-b1825e067dd404ea",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6786",
+      "source": "web/platform_api.py:6820",
       "requirement": "POST /api/v1/platform/billing/confirm",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_billing_checkout",
@@ -510920,7 +510957,7 @@
     {
       "id": "SR-ENDPOINT-49df927ec6c642e3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6856",
+      "source": "web/platform_api.py:6890",
       "requirement": "GET /api/v1/platform/billing",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing",
@@ -510938,7 +510975,7 @@
     {
       "id": "SR-ENDPOINT-5c5ca073b4d9c4e7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6908",
+      "source": "web/platform_api.py:6942",
       "requirement": "POST /api/v1/platform/billing/cancel-auto-renew",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::cancel_billing_auto_renew",
@@ -510956,7 +510993,7 @@
     {
       "id": "SR-ENDPOINT-674e316aeda299ba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6955",
+      "source": "web/platform_api.py:6989",
       "requirement": "POST /api/v1/platform/billing/refund-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_refund_request",
@@ -510974,7 +511011,7 @@
     {
       "id": "SR-ENDPOINT-67027cf38ee1c0e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7014",
+      "source": "web/platform_api.py:7048",
       "requirement": "GET /api/v1/platform/notifications",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::notification_center",
@@ -510992,7 +511029,7 @@
     {
       "id": "SR-ENDPOINT-fdefeb1022ff1bbd",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7041",
+      "source": "web/platform_api.py:7075",
       "requirement": "POST /api/v1/platform/notifications/{notification_id}/read",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mark_notification_read",
@@ -511010,7 +511047,7 @@
     {
       "id": "SR-ENDPOINT-3c1cd32628b7b5b7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7068",
+      "source": "web/platform_api.py:7102",
       "requirement": "GET /api/v1/platform/organizations/{organization_id}/members",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organization_members",
@@ -511028,7 +511065,7 @@
     {
       "id": "SR-ENDPOINT-3acf1f74fa43d703",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7091",
+      "source": "web/platform_api.py:7125",
       "requirement": "POST /api/v1/platform/organizations/{organization_id}/invitations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization_invitation",
@@ -511046,7 +511083,7 @@
     {
       "id": "SR-ENDPOINT-d4de9fdb8142fba5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7148",
+      "source": "web/platform_api.py:7182",
       "requirement": "POST /api/v1/platform/organizations/invitations/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_organization_invitation",
@@ -511064,7 +511101,7 @@
     {
       "id": "SR-ENDPOINT-bdc42b349a9081fc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7189",
+      "source": "web/platform_api.py:7223",
       "requirement": "GET /api/v1/platform/support/tickets/{ticket_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_ticket_detail",
@@ -511082,7 +511119,7 @@
     {
       "id": "SR-ENDPOINT-31a500340874efdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7224",
+      "source": "web/platform_api.py:7258",
       "requirement": "POST /api/v1/platform/support/tickets/{ticket_id}/messages",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_support_message",
@@ -511100,7 +511137,7 @@
     {
       "id": "SR-ENDPOINT-520729a67d5508a6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7261",
+      "source": "web/platform_api.py:7295",
       "requirement": "GET /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_alerts",
@@ -511118,7 +511155,7 @@
     {
       "id": "SR-ENDPOINT-8e1206fb0fa123cf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7282",
+      "source": "web/platform_api.py:7316",
       "requirement": "POST /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_alert",
@@ -511136,7 +511173,7 @@
     {
       "id": "SR-ENDPOINT-4c034f12b196e597",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7315",
+      "source": "web/platform_api.py:7349",
       "requirement": "DELETE /api/v1/platform/alerts/{alert_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_alert",
@@ -511154,7 +511191,7 @@
     {
       "id": "SR-ENDPOINT-7711087f0093e257",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7329",
+      "source": "web/platform_api.py:7363",
       "requirement": "POST /api/v1/platform/analytics/events",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::analytics_event",

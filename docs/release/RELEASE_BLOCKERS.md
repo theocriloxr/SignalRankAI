@@ -1,5 +1,35 @@
 # Release blockers and exact continuation
 
+## Continuation, 2 November 2026 — evidence-based setup filter, ML advisory, protected exits, performance page (owner request)
+
+Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`. The owner approved pushing them to `feat/frontend-rebuild-and-stage1-hardening` ("Yes, push and watch"); that branch deploys to the self-hosted production server.
+
+- **The owner asked for an 82% win rate.** No filter can promise that, and none was set. The thresholds below come from the platform's own tracked results.
+- **Setup-evidence filter (`services/segment_evidence.py`).** This replaces the segment quarantine, which never blocked anything.
+  - A setup is a strategy × timeframe × direction. It may signal only while the Wilson lower bound of its TP1-or-better rate beats the break-even rate of the plan it publishes: `1 / (1 + f1 × rr_tp1)`.
+  - The confidence level comes from `SEGMENT_EVIDENCE_CONFIDENCE` (default 0.95). `f1` is the published TP1 close fraction.
+  - Evidence covers 60 days: shadow outcomes plus delivered outcomes. A rejected setup counts once per asset and bar, because the engine logs it again on every scan.
+  - The worker stores a snapshot in `runtime_state` (`segment_evidence:v1`) every 15 minutes, and the engine reads only that snapshot. While the ML gate is advisory, a missing or stale snapshot blocks signals.
+- **Read-only production replay (60 days, one setup per bar).** Allowed setups: 34,614, with 41.9% reaching TP1 and a +0.02R floor. Blocked setups: 70,567, with 31.2% reaching TP1 and −0.38R.
+- **The ML gate is advisory (`ML_GATE_MODE`, default `advisory`).** The serving model scored pegged tokens above its 0.84 threshold and real coins below it.
+  - The model still scores every signal, and a below-threshold score is logged as `ml_filter` with `ml_gate_mode=advisory`.
+  - Such signals are marked paper-only: live broker execution is disabled for them, and the Telegram card says so. `ML_GATE_MODE=enforce` restores the veto.
+- **Protected exits and observed prices (`e68eab8f`).**
+  - After TP1, the outcome tracker treats entry as the active stop, so a stop recorded after TP1 is breakeven, not SL. This holds for hit checks, event prices and persisted outcomes.
+  - Reconciliation records the observed price, and bot messages prefer it.
+- **Web (`e68eab8f`).**
+  - `/performance` counts closed trades by upper-cased bucket. Win rate is TP3 / (TP3 + SL), and the summary also shows partial wins, breakeven, open and not-triggered signals.
+  - Signal cards show every target, reward/risk and price labels, and hide a missing probability.
+- **Tests.** `tests/test_segment_evidence_20261102.py` (10, including real-PostgreSQL worker → snapshot → engine gate). The targeted suites passed: 72 tests across the segment evidence, pipeline, run_sync, Bybit, Telegram contract, endgame and v1366 files.
+  - Full Python suite at `78cca12b`: 4506 passed, 1 failed, 2 skipped (FAIL (1 environmental: isolated python -I cannot import the user-site alembic; same as 43aa34e8)). Scope: Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production.
+  - Frontend `tsc`, `eslint`, `test:transport` and `test:presentation`: exit 0.
+- **Still open:**
+  - corrupt historical R values in old outcomes;
+  - `DEPLOYMENT_TELEGRAM_SEND_TEST=1` on the server (owner);
+  - Paystack payment channels (owner, account level);
+  - the email flows;
+  - the empty-cycle pause and the `SignalController` ATR repair (owner decisions).
+
 ## Continuation, 1 November 2026 — engine cycle, external contracts, frontend, unbounded waits and production (owner request)
 
 Commits `028fc0c3` (time limits, Bybit signature, contract tests) and `43aa34e8` (engine cycle harness). Not pushed: see the production correction below.
