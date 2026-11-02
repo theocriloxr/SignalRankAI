@@ -52,6 +52,34 @@ def retention_config() -> dict[str, int | bool]:
     }
 
 
+async def _first_id_newer_than(session: Any, days: int) -> int:
+    """Smallest decision_log id created within the last ``days`` days.
+
+    ``decision_log.created_at`` has no index (the table holds millions of JSON
+    rows), so a date filter alone forces a sequential scan that exceeds the
+    statement timeout. Ids grow with time: a binary search over the primary key
+    (a few dozen indexed lookups) bounds every delete to an index range instead.
+    """
+    max_id = int((await session.execute(text("SELECT COALESCE(MAX(id), 0) FROM decision_log"))).scalar() or 0)
+    low, high = 0, max_id + 1
+    while low < high:
+        mid = (low + high) // 2
+        row = (
+            await session.execute(
+                text(
+                    "SELECT id, created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day') "
+                    "FROM decision_log WHERE id >= :mid ORDER BY id LIMIT 1"
+                ),
+                {"mid": mid, "days": int(days)},
+            )
+        ).first()
+        if row is None or not bool(row[1]):
+            high = mid
+        else:
+            low = int(row[0]) + 1
+    return low
+
+
 async def _delete_batch(session: Any, sql: str, params: dict[str, Any]) -> int:
     result = await session.execute(text(sql), params)
     return int(getattr(result, "rowcount", 0) or 0)
@@ -82,6 +110,7 @@ async def run_learning_history_retention_once() -> dict[str, int]:
                     decision = 'rejected'
                     AND COALESCE(meta->>'layer', '') = 'ml'
                 )
+                  AND id < CAST(:max_id AS BIGINT)
                   AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
@@ -100,6 +129,7 @@ async def run_learning_history_retention_once() -> dict[str, int]:
                 WHERE decision = 'rejected'
                   AND COALESCE(meta->>'layer', '') = 'ml'
                   AND NULLIF(meta->>'outcome_tracked_at', '') IS NOT NULL
+                  AND id < CAST(:max_id AS BIGINT)
                   AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
@@ -118,6 +148,7 @@ async def run_learning_history_retention_once() -> dict[str, int]:
                 WHERE decision = 'rejected'
                   AND COALESCE(meta->>'layer', '') = 'ml'
                   AND NULLIF(meta->>'outcome_tracked_at', '') IS NULL
+                  AND id < CAST(:max_id AS BIGINT)
                   AND created_at < NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
                 ORDER BY id
                 LIMIT CAST(:limit AS INTEGER)
@@ -130,26 +161,33 @@ async def run_learning_history_retention_once() -> dict[str, int]:
         ),
     )
 
-    try:
-        async with get_session(
-            priority=_retention_db_priority(),
-            label="learning_history_retention",
-            timeout_seconds=max(10.0, float(os.getenv("LEARNING_HISTORY_DB_TIMEOUT_SECONDS", "60") or 60)),
-            drop_if_busy=False,
-        ) as session:
-            await session.execute(
-                text("SELECT set_config('statement_timeout', :timeout, true)"),
-                {"timeout": f"{int(cfg['statement_timeout_ms'])}ms"},
-            )
-            for key, sql, days in statements:
+    failed = False
+    for key, sql, days in statements:
+        # One transaction per category: a timeout in one no longer rolls back the others.
+        try:
+            async with get_session(
+                priority=_retention_db_priority(),
+                label="learning_history_retention",
+                timeout_seconds=max(10.0, float(os.getenv("LEARNING_HISTORY_DB_TIMEOUT_SECONDS", "60") or 60)),
+                drop_if_busy=False,
+            ) as session:
+                await session.execute(
+                    text("SELECT set_config('statement_timeout', :timeout, true)"),
+                    {"timeout": f"{int(cfg['statement_timeout_ms'])}ms"},
+                )
+                max_id = await _first_id_newer_than(session, days)
                 for _ in range(max_batches):
-                    deleted = await _delete_batch(session, sql, {"days": days, "limit": batch_size})
+                    deleted = await _delete_batch(
+                        session, sql, {"days": days, "limit": batch_size, "max_id": max_id}
+                    )
                     totals[key] += deleted
                     if deleted < batch_size:
                         break
-            await session.commit()
-    except Exception as exc:
-        logger.warning("[storage_maintenance] retention pass failed: %s", exc)
+                await session.commit()
+        except Exception as exc:
+            failed = True
+            logger.warning("[storage_maintenance] retention pass failed category=%s: %s", key, str(exc)[:300])
+    if failed and not any(totals.values()):
         return totals
 
     if any(totals.values()):
