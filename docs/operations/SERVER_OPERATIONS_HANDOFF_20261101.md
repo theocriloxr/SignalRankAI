@@ -188,3 +188,17 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
   long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward
   record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was
   recorded two minutes after publishing.
+
+## 10. 2 Nov 2026: trading styles, intraday research, volume rules, account-flipper profile
+
+- **Styles:** discovery now researches each timeframe once per trading style (`strategies/discovered.STYLES`), with
+  style-specific stops/targets and time stops: scalp (5m, 15m), day (15m, 1h), swing (4h, 1d), position (1d,
+  3–5R), and **flip** (15m–4h, 3–5R targets, 2-day horizon). Every spec and every candidate it produces carries
+  `trade_profile`, so `/profile` delivery matching uses it.
+- **Timeframes:** 5m (Binance 240 days, Yahoo 60 days) and 15m (Binance 730 days, Yahoo 60 days) added to 1h/4h/1d.
+- **Volume rules:** `volume_breakout`, `obv_trend`, `vwap_reversion`; skipped automatically where the source has no
+  real volume (spot forex).
+- **Account flipper profile** (`services/trade_profiles.py`, `/profile flip`, web `PATCH /profile`, all paid tiers
+  through `all_profiles`): matches explicit flip setups and any 15m–4h setup whose best target pays ≥ 3R. It never
+  changes position size or risk per trade.
+- First-generation specs (no style) are retired as `superseded_by_style_research` on the next run.

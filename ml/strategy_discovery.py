@@ -41,18 +41,20 @@ import numpy as np
 import pandas as pd
 
 from strategies.discovered import (
-    EXIT_GRID,
     FAMILY_GRID,
     MAX_HOLD_BARS,
     REDIS_KEY,
+    STYLES,
+    VOLUME_FAMILIES,
     entry_mask,
+    has_volume,
     indicator_frame,
     strategy_name,
 )
 
 logger = logging.getLogger(__name__)
 
-RESEARCH_TIMEFRAMES = ("1h", "4h", "1d")
+RESEARCH_TIMEFRAMES = ("5m", "15m", "1h", "4h", "1d")
 DEFAULT_COSTS = {"crypto": 0.0015, "forex": 0.0002, "fx": 0.0002, "stocks": 0.0010, "stock": 0.0010,
                  "indices": 0.0005, "index": 0.0005, "commodities": 0.0008, "commodity": 0.0008}
 
@@ -123,20 +125,28 @@ def default_universe() -> list[str]:
 
 # --------------------------------------------------------------------------- data
 
-def _frame(rows: Iterable[tuple[int, float, float, float, float]]) -> pd.DataFrame:
-    df = pd.DataFrame(list(rows), columns=["ts", "open", "high", "low", "close"])
+_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+
+def _frame(rows: Iterable[tuple[Any, ...]]) -> pd.DataFrame:
+    """Rows of (ts_ms, open, high, low, close[, volume])."""
+    data = [tuple(r) + (0.0,) * (6 - len(r)) for r in rows]
+    df = pd.DataFrame(data, columns=["ts", *_COLUMNS])
     if df.empty:
-        return df
+        return df[_COLUMNS]
+    df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0.0)
     df = df.dropna().drop_duplicates("ts").sort_values("ts")
     df = df[(df["high"] >= df["low"]) & (df["close"] > 0)]
     df.index = pd.to_datetime(df["ts"], unit="ms", utc=True)
-    return df[["open", "high", "low", "close"]]
+    return df[_COLUMNS]
 
 
 def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     if df.empty:
         return df
-    out = df.resample(rule, origin="epoch").agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+    out = df.resample(rule, origin="epoch").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    )
     return out.dropna()
 
 
@@ -151,7 +161,7 @@ def fetch_binance(symbol: str, interval: str, start_ms: int, client: Any) -> pd.
         batch = resp.json()
         if not batch:
             break
-        rows.extend((int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4])) for k in batch)
+        rows.extend((int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])) for k in batch)
         if len(batch) < 1000:
             break
         cursor = int(batch[-1][0]) + 1
@@ -161,7 +171,9 @@ def fetch_binance(symbol: str, interval: str, start_ms: int, client: Any) -> pd.
 
 def fetch_yahoo(symbol: str, interval: str, client: Any) -> pd.DataFrame:
     params: dict[str, Any] = {"interval": interval, "includePrePost": "false"}
-    if interval == "1h":
+    if interval in {"5m", "15m"}:
+        params["range"] = "60d"  # Yahoo's intraday limit
+    elif interval == "1h":
         params["range"] = "730d"
     else:
         params.update(period1=0, period2=int(time.time()))
@@ -174,8 +186,9 @@ def fetch_yahoo(symbol: str, interval: str, client: Any) -> pd.DataFrame:
     rows = []
     for i, ts in enumerate(stamps):
         try:
+            volume = (quote.get("volume") or [None] * len(stamps))[i]
             rows.append((int(ts) * 1000, float(quote["open"][i]), float(quote["high"][i]), float(quote["low"][i]),
-                         float(quote["close"][i])))
+                         float(quote["close"][i]), float(volume or 0.0)))
         except (TypeError, KeyError, IndexError):
             continue
     return _frame(rows)
@@ -202,13 +215,14 @@ async def stored_history(symbol: str, timeframe: str) -> pd.DataFrame:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT open_time_ms, open, high, low, close FROM market_candles "
+                        "SELECT open_time_ms, open, high, low, close, volume FROM market_candles "
                         "WHERE symbol = :s AND timeframe = :tf ORDER BY open_time_ms"
                     ),
                     {"s": symbol, "tf": timeframe},
                 )
             ).all()
-        return _frame((int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4])) for r in rows)
+        return _frame((int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5] or 0.0))
+                      for r in rows)
     except Exception:
         logger.debug("[discovery] stored history failed %s %s", symbol, timeframe, exc_info=True)
         return _frame([])
@@ -225,15 +239,19 @@ def load_history(symbol: str, klass: str, client: Any) -> tuple[dict[str, pd.Dat
             frames["4h"] = _resample(hourly, "4h")
             daily = fetch_binance(symbol, "1d", start, client)
             frames["1d"] = daily if not daily.empty else _resample(hourly, "1D")
+            now_ms = int(time.time() * 1000)
+            for tf, env, days in (("15m", "DISCOVERY_15M_DAYS", 730), ("5m", "DISCOVERY_5M_DAYS", 240)):
+                intraday = fetch_binance(symbol, tf, now_ms - _env_int(env, days) * 86400000, client)
+                if not intraday.empty:
+                    frames[tf] = intraday
             return frames, "binance"
     ysym = yahoo_symbol(symbol, klass)
-    hourly = fetch_yahoo(ysym, "1h", client)
-    daily = fetch_yahoo(ysym, "1d", client)
-    if not hourly.empty:
-        frames["1h"] = hourly
-        frames["4h"] = _resample(hourly, "4h")
-    if not daily.empty:
-        frames["1d"] = daily
+    for tf in ("5m", "15m", "1h", "1d"):
+        frame = fetch_yahoo(ysym, tf, client)
+        if not frame.empty:
+            frames[tf] = frame
+    if "1h" in frames:
+        frames["4h"] = _resample(frames["1h"], "4h")
     return frames, "yahoo"
 
 
@@ -333,27 +351,38 @@ class Rules:
 
 
 def spec_id(asset: str, tf: str, family: str, params: Mapping[str, Any], direction: str, stop: float,
-            target: float) -> str:
-    raw = json.dumps([asset, tf, family, dict(sorted(params.items())), direction, stop, target])
+            target: float, style: str = "swing") -> str:
+    raw = json.dumps([asset, tf, family, dict(sorted(params.items())), direction, stop, target, style])
     return "ds_" + hashlib.sha1(raw.encode()).hexdigest()[:12]
 
 
-def research_frame(asset: str, klass: str, tf: str, df: pd.DataFrame, rules: Rules) -> dict[str, Any]:
-    """Search every rule on one asset/timeframe. Returns survivors and counts."""
-    ind = indicator_frame(df).iloc[120:]  # drop indicator warm-up
+def styles_for(tf: str) -> list[str]:
+    return [name for name, style in STYLES.items() if tf in style["timeframes"]]
+
+
+def research_frame(asset: str, klass: str, tf: str, df: pd.DataFrame, rules: Rules,
+                   style: str = "swing", ind: pd.DataFrame | None = None) -> dict[str, Any]:
+    """Search every rule for one asset, timeframe and trading style."""
+    if ind is None:
+        ind = indicator_frame(df).iloc[120:]  # drop indicator warm-up
     n = len(ind)
     if n < 600:
         return {"survivors": [], "configs": 0, "bars": n, "skipped": "too_little_history"}
-    hold = MAX_HOLD_BARS.get(tf, 30)
+    style_cfg = STYLES.get(style) or STYLES["swing"]
+    hold = int(style_cfg["hold"].get(tf) or MAX_HOLD_BARS.get(tf, 30))
+    exits = tuple(style_cfg["exits"])
+    volume_ok = has_volume(ind)
     cost = cost_fraction(klass)
     is_end, oos1_end = int(n * rules.is_frac), int(n * (rules.is_frac + rules.oos1_frac))
     passed_is: list[dict[str, Any]] = []
     configs = 0
     for family, grid in FAMILY_GRID.items():
+        if family in VOLUME_FAMILIES and not volume_ok:
+            continue
         for params in grid:
             for direction in ("long", "short"):
                 mask = entry_mask(ind, family, params, direction)
-                for stop_atr, target_r in EXIT_GRID:
+                for stop_atr, target_r in exits:
                     configs += 1
                     bars, r = backtest(ind, mask, direction, stop_atr, target_r, hold, cost)
                     in_is = bars < is_end
@@ -384,8 +413,8 @@ def research_frame(asset: str, klass: str, tf: str, df: pd.DataFrame, rules: Rul
             continue
         survivors.append({
             "spec_id": spec_id(asset, tf, cand["family"], cand["params"], cand["direction"], cand["stop_atr"],
-                               cand["target_r"]),
-            "asset": asset, "asset_class": klass, "timeframe": tf, "family": cand["family"],
+                               cand["target_r"], style),
+            "asset": asset, "asset_class": klass, "timeframe": tf, "trade_profile": style, "family": cand["family"],
             "params": cand["params"], "direction": cand["direction"], "stop_atr": cand["stop_atr"],
             "target_r": cand["target_r"], "max_hold_bars": hold, "cost_fraction": cost,
             "metrics": {"in_sample": cand["is"], "validation": m1, "holdout": m2, "oos": m_oos},
@@ -448,6 +477,10 @@ def merge_specs(existing: list[dict[str, Any]], found: list[dict[str, Any]],
             merged["state"] = "shadow"  # it passed the full walk-forward again
         by_id[spec["spec_id"]] = merged
     for sid, spec in by_id.items():
+        if not spec.get("trade_profile") and spec.get("state") != "retired":
+            # First-generation specs were researched without a trading style.
+            spec["state"], spec["retired_reason"], spec["retired_at"] = "retired", "superseded_by_style_research", now
+            continue
         recent = rechecks.get(sid)
         if recent is not None:
             spec["recent_backtest"] = recent
@@ -506,39 +539,48 @@ def run_discovery(assets: list[str] | None = None, *, publish: bool = True,
                     report.append({"asset": symbol, "timeframe": tf, "skipped": "no_history"})
                     continue
                 try:
-                    result = research_frame(symbol, klass, tf, df, rules)
+                    ind = indicator_frame(df).iloc[120:]
                 except Exception as exc:
-                    logger.warning("[discovery] research failed %s %s %s", symbol, tf, exc)
                     report.append({"asset": symbol, "timeframe": tf, "error": type(exc).__name__})
                     continue
-                for s in result["survivors"]:
-                    s["data_source"] = src
-                found.extend(result["survivors"])
                 for spec in existing:
-                    if spec["asset"] == symbol and spec["timeframe"] == tf:
+                    if spec["asset"] == symbol and spec["timeframe"] == tf and spec.get("trade_profile"):
                         try:
                             rechecks[spec["spec_id"]] = recheck_spec(spec, df)
                         except Exception:
                             pass
-                report.append({
-                    "asset": symbol, "class": klass, "timeframe": tf, "source": src, "bars": result["bars"],
-                    "configs": result["configs"], "passed_in_sample": result.get("passed_in_sample", 0),
-                    "survivors": [
-                        f"{s['family']} {s['direction']} {s['params']} stop={s['stop_atr']}ATR target={s['target_r']}R "
-                        f"oos={s['metrics']['oos']['trades']}tr {s['metrics']['oos']['expectancy_r']:+.2f}R "
-                        f"wr={s['metrics']['oos']['win_rate']}"
-                        for s in result["survivors"]
-                    ],
-                    **({"skipped": result["skipped"]} if result.get("skipped") else {}),
-                })
-                logger.info("[discovery] %s %s source=%s bars=%s configs=%s survivors=%s", symbol, tf, src,
-                            result["bars"], result["configs"], len(result["survivors"]))
+                for style in styles_for(tf):
+                    try:
+                        result = research_frame(symbol, klass, tf, df, rules, style=style, ind=ind)
+                    except Exception as exc:
+                        logger.warning("[discovery] research failed %s %s %s %s", symbol, tf, style, exc)
+                        report.append({"asset": symbol, "timeframe": tf, "style": style, "error": type(exc).__name__})
+                        continue
+                    for s in result["survivors"]:
+                        s["data_source"] = src
+                    found.extend(result["survivors"])
+                    report.append({
+                        "asset": symbol, "class": klass, "timeframe": tf, "style": style, "source": src,
+                        "bars": result["bars"], "configs": result["configs"],
+                        "passed_in_sample": result.get("passed_in_sample", 0),
+                        "survivors": [
+                            f"{s['family']} {s['direction']} {s['params']} stop={s['stop_atr']}ATR "
+                            f"target={s['target_r']}R oos={s['metrics']['oos']['trades']}tr "
+                            f"{s['metrics']['oos']['expectancy_r']:+.2f}R wr={s['metrics']['oos']['win_rate']}"
+                            for s in result["survivors"]
+                        ],
+                        **({"skipped": result["skipped"]} if result.get("skipped") else {}),
+                    })
+                    logger.info("[discovery] %s %s %s source=%s bars=%s configs=%s survivors=%s", symbol, tf,
+                                style, src, result["bars"], result["configs"], len(result["survivors"]))
     specs = merge_specs(existing, found, rechecks)
     summary = {
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "assets": len(symbols),
         "specs": len(specs),
         "states": {k: sum(1 for s in specs if s.get("state") == k) for k in ("shadow", "approved", "retired")},
+        "by_style": {name: sum(1 for s in specs if s.get("trade_profile") == name and s.get("state") != "retired")
+                     for name in STYLES},
         "new_this_run": len({s["spec_id"] for s in found} - {s["spec_id"] for s in existing}),
         "seconds": round(time.monotonic() - started, 1),
     }

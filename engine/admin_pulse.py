@@ -825,7 +825,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             )
         profiles = stats.get("profile_counts") or {}
         if profiles:
-            ordered_profiles = ["scalp", "day", "swing", "position", "unknown"]
+            ordered_profiles = ["scalp", "day", "swing", "position", "flip", "unknown"]
             profile_txt = ", ".join(
                 f"{name}={int(profiles.get(name) or 0)}"
                 for name in ordered_profiles

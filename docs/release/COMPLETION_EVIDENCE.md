@@ -1,5 +1,11 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 (later morning) — trading styles, intraday and volume research, account-flipper profile (server session)
+
+- Strategy discovery researches 5m/15m/1h/4h/1d once per trading style (scalp, day, swing, position, flip) with style-specific exits and time stops, adds three volume-confirmed rule families (skipped without real volume), and tags every spec and candidate with `trade_profile`.
+- New `flip` trade profile (`/profile flip`, web profile update, paid tiers): explicit flip setups or 15m–4h setups with a ≥ 3R target. No risk-per-trade, sizing, execution or payout setting changed.
+- Tests: `tests/test_strategy_discovery_20261102.py` (18) and 701 profile, tier, bot, strategy and engine tests pass locally (19 skipped). Notes: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §10.
+
 ## Continuation, 2 November 2026 (morning) — strategies discovered per asset from long external history (server session)
 
 - `ml/strategy_discovery.py` backtests 360 rules per asset and timeframe on years of external history (Binance public data, Yahoo Finance; SignalRank candles as fallback) with costs, selects on the first 60 % of history, and keeps a rule only if it is profitable on both later windows. Weekly re-runs re-test and retire decayed specs; specs are approved or retired from their own forward-tracked record.

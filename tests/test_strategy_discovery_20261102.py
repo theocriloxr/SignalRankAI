@@ -55,7 +55,8 @@ def test_random_walk_produces_no_survivors():
     rng = np.random.default_rng(7)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.004, 6000)))
     result = sd.research_frame("TESTUSDT", "crypto", "1h", _frame(close), sd.Rules())
-    assert result["configs"] == sum(len(g) for g in dz.FAMILY_GRID.values()) * 2 * len(dz.EXIT_GRID)
+    price_only = sum(len(g) for f, g in dz.FAMILY_GRID.items() if f not in dz.VOLUME_FAMILIES)
+    assert result["configs"] == price_only * 2 * len(dz.STYLES["swing"]["exits"])  # no volume in this frame
     assert result["survivors"] == []
 
 
@@ -74,7 +75,8 @@ def test_persistent_edge_is_found_and_validated_out_of_sample():
 
 def test_lifecycle_new_shadow_decay_and_reinstate(monkeypatch):
     monkeypatch.setattr(sd, "_forward_verdict", lambda spec: None)
-    spec = {"spec_id": "ds_a", "asset": "BTCUSDT", "timeframe": "1h", "family": "donchian_breakout"}
+    spec = {"spec_id": "ds_a", "asset": "BTCUSDT", "timeframe": "1h", "family": "donchian_breakout",
+            "trade_profile": "day"}
     merged = sd.merge_specs([], [spec], {})
     assert merged[0]["state"] == "shadow"
     decayed = sd.merge_specs(merged, [], {"ds_a": {"trades": 12, "expectancy_r": -0.3}})
@@ -84,7 +86,8 @@ def test_lifecycle_new_shadow_decay_and_reinstate(monkeypatch):
 
 
 def test_forward_record_approves_or_retires(monkeypatch):
-    spec = {"spec_id": "ds_b", "asset": "EURUSD", "timeframe": "4h", "family": "rsi_reversal"}
+    spec = {"spec_id": "ds_b", "asset": "EURUSD", "timeframe": "4h", "family": "rsi_reversal",
+            "trade_profile": "swing"}
     monkeypatch.setattr(sd, "_forward_verdict", lambda s: "approved")
     assert sd.merge_specs([], [spec], {})[0]["state"] == "approved"
     monkeypatch.setattr(sd, "_forward_verdict", lambda s: "retired")
@@ -157,3 +160,64 @@ def test_schedule_follows_last_published_run(monkeypatch):
     assert 7 * 86400 - 3700 < sd.seconds_until_due(7 * 86400) <= 7 * 86400 - 3500
     monkeypatch.setattr(sd, "_load_published", lambda: {})
     assert sd.seconds_until_due(7 * 86400) == 0.0
+
+
+def test_survivors_carry_their_trading_style():
+    rng = np.random.default_rng(11)
+    close = 100 * np.exp(np.cumsum(rng.normal(0.0012, 0.004, 6000)))
+    result = sd.research_frame("TESTUSDT", "crypto", "1h", _frame(close), sd.Rules(), style="flip")
+    assert result["survivors"]
+    for spec in result["survivors"]:
+        assert spec["trade_profile"] == "flip" and spec["target_r"] >= 3.0
+        assert spec["max_hold_bars"] == dz.STYLES["flip"]["hold"]["1h"]
+
+
+def test_styles_cover_every_engine_timeframe():
+    assert sd.styles_for("5m") == ["scalp"]
+    assert set(sd.styles_for("15m")) == {"scalp", "day", "flip"}
+    assert set(sd.styles_for("1d")) == {"swing", "position"}
+    for tf in sd.RESEARCH_TIMEFRAMES:
+        assert sd.styles_for(tf)
+
+
+def test_volume_families_need_real_volume():
+    rng = np.random.default_rng(5)
+    df = _frame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 800))))
+    no_volume = dz.indicator_frame(df)
+    assert not dz.has_volume(no_volume)
+    assert not dz.entry_mask(no_volume, "volume_breakout", {"n": 20, "vz": 2.0}, "long").any()
+    df["volume"] = rng.uniform(100, 200, len(df))
+    df.iloc[400, df.columns.get_loc("volume")] = 5000.0
+    df.iloc[400, df.columns.get_loc("close")] = df["high"].iloc[350:400].max() * 1.05
+    with_volume = dz.indicator_frame(df)
+    assert dz.has_volume(with_volume)
+    assert dz.entry_mask(with_volume, "volume_breakout", {"n": 20, "vz": 2.0}, "long").iloc[400]
+
+
+def test_engine_candles_keep_volume():
+    candles = [{"open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}] * 210
+    frame = dz._frame_from_candles(candles)
+    assert list(frame.columns) == ["open", "high", "low", "close", "volume"] and frame["volume"].iloc[0] == 10
+    rows = [[0, 1, 2, 0.5, 1.5]] * 210  # no volume column
+    assert dz._frame_from_candles(rows)["volume"].iloc[0] == 0.0
+
+
+def test_unstyled_first_generation_specs_are_superseded(monkeypatch):
+    monkeypatch.setattr(sd, "_forward_verdict", lambda spec: None)
+    old = {"spec_id": "ds_old", "asset": "BTCUSDT", "timeframe": "4h", "family": "x", "state": "shadow"}
+    merged = sd.merge_specs([old], [], {})
+    assert merged[0]["state"] == "retired" and merged[0]["retired_reason"] == "superseded_by_style_research"
+
+
+def test_flip_profile_matching():
+    from services.trade_profiles import normalize_trade_profile, signal_matches_user_profile
+
+    assert normalize_trade_profile("flipper") == "flip"
+    three_r = {"timeframe": "1h", "direction": "LONG", "entry": 100.0, "stop_loss": 99.0, "take_profit": [103.5]}
+    two_r = dict(three_r, take_profit=[102.0])
+    assert signal_matches_user_profile(three_r, "flip")
+    assert not signal_matches_user_profile(two_r, "flip")
+    assert not signal_matches_user_profile(dict(three_r, timeframe="1d"), "flip")
+    assert signal_matches_user_profile({"trade_profile": "flip", "timeframe": "1d"}, "flip")
+    # explicit styles from discovered specs are honoured for other profiles too
+    assert signal_matches_user_profile({"trade_profile": "scalp", "timeframe": "15m"}, "scalp")

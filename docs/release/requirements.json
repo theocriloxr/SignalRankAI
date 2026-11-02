@@ -369,8 +369,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 394,
-    "requirements_and_source_sections": 10032,
-    "source_clauses": 60255,
+    "requirements_and_source_sections": 10033,
+    "source_clauses": 60267,
     "interfaces": {
       "ENDPOINT": 185,
       "API": 173,
@@ -380,7 +380,7 @@
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
-      "STRATEGY_CALLABLE": 66,
+      "STRATEGY_CALLABLE": 67,
       "STRATEGY": 9,
       "TIMEFRAME": 6
     }
@@ -3132,11 +3132,11 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "b5dd2a72aab286c1ea269f7bb7ddbac98c5c67a185f3ddaee49346a86a89abd9",
+      "sha256_lf": "e4597d854d06d07894d3520763b754faf6437212c985cd662794e04441c1cfe0",
       "encoding": "utf-8-sig",
-      "line_count": 190,
+      "line_count": 204,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 10
+      "section_count": 11
     },
     {
       "path": "docs/operations/automatic-production-releases.md",
@@ -236001,10 +236001,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "0376ea4b6208b31204a35d5d5d7d52c498c7c672861f69f28342ca8f291330ce",
+      "source_sha256": "a0c14b123737bf2e3e5d0e588909a132578c4d879f19ae7c39ec3d1ac3fa7408",
       "line_start": 170,
-      "line_end": 190,
-      "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history\n\n- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly\n  loop on analytics) researches every asset in `TRADABLE_ASSETS`:\n  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,\n    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);\n  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with\n    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);\n  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten\n    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %\n    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);\n  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or\n    retired from its own forward record in the per-asset scorecard.\n- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.\n  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow\n  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.\n- **First run (2 Nov 04:21 UTC, 493 s):** 59 assets × 3 timeframes, 340 rules each; 72 specs survived and were\n  published in `shadow` (crypto 21, stocks 27, indices 18, commodities 4, forex 1, GBPJPY 4h). Almost all are\n  long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward\n  record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was\n  recorded two minutes after publishing.",
+      "line_end": 191,
+      "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history\n\n- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly\n  loop on analytics) researches every asset in `TRADABLE_ASSETS`:\n  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,\n    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);\n  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with\n    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);\n  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten\n    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %\n    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);\n  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or\n    retired from its own forward record in the per-asset scorecard.\n- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.\n  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow\n  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.\n- **First run (2 Nov 04:21 UTC, 493 s):** 59 assets × 3 timeframes, 340 rules each; 72 specs survived and were\n  published in `shadow` (crypto 21, stocks 27, indices 18, commodities 4, forex 1, GBPJPY 4h). Almost all are\n  long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward\n  record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was\n  recorded two minutes after publishing.\n",
       "clauses": [
         {
           "line": 170,
@@ -236085,6 +236085,74 @@
         {
           "line": 190,
           "text": "  recorded two minutes after publishing."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-b590776fe69d8224",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:192",
+      "requirement": "10. 2 Nov 2026: trading styles, intraday research, volume rules, account-flipper profile",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "df7203d7e98e53f293dfa4bd6f9af34aed40f43a7dcb029a43bdb053a547d9f6",
+      "line_start": 192,
+      "line_end": 204,
+      "text": "## 10. 2 Nov 2026: trading styles, intraday research, volume rules, account-flipper profile\n\n- **Styles:** discovery now researches each timeframe once per trading style (`strategies/discovered.STYLES`), with\n  style-specific stops/targets and time stops: scalp (5m, 15m), day (15m, 1h), swing (4h, 1d), position (1d,\n  3–5R), and **flip** (15m–4h, 3–5R targets, 2-day horizon). Every spec and every candidate it produces carries\n  `trade_profile`, so `/profile` delivery matching uses it.\n- **Timeframes:** 5m (Binance 240 days, Yahoo 60 days) and 15m (Binance 730 days, Yahoo 60 days) added to 1h/4h/1d.\n- **Volume rules:** `volume_breakout`, `obv_trend`, `vwap_reversion`; skipped automatically where the source has no\n  real volume (spot forex).\n- **Account flipper profile** (`services/trade_profiles.py`, `/profile flip`, web `PATCH /profile`, all paid tiers\n  through `all_profiles`): matches explicit flip setups and any 15m–4h setup whose best target pays ≥ 3R. It never\n  changes position size or risk per trade.\n- First-generation specs (no style) are retired as `superseded_by_style_research` on the next run.",
+      "clauses": [
+        {
+          "line": 192,
+          "text": "## 10. 2 Nov 2026: trading styles, intraday research, volume rules, account-flipper profile"
+        },
+        {
+          "line": 194,
+          "text": "- **Styles:** discovery now researches each timeframe once per trading style (`strategies/discovered.STYLES`), with"
+        },
+        {
+          "line": 195,
+          "text": "  style-specific stops/targets and time stops: scalp (5m, 15m), day (15m, 1h), swing (4h, 1d), position (1d,"
+        },
+        {
+          "line": 196,
+          "text": "  3–5R), and **flip** (15m–4h, 3–5R targets, 2-day horizon). Every spec and every candidate it produces carries"
+        },
+        {
+          "line": 197,
+          "text": "  `trade_profile`, so `/profile` delivery matching uses it."
+        },
+        {
+          "line": 198,
+          "text": "- **Timeframes:** 5m (Binance 240 days, Yahoo 60 days) and 15m (Binance 730 days, Yahoo 60 days) added to 1h/4h/1d."
+        },
+        {
+          "line": 199,
+          "text": "- **Volume rules:** `volume_breakout`, `obv_trend`, `vwap_reversion`; skipped automatically where the source has no"
+        },
+        {
+          "line": 200,
+          "text": "  real volume (spot forex)."
+        },
+        {
+          "line": 201,
+          "text": "- **Account flipper profile** (`services/trade_profiles.py`, `/profile flip`, web `PATCH /profile`, all paid tiers"
+        },
+        {
+          "line": 202,
+          "text": "  through `all_profiles`): matches explicit flip setups and any 15m–4h setup whose best target pays ≥ 3R. It never"
+        },
+        {
+          "line": 203,
+          "text": "  changes position size or risk per trade."
+        },
+        {
+          "line": 204,
+          "text": "- First-generation specs (no style) are retired as `superseded_by_style_research` on the next run."
         }
       ]
     },
@@ -527070,8 +527138,20 @@
     {
       "id": "SR-STRATEGY_CALLABLE-f95f8673d3372e04",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:77",
+      "source": "strategies/discovered.py:97",
       "requirement": "indicator_frame",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-b8f2a94a11a1b8ab",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:137",
+      "requirement": "has_volume",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",
       "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
@@ -527082,7 +527162,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-1dd2b012d075f54a",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:107",
+      "source": "strategies/discovered.py:142",
       "requirement": "entry_mask",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",
@@ -527094,7 +527174,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-1f367d3c76883abc",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:155",
+      "source": "strategies/discovered.py:207",
       "requirement": "strategy_name",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",
@@ -527106,7 +527186,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-7b6bed32da6f5082",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:167",
+      "source": "strategies/discovered.py:219",
       "requirement": "mode",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",
@@ -527118,7 +527198,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-1cd37522ebe5db4f",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:172",
+      "source": "strategies/discovered.py:224",
       "requirement": "load_specs",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",
@@ -527130,7 +527210,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-b48a57bcaf7bf4cb",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/discovered.py:250",
+      "source": "strategies/discovered.py:309",
       "requirement": "discovered_candidates",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/discovered.py",

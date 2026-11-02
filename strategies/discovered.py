@@ -50,11 +50,31 @@ FAMILY_GRID: dict[str, list[dict[str, Any]]] = {
     "squeeze_breakout": [{"q": q} for q in (0.1, 0.2)],
     "atr_momentum": [{"n": n, "k": k, "trend": t} for n in (10, 20) for k in (1.5, 2.5) for t in (0, 1)],
     "inside_bar_breakout": [{"trend": t} for t in (0, 1)],
+    # Volume-confirmed families (skipped where the source has no real volume, e.g. spot forex).
+    "volume_breakout": [{"n": n, "vz": z} for n in (20, 55) for z in (2.0, 3.0)],
+    "obv_trend": [{"rsi": r} for r in (50, 55)],
+    "vwap_reversion": [{"k": k, "adx_max": a} for k in (1.5, 2.5) for a in (25, 100)],
+}
+VOLUME_FAMILIES = frozenset({"volume_breakout", "obv_trend", "vwap_reversion"})
+
+# Trading styles (services/trade_profiles.py): which timeframes each style is
+# researched on, its stop/target pairs (stop in ATR, target in R) and its time stop
+# in bars. A spec carries its style, so delivery can match the user's /profile.
+STYLES: dict[str, dict[str, Any]] = {
+    "scalp": {"timeframes": ("5m", "15m"), "exits": ((0.75, 1.0), (1.0, 1.0), (1.0, 1.5)),
+              "hold": {"5m": 24, "15m": 16}},
+    "day": {"timeframes": ("15m", "1h"), "exits": ((1.0, 1.5), (1.0, 2.0), (1.5, 2.0)),
+            "hold": {"15m": 64, "1h": 24}},
+    "swing": {"timeframes": ("4h", "1d"), "exits": ((1.0, 2.0), (1.5, 2.0), (1.5, 3.0), (2.0, 2.0)),
+              "hold": {"4h": 30, "1d": 20}},
+    "position": {"timeframes": ("1d",), "exits": ((2.0, 3.0), (2.5, 4.0), (3.0, 5.0)), "hold": {"1d": 60}},
+    "flip": {"timeframes": ("15m", "1h", "4h"), "exits": ((0.8, 3.0), (1.0, 4.0), (1.0, 5.0)),
+             "hold": {"15m": 96, "1h": 48, "4h": 24}},
 }
 
 EXIT_GRID: tuple[tuple[float, float], ...] = ((1.0, 1.5), (1.0, 2.0), (1.5, 2.0), (1.5, 3.0), (2.0, 2.0))
 _TF_ALIASES = {"24h": "1d", "1day": "1d", "60m": "1h", "240m": "4h"}
-MAX_HOLD_BARS = {"15m": 64, "1h": 48, "4h": 30, "1d": 20}
+MAX_HOLD_BARS = {"5m": 24, "15m": 64, "1h": 48, "4h": 30, "1d": 20}
 # The engine fetches 200 candles per timeframe; indicators stay within that window
 # (EMA100 at most), so live values match the long-history backtest closely.
 MIN_BARS = 200
@@ -101,7 +121,22 @@ def indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
     for n in (20, 55):
         out[f"dc_high{n}"] = h.rolling(n).max().shift(1)
         out[f"dc_low{n}"] = lo.rolling(n).min().shift(1)
+    vol = df["volume"].astype(float).fillna(0.0) if "volume" in df.columns else pd.Series(0.0, index=df.index)
+    out["volume"] = vol
+    vmean, vstd = vol.rolling(20).mean(), vol.rolling(20).std(ddof=0)
+    out["volume_z"] = ((vol - vmean) / vstd.replace(0, np.nan)).fillna(0.0)
+    out["has_volume"] = vol.rolling(20, min_periods=1).median() > 0
+    obv = (np.sign(c.diff().fillna(0.0)) * vol).cumsum()
+    out["obv"], out["obv_ema"] = obv, _ema(obv, 20)
+    typical = (h + lo + c) / 3.0
+    vsum = vol.rolling(20).sum()
+    out["vwap20"] = (typical * vol).rolling(20).sum() / vsum.replace(0, np.nan)
     return out
+
+
+def has_volume(ind: pd.DataFrame) -> bool:
+    """True when most bars carry real volume (crypto, stocks, futures; not spot forex)."""
+    return bool(len(ind) and float(ind["has_volume"].mean()) > 0.9)
 
 
 def entry_mask(ind: pd.DataFrame, family: str, params: Mapping[str, Any], direction: str) -> pd.Series:
@@ -149,6 +184,23 @@ def entry_mask(ind: pd.DataFrame, family: str, params: Mapping[str, Any], direct
         if int(p.get("trend") or 0):
             mask &= (c > ind["ema50"]) if long else (c < ind["ema50"])
         return mask
+    if family == "volume_breakout":
+        n, vz = int(p["n"]), float(p["vz"])
+        loud = ind["has_volume"] & (ind["volume_z"] >= vz)
+        return loud & ((c > ind[f"dc_high{n}"]) if long else (c < ind[f"dc_low{n}"]))
+    if family == "obv_trend":
+        level = float(p["rsi"]) if long else 100.0 - float(p["rsi"])
+        rsi, prev = ind["rsi"], ind["rsi"].shift(1)
+        if long:
+            flow = (ind["obv"] > ind["obv_ema"]) & (c > ind["ema50"])
+            return ind["has_volume"] & flow & (prev < level) & (rsi >= level)
+        flow = (ind["obv"] < ind["obv_ema"]) & (c < ind["ema50"])
+        return ind["has_volume"] & flow & (prev > level) & (rsi <= level)
+    if family == "vwap_reversion":
+        k, adx_max = float(p["k"]), float(p["adx_max"])
+        calm = ind["has_volume"] & (ind["adx"] <= adx_max)
+        stretch = (c - ind["vwap20"]) / ind["atr"].replace(0, np.nan)
+        return calm & ((stretch <= -k) if long else (stretch >= k))
     raise ValueError(f"unknown_family:{family}")
 
 
@@ -191,18 +243,24 @@ def _frame_from_candles(candles: Iterable[Any]) -> pd.DataFrame | None:
     for candle in candles or []:
         if isinstance(candle, Mapping):
             get = candle.get
-            row = [get("open", get("o")), get("high", get("h")), get("low", get("l")), get("close", get("c"))]
+            row = [get("open", get("o")), get("high", get("h")), get("low", get("l")), get("close", get("c")),
+                   get("volume", get("v", 0.0))]
         elif isinstance(candle, (list, tuple)) and len(candle) >= 5:
-            row = list(candle[1:5])
+            row = list(candle[1:6]) if len(candle) >= 6 else [*candle[1:5], 0.0]
         else:
             continue
         try:
-            rows.append([float(x) for x in row])
+            values = [float(x) for x in row[:4]]
+            try:
+                values.append(float(row[4] or 0.0))
+            except (TypeError, ValueError):
+                values.append(0.0)
+            rows.append(values)
         except (TypeError, ValueError):
             continue
     if len(rows) < MIN_BARS:
         return None
-    return pd.DataFrame(rows, columns=["open", "high", "low", "close"])
+    return pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"])
 
 
 def _claim(key: str) -> bool:
@@ -227,6 +285,7 @@ def _record_shadow(candidate: dict[str, Any], spec: Mapping[str, Any]) -> None:
             "strategy_group": GROUP,
             "discovered_spec_id": spec["spec_id"],
             "discovered_family": spec["family"],
+            "trade_profile": spec.get("trade_profile"),
             "rr_ratio": spec["target_r"],
             "source": "discovered_strategy_shadow",
         }
@@ -295,6 +354,7 @@ def discovered_candidates(asset: str, timeframe: str, data: Mapping[str, Any]) -
                 ),
                 "discovered_spec_id": spec["spec_id"],
                 "discovered_state": spec.get("state"),
+                "trade_profile": spec.get("trade_profile") or "swing",
             }
             bar_key = f"{spec['spec_id']}|{len(df)}|{ind['close'].iloc[signal_row]:.10g}"
             if not _claim(bar_key):
@@ -311,6 +371,9 @@ def discovered_candidates(asset: str, timeframe: str, data: Mapping[str, Any]) -
 __all__ = [
     "EXIT_GRID",
     "FAMILY_GRID",
+    "STYLES",
+    "VOLUME_FAMILIES",
+    "has_volume",
     "GROUP",
     "MAX_HOLD_BARS",
     "REDIS_KEY",

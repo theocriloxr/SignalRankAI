@@ -4692,7 +4692,7 @@ async def update_trading_profile(
             )
         values["asset_classes"] = normalized_classes
 
-    allowed_profiles = {"all", "scalp", "day", "swing", "position"}
+    allowed_profiles = {"all", "scalp", "day", "swing", "position", "flip"}
     if values.get("trade_profile") is not None:
         profile = str(values["trade_profile"]).strip().lower()
         if profile not in allowed_profiles:

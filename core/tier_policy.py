@@ -195,7 +195,7 @@ _INSTITUTIONAL_FEATURES = _PROFESSIONAL_FEATURES | frozenset(
 
 def _policies() -> Mapping[Tier, TierEntitlements]:
     all_assets = ("crypto", "fx", "commodity", "index", "stock")
-    all_profiles = ("scalp", "day", "swing", "position")
+    all_profiles = ("scalp", "day", "swing", "position", "flip")
     values = {
         Tier.FREE: TierEntitlements(
             tier=Tier.FREE,

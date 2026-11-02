@@ -1908,7 +1908,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					for field_name in current.__dataclass_fields__
 				})
 				valid_update = True
-				if cmd in {"scalp", "scalper", "day", "swing", "position", "all"}:
+				if cmd in {"scalp", "scalper", "day", "swing", "position", "flip", "flipper", "all"}:
 					next_prefs.trade_profile = normalize_trade_profile(cmd, default="all")
 				elif cmd == "risk" and len(args) >= 2:
 					next_prefs.risk_profile = normalize_risk_profile(args[1])

@@ -23,6 +23,12 @@ PROFILE_ALIASES = {
     "position_trader": "position",
     "longterm": "position",
     "long_term": "position",
+    # Account flipping: fast, high-reward setups for growing a small account.
+    "flip": "flip",
+    "flipper": "flip",
+    "account_flip": "flip",
+    "flipping": "flip",
+    "small_account": "flip",
     "all": "all",
 }
 
@@ -85,7 +91,23 @@ TRADE_PROFILES: dict[str, TradeProfile] = {
         max_tp1_hours=42 * 24.0,
         min_rr=1.7,
     ),
+    # Fewer, faster, asymmetric trades: a 1-2 day horizon and at least 3R to the
+    # first target, so a small account can compound without a high win rate.
+    # It never raises position size; risk per trade stays the user's setting.
+    "flip": TradeProfile(
+        name="flip",
+        label="Account Flipper",
+        timeframes=("15m", "1h", "4h"),
+        target_atr_multipliers=(2.4, 4.0, 6.0),
+        stop_atr_multiplier=0.8,
+        expiry_minutes=2 * 24 * 60,
+        expected_duration="2 hours-2 days",
+        max_tp1_hours=48.0,
+        min_rr=3.0,
+    ),
 }
+
+FLIP_MIN_RR = 3.0
 
 
 def normalize_trade_profile(value: Any, default: str = "swing") -> str:
@@ -309,11 +331,32 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     return sig
 
 
+def _max_target_rr(signal: dict[str, Any]) -> float:
+    for key in ("rr_final", "rr_ratio", "rr_estimate"):
+        value = _as_float(signal.get(key), 0.0)
+        if value > 0 and key == "rr_final":
+            return value
+    entry = _as_float(signal.get("entry"), 0.0)
+    stop = _as_float(signal.get("stop_loss") or signal.get("stop"), 0.0)
+    levels = _parse_tp_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
+    risk = abs(entry - stop)
+    if entry > 0 and risk > 0 and levels:
+        return max(abs(level - entry) / risk for level in levels)
+    return _as_float(signal.get("rr_ratio") or signal.get("rr_estimate"), 0.0)
+
+
 def signal_matches_user_profile(signal: dict[str, Any], user_profile: str | None) -> bool:
     normalized = normalize_trade_profile(user_profile or "all", default="all")
     if normalized == "all":
         return True
-    return infer_trade_profile(signal) == normalized
+    inferred = infer_trade_profile(signal)
+    if normalized == "flip":
+        # Flippers get explicit flip setups plus any 15m-4h setup paying at least 3R.
+        if inferred == "flip":
+            return True
+        timeframe = str(signal.get("timeframe") or "").strip().lower()
+        return timeframe in TRADE_PROFILES["flip"].timeframes and _max_target_rr(signal) >= FLIP_MIN_RR
+    return inferred == normalized
 
 
 async def get_user_trade_profile(session, telegram_user_id: int) -> str:
@@ -334,7 +377,7 @@ async def get_user_trade_profile(session, telegram_user_id: int) -> str:
 
 async def set_user_trade_profile(session, telegram_user_id: int, profile: str) -> str:
     normalized = normalize_trade_profile(profile, default="")
-    if normalized not in {"scalp", "day", "swing", "position", "all"}:
+    if normalized not in {"scalp", "day", "swing", "position", "flip", "all"}:
         raise ValueError("invalid_trade_profile")
     payload = json.dumps({"profile": normalized})
     await session.execute(
@@ -358,10 +401,11 @@ def format_trade_profile_options(current: str = "all") -> str:
         "day": "Day Trader: 5m-1h, same-day targets",
         "swing": "Swing Trader: 4h/1d, multi-day targets",
         "position": "Position Trader: daily/weekly, multi-week targets",
+        "flip": "Account Flipper: 15m-4h, 3R+ targets, hours to 2 days (fewer, higher-risk setups)",
         "all": "All: receive any matching high-quality profile",
     }
     lines = ["Trading Profile", "", f"Current: {current.upper()}", ""]
     lines.extend(f"- {name}: {desc}" for name, desc in labels.items())
     lines.append("")
-    lines.append("Use /profile scalp, /profile day, /profile swing, /profile position, or /profile all.")
+    lines.append("Use /profile scalp, /profile day, /profile swing, /profile position, /profile flip, or /profile all.")
     return "\n".join(lines)
