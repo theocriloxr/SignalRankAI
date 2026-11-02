@@ -369,8 +369,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 394,
-    "requirements_and_source_sections": 10034,
-    "source_clauses": 60283,
+    "requirements_and_source_sections": 10035,
+    "source_clauses": 60291,
     "interfaces": {
       "ENDPOINT": 187,
       "API": 173,
@@ -3132,11 +3132,11 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "30755303bb65c04db7fa5c98cd29858dc233929622ade765a6474359602f9de9",
+      "sha256_lf": "f00fd7ca8540787b3f4a5e3151e1153dc798bf456ae38a3ebb3bb81c2e44541d",
       "encoding": "utf-8-sig",
-      "line_count": 222,
+      "line_count": 233,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 12
+      "section_count": 13
     },
     {
       "path": "docs/operations/automatic-production-releases.md",
@@ -236169,10 +236169,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "177f0dc8b136fa5cbf9ce5249449dedf4b874f95e103adf691d0822b22bd41fb",
+      "source_sha256": "35c2abc92c96edc71890d731c9e77a95c136f2f5f8b8edfff46c77ec5aa57abb",
       "line_start": 206,
-      "line_end": 222,
-      "text": "## 11. 2 Nov 2026: loss control and prop-rule protection for automated execution\n\n- `core/account_policy.evaluate_account_policy` now checks **worst-case headroom**: today's loss + the risk still\n  open in positions (to their stops) + the new order must stay within the daily and drawdown limits\n  (`daily_loss_headroom`, `drawdown_headroom`). The decision reports `max_allowed_risk_pct`, the largest new-trade\n  risk that keeps every limit intact. Optional `extra_rules.max_consecutive_losses` pauses an account\n  (`loss_streak_pause`).\n- `core/prop_rules.py`: firm presets (FTMO 2-Step/1-Step, FundedNext Stellar 2-Step/1-Step/Lite/Instant, Topstep\n  50K/100K/150K) with their daily-loss base, static or end-of-day trailing max loss (with lock), flat-by time,\n  weekend and funded-news rules, each with its source and check date. A `prop_preset` hard rule enforces both\n  floors in money with a safety buffer (default 0.5 % of the initial balance) over all open positions.\n- `services/mt5_signal_router.py` passes open-position risk (positions without a usable stop are charged the\n  account's max risk per trade), the day-start balance, the highest end-of-day balance and the loss streak.\n- API: `GET /broker/prop-presets`, `PUT /broker/connections/{id}/prop-preset` (configures a PROP policy from a\n  preset; execution stays `SIGNALS_ONLY` until certification).\n- No execution flag, kill switch, live-trading permission or payout setting changed. TradingView market data is\n  not used: its terms forbid scraping; TradingView alerts can be received by webhook instead.",
+      "line_end": 223,
+      "text": "## 11. 2 Nov 2026: loss control and prop-rule protection for automated execution\n\n- `core/account_policy.evaluate_account_policy` now checks **worst-case headroom**: today's loss + the risk still\n  open in positions (to their stops) + the new order must stay within the daily and drawdown limits\n  (`daily_loss_headroom`, `drawdown_headroom`). The decision reports `max_allowed_risk_pct`, the largest new-trade\n  risk that keeps every limit intact. Optional `extra_rules.max_consecutive_losses` pauses an account\n  (`loss_streak_pause`).\n- `core/prop_rules.py`: firm presets (FTMO 2-Step/1-Step, FundedNext Stellar 2-Step/1-Step/Lite/Instant, Topstep\n  50K/100K/150K) with their daily-loss base, static or end-of-day trailing max loss (with lock), flat-by time,\n  weekend and funded-news rules, each with its source and check date. A `prop_preset` hard rule enforces both\n  floors in money with a safety buffer (default 0.5 % of the initial balance) over all open positions.\n- `services/mt5_signal_router.py` passes open-position risk (positions without a usable stop are charged the\n  account's max risk per trade), the day-start balance, the highest end-of-day balance and the loss streak.\n- API: `GET /broker/prop-presets`, `PUT /broker/connections/{id}/prop-preset` (configures a PROP policy from a\n  preset; execution stays `SIGNALS_ONLY` until certification).\n- No execution flag, kill switch, live-trading permission or payout setting changed. TradingView market data is\n  not used: its terms forbid scraping; TradingView alerts can be received by webhook instead.\n",
       "clauses": [
         {
           "line": 206,
@@ -236237,6 +236237,58 @@
         {
           "line": 222,
           "text": "  not used: its terms forbid scraping; TradingView alerts can be received by webhook instead."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-aede3ed01cfaeae5",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:224",
+      "requirement": "12. 2 Nov 2026 (daily review): shadow outcome labels need the full candle path",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "ddc434467c8b9ea79820ecc9f3c537100d3b91c536ba551390a5df2349f88ba5",
+      "line_start": 224,
+      "line_end": 233,
+      "text": "## 12. 2 Nov 2026 (daily review): shadow outcome labels need the full candle path\n\n- The ML tracker ran ~46 h behind on 2 Nov while providers return 200 bars (16.7 h of 5m). Rows whose returned candles start\n  more than one bar after the rejection are now stored as `actual_outcome='unverifiable'` and excluded from learning; a live\n  price alone decides a row only within max(2 bars, 30 min) of the rejection.\n- Rows labelled before this change (1m/5m especially, and 15m tracked > 50 h late) carry this bias; prefer outcomes tracked\n  after this commit when judging 1m–15m scorecard cells or a retrain.\n- Rows that stay unresolved longer than the provider window also become `unverifiable`; a deeper tracker window (e.g. 1000 bars\n  where the provider allows) would keep long-running setups.\n",
+      "clauses": [
+        {
+          "line": 224,
+          "text": "## 12. 2 Nov 2026 (daily review): shadow outcome labels need the full candle path"
+        },
+        {
+          "line": 226,
+          "text": "- The ML tracker ran ~46 h behind on 2 Nov while providers return 200 bars (16.7 h of 5m). Rows whose returned candles start"
+        },
+        {
+          "line": 227,
+          "text": "  more than one bar after the rejection are now stored as `actual_outcome='unverifiable'` and excluded from learning; a live"
+        },
+        {
+          "line": 228,
+          "text": "  price alone decides a row only within max(2 bars, 30 min) of the rejection."
+        },
+        {
+          "line": 229,
+          "text": "- Rows labelled before this change (1m/5m especially, and 15m tracked > 50 h late) carry this bias; prefer outcomes tracked"
+        },
+        {
+          "line": 230,
+          "text": "  after this commit when judging 1m–15m scorecard cells or a retrain."
+        },
+        {
+          "line": 231,
+          "text": "- Rows that stay unresolved longer than the provider window also become `unverifiable`; a deeper tracker window (e.g. 1000 bars"
+        },
+        {
+          "line": 232,
+          "text": "  where the provider allows) would keep long-running setups."
         }
       ]
     },
