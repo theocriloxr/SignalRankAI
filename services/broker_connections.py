@@ -31,6 +31,18 @@ _PLATFORM_CATALOG: tuple[dict[str, Any], ...] = (
         "execution_adapter": "ready",
         "demo_supported": True,
         "live_supported": True,
+        # Any MT5 broker works: the server name comes from the broker's account
+        # e-mail or terminal, and broker symbol names (EURUSDm, US500.cash,
+        # XTIUSD...) are resolved automatically per account (services/broker_symbols.py).
+        "popular_brokers": [
+            {"name": "Exness", "server_hint": "Exness-MT5Real… or Exness-MT5Trial… as shown in your Exness Personal Area",
+             "symbol_note": "Standard/Cent accounts use m/c suffixes; resolved automatically"},
+            {"name": "AssexMarkets", "server_hint": "MT5 server name from your AssexMarkets account e-mail"},
+            {"name": "IC Markets", "server_hint": "ICMarketsSC-MT5… (live) or ICMarketsSC-Demo…"},
+            {"name": "Pepperstone", "server_hint": "Pepperstone-MT5-Live01 / Pepperstone-Demo"},
+            {"name": "FTMO", "server_hint": "FTMO-Server… / FTMO-Demo… (use a prop preset)"},
+            {"name": "FundedNext", "server_hint": "FundedNext-Server… (use a prop preset)"},
+        ],
     },
     {
         "platform": "mt4",

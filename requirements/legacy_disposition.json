@@ -14006,7 +14006,7 @@
       "line_count": 16519,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "f7738242045e1955b14923eaa299c1835c4d4a8042c46bb6f12e88c0ef10ce8e",
+      "sha256": "20ab4f9b22ea9674e814cd9be8d63227bbbc5ad3f35b43ffe344b8d8568495c8",
       "size_bytes": 483424
     },
     {
@@ -15451,11 +15451,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 829,
+      "line_count": 841,
       "path": "services/broker_connections.py",
       "reason": "production/build source",
-      "sha256": "1fe300d35ebc4b01c67f8df84a00aedc778f8f3a1a89ffd53e84f99bc1f92a4f",
-      "size_bytes": 33604
+      "sha256": "49ae711280c0dcfc1798ea884336422b4d9d6d414a59f1f48b7920c9aaca1365",
+      "size_bytes": 34616
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15755,11 +15755,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2124,
+      "line_count": 2133,
       "path": "services/mt5_signal_router.py",
       "reason": "production/build source",
-      "sha256": "6c85fcd193005202ba156ccff72b5497cd495cb98d4bc517b1d9fad40f51689c",
-      "size_bytes": 92531
+      "sha256": "892cab338b484b7a876899668879e9969c35c88d934a83ee199d212fe3e43eac",
+      "size_bytes": 93057
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

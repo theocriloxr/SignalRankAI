@@ -1948,7 +1948,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/tiered_executor.py:47",
-        "services/mt5_signal_router.py:1739",
+        "services/mt5_signal_router.py:1748",
         "signalrank_telegram/commands.py:7822"
       ],
       "required_by_code": true,
@@ -3415,7 +3415,7 @@
       "name": "CTRADER_CLIENT_ID",
       "production_example_default": null,
       "read_locations": [
-        "services/broker_connections.py:197"
+        "services/broker_connections.py:209"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3425,7 +3425,7 @@
       "name": "CTRADER_CLIENT_SECRET",
       "production_example_default": null,
       "read_locations": [
-        "services/broker_connections.py:198"
+        "services/broker_connections.py:210"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -3435,7 +3435,7 @@
       "name": "CTRADER_REDIRECT_URI",
       "production_example_default": null,
       "read_locations": [
-        "services/broker_connections.py:199"
+        "services/broker_connections.py:211"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4653,7 +4653,7 @@
       "name": "DEMO_EXECUTION_REQUIRES_LIVE_INTEGRITY",
       "production_example_default": null,
       "read_locations": [
-        "services/mt5_signal_router.py:1388"
+        "services/mt5_signal_router.py:1397"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7347,7 +7347,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/mt5_bridge.py:271",
-        "services/mt5_signal_router.py:1733"
+        "services/mt5_signal_router.py:1742"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7441,7 +7441,7 @@
         "railway_main.py:2904",
         "railway_main.py:585",
         "railway_main.py:622",
-        "services/broker_connections.py:194",
+        "services/broker_connections.py:206",
         "web/platform_api.py:5184",
         "web/platform_api.py:5220",
         "web/platform_api.py:5289",
@@ -7553,7 +7553,7 @@
         "railway_main.py:2904",
         "railway_main.py:585",
         "railway_main.py:622",
-        "services/broker_connections.py:194",
+        "services/broker_connections.py:206",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2810",
         "web/platform_api.py:5184",

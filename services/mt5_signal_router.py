@@ -986,10 +986,19 @@ class MT5SignalRouter:
             )
 
             asset = str(signal.get("asset") or signal.get("symbol") or "").upper()
+            # The broker's own name for the instrument (EURUSDm on Exness Standard,
+            # US500.cash, XTIUSD...). Policy and ledgers keep the canonical asset.
+            try:
+                from services.broker_symbols import resolve_broker_symbol
+
+                broker_symbol = await resolve_broker_symbol(mt5_account_id, asset)
+            except Exception:
+                broker_symbol = asset
+            signal = {**signal, "broker_symbol": broker_symbol}
             account_info, symbol_spec, quote, policy, profile_policy, evidence = await asyncio.gather(
                 get_account_info(mt5_account_id),
-                get_symbol_specification(mt5_account_id, asset),
-                get_live_quote(mt5_account_id, asset),
+                get_symbol_specification(mt5_account_id, broker_symbol),
+                get_live_quote(mt5_account_id, broker_symbol),
                 self._get_user_execution_policy(
                     user_id,
                     mt5_account_id,
@@ -1529,7 +1538,7 @@ class MT5SignalRouter:
 
             result = await execute_trade(
                 account_id=account_id,
-                symbol=asset,
+                symbol=str(signal.get("broker_symbol") or asset),
                 direction=direction,
                 volume=volume,
                 stop_loss=stop_loss,
