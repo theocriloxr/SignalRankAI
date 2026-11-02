@@ -12939,11 +12939,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 600,
+      "line_count": 619,
       "path": "ml/strategy_discovery.py",
       "reason": "production/build source",
-      "sha256": "63caeac953edaaf924953141f2785e8d1db9a93fca2c12a29e27619e8b3dedf3",
-      "size_bytes": 26369
+      "sha256": "4ddc446ed2e7b8273c1d7262e9b87210229f78ce8fc643913f4edb21fe7fd12f",
+      "size_bytes": 27169
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -20259,11 +20259,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 149,
+      "line_count": 159,
       "path": "tests/test_strategy_discovery_20261102.py",
       "reason": "automated test evidence",
-      "sha256": "6949d7e2fdfe77ecb1ec61311bd77a99edd1193008d538f3f08b2916526619ca",
-      "size_bytes": 6927
+      "sha256": "e73009c281a499a0a38e4bb3a5cf776e1ffae7503109863e0e43ce8aa36756a9",
+      "size_bytes": 7366
     },
     {
       "disposition": "TEST_ONLY",
