@@ -1,5 +1,5 @@
 {
-  "file_count": 2670,
+  "file_count": 2672,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3168,6 +3168,14 @@
       "reason": "production/build source",
       "sha256": "70af52622b65da596cbee645e4b06ff4080db3f976d0aa5d99907cff203be7a0",
       "size_bytes": 13763
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 339,
+      "path": "core/prop_rules.py",
+      "reason": "production/build source",
+      "sha256": "7d87b4d4bd06944f85ad0f9489e9c9a4e053894cca4dd99d71dff9b37de8de55",
+      "size_bytes": 16625
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7371,11 +7379,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10823,
+      "line_count": 10826,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "283db847176a82de6051129ee0f95576ff0af85978a96d0981fcfa654e2878f5",
-      "size_bytes": 4915753
+      "sha256": "cd32a33c967cb826d1e1a30dae6fcded045b5370eb0fcf59b7da44b3846480ae",
+      "size_bytes": 4917119
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10267,11 +10275,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 527979,
+      "line_count": 528099,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "13c0ccaa05d092b7b6bc4f9b50401b8222193559e8331c0434a5b402bfbdf7d2",
-      "size_bytes": 24565444
+      "sha256": "c981c5a7a85272fd96dd23e91ad6dc71e39e7357fcc2b1e734c20cd322597cb5",
+      "size_bytes": 24572413
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -19483,6 +19491,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 180,
+      "path": "tests/test_prop_rules_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "f5c4cf78a949e6320e9a1de4b4a449cab2351782ee1e9340549ee50e81818ece",
+      "size_bytes": 9511
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 165,
       "path": "tests/test_provider_and_asset_registry_hardening.py",
       "reason": "automated test evidence",
@@ -21375,7 +21391,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
-    "PRESERVE_BEHAVIOUR": 1363,
-    "TEST_ONLY": 431
+    "PRESERVE_BEHAVIOUR": 1364,
+    "TEST_ONLY": 432
   }
 }
