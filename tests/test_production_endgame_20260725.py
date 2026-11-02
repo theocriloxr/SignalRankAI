@@ -127,13 +127,16 @@ def test_engine_pulse_partial_fanout_does_not_fail_engine_health():
 
 
 def test_segment_quarantine_uses_delivery_proof():
+    # Superseded 2 Nov 2026 by owner decision: the delivered-only, fixed 30-trade /
+    # 45% check never reached its minimum and blocked nothing. The gate now reads
+    # the evidence snapshot (shadow and delivered outcomes) and compares the Wilson
+    # lower bound with the plan's break-even rate (tests/test_segment_evidence_20261102.py).
     from engine import core
 
     source = inspect.getsource(core._segment_quarantine_gate)
-    assert "SEGMENT_QUARANTINE_REQUIRE_DELIVERED" in source
-    assert "FROM signal_deliveries sd" in source
-    assert "sd.sent_ok IS TRUE" in source
-    assert "SEGMENT_QUARANTINE_MIN_TRADES\", 30" in source
+    assert "segment_evidence.load_snapshot" in source
+    assert "segment_evidence.evaluate" in source
+    assert "SEGMENT_QUARANTINE_MIN_TRADES" not in source
 
 
 def test_gemini_429_opens_process_circuit(monkeypatch):

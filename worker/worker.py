@@ -259,6 +259,10 @@ class Worker:
         else:
             logger.info("[worker] ShadowOutcomeTracker disabled for this worker instance")
 
+        # Evidence snapshot for the engine's setup filter (services/segment_evidence.py).
+        if _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
+            _register_task("segment_evidence", lambda: self._segment_evidence_loop(), restart_on_failure=True)
+
         # Owner alerts for a silent engine and old queue items (observability/owner_alerts.py).
         if _env_bool("OWNER_ALERTS_ENABLED", True):
             _register_task("owner_alerts", lambda: self._owner_alerts_loop(), restart_on_failure=True)
@@ -1241,6 +1245,24 @@ class Worker:
         finally:
             with contextlib.suppress(Exception):
                 await outcome_tracker.stop()
+
+    async def _segment_evidence_loop(self) -> None:
+        from services.segment_evidence import refresh_once
+
+        try:
+            interval = max(60.0, float(os.getenv("SEGMENT_EVIDENCE_REFRESH_SECONDS", "900") or 900))
+        except ValueError:
+            interval = 900.0
+        while not self._stop.is_set():
+            try:
+                segments = await asyncio.wait_for(refresh_once(), timeout=interval)
+                logger.info("[worker] segment evidence refreshed segments=%s", segments)
+            except Exception as exc:
+                logger.warning("[worker] segment evidence refresh failed: %s", type(exc).__name__)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
     async def _owner_alerts_loop(self) -> None:
         from observability.owner_alerts import run_checks_once

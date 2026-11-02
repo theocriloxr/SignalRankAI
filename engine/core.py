@@ -1729,89 +1729,35 @@ def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_
 
 
 async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
-    """Auto-quarantine weak live segments using aggregate outcomes only."""
+    """Evidence-based setup filter (services/segment_evidence.py).
+
+    A strategy/timeframe/direction may produce signals only while the lower
+    confidence bound of its TP1 rate beats the break-even rate of this signal's
+    own plan. Reads the snapshot the worker refreshes; the old delivered-only,
+    fixed-45% check never reached its 30-trade minimum and blocked nothing.
+    """
     if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
         return True, ""
-    try:
-        from sqlalchemy import text
-        from db.session import get_session, is_db_configured
+    from db.priority import DBPriority
+    from db.session import get_session, is_db_configured
+    from services import segment_evidence
 
-        if not is_db_configured():
-            return True, ""
-        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-        asset_class = _asset_class_key(asset)
-        timeframe = str(signal.get("timeframe") or "").strip().lower() or "unknown"
-        strategy = str(signal.get("strategy_name") or "unknown").strip()[:64] or "unknown"
-        days = max(1, _env_int("SEGMENT_QUARANTINE_LOOKBACK_DAYS", 30))
-        min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 30))
-        min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
-        min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
-        since = now_utc_naive() - _timedelta(days=days)
-        from db.priority import DBPriority
-
-        async with get_session(priority=DBPriority.BACKGROUND, label="segment_quarantine") as session:
-            row = (
-                (
-                    await session.execute(
-                        text(
-                            """
-                        SELECT COUNT(o.id) AS outcomes,
-                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
-                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
-                               AVG(o.r_multiple) AS avg_r
-                        FROM outcomes o
-                        JOIN signals s ON s.signal_id = o.signal_id
-                        WHERE o.closed_at >= :since
-                          AND lower(COALESCE(s.asset_class, :asset_class)) = :asset_class
-                          AND lower(COALESCE(s.timeframe, 'unknown')) = :timeframe
-                          AND lower(COALESCE(s.strategy_name, 'unknown')) = :strategy
-                          AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
-                          AND (
-                              :require_delivered = FALSE
-                              OR EXISTS (
-                                  SELECT 1
-                                  FROM signal_deliveries sd
-                                  WHERE sd.signal_id = s.signal_id
-                                    AND sd.sent_ok IS TRUE
-                                    AND lower(COALESCE(sd.delivery_state, '')) IN ('sent','delivered','confirmed','reconciled')
-                                    AND sd.telegram_chat_id IS NOT NULL
-                                    AND sd.telegram_message_id IS NOT NULL
-                              )
-                          )
-                        """
-                        ),
-                        {
-                            "since": since,
-                            "asset_class": asset_class,
-                            "timeframe": timeframe,
-                            "strategy": strategy.lower(),
-                            "require_delivered": _env_bool("SEGMENT_QUARANTINE_REQUIRE_DELIVERED", True),
-                        },
-                    )
-                )
-                .mappings()
-                .first()
-            )
-            await session.commit()
-        wins = int((row or {}).get("wins") or 0)
-        losses = int((row or {}).get("losses") or 0)
-        terminal = wins + losses
-        avg_r = float((row or {}).get("avg_r") or 0.0)
-        if terminal < min_trades:
-            return True, ""
-        win_rate = wins / max(1, terminal) * 100.0
-        if win_rate < min_win_rate or avg_r < min_avg_r:
-            return (
-                False,
-                f"segment_quarantine {asset_class}/{timeframe}/{strategy} "
-                f"wr={win_rate:.1f}% avg_r={avg_r:.2f} n={terminal}",
-            )
+    if not is_db_configured():
         return True, ""
-    except Exception as exc:
+    async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_read") as session:
+        snapshot = await segment_evidence.load_snapshot(session)
+        await session.rollback()
+    if not segment_evidence.snapshot_is_current(snapshot):
         if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
-            return False, f"segment_quarantine_error {exc}"
-        logger.debug("[segment_quarantine] check failed: %s", exc)
-        return True, ""
+            return False, "segment_evidence_unavailable"
+        logger.warning("[segment_evidence] snapshot missing or stale; setup filter not applied")
+        return True, "segment_evidence_unavailable"
+    decision = segment_evidence.evaluate(signal, dict((snapshot or {}).get("segments") or {}))
+    signal["segment_evidence"] = {
+        "key": decision.key, "trades": decision.trades, "wins": decision.wins,
+        "lower_bound": decision.lower_bound, "breakeven": decision.breakeven,
+    }
+    return decision.allowed, decision.reason
 
 
 def _latest_candle_timestamp(candles: Any) -> datetime | None:
