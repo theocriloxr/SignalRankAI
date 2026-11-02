@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import calendar
 import hashlib
 import json
 import logging
@@ -557,10 +558,20 @@ def _in_event_loop() -> bool:
         return False
 
 
+def seconds_until_due(interval: float, now: float | None = None) -> float:
+    """Seconds until the next run, from the last published ``built_at``."""
+    built = str((_load_published().get("summary") or {}).get("built_at") or "")
+    try:
+        last = calendar.timegm(time.strptime(built, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return 0.0
+    return max(0.0, last + interval - (time.time() if now is None else now))
+
+
 async def strategy_discovery_loop(stop: asyncio.Event) -> None:
     """Weekly re-discovery and re-validation on the analytics role."""
     interval = max(86400, _env_int("DISCOVERY_INTERVAL_SECONDS", 7 * 86400))
-    delay = max(0, _env_int("DISCOVERY_STARTUP_DELAY_SECONDS", 1800))
+    delay = max(0, _env_int("DISCOVERY_STARTUP_DELAY_SECONDS", 600))
     try:
         await asyncio.wait_for(stop.wait(), timeout=delay)
         return
@@ -568,6 +579,14 @@ async def strategy_discovery_loop(stop: asyncio.Event) -> None:
         pass
     while not stop.is_set():
         wait = interval
+        due_in = seconds_until_due(interval)
+        if due_in > 0:
+            # Restarts and deploys must not re-run a fresh discovery or postpone a due one.
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=min(due_in, interval))
+                return
+            except asyncio.TimeoutError:
+                continue
         try:
             # Research is CPU-bound and makes blocking HTTP calls: keep it off the loop.
             await asyncio.to_thread(run_discovery)

@@ -147,3 +147,13 @@ def test_every_family_evaluates_both_directions():
         for direction in ("long", "short"):
             mask = dz.entry_mask(ind, family, grid[0], direction)
             assert mask.dtype == bool and len(mask) == len(ind)
+
+
+def test_schedule_follows_last_published_run(monkeypatch):
+    import time as _t
+
+    built = _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime(_t.time() - 3600))
+    monkeypatch.setattr(sd, "_load_published", lambda: {"summary": {"built_at": built}})
+    assert 7 * 86400 - 3700 < sd.seconds_until_due(7 * 86400) <= 7 * 86400 - 3500
+    monkeypatch.setattr(sd, "_load_published", lambda: {})
+    assert sd.seconds_until_due(7 * 86400) == 0.0
