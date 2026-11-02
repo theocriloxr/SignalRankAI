@@ -399,7 +399,9 @@
         "e68eab8f",
         "f117be00",
         "cb2be103",
-        "78cca12b"
+        "78cca12b",
+        "6bfc285b",
+        "6c357aa5"
       ],
       "owner_push_approval": "Yes, push and watch",
       "setup_evidence_filter": {
@@ -429,7 +431,20 @@
         "result": "FAIL (1 environmental: isolated python -I cannot import the user-site alembic; same as 43aa34e8)",
         "scope": "Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production"
       },
-      "frontend": "tsc, eslint, test:transport, test:presentation exit 0"
+      "frontend": "tsc, eslint, test:transport, test:presentation exit 0",
+      "production_observation": {
+        "git_sha": "6c357aa5",
+        "readyz": 200,
+        "segment_snapshot_segments": 92,
+        "first_10_minutes": {
+          "ml_advisory_passed": 174,
+          "issued": 0,
+          "top_rejection": "production_quality:quality_score < 82 (hand-set floor, owner decision)"
+        },
+        "db_command_timeout_production": 15,
+        "hourly_window_max_seconds": 4.0,
+        "hourly_windows_total_seconds": 139
+      }
     }
   },
   "inventory_is_verification": false,

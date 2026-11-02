@@ -2,7 +2,7 @@
 
 ## Continuation, 2 November 2026 — evidence-based setup filter, ML advisory, protected exits, performance page (owner request)
 
-Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`. The owner approved pushing them to `feat/frontend-rebuild-and-stage1-hardening` ("Yes, push and watch"); that branch deploys to the self-hosted production server.
+Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`, then `6bfc285b` and `6c357aa5` after the first production observation. The owner approved pushing them to `feat/frontend-rebuild-and-stage1-hardening` ("Yes, push and watch"); that branch deploys to the self-hosted production server.
 
 - **The owner asked for an 82% win rate.** No filter can promise that, and none was set. The thresholds below come from the platform's own tracked results.
 - **Setup-evidence filter (`services/segment_evidence.py`).** This replaces the segment quarantine, which never blocked anything.
@@ -23,6 +23,15 @@ Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`. The owner approved pushi
 - **Tests.** `tests/test_segment_evidence_20261102.py` (10, including real-PostgreSQL worker → snapshot → engine gate). The targeted suites passed: 72 tests across the segment evidence, pipeline, run_sync, Bybit, Telegram contract, endgame and v1366 files.
   - Full Python suite at `78cca12b`: 4506 passed, 1 failed, 2 skipped (FAIL (1 environmental: isolated python -I cannot import the user-site alembic; same as 43aa34e8)). Scope: Local Windows 11, Python 3.13.7, owned PostgreSQL 17 migrated from empty to 0057; not CI, staging or production.
   - Frontend `tsc`, `eslint`, `test:transport` and `test:presentation`: exit 0.
+- **After the push (`811dd794` served 2 Nov 23:12 UTC).**
+  - The first evidence refreshes failed with `TimeoutError`. Production sets `DB_COMMAND_TIMEOUT=15`, and the 60-day aggregate takes 40 s (decision_log: 2.1M rows, 3.5 GB).
+  - `6bfc285b` reads hourly windows instead. A read-only production timing of all 1,440 windows gave at most 4.0 s each and 139 s in total.
+  - `6c357aa5`: the quality gate was re-applying an ML floor (`quality_recovery_ml`, raw ≥ 0.40) to advisory signals, which rejected 105 of 1,011 candidates in 45 minutes. Advisory signals now skip the ML floors only.
+  - Both were served as `6c357aa5`. The worker logged `segment evidence refreshed segments=92`, and `/readyz` returned 200.
+  - In the next 10 minutes, 174 candidates passed the advisory ML step and 0 were issued. All were rejected before the evidence filter, mostly by `production_quality:quality_score < 82` (crypto 80, commodity 31), plus EMA distance, weak trend and stop width.
+  - Those floors are hand-set constants in `engine/core.py::_production_quality_gate`. They were left unchanged: lowering them to raise signal counts is excluded, and replacing them is an owner decision.
+  - Per-strategy 60-day TP1 rates (one setup per bar): ATR Breakout 47.7% (2,694), MACD 38.1%, RSI 37.4%, ADX Trend 34.8% (18,123), EMA Trend 34.2% (80,751). No strategy with more than 41 setups exceeds 48%.
+
 - **Still open:**
   - corrupt historical R values in old outcomes;
   - `DEPLOYMENT_TELEGRAM_SEND_TEST=1` on the server (owner);
