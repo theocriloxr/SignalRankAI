@@ -1,5 +1,5 @@
 {
-  "file_count": 2677,
+  "file_count": 2683,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7195,11 +7195,27 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 233,
+      "line_count": 248,
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f00fd7ca8540787b3f4a5e3151e1153dc798bf456ae38a3ebb3bb81c2e44541d",
-      "size_bytes": 17832
+      "sha256": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
+      "size_bytes": 19222
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 248,
+      "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
+      "size_bytes": 19222
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 248,
+      "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
+      "size_bytes": 19222
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7379,11 +7395,27 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10826,
+      "line_count": 10827,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "9e99d4b728a7ed2d97fbc873ed2cf7b81fb01dde5f2176cd0d963bde5dd8a11a",
-      "size_bytes": 4917119
+      "sha256": "07458d75202ce117e94017786e89b610a621b97dc435e67a08141e2a7f2e267d",
+      "size_bytes": 4917628
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 10827,
+      "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "07458d75202ce117e94017786e89b610a621b97dc435e67a08141e2a7f2e267d",
+      "size_bytes": 4917628
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 10827,
+      "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "07458d75202ce117e94017786e89b610a621b97dc435e67a08141e2a7f2e267d",
+      "size_bytes": 4917628
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10275,11 +10307,27 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 528126,
+      "line_count": 528178,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "d5dec131194fd981aafbee0d9145d622f76565ea3f1e3e6aa41bdc7acca57b51",
-      "size_bytes": 24573381
+      "sha256": "c824534e1e3a968f6aa3b5909710347285b7ecf139a43574c7315953c05093d8",
+      "size_bytes": 24576557
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 528178,
+      "path": "docs/release/requirements.json",
+      "reason": "documentation/specification/evidence",
+      "sha256": "c824534e1e3a968f6aa3b5909710347285b7ecf139a43574c7315953c05093d8",
+      "size_bytes": 24576557
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 528178,
+      "path": "docs/release/requirements.json",
+      "reason": "documentation/specification/evidence",
+      "sha256": "c824534e1e3a968f6aa3b5909710347285b7ecf139a43574c7315953c05093d8",
+      "size_bytes": 24576557
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11803,11 +11851,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 76,
+      "line_count": 78,
       "path": "frontend/next.config.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "82054ca2eb02e1b5044b3b94cfa28eabad726c0bd6cc4a2311db16cfcfbcac15",
-      "size_bytes": 3924
+      "sha256": "dc3e95c3af503462059d1d4a369c0f3ea8cd912a9fdb6efc6a0f9092a829cad2",
+      "size_bytes": 4145
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12099,11 +12147,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 12,
+      "line_count": 13,
       "path": "frontend/src/app/login/page.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bc3725c5f8d3c05dda458bb35463b5ffa389ed16e74bc41a931a7a6e09344f14",
-      "size_bytes": 365
+      "sha256": "1230ed372987e73a50e683a22dd7e075df286894221370c40afebdcf78468527",
+      "size_bytes": 420
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12163,11 +12211,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 127,
+      "line_count": 148,
       "path": "frontend/src/components/AccountEntry.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bb140f11b1036c4e14c2ddfe253e19ccac9f01e0684611fe7e7a2ec814817ecb",
-      "size_bytes": 7738
+      "sha256": "9782efe0ee73f4da45d9088f253c194e533e48560e9d1b2066b370419f18d1c7",
+      "size_bytes": 9455
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12595,11 +12643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 246,
+      "line_count": 247,
       "path": "frontend/src/styles/marketing.css",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "a301751957b832b89a903cd815efbc75375f94609cfdfcf7409e186f5d01d86f",
-      "size_bytes": 21180
+      "sha256": "35f90c481d3ff71762007fe90bd1f2030cef9ec836ef59aa112a34caa4600b22",
+      "size_bytes": 21373
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21430,7 +21478,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 875,
+    "DOCUMENTATION_ONLY": 881,
     "PRESERVE_BEHAVIOUR": 1366,
     "TEST_ONLY": 435
   }

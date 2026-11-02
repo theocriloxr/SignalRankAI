@@ -369,8 +369,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 394,
-    "requirements_and_source_sections": 10035,
-    "source_clauses": 60291,
+    "requirements_and_source_sections": 10036,
+    "source_clauses": 60305,
     "interfaces": {
       "ENDPOINT": 187,
       "API": 173,
@@ -3132,11 +3132,11 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "f00fd7ca8540787b3f4a5e3151e1153dc798bf456ae38a3ebb3bb81c2e44541d",
+      "sha256_lf": "209fed314c159ced2c1fc76d5b371c5607feaf3517c7021461ea494011a02232",
       "encoding": "utf-8-sig",
-      "line_count": 233,
+      "line_count": 248,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 13
+      "section_count": 14
     },
     {
       "path": "docs/operations/automatic-production-releases.md",
@@ -236289,6 +236289,82 @@
         {
           "line": 232,
           "text": "  where the provider allows) would keep long-running setups."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-c5dcdcc5fa10af4c",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:234",
+      "requirement": "13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "25ff1b8c10854230d9d374d831fa960bac9ee6b69b606a739ebab905413cd614",
+      "line_start": 234,
+      "line_end": 248,
+      "text": "## 13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace\n\n- Daily loss limits were already per user (`services/execution_quota.py`) and per account (account policy). The\n  only engine-wide halt was the BTC flash-crash breaker; it now pauses crypto only\n  (`MARKET_CIRCUIT_BREAKER_SCOPE=crypto`, `all` restores the old behaviour). `admin/auto_kill.py` (global) is not\n  wired anywhere.\n- `services/broker_symbols.py`: every MT4/MT5 account's own symbol names are resolved (Exness `EURUSDm`/`XAUUSDm`,\n  `US500.cash`, `USTEC`, `XTIUSD`...); the MT5 catalog lists popular brokers (Exness, AssexMarkets, IC Markets,\n  Pepperstone, FTMO, FundedNext) with server hints.\n- Signal detail returns stored candles; `frontend/src/components/SignalChart.tsx` draws them with entry/stop/target.\n- **Web workspace:** production ran `SIGNALRANK_WORKSPACE_MODE=legacy`, so `/app` and `/login` showed the old\n  `web/platform_app` SPA (the owner's screenshots of overlapping chart labels, collapsed-rail appearance controls and\n  misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace.\n  Its sign-in page gained a \"From Telegram\" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot\n  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy.",
+      "clauses": [
+        {
+          "line": 234,
+          "text": "## 13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace"
+        },
+        {
+          "line": 236,
+          "text": "- Daily loss limits were already per user (`services/execution_quota.py`) and per account (account policy). The"
+        },
+        {
+          "line": 237,
+          "text": "  only engine-wide halt was the BTC flash-crash breaker; it now pauses crypto only"
+        },
+        {
+          "line": 238,
+          "text": "  (`MARKET_CIRCUIT_BREAKER_SCOPE=crypto`, `all` restores the old behaviour). `admin/auto_kill.py` (global) is not"
+        },
+        {
+          "line": 239,
+          "text": "  wired anywhere."
+        },
+        {
+          "line": 240,
+          "text": "- `services/broker_symbols.py`: every MT4/MT5 account's own symbol names are resolved (Exness `EURUSDm`/`XAUUSDm`,"
+        },
+        {
+          "line": 241,
+          "text": "  `US500.cash`, `USTEC`, `XTIUSD`...); the MT5 catalog lists popular brokers (Exness, AssexMarkets, IC Markets,"
+        },
+        {
+          "line": 242,
+          "text": "  Pepperstone, FTMO, FundedNext) with server hints."
+        },
+        {
+          "line": 243,
+          "text": "- Signal detail returns stored candles; `frontend/src/components/SignalChart.tsx` draws them with entry/stop/target."
+        },
+        {
+          "line": 244,
+          "text": "- **Web workspace:** production ran `SIGNALRANK_WORKSPACE_MODE=legacy`, so `/app` and `/login` showed the old"
+        },
+        {
+          "line": 245,
+          "text": "  `web/platform_app` SPA (the owner's screenshots of overlapping chart labels, collapsed-rail appearance controls and"
+        },
+        {
+          "line": 246,
+          "text": "  misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace."
+        },
+        {
+          "line": 247,
+          "text": "  Its sign-in page gained a \"From Telegram\" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot"
+        },
+        {
+          "line": 248,
+          "text": "  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy."
         }
       ]
     },

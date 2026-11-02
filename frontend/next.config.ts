@@ -25,7 +25,9 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   env: { SIGNALRANK_WORKSPACE_MODE: mode },
   async redirects() {
-    if (mode !== "legacy") return [];
+    // Telegram activation links (/activate?token=...) open the new sign-in page,
+    // which reads the token; the query string is carried over by the redirect.
+    if (mode !== "legacy") return [{source:"/activate", destination:"/login", permanent:false}];
     // The retained SPA reads the visible URL. An upstream-only query rewrite
     // would lose the requested view and send every deep link to its default page.
     return [

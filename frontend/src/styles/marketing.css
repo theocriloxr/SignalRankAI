@@ -187,8 +187,9 @@
 .auth-card { width: min(440px, 100%); display: grid; gap: var(--space-5); }
 .auth-card h2 { font-size: var(--text-3xl); letter-spacing: -0.03em; }
 .auth-card > p { color: var(--text-2); }
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; }
-.auth-tabs button { height: 36px; }
+.auth-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.auth-tabs button { height: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-inline: var(--space-2); }
+@media (max-width: 420px) { .auth-tabs button { font-size: var(--text-xs); } }
 .auth-links { display: grid; gap: var(--space-2); justify-items: start; font-size: var(--text-sm); }
 .auth-links button, .auth-links a { background: none; border: 0; padding: 4px 0; color: var(--text-2); font-weight: 550; }
 .auth-links button:hover, .auth-links a:hover { color: var(--brand); }

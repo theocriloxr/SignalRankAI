@@ -231,3 +231,18 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
 - Rows that stay unresolved longer than the provider window also become `unverifiable`; a deeper tracker window (e.g. 1000 bars
   where the provider allows) would keep long-running setups.
 
+## 13. 2 Nov 2026: per-user loss scope, broker symbols, chart, and the new web workspace
+
+- Daily loss limits were already per user (`services/execution_quota.py`) and per account (account policy). The
+  only engine-wide halt was the BTC flash-crash breaker; it now pauses crypto only
+  (`MARKET_CIRCUIT_BREAKER_SCOPE=crypto`, `all` restores the old behaviour). `admin/auto_kill.py` (global) is not
+  wired anywhere.
+- `services/broker_symbols.py`: every MT4/MT5 account's own symbol names are resolved (Exness `EURUSDm`/`XAUUSDm`,
+  `US500.cash`, `USTEC`, `XTIUSD`...); the MT5 catalog lists popular brokers (Exness, AssexMarkets, IC Markets,
+  Pepperstone, FTMO, FundedNext) with server hints.
+- Signal detail returns stored candles; `frontend/src/components/SignalChart.tsx` draws them with entry/stop/target.
+- **Web workspace:** production ran `SIGNALRANK_WORKSPACE_MODE=legacy`, so `/app` and `/login` showed the old
+  `web/platform_app` SPA (the owner's screenshots of overlapping chart labels, collapsed-rail appearance controls and
+  misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace.
+  Its sign-in page gained a "From Telegram" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot
+  redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy.
