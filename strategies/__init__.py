@@ -238,6 +238,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             _run_group("zones", lambda: zone_rejection_strategies(asset, market_data))
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
+        # Rules discovered per asset from long price history (ml/strategy_discovery.py).
+        # Shadow mode records them for forward tracking and returns nothing here.
+        if _env_bool("DISCOVERED_STRATEGIES_ENABLED", True):
+            from .discovered import discovered_candidates
+
+            _run_group("discovered", lambda: discovered_candidates(asset, timeframe, data))
 
     # Queue canonical candle snapshots for asynchronous sequence learning.
     if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):

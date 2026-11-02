@@ -1,5 +1,11 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 (morning) — strategies discovered per asset from long external history (server session)
+
+- `ml/strategy_discovery.py` backtests 360 rules per asset and timeframe on years of external history (Binance public data, Yahoo Finance; SignalRank candles as fallback) with costs, selects on the first 60 % of history, and keeps a rule only if it is profitable on both later windows. Weekly re-runs re-test and retire decayed specs; specs are approved or retired from their own forward-tracked record.
+- `strategies/discovered.py` evaluates the published specs inside `run_all_strategies`; the default `DISCOVERED_STRATEGIES_MODE=shadow` only records them for forward tracking. `live` returns approved specs as ordinary candidates that pass every existing gate. No real-money or delivery setting changed.
+- Tests: `tests/test_strategy_discovery_20261102.py` (11, incl. no survivors on a random walk) plus 214 strategy/engine/analytics tests pass locally. Operations notes: `docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md` §9.
+
 ## Continuation, 2 November 2026 — per-asset strategy scorecard and expectancy shadow tracking (server session)
 
 - `services/strategy_scorecard.py` learns, per asset × timeframe × strategy × direction, from issued outcomes and from every shadow-tracked rejected setup, and publishes a scorecard to Redis every 3 h from the analytics role. The engine applies at most a 0.85–1.15 score multiplier, only when a cell has ≥ 40 outcomes and its Wilson 95 % win-rate interval clears the cell's own break-even win rate; `STRATEGY_SCORECARD_MODE` defaults to `shadow` (annotation only). It cannot create a signal or bypass a gate.

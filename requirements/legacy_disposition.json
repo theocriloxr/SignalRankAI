@@ -7187,11 +7187,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 168,
+      "line_count": 185,
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a7d30c87c65bfaba37b529e9ddd76f5ecd7bdec57c16bf449fa13f04561f41c4",
-      "size_bytes": 12320
+      "sha256": "fd2683f32d279edb3641c92e3aa9cf20bbfa893bbc5d1f1062fc59671fe21ef9",
+      "size_bytes": 13845
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7315,11 +7315,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 550,
+      "line_count": 556,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d1a0b00bd930cd6e6eb7c1697c31ade811e71dacef33cd891838eae5a7c04c1b",
-      "size_bytes": 66684
+      "sha256": "e7dfb42d9db0bd6c9a8e8ca7fa7f55828f874e4b708d8ae83758d4f282c68bc6",
+      "size_bytes": 67745
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14099,11 +14099,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 513,
+      "line_count": 516,
       "path": "runtime/analytics.py",
       "reason": "production/build source",
-      "sha256": "f858aa7cdc3b7db43a211c816aa4849cb40216b4c78ada76a5eb910f87942fe1",
-      "size_bytes": 22651
+      "sha256": "94db37a5b0c3c7914110b6cc0341c1f7d1d6eebdcb638a362f20d93c105bae33",
+      "size_bytes": 22882
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17307,11 +17307,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 356,
+      "line_count": 362,
       "path": "strategies/__init__.py",
       "reason": "production/build source",
-      "sha256": "406c020edb4bd6d5f899b09696c886e386639c2b2945ca8bead8ffa8203803ca",
-      "size_bytes": 16018
+      "sha256": "e14dd2ca50938d8cae6911df1dd45ae2639f972c495bfc9f950840de7ec999fe",
+      "size_bytes": 16401
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

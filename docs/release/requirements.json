@@ -369,8 +369,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 394,
-    "requirements_and_source_sections": 10031,
-    "source_clauses": 60235,
+    "requirements_and_source_sections": 10032,
+    "source_clauses": 60250,
     "interfaces": {
       "ENDPOINT": 185,
       "API": 173,
@@ -380,7 +380,7 @@
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
-      "STRATEGY_CALLABLE": 60,
+      "STRATEGY_CALLABLE": 66,
       "STRATEGY": 9,
       "TIMEFRAME": 6
     }
@@ -3132,11 +3132,11 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "a7d30c87c65bfaba37b529e9ddd76f5ecd7bdec57c16bf449fa13f04561f41c4",
+      "sha256_lf": "fd2683f32d279edb3641c92e3aa9cf20bbfa893bbc5d1f1062fc59671fe21ef9",
       "encoding": "utf-8-sig",
-      "line_count": 168,
+      "line_count": 185,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 9
+      "section_count": 10
     },
     {
       "path": "docs/operations/automatic-production-releases.md",
@@ -235917,10 +235917,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "cba1c4bbbfa522bafe1da0e2fdc154f70f84bfd8cd08066b421f340a6fb7b76d",
+      "source_sha256": "d5f86dc4b638716b7eb033bce9d41b1f3bb2288f762133fbe0855138655c4d48",
       "line_start": 152,
-      "line_end": 168,
-      "text": "## 8. 2 Nov 2026 (night): learning from every outcome\n\n- **Retrain with all rejected evidence** (`ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO=50`, 45-day lookback, long DB\n  timeouts) trained on 231,747 rows and was **rejected by the quality gate**: accuracy 0.69 vs majority\n  baseline 0.82, AUC 0.62, expected R −0.17 on the validation slice. The 29 Sep model stays in service. The\n  rejected-setup population is dominated by losers (SL 139k vs TP 42k), and the current features cannot yet\n  separate the winners. More delivered outcomes and the per-asset scorecard below are the next levers.\n- **Expectancy shadow tracking now runs in analytics** (`runtime/analytics.py`). It was registered only in the\n  worker, where `SHADOW_OUTCOME_TRACKER_ENABLED=0`, so expectancy-layer rows were never followed forward.\n- **Per-asset strategy scorecard** (`services/strategy_scorecard.py`):\n  - analytics rebuilds it every 3 h from issued outcomes (weight 3) plus every shadow-tracked rejected setup;\n  - cells per asset × timeframe × strategy × direction, with fallback to asset, asset class × timeframe, and\n    asset class;\n  - the engine multiplies the score by at most 0.85–1.15, and only when the cell's Wilson 95 % win-rate\n    interval is clearly above or below the cell's own break-even win rate (≥ 40 outcomes);\n  - `STRATEGY_SCORECARD_MODE=off|shadow|apply` (code default `shadow`: annotate `sig[\"strategy_scorecard\"]`\n    only). It never creates a signal or bypasses a gate.",
+      "line_end": 169,
+      "text": "## 8. 2 Nov 2026 (night): learning from every outcome\n\n- **Retrain with all rejected evidence** (`ML_MAX_SHADOW_REJECTED_EFFECTIVE_RATIO=50`, 45-day lookback, long DB\n  timeouts) trained on 231,747 rows and was **rejected by the quality gate**: accuracy 0.69 vs majority\n  baseline 0.82, AUC 0.62, expected R −0.17 on the validation slice. The 29 Sep model stays in service. The\n  rejected-setup population is dominated by losers (SL 139k vs TP 42k), and the current features cannot yet\n  separate the winners. More delivered outcomes and the per-asset scorecard below are the next levers.\n- **Expectancy shadow tracking now runs in analytics** (`runtime/analytics.py`). It was registered only in the\n  worker, where `SHADOW_OUTCOME_TRACKER_ENABLED=0`, so expectancy-layer rows were never followed forward.\n- **Per-asset strategy scorecard** (`services/strategy_scorecard.py`):\n  - analytics rebuilds it every 3 h from issued outcomes (weight 3) plus every shadow-tracked rejected setup;\n  - cells per asset × timeframe × strategy × direction, with fallback to asset, asset class × timeframe, and\n    asset class;\n  - the engine multiplies the score by at most 0.85–1.15, and only when the cell's Wilson 95 % win-rate\n    interval is clearly above or below the cell's own break-even win rate (≥ 40 outcomes);\n  - `STRATEGY_SCORECARD_MODE=off|shadow|apply` (code default `shadow`: annotate `sig[\"strategy_scorecard\"]`\n    only). It never creates a signal or bypasses a gate.\n",
       "clauses": [
         {
           "line": 152,
@@ -235985,6 +235985,86 @@
         {
           "line": 168,
           "text": "    only). It never creates a signal or bypasses a gate."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-0ebc90caf4f852cb",
+      "kind": "SOURCE",
+      "source": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md:170",
+      "requirement": "9. 2 Nov 2026 (early morning): strategies discovered from long external history",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "623dc8ce8fa860d514940c16baf64bdafe4017f503e9daa02cbbc701f50c37dd",
+      "line_start": 170,
+      "line_end": 185,
+      "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history\n\n- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly\n  loop on analytics) researches every asset in `TRADABLE_ASSETS`:\n  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,\n    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);\n  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with\n    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);\n  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten\n    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %\n    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);\n  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or\n    retired from its own forward record in the per-asset scorecard.\n- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.\n  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow\n  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.",
+      "clauses": [
+        {
+          "line": 170,
+          "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history"
+        },
+        {
+          "line": 172,
+          "text": "- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly"
+        },
+        {
+          "line": 173,
+          "text": "  loop on analytics) researches every asset in `TRADABLE_ASSETS`:"
+        },
+        {
+          "line": 174,
+          "text": "  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,"
+        },
+        {
+          "line": 175,
+          "text": "    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);"
+        },
+        {
+          "line": 176,
+          "text": "  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with"
+        },
+        {
+          "line": 177,
+          "text": "    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);"
+        },
+        {
+          "line": 178,
+          "text": "  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten"
+        },
+        {
+          "line": 179,
+          "text": "    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %"
+        },
+        {
+          "line": 180,
+          "text": "    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);"
+        },
+        {
+          "line": 181,
+          "text": "  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or"
+        },
+        {
+          "line": 182,
+          "text": "    retired from its own forward record in the per-asset scorecard."
+        },
+        {
+          "line": 183,
+          "text": "- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code."
+        },
+        {
+          "line": 184,
+          "text": "  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow"
+        },
+        {
+          "line": 185,
+          "text": "  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate."
         }
       ]
     },
@@ -526962,6 +527042,78 @@
       "requirement": "best_crypto_strategies",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/crypto.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-f95f8673d3372e04",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:77",
+      "requirement": "indicator_frame",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-1dd2b012d075f54a",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:107",
+      "requirement": "entry_mask",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-1f367d3c76883abc",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:155",
+      "requirement": "strategy_name",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-7b6bed32da6f5082",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:167",
+      "requirement": "mode",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-1cd37522ebe5db4f",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:172",
+      "requirement": "load_specs",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-b48a57bcaf7bf4cb",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/discovered.py:250",
+      "requirement": "discovered_candidates",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/discovered.py",
       "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
       "status": "IMPLEMENTED",
       "test_evidence": [],

@@ -166,3 +166,20 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
     interval is clearly above or below the cell's own break-even win rate (≥ 40 outcomes);
   - `STRATEGY_SCORECARD_MODE=off|shadow|apply` (code default `shadow`: annotate `sig["strategy_scorecard"]`
     only). It never creates a signal or bypasses a gate.
+
+## 9. 2 Nov 2026 (early morning): strategies discovered from long external history
+
+- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly
+  loop on analytics) researches every asset in `TRADABLE_ASSETS`:
+  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,
+    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);
+  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with
+    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);
+  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten
+    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %
+    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);
+  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or
+    retired from its own forward record in the per-asset scorecard.
+- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.
+  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow
+  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.

@@ -434,6 +434,9 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
         if _enabled("STRATEGY_SCORECARD_ENABLED", True):
             from services.strategy_scorecard import strategy_scorecard_loop
             tasks.append(asyncio.create_task(strategy_scorecard_loop(stop), name="strategy-scorecard"))
+        if _enabled("STRATEGY_DISCOVERY_ENABLED", True):
+            from ml.strategy_discovery import strategy_discovery_loop
+            tasks.append(asyncio.create_task(strategy_discovery_loop(stop), name="strategy-discovery"))
         if _enabled("ASSET_LEARNING_ENABLED", True):
             from worker.asset_learning_worker import asset_learning_worker
             tasks.append(asyncio.create_task(asset_learning_worker.run(stop),name="asset-learning"))
