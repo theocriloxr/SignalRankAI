@@ -246,3 +246,6 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
   misaligned login were from it). The server now builds the website in `next` mode, i.e. the new Next.js workspace.
   Its sign-in page gained a "From Telegram" tab (`/auth/telegram/complete`), and `/activate?token=` links from the bot
   redirect to `/login?token=`. Roll back with `sr env-set SIGNALRANK_WORKSPACE_MODE=legacy web` and a web deploy.
+- The strategy scorecard now counts a shadow setup once per bar (asset × timeframe × strategy × direction); re-scans had turned
+  one 4h bar into thousands of identical outcomes (XAGUSD 4h EMA Trend: 3,470 rows, almost all on 30 Oct).
+

@@ -99,3 +99,35 @@ def test_market_breaker_scope_defaults_to_crypto(monkeypatch):
     assert not engine_core._is_crypto_symbol("EURUSD")
     src = open(engine_core.__file__, encoding="utf-8").read()
     assert "assets = [a for a in assets if not _is_crypto_symbol(a)]" in src
+
+
+def test_repeated_logs_of_one_setup_in_one_bar_count_once():
+    from datetime import datetime
+
+    base = datetime(2026, 10, 30, 8, 0)
+    # 300 identical rejected rows inside one 4h bar (re-scans) plus 50 distinct bars.
+    storm = [
+        {"asset": "XAGUSD", "timeframe": "4h", "strategy": "EMA Trend", "direction": "long", "r": -1.0,
+         "source": "shadow", "bar": sc.bar_index(base.replace(minute=i % 60), "4h")}
+        for i in range(300)
+    ]
+    distinct = [
+        {"asset": "XAGUSD", "timeframe": "4h", "strategy": "EMA Trend", "direction": "long",
+         "r": 2.0 if i % 2 else -1.0, "source": "shadow", "bar": 1000 + i}
+        for i in range(50)
+    ]
+    card = sc.build_scorecard(storm + distinct)
+    cell = card["cells"]["asset_tf_dir"]["XAGUSD|4h|ema trend|long"]
+    assert cell["n"] == 51
+    assert card["duplicates_skipped"] == 299
+    # A short in the same bar and an issued outcome are separate opportunities.
+    extra = [dict(storm[0], direction="short"), dict(storm[0], source="issued")]
+    assert sc.build_scorecard(storm + extra, issued_weight=1)["rows_used"] == 3
+
+
+def test_bar_index_uses_the_timeframe():
+    from datetime import datetime
+
+    assert sc.bar_index(datetime(2026, 11, 2, 3, 59), "4h") == sc.bar_index(datetime(2026, 11, 2, 0, 1), "4h")
+    assert sc.bar_index(datetime(2026, 11, 2, 4, 0), "4h") != sc.bar_index(datetime(2026, 11, 2, 3, 59), "4h")
+    assert sc.bar_index(None, "1h") is None

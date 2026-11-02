@@ -151,6 +151,27 @@ def _classify(asset: str) -> str:
     return "crypto" if upper.endswith(("USDT", "USDC", "PERP")) else "other"
 
 
+_TIMEFRAME_SECONDS = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+    "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200, "1d": 86400, "24h": 86400, "1w": 604800,
+}
+
+
+def bar_index(created_at: Any, timeframe: Any) -> int | None:
+    """Index of the timeframe bar a decision was logged in (UTC-naive timestamps)."""
+    if created_at is None or not hasattr(created_at, "timestamp"):
+        return None
+    seconds = _TIMEFRAME_SECONDS.get(str(timeframe or "").strip().lower(), 3600)
+    try:
+        if getattr(created_at, "tzinfo", None) is None:
+            from datetime import timezone
+
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return int(created_at.timestamp() // seconds)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
 def cell_keys(asset: str, timeframe: str, strategy: str, direction: str, asset_class: str) -> list[tuple[str, str]]:
     """Scope keys from the most specific to the most general."""
     a, tf, st = asset.upper(), timeframe.lower(), strategy.lower()
@@ -220,6 +241,8 @@ def build_scorecard(rows: Iterable[Mapping[str, Any]], *, issued_weight: int | N
     weight = issued_weight if issued_weight is not None else _env_int("STRATEGY_SCORECARD_ISSUED_WEIGHT", 3, 1, 20)
     cells: dict[str, dict[str, _Cell]] = {scope: defaultdict(_Cell) for scope in _SCOPES}
     used = 0
+    duplicates = 0
+    seen: set[tuple[Any, ...]] = set()
     for row in rows:
         r = row.get("r")
         if r is None:
@@ -235,6 +258,18 @@ def build_scorecard(rows: Iterable[Mapping[str, Any]], *, issued_weight: int | N
         if strategy == "unknown" or asset == "UNKNOWN":
             continue
         source = "issued" if row.get("source") == "issued" else "shadow"
+        bar = row.get("bar")
+        if source == "shadow" and bar is not None:
+            # The engine re-evaluates the same setup on every scan, so one
+            # bar can log the same rejected candidate hundreds of times (2 Nov:
+            # 3,470 XAGUSD 4h EMA Trend rows in about a day). One bar of one
+            # strategy and direction is one trade opportunity.
+            dedup = (asset, _norm(row.get("timeframe")).lower(), strategy.lower(),
+                     _norm(row.get("direction"), "long").lower() in {"long", "buy"}, bar)
+            if dedup in seen:
+                duplicates += 1
+                continue
+            seen.add(dedup)
         keys = cell_keys(
             asset,
             _norm(row.get("timeframe")),
@@ -250,7 +285,7 @@ def build_scorecard(rows: Iterable[Mapping[str, Any]], *, issued_weight: int | N
         scope: {key: summarise_cell(cell) for key, cell in scoped.items() if cell.wins + cell.losses >= min_n}
         for scope, scoped in cells.items()
     }
-    return {"rows_used": used, "cells": published}
+    return {"rows_used": used, "duplicates_skipped": duplicates, "cells": published}
 
 
 def adjustment_for_cell(cell: Mapping[str, Any] | None) -> tuple[float, str]:
@@ -394,7 +429,7 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
                 await session.execute(
                     text(
                         """
-                        SELECT id, asset, timeframe,
+                        SELECT id, asset, timeframe, created_at,
                                meta::jsonb->>'direction', meta::jsonb->>'entry', meta::jsonb->>'stop_loss',
                                meta::jsonb->'take_profit', meta::jsonb->>'actual_outcome',
                                COALESCE(meta::jsonb->'features'->>'strategy_name',
@@ -407,11 +442,11 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
                     {"after": after, "page": page},
                 )
             ).all()
-        for _id, asset, tf, direction, entry, stop, tp, outcome, strategy in batch:
+        for _id, asset, tf, created_at, direction, entry, stop, tp, outcome, strategy in batch:
             r = outcome_r(direction, entry, stop, tp, outcome)
             if r is not None:
                 rows.append({"asset": asset, "timeframe": tf, "strategy": strategy, "direction": direction,
-                             "r": r, "source": "shadow"})
+                             "r": r, "source": "shadow", "bar": bar_index(created_at, tf)})
         after += page
         if after >= max_id:
             break
@@ -444,6 +479,7 @@ async def rebuild_once() -> dict[str, Any]:
     penalised = sum(1 for _, (m, _) in decisive if m < 1.0)
     summary = {
         "rows_used": scorecard["rows_used"],
+        "duplicates_skipped": scorecard.get("duplicates_skipped", 0),
         "sources": scorecard["sources"],
         "cells": {scope: len(v) for scope, v in cells.items()},
         "asset_tf_boosted": boosted,
@@ -480,6 +516,7 @@ async def strategy_scorecard_loop(stop: asyncio.Event) -> None:
 __all__ = [
     "REDIS_KEY",
     "adjustment_for_cell",
+    "bar_index",
     "build_scorecard",
     "lookup",
     "outcome_r",

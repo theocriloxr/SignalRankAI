@@ -1,5 +1,11 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 (daily review) — strategy scorecard counts one setup once per bar (scheduled review session)
+
+- Production evidence (2 Nov, `decision_log` tracked rows 28–31 Oct): the engine re-logs the same rejected setup on every scan, so single cells were built from one or two bars repeated thousands of times — XAGUSD 4h EMA Trend 3,470 rows (94 % on 30 Oct, all stops), XAUUSD 15m EMA Trend 3,112 rows (100 % on 30 Oct), AAVEUSDT 1h EMA Trend 1,622 rows (92 % on one day). Each was penalised at the 0.85 floor from what is effectively one or two trades.
+- `services/strategy_scorecard.py`: shadow rows count once per asset × timeframe × strategy × direction × timeframe bar (first logged row wins); issued outcomes are unchanged. The rebuild summary reports `duplicates_skipped`. Scorecard mode, bounds, sample minimums and edge margin are unchanged.
+- Tests: `tests/test_strategy_scorecard_20261102.py` (+2) with the discovery and shadow-window tests, 35 pass locally (Python 3.11.18).
+
 ## Continuation, 2 November 2026 (daily review) — shadow outcomes no longer judged from a candle window that starts after the rejection (scheduled review session)
 
 - Production evidence (2 Nov 05:48 UTC, `decision_log`): rows tracked in the previous 6 h were labelled on average 46 h after the rejection, while providers return 200 bars (`[data][async] ... tf=5m candles=200`), i.e. 3.3 h of 1m and 16.7 h of 5m history. Every 1m/5m row in that window was judged from candles that began long after the rejection, so the first barrier touch could be missing; their win rates (1m 47 %, 5m 31 % vs 1h 6 %) fed the scorecard and retraining.
