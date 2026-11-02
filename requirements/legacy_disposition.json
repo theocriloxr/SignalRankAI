@@ -1,5 +1,5 @@
 {
-  "file_count": 2667,
+  "file_count": 2670,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7371,11 +7371,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10814,
+      "line_count": 10821,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a51e6c93c51d57c53021a11930238865d3e06466d0d7dbb83daacec418860007",
-      "size_bytes": 4911478
+      "sha256": "d8b2d56fa30b2d8b15e5fc406c327447c9dfca2eeaca531f5dacb5ef7feedac5",
+      "size_bytes": 4914772
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10267,11 +10267,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 527727,
+      "line_count": 527879,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "d6e354980a7baa41714ba7a5d94111159707a64f93a36330aeeabed4927d0d8e",
-      "size_bytes": 24549961
+      "sha256": "b5628a0a23b1df0f02e8be3ba3582f00d3629c92f7fb32c61ab8bebeb46a1064",
+      "size_bytes": 24559326
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -12936,6 +12936,14 @@
       "reason": "production/build source",
       "sha256": "9953a65f8e0e4748dbd4c4b5a0ded587de7f6a5b2507512ed59172515202bd27",
       "size_bytes": 12035
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 600,
+      "path": "ml/strategy_discovery.py",
+      "reason": "production/build source",
+      "sha256": "63caeac953edaaf924953141f2785e8d1db9a93fca2c12a29e27619e8b3dedf3",
+      "size_bytes": 26369
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17347,6 +17355,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 323,
+      "path": "strategies/discovered.py",
+      "reason": "production/build source",
+      "sha256": "e787583092060cafeb04069af90a07d2aa330118992cd65e90fc3a366ca3021d",
+      "size_bytes": 13638
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 150,
       "path": "strategies/dynamic_targets.py",
       "reason": "production/build source",
@@ -20243,6 +20259,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 149,
+      "path": "tests/test_strategy_discovery_20261102.py",
+      "reason": "automated test evidence",
+      "sha256": "6949d7e2fdfe77ecb1ec61311bd77a99edd1193008d538f3f08b2916526619ca",
+      "size_bytes": 6927
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 210,
       "path": "tests/test_strategy_health_baselines.py",
       "reason": "automated test evidence",
@@ -21351,7 +21375,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
-    "PRESERVE_BEHAVIOUR": 1361,
-    "TEST_ONLY": 430
+    "PRESERVE_BEHAVIOUR": 1363,
+    "TEST_ONLY": 431
   }
 }
