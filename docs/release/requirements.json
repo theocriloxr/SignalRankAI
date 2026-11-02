@@ -370,7 +370,7 @@
   "summary": {
     "documents": 394,
     "requirements_and_source_sections": 10032,
-    "source_clauses": 60250,
+    "source_clauses": 60255,
     "interfaces": {
       "ENDPOINT": 185,
       "API": 173,
@@ -3132,9 +3132,9 @@
     },
     {
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
-      "sha256_lf": "fd2683f32d279edb3641c92e3aa9cf20bbfa893bbc5d1f1062fc59671fe21ef9",
+      "sha256_lf": "b5dd2a72aab286c1ea269f7bb7ddbac98c5c67a185f3ddaee49346a86a89abd9",
       "encoding": "utf-8-sig",
-      "line_count": 185,
+      "line_count": 190,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 10
     },
@@ -236001,10 +236001,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "623dc8ce8fa860d514940c16baf64bdafe4017f503e9daa02cbbc701f50c37dd",
+      "source_sha256": "0376ea4b6208b31204a35d5d5d7d52c498c7c672861f69f28342ca8f291330ce",
       "line_start": 170,
-      "line_end": 185,
-      "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history\n\n- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly\n  loop on analytics) researches every asset in `TRADABLE_ASSETS`:\n  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,\n    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);\n  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with\n    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);\n  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten\n    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %\n    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);\n  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or\n    retired from its own forward record in the per-asset scorecard.\n- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.\n  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow\n  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.",
+      "line_end": 190,
+      "text": "## 9. 2 Nov 2026 (early morning): strategies discovered from long external history\n\n- `ml/strategy_discovery.py` (CLI `python -m ml.strategy_discovery [--assets …] [--dry-run]`, plus a weekly\n  loop on analytics) researches every asset in `TRADABLE_ASSETS`:\n  - history: Binance public data for crypto since 2019 (1h, 1d; 4h resampled), Yahoo Finance for forex, stocks,\n    indices and commodities (730 days of 1h, full daily history), SignalRank `market_candles` as a fallback (CLI);\n  - 7 rule families × parameters × 5 stop/target pairs × 2 directions = 360 rules per asset and timeframe, with\n    next-bar entry, stop-first on shared bars, a time stop and per-class costs (`DISCOVERY_COSTS_JSON`);\n  - selection on the first 60 % only (≥ 30 trades, ≥ +0.05 R, t ≥ 2, positive in ≥ 60 % of sub-periods); the ten\n    best are checked on the next 20 %, and a rule survives only if it is also profitable on the final 20 %\n    (profit factor ≥ 1.15 out of sample); on a random walk nothing survives (test);\n  - each weekly run re-tests published specs on the newest 20 % and retires decayed ones; a spec is approved or\n    retired from its own forward record in the per-asset scorecard.\n- `strategies/discovered.py` runs published specs inside `run_all_strategies` with the same indicator code.\n  `DISCOVERED_STRATEGIES_MODE=shadow` (default) records matches as `discovered_shadow` rows, which the shadow\n  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate.\n- **First run (2 Nov 04:21 UTC, 493 s):** 59 assets × 3 timeframes, 340 rules each; 72 specs survived and were\n  published in `shadow` (crypto 21, stocks 27, indices 18, commodities 4, forex 1, GBPJPY 4h). Almost all are\n  long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward\n  record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was\n  recorded two minutes after publishing.",
       "clauses": [
         {
           "line": 170,
@@ -236065,6 +236065,26 @@
         {
           "line": 185,
           "text": "  tracker follows forward; `live` returns only `approved` specs as normal candidates through every gate."
+        },
+        {
+          "line": 186,
+          "text": "- **First run (2 Nov 04:21 UTC, 493 s):** 59 assets × 3 timeframes, 340 rules each; 72 specs survived and were"
+        },
+        {
+          "line": 187,
+          "text": "  published in `shadow` (crypto 21, stocks 27, indices 18, commodities 4, forex 1, GBPJPY 4h). Almost all are"
+        },
+        {
+          "line": 188,
+          "text": "  long-side momentum/breakout rules on daily and 4h bars; the history is mostly a rising market, so the forward"
+        },
+        {
+          "line": 189,
+          "text": "  record must confirm them before any approval. The first `discovered_strategy_shadow` row (ETHUSDT 4h) was"
+        },
+        {
+          "line": 190,
+          "text": "  recorded two minutes after publishing."
         }
       ]
     },

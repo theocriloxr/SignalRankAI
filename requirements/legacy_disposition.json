@@ -7187,11 +7187,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 185,
+      "line_count": 190,
       "path": "docs/operations/SERVER_OPERATIONS_HANDOFF_20261101.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "fd2683f32d279edb3641c92e3aa9cf20bbfa893bbc5d1f1062fc59671fe21ef9",
-      "size_bytes": 13845
+      "sha256": "b5dd2a72aab286c1ea269f7bb7ddbac98c5c67a185f3ddaee49346a86a89abd9",
+      "size_bytes": 14328
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
