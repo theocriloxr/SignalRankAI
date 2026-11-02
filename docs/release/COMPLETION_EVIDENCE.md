@@ -1,5 +1,11 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 2 November 2026 (daily review) — shadow outcomes no longer judged from a candle window that starts after the rejection (scheduled review session)
+
+- Production evidence (2 Nov 05:48 UTC, `decision_log`): rows tracked in the previous 6 h were labelled on average 46 h after the rejection, while providers return 200 bars (`[data][async] ... tf=5m candles=200`), i.e. 3.3 h of 1m and 16.7 h of 5m history. Every 1m/5m row in that window was judged from candles that began long after the rejection, so the first barrier touch could be missing; their win rates (1m 47 %, 5m 31 % vs 1h 6 %) fed the scorecard and retraining.
+- `engine/shadow_outcome_worker.py`: when the first returned candle opens more than one bar after the rejection, the row is stored as `unverifiable` (excluded by the trainer, scorecard, expectancy shadow and admin counts, which accept only tp*/sl/win/loss). Without candles, a live price may decide a row only within max(2 bars, 30 min) of the rejection; older rows wait for candles. No threshold, gate, scorecard mode or trading setting changed.
+- Tests: `tests/test_shadow_tracker_history_window_20261102.py` (6) plus 195 shadow-tracker, expectancy, scorecard and ML-learning tests pass locally (Python 3.11.18; 2 skipped).
+
 ## Continuation, 2 November 2026 (midday) — worst-case loss headroom and prop-firm presets (server session)
 
 - Account policy evaluation adds worst-case daily/drawdown headroom over open-position risk, `max_allowed_risk_pct`, and an optional loss-streak pause. `core/prop_rules.py` adds sourced, dated presets for FTMO, FundedNext and Topstep programs and a `prop_preset` hard rule that keeps equity above both firm floors plus a buffer even if every open position and the new order stop out; the MT5 router supplies open-position risk. New routes `GET /broker/prop-presets` and `PUT /broker/connections/{id}/prop-preset` (parity matrix updated). Only restrictions were added; no permission, kill switch or live-trading setting changed.

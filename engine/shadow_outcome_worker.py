@@ -20,6 +20,22 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+_TIMEFRAME_SECONDS = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+    "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200, "1d": 86400, "24h": 86400, "1w": 604800,
+}
+
+# Outcome stored when the candles a provider returns start after the bar that
+# followed the rejection. The path between the rejection and the first candle
+# is unknown, so neither a win nor a loss can be proven; consumers that accept
+# only tp*/sl/win/loss labels exclude it automatically.
+UNVERIFIABLE_OUTCOME = "unverifiable"
+
+
+def _timeframe_seconds(timeframe: Any) -> int:
+    return _TIMEFRAME_SECONDS.get(str(timeframe or "").strip().lower(), 3600)
+
+
 def _shadow_db_priority() -> str:
     role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
     return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
@@ -224,6 +240,16 @@ class ShadowOutcomeWorker:
             final_target = float(targets[-1]) if targets else 0.0
             if stop <= 0 or final_target <= 0:
                 return None
+            if isinstance(created_at, datetime) and candles:
+                times = [t for t in (_candle_time(c) for c in candles) if t is not None]
+                # Providers return a fixed number of recent bars (often 200:
+                # under 17 hours of 5m bars). When the tracker reaches a row
+                # after that window has moved past it, the first barrier touch
+                # may be missing; judging the rest of the path would record
+                # false wins and false losses.
+                bar = timedelta(seconds=_timeframe_seconds(row.get("timeframe")))
+                if times and min(times) > created_at + bar:
+                    return UNVERIFIABLE_OUTCOME
             for candle in candles:
                 candle_time = _candle_time(candle)
                 # A rejected signal can only be judged on market data observed
@@ -254,6 +280,13 @@ class ShadowOutcomeWorker:
                 except Exception:
                     candles = []
                 historical = historical_terminal(row, candles)
+                if historical == UNVERIFIABLE_OUTCOME:
+                    return row, UNVERIFIABLE_OUTCOME
+                if not candles and not self._live_price_can_judge(row):
+                    # No candle history: a current price cannot tell which
+                    # barrier was touched first for an older rejection. Retry
+                    # on a later pass when candles are available.
+                    return None
                 if historical == "ambiguous":
                     # Persist ambiguous candle ordering as an explicit excluded
                     # research result. Retrying forever would leave shadow
@@ -276,6 +309,16 @@ class ShadowOutcomeWorker:
 
         results = await asyncio.gather(*(one(row) for row in rows), return_exceptions=True)
         return [item for item in results if isinstance(item, tuple)]
+
+    def _live_price_can_judge(self, row: dict[str, Any]) -> bool:
+        """A live price alone may decide a row only shortly after its rejection."""
+        created_at = row.get("created_at")
+        if not isinstance(created_at, datetime):
+            return True
+        if created_at.tzinfo is not None:
+            created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+        limit = max(2 * _timeframe_seconds(row.get("timeframe")), 30 * 60)
+        return (now_utc_naive() - created_at).total_seconds() <= limit
 
     async def _persist(self, evaluated: list[tuple[dict[str, Any], str]]) -> int:
         if not evaluated:

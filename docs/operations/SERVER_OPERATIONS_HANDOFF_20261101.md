@@ -220,3 +220,14 @@ Both sessions commit to this branch. Pull and rebase before every push, keep com
   preset; execution stays `SIGNALS_ONLY` until certification).
 - No execution flag, kill switch, live-trading permission or payout setting changed. TradingView market data is
   not used: its terms forbid scraping; TradingView alerts can be received by webhook instead.
+
+## 12. 2 Nov 2026 (daily review): shadow outcome labels need the full candle path
+
+- The ML tracker ran ~46 h behind on 2 Nov while providers return 200 bars (16.7 h of 5m). Rows whose returned candles start
+  more than one bar after the rejection are now stored as `actual_outcome='unverifiable'` and excluded from learning; a live
+  price alone decides a row only within max(2 bars, 30 min) of the rejection.
+- Rows labelled before this change (1m/5m especially, and 15m tracked > 50 h late) carry this bias; prefer outcomes tracked
+  after this commit when judging 1m–15m scorecard cells or a retrain.
+- Rows that stay unresolved longer than the provider window also become `unverifiable`; a deeper tracker window (e.g. 1000 bars
+  where the provider allows) would keep long-running setups.
+
