@@ -7371,11 +7371,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10821,
+      "line_count": 10823,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d8b2d56fa30b2d8b15e5fc406c327447c9dfca2eeaca531f5dacb5ef7feedac5",
-      "size_bytes": 4914772
+      "sha256": "283db847176a82de6051129ee0f95576ff0af85978a96d0981fcfa654e2878f5",
+      "size_bytes": 4915753
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10267,11 +10267,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 527899,
+      "line_count": 527979,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "f56b607669df862931ed98ae0aed284c9c89e040c82c13d57f13c231d1cc66d8",
-      "size_bytes": 24560617
+      "sha256": "13c0ccaa05d092b7b6bc4f9b50401b8222193559e8331c0434a5b402bfbdf7d2",
+      "size_bytes": 24565444
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
