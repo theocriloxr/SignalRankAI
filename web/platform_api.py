@@ -6648,20 +6648,35 @@ async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
 @router.get("/performance")
 async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "performance_analytics")
+    from services.performance_ledger import COMPLETED_BUCKETS
+
     uid = int(user["id"])
+    # The ledger stores canonical upper-case buckets (TP3, STOPPED_AT_TP1, SL,
+    # ...). Matching lower-case names here counted every win and loss as 0.
+    completed = sorted(COMPLETED_BUCKETS)
     async with get_session() as session:
-        summary = (
+        counts = {
+            str(bucket or "").upper(): int(count or 0)
+            for bucket, count in (
+                await session.execute(
+                    text(
+                        "SELECT upper(primary_bucket),COUNT(*) FROM performance_ledger_entries "
+                        "WHERE user_id=:uid AND included GROUP BY 1"
+                    ),
+                    {"uid": uid},
+                )
+            ).all()
+        }
+        r_totals = (
             (
                 await session.execute(
                     text(
-                        "SELECT COUNT(*) FILTER (WHERE included) AS signals,"
-                        "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('win','tp1','tp2','tp3','partial_win','partial_win_be')) AS wins,"
-                        "COUNT(*) FILTER (WHERE included AND primary_bucket IN ('loss','sl')) AS losses,"
-                        "COALESCE(AVG(final_realized_r) FILTER (WHERE included),0) AS average_r,"
-                        "COALESCE(SUM(final_realized_r) FILTER (WHERE included),0) AS total_r "
-                        "FROM performance_ledger_entries WHERE user_id=:uid"
+                        "SELECT COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r,"
+                        "COUNT(*) FILTER (WHERE final_realized_r>0) AS profitable "
+                        "FROM performance_ledger_entries WHERE user_id=:uid AND included "
+                        "AND upper(primary_bucket)=ANY(:completed)"
                     ),
-                    {"uid": uid},
+                    {"uid": uid, "completed": completed},
                 )
             )
             .mappings()
@@ -6671,20 +6686,39 @@ async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str,
             (
                 await session.execute(
                     text(
-                        "SELECT asset,timeframe,COUNT(*) AS signals,COALESCE(AVG(final_realized_r),0) AS average_r,"
-                        "COALESCE(SUM(final_realized_r),0) AS total_r FROM performance_ledger_entries "
-                        "WHERE user_id=:uid AND included GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
+                        "SELECT asset,timeframe,COUNT(*) AS signals,"
+                        "COUNT(*) FILTER (WHERE upper(primary_bucket)='TP3') AS wins,"
+                        "COUNT(*) FILTER (WHERE upper(primary_bucket)='SL') AS losses,"
+                        "COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r "
+                        "FROM performance_ledger_entries WHERE user_id=:uid AND included "
+                        "AND upper(primary_bucket)=ANY(:completed) "
+                        "GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
                     ),
-                    {"uid": uid},
+                    {"uid": uid, "completed": completed},
                 )
             )
             .mappings()
             .all()
         )
         await session.rollback()
-    data = dict(summary or {})
-    total = int(data.get("signals") or 0)
-    data["win_rate"] = (int(data.get("wins") or 0) / total) if total else None
+    closed = sum(counts.get(name, 0) for name in completed)
+    wins, losses = counts.get("TP3", 0), counts.get("SL", 0)
+    totals = dict(r_totals or {})
+    data = {
+        # Same definitions as the proof ledger and the Telegram /performance view.
+        "signals": closed,
+        "wins": wins,
+        "partial_wins": counts.get("STOPPED_AT_TP1", 0) + counts.get("STOPPED_AT_TP2", 0),
+        "losses": losses,
+        "breakeven": counts.get("BREAKEVEN", 0) + counts.get("TIME_STOP", 0),
+        "open": counts.get("ACTIVE", 0) + counts.get("PENDING_ENTRY", 0),
+        "not_triggered": counts.get("MISSED_ENTRY", 0) + counts.get("EXPIRED", 0),
+        "delivered": sum(counts.values()),
+        "average_r": float(totals.get("average_r") or 0),
+        "total_r": float(totals.get("total_r") or 0),
+        "win_rate": (wins / (wins + losses)) if (wins + losses) else None,
+        "profitable_rate": (int(totals.get("profitable") or 0) / closed) if closed else None,
+    }
     data["claim_certified"] = False
     data["disclaimer"] = "User-level proof-backed history; not a guaranteed future win rate."
     return {"summary": data, "breakdown": [dict(row) for row in breakdown]}

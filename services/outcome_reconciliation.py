@@ -180,6 +180,9 @@ def _projection_metrics(
         "tp2_hit": bool(highest_tp >= 2),
         "tp3_hit": bool(highest_tp >= 3),
         "terminal_event_type": getattr(lifecycle, "terminal_event_type", None) if lifecycle else None,
+        # The price the terminal event actually observed; terminal_price may be a
+        # later mark (a TRUMPUSDT stop at 1.721 was reported as "Observed 1.752").
+        "observation_price": evidence.get("observation_price"),
         "observation_provider": evidence.get("observation_provider"),
         "observation_high": evidence.get("observation_high"),
         "observation_low": evidence.get("observation_low"),

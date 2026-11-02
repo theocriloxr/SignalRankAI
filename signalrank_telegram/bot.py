@@ -7993,6 +7993,10 @@ def run_bot() -> None:
                     if not isinstance(_evidence, dict):
                         _evidence = {}
                     for _candidate in (
+                        # The terminal event's own observation first; terminal_price
+                        # can be a later mark recorded during reconciliation.
+                        _meta.get("observation_price"),
+                        _evidence.get("observation_price"),
                         _meta.get("terminal_price"),
                         _meta.get("observed_price"),
                         _meta.get("hit_price"),

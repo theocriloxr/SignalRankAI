@@ -366,3 +366,33 @@ async def test_an_untouched_entry_expires_as_missed_and_is_not_a_loss(postgres_d
         outcome = (await session.execute(select(Outcome).where(Outcome.signal_id == stored["signal_id"]))).scalar_one()
     assert str(outcome.status).lower() in {"missed_entry", "expired"}, outcome.status
     assert outcome.r_multiple is None  # never a realized loss or win
+
+
+@pytest.mark.asyncio
+async def test_after_tp1_a_return_to_entry_is_a_protected_exit_not_a_loss(postgres_database, network_edges):  # noqa: F811
+    """The plan says "close 50% at TP1 & move SL to BE": the remainder is stopped at entry.
+
+    Production booked BTCUSDT (TP1 hit, +2.88R on that half) as -1.00R because the
+    tracker kept watching the original stop after TP1.
+    """
+    import signalrank_telegram.bot as bot
+    from db.models import Outcome, SignalTrackingEvent
+    from db.session import get_session
+    from engine.realtime_outcome_tracker import reconcile_signal_now
+
+    telegram_id = await _vip_user()
+    asset = f"K{uuid4().hex[:6].upper()}USDT"
+    network_edges.prices[asset] = 100.0
+    stored = await _stored(_signal(asset))
+    assert await bot.dispatch_signals_async([dict(stored)], telegram_id) == 1
+    for price in (100.0, 102.05, 99.95):  # entry, TP1, back through entry (original stop 98 untouched)
+        network_edges.prices[asset] = price
+        await reconcile_signal_now(stored["signal_id"])
+    async with get_session() as session:
+        outcome = (await session.execute(select(Outcome).where(Outcome.signal_id == stored["signal_id"]))).scalar_one()
+        stop_event = (await session.execute(select(SignalTrackingEvent).where(
+            SignalTrackingEvent.signal_id == stored["signal_id"],
+            SignalTrackingEvent.event_type == "breakeven_stop"))).scalar_one()
+    assert str(outcome.status).lower() == "partial_win_be", outcome.status
+    assert float(outcome.r_multiple) > 0, outcome.r_multiple  # TP1 half banked, remainder at 0R
+    assert float(stop_event.price) == pytest.approx(100.0) and float(stop_event.r_multiple) == pytest.approx(0.0, abs=1e-9)

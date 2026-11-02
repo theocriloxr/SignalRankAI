@@ -30,6 +30,37 @@ export function numberLabel(value: unknown, fractionDigits = 2): string {
   }).format(n);
 }
 
+/** A price with decimals sized to its magnitude (4,393.47 · 1.2345 · 0.00012345). */
+export function priceLabel(value: unknown): string {
+  const n = finite(value);
+  if (n === null) return "Unavailable";
+  const size = Math.abs(n);
+  const digits = size >= 1000 ? 2 : size >= 1 ? 4 : size >= 0.01 ? 6 : 8;
+  return new Intl.NumberFormat("en-NG", { maximumFractionDigits: digits }).format(n);
+}
+
+/** Take-profit levels from a list, a JSON-encoded list ("[1.2, 1.3]") or a single number. */
+export function targetPrices(value: unknown): number[] {
+  let raw: unknown = value;
+  if (typeof raw === "string" && raw.trim().startsWith("[")) {
+    try { raw = JSON.parse(raw); } catch { return []; }
+  }
+  const items = Array.isArray(raw) ? raw : [raw];
+  return items
+    .map(item => finite(item && typeof item === "object" ? (item as Record<string, unknown>).price : item))
+    .filter((n): n is number => n !== null && n > 0);
+}
+
+/** Reward-to-risk to the final target, from the stored estimate or the levels themselves. */
+export function riskReward(entry: unknown, stop: unknown, targets: number[], stored?: unknown): number | null {
+  const given = finite(stored);
+  if (given !== null && given > 0) return given;
+  const e = finite(entry), s = finite(stop), t = targets.length ? targets[targets.length - 1] : null;
+  if (e === null || s === null || t === null || e === s) return null;
+  const ratio = Math.abs(t - e) / Math.abs(e - s);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+}
+
 /** The backend's ml_probability_calibrated is a [0, 1] probability, not a percentage. */
 export function probabilityLabel(value: unknown): string {
   const n = finite(value);

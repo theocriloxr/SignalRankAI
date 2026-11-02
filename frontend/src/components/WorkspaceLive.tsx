@@ -30,8 +30,8 @@ import { SignalFilters, type SignalQuery } from "./SignalFilters";
 import { Icon, type IconName } from "./ui/Icon";
 import { Badge, Card, DirectionBadge, Empty, KV, KVList, Notice, Skeleton, Stat, TableWrap, type Tone } from "./ui/primitives";
 import {
-  display, finite, moneyLabel, numberLabel,
-  probabilityLabel, record, rows, statusText, timeLabel,
+  display, finite, moneyLabel, numberLabel, priceLabel,
+  probabilityLabel, record, riskReward, rows, statusText, targetPrices, timeLabel,
   type Row,
 } from "../lib/presentation";
 
@@ -116,6 +116,8 @@ function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolea
   const direction = display(signal.direction, "");
   const probability = finite(signal.ml_probability_calibrated);
   const outcome = display(signal.outcome_status, "Lifecycle not reported");
+  const targets = targetPrices(signal.take_profit);
+  const rr = riskReward(signal.entry, signal.stop_loss, targets, signal.rr_estimate ?? signal.rr_final);
   return <article className="ws-signal">
     <header className="ws-signal-head">
       <div>
@@ -125,19 +127,19 @@ function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolea
       <Badge tone={outcomeTone(outcome)}>{outcome}</Badge>
     </header>
     <dl className="ws-levels">
-      <div className="ws-level"><dt>Entry</dt><dd>{numberLabel(signal.entry, 6)}</dd></div>
-      <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{numberLabel(signal.stop_loss, 6)}</dd></div>
-      <div className="ws-level ws-level--target"><dt>Target</dt><dd>{numberLabel(signal.take_profit, 6)}</dd></div>
+      <div className="ws-level"><dt>Entry</dt><dd>{priceLabel(signal.entry)}</dd></div>
+      <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{priceLabel(signal.stop_loss)}</dd></div>
+      <div className="ws-level ws-level--target"><dt>{targets.length > 1 ? `Targets (${targets.length})` : "Target"}</dt>
+        <dd>{targets.length ? targets.map(priceLabel).join(" · ") : "Not set"}</dd></div>
     </dl>
     <div className="ws-signal-meta">
-      <span>R/R <b>{numberLabel(signal.rr_estimate)}</b></span>
+      <span>R/R <b>{rr === null ? "Not set" : `1 : ${numberLabel(rr)}`}</b></span>
       <span>Strategy <b>{display(signal.strategy_name)}</b></span>
     </div>
-    <div className="ws-prob">
-      <div className="ws-signal-meta"><span>Calibrated probability <b>{probabilityLabel(signal.ml_probability_calibrated)}</b></span></div>
-      {probability !== null && probability >= 0 && probability <= 1 &&
-        <div className="ws-prob-bar" aria-hidden="true"><span style={{width:`${(probability*100).toFixed(1)}%`}}/></div>}
-    </div>
+    {probability !== null && probability >= 0 && probability <= 1 && <div className="ws-prob">
+      <div className="ws-signal-meta"><span>Calibrated probability <b>{probabilityLabel(probability)}</b></span></div>
+      <div className="ws-prob-bar" aria-hidden="true"><span style={{width:`${(probability*100).toFixed(1)}%`}}/></div>
+    </div>}
     <footer className="ws-signal-foot"><span>Received {timeLabel(signal.delivered_at)}</span>
       {!detail && id && <Link className="ui-link" href={`/app/signals/${encodeURIComponent(id)}`}>Inspect evidence <Icon name="arrowRight"/></Link>}</footer>
   </article>;
@@ -241,9 +243,16 @@ function PerformanceView({ data }: { data: Row }) {
   const sample = finite(summary.signals);
   return <div className="ws-stack">
     <Notice tone="warning">{display(summary.disclaimer,"Historical performance is not a guarantee of future results.")} Claim certified: <strong>{summary.claim_certified === true ? "yes" : "no"}</strong>.</Notice>
-    {sample !== null && sample < MIN_SAMPLE && <Notice tone="neutral">Only {numberLabel(sample,0)} evaluated signals. Ratios from fewer than {MIN_SAMPLE} outcomes are statistically weak — treat them as anecdotal.</Notice>}
-    <div className="ui-stat-grid"><Stat icon="signals" label="Evaluated signals" value={numberLabel(summary.signals,0)}/><Stat icon="check" label="Wins" value={numberLabel(summary.wins,0)}/><Stat icon="x" label="Losses" value={numberLabel(summary.losses,0)}/><Stat icon="performance" label="Historical win ratio" value={probabilityLabel(summary.win_rate)} detail="Not a forward performance promise"/></div>
-    <Card title="Breakdown by instrument" description="Mean and total R express outcomes in multiples of the planned risk.">{breakdown.length?<TableWrap label="Scrollable performance breakdown"><thead><tr><th>Instrument</th><th>Timeframe</th><th>Signals</th><th>Mean R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>)}</tbody></TableWrap>:<Empty title="No evaluated outcomes yet." icon="performance"/>}</Card>
+    {sample !== null && sample < MIN_SAMPLE && <Notice tone="neutral">Only {numberLabel(sample,0)} closed trades. Ratios from fewer than {MIN_SAMPLE} outcomes are statistically weak — treat them as anecdotal.</Notice>}
+    <div className="ui-stat-grid">
+      <Stat icon="signals" label="Closed trades" value={numberLabel(summary.signals,0)} detail={`${numberLabel(summary.delivered,0)} delivered in total`}/>
+      <Stat icon="check" label="Full wins (TP3)" value={numberLabel(summary.wins,0)} detail={`${numberLabel(summary.partial_wins,0)} partial wins stopped after TP1/TP2`}/>
+      <Stat icon="x" label="Losses (stop hit)" value={numberLabel(summary.losses,0)} detail={`${numberLabel(summary.breakeven,0)} breakeven or time stop`}/>
+      <Stat icon="performance" label="Win ratio (TP3 vs stop)" value={probabilityLabel(summary.win_rate)} detail={`Profitable closes: ${probabilityLabel(summary.profitable_rate)}. Not a forward promise.`}/>
+      <Stat icon="layers" label="Total R (closed)" value={numberLabel(summary.total_r)} detail={`Mean ${numberLabel(summary.average_r)} R per closed trade`}/>
+      <Stat icon="signals" label="Still open or not triggered" value={numberLabel(finite(summary.open) === null || finite(summary.not_triggered) === null ? null : (finite(summary.open) ?? 0) + (finite(summary.not_triggered) ?? 0),0)} detail={`${numberLabel(summary.open,0)} open · ${numberLabel(summary.not_triggered,0)} entry never reached or expired`}/>
+    </div>
+    <Card title="Breakdown by instrument" description="Closed trades only. Mean and total R express outcomes in multiples of the planned risk.">{breakdown.length?<TableWrap label="Scrollable performance breakdown"><thead><tr><th>Instrument</th><th>Timeframe</th><th>Closed</th><th>Full wins</th><th>Losses</th><th>Mean R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}</td><td>{numberLabel(p.wins,0)}</td><td>{numberLabel(p.losses,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>)}</tbody></TableWrap>:<Empty title="No closed trades yet." icon="performance"/>}</Card>
   </div>;
 }
 

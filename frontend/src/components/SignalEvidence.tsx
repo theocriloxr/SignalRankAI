@@ -1,4 +1,4 @@
-import { display, finite, numberLabel, probabilityLabel, record, rows, timeLabel, type Row } from "../lib/presentation";
+import { display, finite, numberLabel, priceLabel, probabilityLabel, record, riskReward, rows, targetPrices, timeLabel, type Row } from "../lib/presentation";
 import { Icon } from "./ui/Icon";
 import { Badge, Card, KV, KVList, Notice, TableWrap } from "./ui/primitives";
 
@@ -47,7 +47,7 @@ export function SignalEvidence({ data }: { data: Row }) {
         <h3>Model and risk context</h3>
         <KVList>
           <KV label="Calibrated probability" value={probabilityLabel(signal.ml_probability_calibrated)}/>
-          <KV label="Risk / reward estimate" value={numberLabel(signal.rr_estimate)}/>
+          <KV label="Risk / reward estimate" value={(() => { const rr = riskReward(signal.entry, signal.stop_loss, targetPrices(signal.take_profit), signal.rr_estimate ?? signal.rr_final); return rr === null ? "Not set" : `1 : ${numberLabel(rr)}`; })()}/>
           <KV label="Strategy" value={display(signal.strategy_name)}/>
           <KV label="Market regime" value={display(signal.regime)}/>
           <KV label="Model recovery mode" value={display(signal.ml_recovery_mode)}/>
@@ -82,7 +82,7 @@ export function SignalEvidence({ data }: { data: Row }) {
       <h3 id="ws-evidence-events">Recorded tracking events ({events.length})</h3>
       {events.length ? <TableWrap label="Scrollable signal event records">
         <thead><tr><th>Event time</th><th>Type</th><th>Observed price</th><th>R multiple</th></tr></thead>
-        <tbody>{events.map((event, index) => <tr key={index}><td>{timeLabel(event.event_time)}</td><th>{display(event.event_type)}</th><td>{numberLabel(event.price, 6)}</td><td>{numberLabel(event.r_multiple, 3)}</td></tr>)}</tbody>
+        <tbody>{events.map((event, index) => <tr key={index}><td>{timeLabel(event.event_time)}</td><th>{display(event.event_type)}</th><td>{priceLabel(event.price)}</td><td>{numberLabel(event.r_multiple, 3)}</td></tr>)}</tbody>
       </TableWrap> : <p className="ui-muted">No tracking events were returned for this entitled signal. This does not establish that a trade filled or closed.</p>}
     </section>
   </Card>;

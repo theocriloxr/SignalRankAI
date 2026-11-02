@@ -2667,9 +2667,14 @@ class RealtimeOutcomeTracker:
         except Exception as exc:
             logger.debug("[outcome_tracker] retrace warning check failed for %s: %s", signal_id[:8], exc)
 
+        # After TP1 every delivered plan says "close 50% & move SL to BE": the
+        # remainder is protected at entry. Checking the original stop instead
+        # kept such trades open and booked a later stop-out against a stop the
+        # user no longer holds (-1R event on a protected exit).
+        active_stop = float(entry) if prev_tp >= 1 else sl
         hit = _check_hit_observation(
             direction,
-            sl,
+            active_stop,
             tp_levels,
             price,
             high=range_high,
@@ -2740,7 +2745,7 @@ class RealtimeOutcomeTracker:
             accepted = await record_lifecycle_event(
                 signal,
                 event_type,
-                sl,
+                active_stop,
                 {
                     "highest_tp_hit": prev_tp,
                     "observation_price": price,
@@ -2753,7 +2758,7 @@ class RealtimeOutcomeTracker:
             if accepted or not lifecycle_cas_enabled:
                 lifecycle_state = event_state(event_type)
                 signal["lifecycle_state"] = lifecycle_state
-                await _persist_outcome(signal_id, persist_status, entry, sl)
+                await _persist_outcome(signal_id, persist_status, entry, active_stop)
             await publish_snapshot()
             return
 
