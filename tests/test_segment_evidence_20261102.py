@@ -120,7 +120,7 @@ async def test_a_setup_logged_on_every_scan_counts_once_per_bar(postgres_databas
     from utils.timeutils import now_utc_naive
 
     strategy = f"Rescanned {uuid4().hex[:6]}"
-    bar_start = now_utc_naive().replace(minute=0, second=0, microsecond=0)
+    bar_start = now_utc_naive().replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
     async with get_session() as session:
         for i in range(500):  # one 1h bar, re-logged on every scan
             session.add(DecisionLog(asset="BTCUSDT", timeframe="1h", decision="rejected", reason="ml",
@@ -132,3 +132,25 @@ async def test_a_setup_logged_on_every_scan_counts_once_per_bar(postgres_databas
         snapshot = await se.compute_snapshot(session)
         await session.rollback()
     assert snapshot["segments"][se.segment_key(strategy, "1h", "short")] == {"n": 1, "wins": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_bar_read_in_several_windows_counts_once(postgres_database):  # noqa: F811
+    from db.models import DecisionLog
+    from db.session import get_session
+    from utils.timeutils import now_utc_naive
+
+    strategy = f"Spanning {uuid4().hex[:6]}"
+    day = (now_utc_naive() - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # One 1d bar read in hourly windows: its first and last minute fall in different windows.
+    async with get_session() as session:
+        for created_at, outcome in ((day + timedelta(minutes=1), "sl"), (day + timedelta(hours=23, minutes=59), "tp1")):
+            session.add(DecisionLog(asset="ETHUSDT", timeframe="1d", decision="rejected", reason="ml",
+                                    created_at=created_at, meta={
+                                        "layer": "ml", "direction": "long", "features": {"strategy_name": strategy},
+                                        "actual_outcome": outcome}))
+        await session.commit()
+    async with get_session() as session:
+        snapshot = await se.compute_snapshot(session)
+        await session.rollback()
+    assert snapshot["segments"][se.segment_key(strategy, "1d", "long")] == {"n": 1, "wins": 0}

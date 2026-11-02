@@ -16011,11 +16011,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 227,
+      "line_count": 242,
       "path": "services/segment_evidence.py",
       "reason": "production/build source",
-      "sha256": "59ef61daee8f64e76801eb1dfd217f033f88155b677991ca9a1e41958ac1bf3b",
-      "size_bytes": 9561
+      "sha256": "f40d4692afd5fbd04c694d3fafa55369922441630e57894f78627df338624fed",
+      "size_bytes": 10265
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -20099,11 +20099,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 134,
+      "line_count": 156,
       "path": "tests/test_segment_evidence_20261102.py",
       "reason": "automated test evidence",
-      "sha256": "4d487fb13ba9545a5777241470021aca81023f096fbea4d1b56955d695c3a49c",
-      "size_bytes": 6226
+      "sha256": "937541d552e7577b94176bc600d685ba31cee12c9c178a50a8d9d83a3dc259fe",
+      "size_bytes": 7494
     },
     {
       "disposition": "TEST_ONLY",
@@ -21502,8 +21502,8 @@
       "line_count": 1384,
       "path": "worker/worker.py",
       "reason": "production/build source",
-      "sha256": "d214d7171db9c27dd06c8980e6d15fd2fcb524310875a53e3e5034da68a92195",
-      "size_bytes": 63328
+      "sha256": "61243d9925358a24200ce1623a6496443b4c35e25f04e739f5b6a9c9bcb4fa7a",
+      "size_bytes": 63348
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

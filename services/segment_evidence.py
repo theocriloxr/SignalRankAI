@@ -134,35 +134,42 @@ def evaluate(signal: Mapping[str, Any], segments: Mapping[str, Any]) -> SegmentD
 # The engine re-logs the same rejected setup on every scan (one bar could yield
 # thousands of identical rows), so shadow evidence counts one setup per asset,
 # timeframe, strategy, direction and bar: the first logged row of that bar.
-EVIDENCE_SQL = """
-WITH shadow AS (
-    SELECT DISTINCT ON (asset, tf, strategy, direction, bar) strategy, tf, direction, outcome
-    FROM (
-        SELECT asset, lower(timeframe) AS tf, lower(features->>'strategy_name') AS strategy,
-               lower(direction) AS direction, lower(actual_outcome) AS outcome, created_at,
-               floor(extract(epoch FROM created_at) / CASE lower(timeframe)
-                   WHEN '1m' THEN 60 WHEN '3m' THEN 180 WHEN '5m' THEN 300 WHEN '15m' THEN 900
-                   WHEN '30m' THEN 1800 WHEN '1h' THEN 3600 WHEN '2h' THEN 7200 WHEN '4h' THEN 14400
-                   WHEN '6h' THEN 21600 WHEN '8h' THEN 28800 WHEN '12h' THEN 43200 WHEN '1d' THEN 86400
-                   WHEN '24h' THEN 86400 WHEN '1w' THEN 604800 ELSE 3600 END) AS bar
-        FROM ml_rejected_signals
-        WHERE created_at >= :since AND lower(actual_outcome) IN ('sl','tp1','tp2','tp3')
-    ) AS rows
-    ORDER BY asset, tf, strategy, direction, bar, created_at
-)
-SELECT strategy, timeframe, direction, SUM(n) AS n, SUM(wins) AS wins FROM (
-    SELECT strategy, tf AS timeframe, direction, COUNT(*) AS n,
-           COUNT(*) FILTER (WHERE outcome IN ('tp1','tp2','tp3')) AS wins
-    FROM shadow GROUP BY 1, 2, 3
-    UNION ALL
-    SELECT lower(s.strategy_name), lower(s.timeframe), lower(s.direction),
-           COUNT(*), COUNT(*) FILTER (WHERE lower(o.status) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win_be'))
-    FROM outcomes o JOIN signals s ON s.signal_id = o.signal_id
-    WHERE o.closed_at >= :since
-      AND lower(o.status) IN ('sl','tp','tp1','tp2','tp3','partial_tp','partial_win_be')
-    GROUP BY 1, 2, 3
-) AS evidence GROUP BY 1, 2, 3
+# Read one hour at a time through the created_at index: the whole window in one
+# statement reads gigabytes and outlasts the driver's command timeout (a busy
+# day alone took 21 s on production on 2 Nov). Windows
+# run oldest first and bars already counted are skipped, so a bar that spans
+# two windows still counts once.
+SHADOW_WINDOW_SQL = """
+SELECT DISTINCT ON (asset, tf, strategy, direction, bar) asset, tf, strategy, direction, bar, outcome
+FROM (
+    SELECT asset, lower(timeframe) AS tf, lower(features->>'strategy_name') AS strategy,
+           lower(direction) AS direction, lower(actual_outcome) AS outcome, created_at,
+           floor(extract(epoch FROM created_at) / CASE lower(timeframe)
+               WHEN '1m' THEN 60 WHEN '3m' THEN 180 WHEN '5m' THEN 300 WHEN '15m' THEN 900
+               WHEN '30m' THEN 1800 WHEN '1h' THEN 3600 WHEN '2h' THEN 7200 WHEN '4h' THEN 14400
+               WHEN '6h' THEN 21600 WHEN '8h' THEN 28800 WHEN '12h' THEN 43200 WHEN '1d' THEN 86400
+               WHEN '24h' THEN 86400 WHEN '1w' THEN 604800 ELSE 3600 END) AS bar
+    FROM ml_rejected_signals
+    WHERE created_at >= :start AND created_at < :end AND lower(actual_outcome) IN ('sl','tp1','tp2','tp3')
+) AS rows
+ORDER BY asset, tf, strategy, direction, bar, created_at
 """
+OUTCOME_SQL = """
+SELECT lower(s.strategy_name), lower(s.timeframe), lower(s.direction), COUNT(*),
+       COUNT(*) FILTER (WHERE lower(o.status) IN ('tp','tp1','tp2','tp3','partial_tp','partial_win_be'))
+FROM outcomes o JOIN signals s ON s.signal_id = o.signal_id
+WHERE o.closed_at >= :since
+  AND lower(o.status) IN ('sl','tp','tp1','tp2','tp3','partial_tp','partial_win_be')
+GROUP BY 1, 2, 3
+"""
+
+
+def _add(segments: dict[str, dict[str, int]], strategy, timeframe, direction, n: int, wins: int) -> None:
+    key = segment_key(strategy, timeframe, direction)
+    if not key.endswith("|") and n > 0:
+        row = segments.setdefault(key, {"n": 0, "wins": 0})
+        row["n"] += n
+        row["wins"] += wins
 
 
 async def compute_snapshot(session, *, now: float | None = None) -> dict[str, Any]:
@@ -173,14 +180,22 @@ async def compute_snapshot(session, *, now: float | None = None) -> dict[str, An
     from utils.timeutils import now_utc_naive
 
     lookback = max(1.0, _env_float("SEGMENT_EVIDENCE_LOOKBACK_DAYS", 60.0))
-    since = now_utc_naive() - timedelta(days=lookback)
+    end = now_utc_naive()
+    since = end - timedelta(days=lookback)
     segments: dict[str, dict[str, int]] = {}
-    for strategy, timeframe, direction, n, wins in (await session.execute(text(EVIDENCE_SQL), {"since": since})).all():
-        key = segment_key(strategy, timeframe, direction)
-        if not key.endswith("|") and int(n or 0) > 0:
-            row = segments.setdefault(key, {"n": 0, "wins": 0})
-            row["n"] += int(n)
-            row["wins"] += int(wins or 0)
+    seen: set[tuple] = set()
+    start = since
+    while start < end:
+        stop = min(end, start + timedelta(hours=1))
+        rows = (await session.execute(text(SHADOW_WINDOW_SQL), {"start": start, "end": stop})).all()
+        for asset, timeframe, strategy, direction, bar, outcome in rows:
+            bar_key = (asset, timeframe, strategy, direction, bar)
+            if bar_key not in seen:
+                seen.add(bar_key)
+                _add(segments, strategy, timeframe, direction, 1, int(outcome in WIN_SHADOW))
+        start = stop
+    for strategy, timeframe, direction, n, wins in (await session.execute(text(OUTCOME_SQL), {"since": since})).all():
+        _add(segments, strategy, timeframe, direction, int(n or 0), int(wins or 0))
     return {"computed_at": float(now if now is not None else time.time()), "lookback_days": lookback,
             "segments": segments}
 

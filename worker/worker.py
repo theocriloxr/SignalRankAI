@@ -1258,7 +1258,7 @@ class Worker:
                 segments = await asyncio.wait_for(refresh_once(), timeout=interval)
                 logger.info("[worker] segment evidence refreshed segments=%s", segments)
             except Exception as exc:
-                logger.warning("[worker] segment evidence refresh failed: %s", type(exc).__name__)
+                logger.warning("[worker] segment evidence refresh failed: %s: %s", type(exc).__name__, str(exc)[:200])
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
