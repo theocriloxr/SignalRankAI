@@ -1,5 +1,5 @@
 {
-  "file_count": 2681,
+  "file_count": 2682,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12379,11 +12379,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 92,
+      "line_count": 94,
       "path": "frontend/src/components/SignalChart.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cd48934d8453acf0be0a02e22f52936ef59181f4632938df9cda122928cae97a",
-      "size_bytes": 4778
+      "sha256": "0f4a6f440edabcae881f8fee54d962d57a95f3dd582bd63b4e4d72150f87e9aa",
+      "size_bytes": 5015
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12432,6 +12432,14 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "6595bf1948f8580ebe42db57f9490a07f3e0e2309167d8fc3e0135009864cf91",
       "size_bytes": 5993
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 51,
+      "path": "frontend/src/components/SupportedBrokers.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "395d34c3afcffcfd558b4f4dff27f0107d070b383a53e898ec690da3beb3b642",
+      "size_bytes": 2705
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21463,7 +21471,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 875,
-    "PRESERVE_BEHAVIOUR": 1367,
+    "PRESERVE_BEHAVIOUR": 1368,
     "TEST_ONLY": 438
   }
 }

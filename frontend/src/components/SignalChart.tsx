@@ -16,12 +16,14 @@ function candlesFrom(chart: Row): Candle[] {
     .filter((c): c is Candle => [c.t, c.o, c.h, c.l, c.c].every(v => v !== null));
 }
 
-function firstTarget(value: unknown): number | null {
-  if (Array.isArray(value)) return finite(value[0]);
-  if (typeof value === "string" && value.trim().startsWith("[")) {
-    try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? finite(parsed[0]) : null; } catch { return null; }
-  }
-  return finite(value);
+function targetsFrom(value: unknown): number[] {
+  let list: unknown[] = [];
+  if (Array.isArray(value)) list = value;
+  else if (typeof value === "string" && value.trim().startsWith("[")) {
+    try { const parsed = JSON.parse(value); list = Array.isArray(parsed) ? parsed : []; } catch { list = []; }
+  } else list = [value];
+  return list.map(item => finite(typeof item === "object" && item !== null ? record(item).price : item))
+    .filter((v): v is number => v !== null).slice(0, 3);
 }
 
 function timeTick(ms: number, timeframe: string): string {
@@ -38,13 +40,13 @@ export function SignalChart({ data }: { data: Row }) {
   const timeframe = String(chart.timeframe || "");
   const entry = finite(signal.entry);
   const stop = finite(signal.stop_loss);
-  const target = firstTarget(signal.take_profit);
+  const targets = targetsFrom(signal.take_profit);
   if (candles.length < 5) {
     return <Card id="ws-chart" title="Price chart" eyebrow="Stored market candles">
       <Notice tone="neutral">No stored candles are available for this instrument and timeframe yet.</Notice>
     </Card>;
   }
-  const levels = [entry, stop, target].filter((v): v is number => v !== null);
+  const levels = [entry, stop, ...targets].filter((v): v is number => v !== null);
   const lo = Math.min(...candles.map(c => c.l), ...levels);
   const hi = Math.max(...candles.map(c => c.h), ...levels);
   const span = hi - lo || Math.abs(hi) * 0.01 || 1;
@@ -81,7 +83,7 @@ export function SignalChart({ data }: { data: Row }) {
           </g>;
         })}
         {line(stop, "Stop", "ws-chart-level--stop")}
-        {line(target, "Target", "ws-chart-level--target")}
+        {targets.map((t, i) => <g key={i}>{line(t, targets.length > 1 ? `TP${i + 1}` : "Target", "ws-chart-level--target")}</g>)}
         {line(entry, "Entry", "ws-chart-level--entry")}
         {ticks.map(i => <text key={i} className="ws-chart-tick" x={x(i)} y={H - 8} textAnchor="middle">
           {timeTick(candles[i].t, timeframe)}</text>)}
