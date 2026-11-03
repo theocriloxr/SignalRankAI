@@ -1524,3 +1524,81 @@ __all__ = [
     "persist_performance_reconciliation_result",
     "PerformanceReconciliationResult",
 ]
+
+
+async def ledger_summary(session, user_id: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """One user's results from the proof ledger: the single source for the web page, /stats and /mystats.
+
+    ``user_id`` is ``users.id``. Only included ledger rows count (audited
+    exclusions such as migration 0058 stay out). Win rate is full wins (TP3)
+    against losses (SL), as in /performance; partial wins and breakevens are
+    reported separately, never folded into the rate.
+    """
+    from sqlalchemy import text
+
+    completed = sorted(COMPLETED_BUCKETS)
+    counts = {
+        str(bucket or "").upper(): int(count or 0)
+        for bucket, count in (
+            await session.execute(
+                text("SELECT upper(primary_bucket),COUNT(*) FROM performance_ledger_entries "
+                     "WHERE user_id=:uid AND included GROUP BY 1"),
+                {"uid": int(user_id)},
+            )
+        ).all()
+    }
+    totals = dict((
+        await session.execute(
+            text("SELECT COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r,"
+                 "COUNT(*) FILTER (WHERE final_realized_r>0) AS profitable "
+                 "FROM performance_ledger_entries WHERE user_id=:uid AND included "
+                 "AND upper(primary_bucket)=ANY(:completed)"),
+            {"uid": int(user_id), "completed": completed},
+        )
+    ).mappings().first() or {})
+    breakdown = [dict(row) for row in (
+        await session.execute(
+            text("SELECT asset,timeframe,COUNT(*) AS signals,"
+                 "COUNT(*) FILTER (WHERE upper(primary_bucket)='TP3') AS wins,"
+                 "COUNT(*) FILTER (WHERE upper(primary_bucket)='SL') AS losses,"
+                 "COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r "
+                 "FROM performance_ledger_entries WHERE user_id=:uid AND included "
+                 "AND upper(primary_bucket)=ANY(:completed) "
+                 "GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"),
+            {"uid": int(user_id), "completed": completed},
+        )
+    ).mappings().all()]
+    closed = sum(counts.get(name, 0) for name in completed)
+    wins, losses = counts.get("TP3", 0), counts.get("SL", 0)
+    summary = {
+        "signals": closed,
+        "wins": wins,
+        "partial_wins": counts.get("STOPPED_AT_TP1", 0) + counts.get("STOPPED_AT_TP2", 0),
+        "losses": losses,
+        "breakeven": counts.get("BREAKEVEN", 0) + counts.get("TIME_STOP", 0),
+        "open": counts.get("ACTIVE", 0) + counts.get("PENDING_ENTRY", 0),
+        "not_triggered": counts.get("MISSED_ENTRY", 0) + counts.get("EXPIRED", 0),
+        "delivered": sum(counts.values()),
+        "average_r": float(totals.get("average_r") or 0),
+        "total_r": float(totals.get("total_r") or 0),
+        "win_rate": (wins / (wins + losses)) if (wins + losses) else None,
+        "profitable_rate": (int(totals.get("profitable") or 0) / closed) if closed else None,
+    }
+    return summary, breakdown
+
+
+def format_ledger_summary_lines(summary: dict[str, Any]) -> list[str]:
+    """Plain-text result lines shared by /stats and /mystats (same figures as the web page)."""
+    if not summary.get("signals"):
+        return ["No closed results yet. Results appear once a delivered signal hits a target or its stop."]
+    rate = summary.get("win_rate")
+    lines = [
+        f"Closed results: {summary['signals']}",
+        f"Full wins (TP3): {summary['wins']}  Partial wins: {summary['partial_wins']}",
+        f"Breakeven: {summary['breakeven']}  Losses: {summary['losses']}",
+        f"Win rate (TP3 vs SL): {'n/a' if rate is None else f'{rate * 100:.1f}%'}",
+        f"Net R: {summary['total_r']:+.2f}R  Average R: {summary['average_r']:+.2f}R",
+    ]
+    if summary.get("open") or summary.get("not_triggered"):
+        lines.append(f"Still open: {summary['open']}  Never triggered: {summary['not_triggered']}")
+    return lines

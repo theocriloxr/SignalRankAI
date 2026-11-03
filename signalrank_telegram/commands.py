@@ -6570,72 +6570,36 @@ async def gemini_predict_command(update, context) -> None:
 @require_tier("PREMIUM")
 async def stats_command(update, context) -> None:
 	user_id = update.effective_user.id
-	# Postgres-first
 	try:
 		from db.session import get_engine_for_event_loop, get_session
-		engine = get_engine_for_event_loop()
-		if engine is not None:
+		if get_engine_for_event_loop() is not None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
-			from sqlalchemy import select as _sel_s, func as _func_s
-			from db.models import Outcome as _Out, Signal as _Sig_s, SignalDelivery as _Deliv, User as _U_s
+			from sqlalchemy import select as _sel_s
+			from db.models import User as _U_s
+			from services.performance_ledger import format_ledger_summary_lines, ledger_summary
 			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
 				today_rows: list = await list_signals_sent_today(session, int(user_id))
-				# Fetch outcomes for signals delivered to this user (via SignalDelivery join)
-				try:
-					_u_res = await session.execute(
-						_sel_s(_U_s).where(_U_s.telegram_user_id == int(user_id))
-					)
-					_u = _u_res.scalar_one_or_none()
-					if _u is not None:
-						_outcome_rows = (
-							await session.execute(
-								_sel_s(_Out)
-								.join(_Deliv, _Deliv.signal_id == _Out.signal_id)
-								.where(_Deliv.user_id == _u.id)
-								.order_by(_Out.closed_at.desc())
-								.limit(100)
-							)
-						).scalars().all()
-					else:
-						_outcome_rows = []
-				except Exception:
-					_outcome_rows = []
+				# Results come from the proof ledger, exactly as /performance and the web page show them.
+				_u = (await session.execute(_sel_s(_U_s).where(_U_s.telegram_user_id == int(user_id)))).scalar_one_or_none()
+				summary = (await ledger_summary(session, int(_u.id)))[0] if _u is not None else {}
 				await session.commit()
-			# Compute stats from outcome rows
-			_wins = sum(1 for o in _outcome_rows if str(o.status).startswith("tp"))
-			_losses = sum(1 for o in _outcome_rows if o.status == "sl")
-			_tracked = len(_outcome_rows)
-			_win_rate = (_wins / _tracked * 100) if _tracked > 0 else None
-			_r_values = [o.r_multiple for o in _outcome_rows if o.r_multiple is not None]
-			_net_r = sum(_r_values) if _r_values else None
-			_avg_r = (sum(_r_values) / len(_r_values)) if _r_values else None
-			total_week = int((week or {}).get("total") or 0)
-			today: int = len(today_rows or [])
 			lines = [
-				"📈 *My Stats*",
+				"📈 My Stats",
 				"",
-				f"📡 Signals today: `{today}`",
-				f"📊 Signals this week: `{total_week}`",
+				f"📡 Signals today: {len(today_rows or [])}",
+				f"📊 Signals this week: {int((week or {}).get('total') or 0)}",
+				"",
+				*format_ledger_summary_lines(summary),
+				"",
+				"Use /history for recent signals, or /performance for the full breakdown.",
 			]
-			if _tracked > 0:
-				lines += [
-					"",
-					f"✅ Wins: `{_wins}` | ❌ Losses: `{_losses}` | Total: `{_tracked}`",
-					f"🎯 Win Rate: `{_win_rate:.1f}%`" if _win_rate is not None else "",
-					f"📐 Net R: `{_net_r:+.2f}R`" if _net_r is not None else "",
-					f"📏 Avg R/trade: `{_avg_r:+.2f}R`" if _avg_r is not None else "",
-				]
-			else:
-				lines.append("\n_No tracked outcomes yet. Outcomes appear when TP/SL levels are hit._")
-			lines.append("\nUse /history to view recent signals.")
-			msg: str = "\n".join(l for l in lines if l is not None)
 			if update.message is not None:
-				await update.message.reply_text(msg, parse_mode="MarkdownV2")
+				await update.message.reply_text("\n".join(lines))
 			return
 	except Exception:
 		pass
-	
+
 	if update.message is not None:
 		await update.message.reply_text("Stats unavailable right now.")
 
@@ -8182,31 +8146,10 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				)
 			)).scalar() or 0.0
 
-			# Also count from signal outcomes (broader — covers non-MT5 users too)
-			oc_rows = (await session.execute(
-				select(Outcome)
-				.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
-				.where(SignalDelivery.user_id == db_user_id)
-				.order_by(Outcome.closed_at.desc())
-				.limit(200)
-			)).scalars().all()
+			# Signal results come from the proof ledger, exactly as /performance and the web page show them.
+			from services.performance_ledger import format_ledger_summary_lines, ledger_summary
+			summary, _ = await ledger_summary(session, int(db_user_id))
 			await session.commit()
-
-		# If no MT5 executions, fall back to signal outcome counts
-		if total_exec > 0:
-			wins = wins_exec
-			losses = losses_exec
-		else:
-			wins = sum(1 for o in oc_rows if str(o.status or "").startswith("tp"))
-			losses = sum(1 for o in oc_rows if o.status == "sl")
-
-		tracked = wins + losses
-		win_rate = (wins / tracked * 100) if tracked > 0 else 0.0
-
-		# Net/avg R from outcomes
-		r_values = [float(o.r_multiple) for o in oc_rows if o.r_multiple is not None]
-		net_r = sum(r_values) if r_values else None
-		avg_r = (sum(r_values) / len(r_values)) if r_values else None
 
 		# Subscription expiry
 		sub_expiry = ""
@@ -8229,21 +8172,14 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			daily_exec = int(getattr(user_row, "daily_executions_today", 0) or 0)
 
 		tier_disp = tier.upper()
-		msg = (
-			f"<b>📈 My Stats — {tier_disp}</b>\n\n"
-			f"🔢 MT5 executions: <b>{total_exec}</b>\n"
-			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
-			f"🎯 Win rate: <b>{win_rate:.1f}%</b>\n"
-		)
-		if net_r is not None:
-			net_sign = "+" if net_r >= 0 else ""
-			msg += f"📐 Net R: <b>{net_sign}{net_r:.2f}R</b>\n"
-		if avg_r is not None:
-			avg_sign = "+" if avg_r >= 0 else ""
-			msg += f"📏 Avg R/trade: <b>{avg_sign}{avg_r:.2f}R</b>\n"
+		import html as _html
+		msg = f"<b>📈 My Stats — {tier_disp}</b>\n\n<b>Signal results</b>\n"
+		msg += "".join(f"{_html.escape(line)}\n" for line in format_ledger_summary_lines(summary))
+		msg += f"\n<b>Broker</b>\n🔢 MT5 executions: <b>{total_exec}</b>"
 		if total_exec > 0:
 			pnl_sign = "+" if float(total_pnl) >= 0 else ""
-			msg += f"💰 Realized P&amp;L: <b>{pnl_sign}${float(total_pnl):.2f}</b>\n"
+			msg += f" (wins {wins_exec}, losses {losses_exec})\n💰 Realized P&amp;L: <b>{pnl_sign}${float(total_pnl):.2f}</b>"
+		msg += "\n"
 		if tier.upper() in ("PREMIUM", "VIP"):
 			try:
 				from engine.tiered_executor import PREMIUM_DAILY_LIMIT
