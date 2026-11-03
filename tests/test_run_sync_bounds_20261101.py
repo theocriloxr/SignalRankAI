@@ -29,9 +29,6 @@ OWNER_DECISION_PENDING = {
     ("signalrank_telegram/bot.py", "run_bot.smart_exit_guard_job"),
     ("signalrank_telegram/bot.py", "run_bot.drawdown_circuit_breaker_job"),
     ("signalrank_telegram/bot.py", "run_bot.killswitch_close_all_watchdog_job"),
-    # Passes a function, not a coroutine, after a failing import: the ATR stop
-    # repair has never run; fixing it changes generated stops and targets.
-    ("engine/signal_controller.py", "SignalController._normalize_signal"),
 }
 
 

@@ -1,5 +1,5 @@
 {
-  "count": 163,
+  "count": 164,
   "flags": [
     {
       "dangerous": false,
@@ -1132,6 +1132,14 @@
     {
       "dangerous": false,
       "name": "SHADOW_TRACKING_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "SIGNAL_ATR_STOP_REPAIR_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
