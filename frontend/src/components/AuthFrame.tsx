@@ -12,15 +12,14 @@ export function AuthAside() {
   return <aside className="auth-aside" aria-label="About your SignalRankAI workspace">
     <BrandLink/>
     <div className="auth-aside-copy">
-      <p className="ui-eyebrow ui-eyebrow--brand">Your private trading workspace</p>
-      <h1>See the evidence. <em>Make your next move.</em></h1>
-      <p>Bring signal history, research, paper trading and broker connections together in one secure place.</p>
+      <h1>Your signals, your paper account and your record, in one place.</h1>
+      <p>Sign in to see every signal you have received, how each one ended, and the setup record behind it.</p>
       <ul className="auth-points">
-        <li><span><Icon name="lock"/></span>Secure sessions with HttpOnly cookies and CSRF protection</li>
-        <li><span><Icon name="key"/></span>Optional authenticator two-step verification</li>
-        <li><span><Icon name="telegram"/></span>One account across the web workspace and Telegram</li>
+        <li><span><Icon name="telegram"/></span>The same account works here and on Telegram.</li>
+        <li><span><Icon name="key"/></span>You can add an authenticator app for two-step sign-in.</li>
+        <li><span><Icon name="lock"/></span>Linking a broker account never places a trade on its own.</li>
       </ul>
     </div>
-    <p className="auth-disclaimer">Trading carries risk. Signals are research, not guarantees, and broker execution requires separate verification.</p>
+    <p className="auth-disclaimer">Trading carries risk. Signals are research to inform your own decisions, not guarantees.</p>
   </aside>;
 }

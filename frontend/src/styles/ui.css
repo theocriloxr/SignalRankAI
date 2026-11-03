@@ -85,11 +85,12 @@
 .ui-card-head > div { display: grid; gap: 4px; min-width: 0; }
 .ui-card-title { font-size: var(--text-lg); font-weight: 650; letter-spacing: -0.012em; }
 .ui-card-desc { color: var(--text-2); font-size: var(--text-sm); }
+/* Section labels read as a quiet caption, not a shouted monospace tag. */
 .ui-eyebrow {
-  font-family: var(--font-mono); font-size: var(--text-2xs); font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--text-3);
+  font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 550;
+  letter-spacing: 0; text-transform: none; color: var(--text-3);
 }
-.ui-eyebrow--brand { color: var(--brand); }
+.ui-eyebrow--brand { color: var(--text-2); }
 .ui-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .ui-actions--end { justify-content: flex-end; }
 .ui-divider { height: 1px; background: var(--border); border: 0; margin: 0; }

@@ -262,13 +262,13 @@ test("public redesign covers seven reference routes with canonical semantics and
 test("home page includes truthful market/workflow boundaries without fake live status",()=>{
   const home=readFileSync(new URL("../src/app/page.tsx",import.meta.url),"utf8");
   const css=readFileSync(new URL("../src/styles/marketing.css",import.meta.url),"utf8");
-  assert.ok(home.includes("SCHEMATIC / NOT LIVE"),"Public terminal must explicitly disclose illustrative evidence");
-  assert.ok(home.includes("This is a system illustration") || home.includes("No market data"),"Hero may not claim to show live prices");
-  assert.ok(home.includes("no trade") || home.includes("NO AUTO-TRADE CLAIM"),"No-trade / no automatic trade boundary must be visible");
+  assert.ok(home.includes("An example, not a live signal"),"The example ticket must say it is not live");
+  assert.ok(home.includes("no trade at all"),"The no-trade outcome must be visible");
+  assert.ok(home.includes("we don&rsquo;t trade your money for you"),"No automatic-trading claim");
   assert.ok(home.includes("paper") || home.includes("simulated"));
   assert.ok(home.includes("/risk"));
   assert.ok(home.includes("/login"));
-  assert.ok(css.includes(".mk-hero"));
+  assert.ok(css.includes(".hm-hero"));
   assert.doesNotMatch(home,/Math.random|fakeSignal|livePrice|localStorage|sessionStorage/);
 });
 

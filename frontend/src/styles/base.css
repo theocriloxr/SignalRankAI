@@ -16,7 +16,6 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-md);
   line-height: 1.55;
-  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -24,9 +23,9 @@ body {
 h1, h2, h3, h4 {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 650;
-  letter-spacing: -0.022em;
-  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.18;
   color: var(--text);
   text-wrap: balance;
 }
@@ -79,3 +78,6 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
   .ui-btn--primary { forced-color-adjust: none; background: Highlight; color: HighlightText; }
   :focus-visible { outline-color: Highlight; }
 }
+
+/* Prices and other figures line up in columns. */
+.mono, code, td, .ws-level dd { font-variant-numeric: tabular-nums; }

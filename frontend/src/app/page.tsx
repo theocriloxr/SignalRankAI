@@ -1,103 +1,109 @@
 import Link from "next/link";
 import { PublicNav } from "../components/PublicNav";
-import { SignalLifecycleExperience } from "../components/SignalLifecycleExperience";
 import { SiteCredit } from "../components/SiteCredit";
 import { WorkspaceLink } from "../components/WorkspaceLink";
-import { Icon, type IconName } from "../components/ui/Icon";
 
-const markets = [
-  { code:"CRYPTO", name:"Crypto", copy:"Continuous markets with exchange-specific symbols and venue rules." },
-  { code:"FOREX", name:"Forex", copy:"Session-aware currency pairs with broker-specific contract sizes." },
-  { code:"INDICES", name:"Indices", copy:"Cash and derivative index exposure kept as distinct instruments." },
-  { code:"STOCKS", name:"Equities", copy:"Exchange sessions, holidays and corporate events respected." },
-  { code:"COMMODITIES", name:"Commodities", copy:"Metals and energy with explicit contract and spread checks." },
-];
+// What a member gets, in plain words. Each item opens the matching part of the workspace.
+const offering = [
+  { title:"On Telegram", copy:"Each signal arrives as a message with the entry, the stop and three targets, followed by a short note when a target or the stop is hit.", href:"/app/settings", cta:"Link Telegram" },
+  { title:"In the web app", copy:"The same signals with a chart, the record of the setup behind each one, and filters for market and timeframe.", href:"/app/signals", cta:"Open signals" },
+  { title:"Paper trading", copy:"Try signals on a simulated account before you risk anything. Paper positions and paper results are always labelled as paper.", href:"/app/paper", cta:"Open the paper desk" },
+  { title:"Your broker accounts", copy:"Link MT4/MT5, Bybit or Binance to see balances and open positions next to the signals. Linking an account never places a trade on its own.", href:"/app/brokers", cta:"Link an account" },
+  { title:"The scoreboard", copy:"Every closed signal, counted: full wins, partial wins, breakevens, losses and the average R. Signals that never triggered are listed separately.", href:"/app/performance", cta:"See performance" },
+] as const;
 
-const features: { icon: IconName; title: string; copy: string; href: string; cta: string }[] = [
-  { icon:"signals", title:"Signal intelligence", copy:"Filter delivered decisions by market, strategy and timeframe, then open the evidence behind each one.", href:"/app/signals", cta:"Explore signals" },
-  { icon:"paper", title:"Paper desk", copy:"Practise with simulated positions, cash and P&L that are always kept apart from live broker balances.", href:"/app/paper", cta:"Explore paper trading" },
-  { icon:"brokers", title:"Broker oversight", copy:"Review each linked account, its verified environment and its permissions. A connection alone never approves a trade.", href:"/app/brokers", cta:"Inspect connections" },
-  { icon:"markets", title:"Market directory", copy:"Search the canonical instrument registry with provider lineage, tick size and quantity steps.", href:"/app/markets", cta:"Browse markets" },
-  { icon:"performance", title:"Performance evidence", copy:"Outcome-based results with sample sizes and disclosure, never a headline win rate on its own.", href:"/app/performance", cta:"View performance" },
-  { icon:"telegram", title:"Web and Telegram", copy:"One account, one entitlement model and one signal history across the web workspace and Telegram.", href:"/app/settings", cta:"Link Telegram" },
-];
+const coverage = [
+  ["Crypto", "The most traded coins, quoted against USDT. Stablecoins and pegged tokens are left out."],
+  ["Forex", "Majors and the main crosses, scanned during the sessions when they move."],
+  ["Stocks", "Large US companies, during US market hours."],
+  ["Indices", "US, European and Asian cash indices."],
+  ["Commodities", "Gold, silver and crude oil."],
+] as const;
 
-const proof: { icon: IconName; label: string }[] = [
-  { icon:"shield", label:"Server-side risk gates" },
-  { icon:"check", label:"Receipt-backed signals" },
-  { icon:"paper", label:"Paper is never presented as live" },
-];
+// Illustration only: fixed example levels, never fetched or computed, and labelled as an example.
+const example = { pair:"ETH/USDT", timeframe:"1h", side:"Long", levels:[
+  ["Entry", "2,412.50"], ["Stop", "2,371.80"], ["Target 1", "2,473.55"], ["Target 2", "2,514.30"], ["Target 3", "2,575.30"],
+] as const };
 
 export default function Home() {
   return <main className="mk-page">
     <PublicNav/>
-    <section className="mk-hero skip-target" id="page-content" tabIndex={-1} aria-labelledby="mk-hero-title">
-      <div className="mk-container mk-hero-grid">
-        <div className="mk-hero-copy">
-          <span className="mk-pill"><b>EVIDENCE FIRST</b> Multi-asset trading intelligence</span>
-          <h1 id="mk-hero-title">Read the market.<br/>Question the signal.<br/><em>Own the decision.</em></h1>
-          <p className="mk-lede">SignalRankAI connects market research, quality gates, signal evidence and risk-aware account workflows across crypto, forex, indices, equities and commodities — on the web and through Telegram.</p>
-          <div className="mk-hero-actions">
-            <WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Get started <Icon name="arrowRight"/></WorkspaceLink>
-            <Link href="#lifecycle" className="ui-btn ui-btn--lg">See how decisions are made</Link>
+    <section className="hm-hero skip-target" id="page-content" tabIndex={-1} aria-labelledby="hm-title">
+      <div className="mk-container hm-hero-grid">
+        <div className="hm-hero-copy">
+          <h1 id="hm-title">Trade setups that come with their track record.</h1>
+          <p className="hm-lede">SignalRankAI watches crypto, forex, stocks, indices and commodities around the clock. When a setup appears, we look up how that same kind of setup has done over the past two months. It only reaches you if its record beats what the trade needs to break even.</p>
+          <div className="hm-actions">
+            <WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
+            <Link href="#how" className="hm-textlink">How we decide what to send</Link>
           </div>
-          <div className="mk-proof">{proof.map(item=><span key={item.label}><Icon name={item.icon}/>{item.label}</span>)}</div>
+          <p className="hm-small">There is a free plan. Signals are research to help your own decisions, not financial advice.</p>
         </div>
-        <div className="mk-schematic" role="img" aria-label="Schematic of the SignalRankAI decision pipeline. This is a system illustration: no market data, prices, balances or performance figures are shown.">
-          <div className="mk-schematic-bar" aria-hidden="true"><span><i/><i/><i/></span><strong>DECISION PIPELINE</strong><span className="ui-badge ui-badge--warning">SCHEMATIC / NOT LIVE</span></div>
-          <div className="mk-schematic-body" aria-hidden="true">
-            <div className="mk-gate"><span><Icon name="database"/></span><div><strong>Data quality</strong><small>Source, session and quote freshness</small></div><span className="ui-badge ui-badge--positive ui-badge--plain">Check</span></div>
-            <div className="mk-gate"><span><Icon name="research"/></span><div><strong>Strategy consensus</strong><small>Setup, regime and model calibration</small></div><span className="ui-badge ui-badge--info ui-badge--plain">Review</span></div>
-            <div className="mk-gate"><span><Icon name="shield"/></span><div><strong>Risk admission</strong><small>Account limits, exposure and permissions</small></div><span className="ui-badge ui-badge--warning ui-badge--plain">Enforce</span></div>
-            <div className="mk-gate-bars"><span>ENTRY</span><span>STOP</span><span>TARGET</span></div>
+
+        <figure className="hm-ticket" aria-labelledby="hm-ticket-caption">
+          <div className="hm-ticket-head">
+            <strong>{example.pair}</strong><span>{example.timeframe} · {example.side}</span>
+            <span className="hm-tag">Example</span>
           </div>
-          <div className="mk-schematic-foot" aria-hidden="true"><span>WEAK EVIDENCE IS REJECTED</span><span>NO AUTO-TRADE CLAIM</span></div>
+          <dl className="hm-ticket-levels">
+            {example.levels.map(([label, price])=><div key={label}><dt>{label}</dt><dd>{price}</dd></div>)}
+          </dl>
+          <p className="hm-ticket-plan">Plan: take half off at target 1 and a quarter at target 2, then move the stop to the entry for the rest.</p>
+          <figcaption id="hm-ticket-caption">An example, not a live signal. Real signals also show the setup&rsquo;s record and its break-even rate.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section className="hm-section" id="how" aria-labelledby="hm-how-title">
+      <div className="mk-container hm-split">
+        <div className="hm-split-head">
+          <h2 id="hm-how-title">How a setup gets to you</h2>
+          <p className="hm-aside">Most setups don&rsquo;t make it. On a typical day the engine looks at thousands of candidates and sends a handful. Some days it sends none, and that is the system working.</p>
         </div>
+        <ol className="hm-steps">
+          <li><h3>We scan</h3><p>Every few minutes the engine pulls fresh candles for each market, from 5-minute to daily charts, and runs about a dozen strategies over them: trend, momentum, breakouts and volatility.</p></li>
+          <li><h3>We check the record</h3><p>A candidate belongs to a setup, meaning one strategy on one timeframe in one direction. We count how often that setup reached its first target over the last 60 days, take the cautious end of that estimate, and compare it with the hit rate this trade needs to break even under our exit plan. If the record falls short, nothing is sent.</p></li>
+          <li><h3>We send it, then keep score</h3><p>A signal that passes goes out with its levels. We follow it until it closes, and the result goes on the scoreboard whether it won or lost.</p></li>
+        </ol>
       </div>
     </section>
 
-    <section className="mk-section mk-section--tight" aria-labelledby="mk-markets-title">
+    <section className="hm-section" aria-labelledby="hm-get-title">
       <div className="mk-container">
-        <div className="mk-section-head"><p className="ui-eyebrow ui-eyebrow--brand">One intelligence layer</p><h2 id="mk-markets-title">Five market families. <em>One canonical registry.</em></h2>
-          <p>Every instrument is identified before it is compared, so similar names on different venues are never confused.</p></div>
-        <div className="mk-markets">{markets.map(m=><div className="mk-market" key={m.code}><span className="mono">{m.code}</span><strong>{m.name}</strong><small>{m.copy}</small></div>)}</div>
+        <h2 id="hm-get-title" className="hm-h2">What you get</h2>
+        <dl className="hm-offer">
+          {offering.map(item=><div key={item.title}>
+            <dt>{item.title}</dt>
+            <dd><p>{item.copy}</p><WorkspaceLink href={item.href} className="hm-textlink">{item.cta}</WorkspaceLink></dd>
+          </div>)}
+        </dl>
       </div>
     </section>
 
-    <section className="mk-section" aria-labelledby="mk-standard-title">
-      <div className="mk-container mk-statement">
-        <div><p className="ui-eyebrow ui-eyebrow--brand">The SignalRank standard</p><h2 id="mk-standard-title">The best decision is sometimes <em>no trade.</em></h2></div>
-        <div><p>More alerts do not mean better intelligence. SignalRankAI is built around evidence, explicit rejection, and the difference between an observed opportunity, a simulated paper result and an executed broker order.</p>
-          <Link className="ui-link" href="/methodology">Read the methodology <Icon name="arrowRight"/></Link></div>
+    <section className="hm-section" aria-labelledby="hm-cover-title">
+      <div className="mk-container hm-split">
+        <div className="hm-split-head"><h2 id="hm-cover-title">Markets we cover</h2></div>
+        <dl className="hm-cover">
+          {coverage.map(([name, copy])=><div key={name}><dt>{name}</dt><dd>{copy}</dd></div>)}
+        </dl>
       </div>
     </section>
 
-    <SignalLifecycleExperience/>
-
-    <section className="mk-section" aria-labelledby="mk-features-title">
-      <div className="mk-container">
-        <div className="mk-section-head"><p className="ui-eyebrow ui-eyebrow--brand">Your workspace, connected</p><h2 id="mk-features-title">From the first scan to the full picture.</h2>
-          <p>One secure workspace for the signal lifecycle. Data and access always come from your authenticated account, never from this page.</p></div>
-        <div className="mk-features">{features.map(f=><WorkspaceLink key={f.href} href={f.href} className="mk-feature">
-          <span className="mk-feature-icon"><Icon name={f.icon}/></span><h3>{f.title}</h3><p>{f.copy}</p>
-          <span className="ui-link">{f.cta} <Icon name="arrowRight"/></span>
-        </WorkspaceLink>)}</div>
+    <section className="hm-section" aria-labelledby="hm-plain-title">
+      <div className="mk-container hm-note">
+        <h2 id="hm-plain-title">A few things we won&rsquo;t pretend</h2>
+        <p>No signal service wins every trade, and this one doesn&rsquo;t either. We don&rsquo;t promise returns and we don&rsquo;t trade your money for you. When a signal is paper only, the card says so, and some days the right call is no trade at all. If that sounds like the service you want, start on the free plan and judge us by the record.</p>
+        <p className="hm-links"><Link className="hm-textlink" href="/risk">Risks of trading</Link><Link className="hm-textlink" href="/methodology">The method in detail</Link><Link className="hm-textlink" href="/security">Privacy and security</Link></p>
       </div>
     </section>
 
-    <section className="mk-section" aria-labelledby="mk-responsibility-title">
-      <div className="mk-container mk-statement">
-        <div><p className="ui-eyebrow ui-eyebrow--brand">Designed with responsibility</p><h2 id="mk-responsibility-title">Built for clarity. <em>Grounded in evidence.</em></h2></div>
-        <div><p>Signals are not guarantees. A paper result is a simulated outcome, not a live fill. A connected broker is not an authorized execution destination. These distinctions are part of the product.</p>
-          <div className="ui-actions mk-statement-links"><Link className="ui-link" href="/risk">Risk boundaries <Icon name="arrowRight"/></Link><Link className="ui-link" href="/security">Privacy and security <Icon name="arrowRight"/></Link></div></div>
-      </div>
-    </section>
-
-    <section className="mk-section mk-section--tight" aria-labelledby="mk-cta-title">
-      <div className="mk-container">
-        <div className="mk-cta">
-          <div><h2 id="mk-cta-title">See beyond the signal.</h2><p>Explore entitled signal history, account records, notifications and paper trading. Features depend on your plan and service availability.</p></div>
-          <div className="ui-actions"><WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Open SignalRankAI <Icon name="arrowRight"/></WorkspaceLink><Link href="/pricing" className="ui-btn ui-btn--lg">Plans and access</Link></div>
+    <section className="hm-section hm-end" aria-labelledby="hm-end-title">
+      <div className="mk-container hm-end-inner">
+        <h2 id="hm-end-title">Start on the free plan</h2>
+        <p>Link Telegram in about a minute. Upgrade only if the record convinces you.</p>
+        <div className="hm-actions">
+          <WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
+          <Link href="/pricing" className="hm-textlink">Compare plans</Link>
         </div>
       </div>
     </section>
