@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1405,
+  "variable_count": 1406,
   "variables": [
     {
       "declared_defaults": {},
@@ -1797,8 +1797,8 @@
       "name": "ASSET_REPEAT_LOCK_HOURS",
       "production_example_default": "4",
       "read_locations": [
-        "db/pg_features.py:4144",
-        "db/pg_features.py:4193",
+        "db/pg_features.py:4155",
+        "db/pg_features.py:4204",
         "services/platform/signal_delivery.py:255"
       ],
       "required_by_code": true,
@@ -4569,7 +4569,7 @@
       "name": "DELIVERY_REQUIRE_QUALITY_GATE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:4048"
+        "db/pg_features.py:4059"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5133,7 +5133,7 @@
       "name": "EMAIL_MAX_ATTEMPTS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/email_delivery.py:190"
+        "services/platform/email_delivery.py:209"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5146,6 +5146,16 @@
       "production_example_default": null,
       "read_locations": [
         "services/platform/email_delivery.py:40"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "EMAIL_SENDING_LEASE_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/email_delivery.py:226"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8313,7 +8323,7 @@
       "name": "ML_MODEL_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:385"
+        "engine/shadow_outcome_worker.py:398"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12572,9 +12582,9 @@
       "name": "REFERRALS_PER_REWARD",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3303",
-        "db/pg_features.py:3437",
-        "db/pg_features.py:3641",
+        "db/pg_features.py:3314",
+        "db/pg_features.py:3448",
+        "db/pg_features.py:3652",
         "web/platform_api.py:3587"
       ],
       "required_by_code": true,
@@ -12585,9 +12595,9 @@
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3304",
-        "db/pg_features.py:3438",
-        "db/pg_features.py:3642",
+        "db/pg_features.py:3315",
+        "db/pg_features.py:3449",
+        "db/pg_features.py:3653",
         "web/platform_api.py:3598"
       ],
       "required_by_code": true,
@@ -12598,8 +12608,8 @@
       "name": "REFERRAL_MONTHLY_CAP_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3457",
-        "db/pg_features.py:3677"
+        "db/pg_features.py:3468",
+        "db/pg_features.py:3688"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13948,7 +13958,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/shadow_outcome_worker.py:150",
-        "engine/shadow_outcome_worker.py:338"
+        "engine/shadow_outcome_worker.py:351"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14265,7 +14275,7 @@
       "name": "SIGNAL_THESIS_DEDUP_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2874",
+        "db/pg_features.py:2885",
         "db/pg_features.py:985",
         "services/performance_ledger.py:436"
       ],
@@ -15451,7 +15461,7 @@
       "name": "TIME_STOP",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3176",
+        "db/pg_features.py:3187",
         "web/platform_api.py:6713"
       ],
       "required_by_code": true,
