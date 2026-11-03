@@ -128,7 +128,7 @@
     },
     "expectancy_shadow": {
       "commits": "136290b8..698a0191",
-      "schema_head": "0057_expectancy_shadow_index",
+      "schema_head": "0058_exclude_no_trade_outcomes",
       "flags": {
         "EXPECTANCY_SHADOW_RECORDING_ENABLED": "default on",
         "EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED": "default off",

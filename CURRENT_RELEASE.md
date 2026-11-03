@@ -10,7 +10,7 @@ values below are historical observations, not a fresh deployment certification.
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0057_expectancy_shadow_index
+Repository Alembic head: 0058_exclude_no_trade_outcomes
 Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -44,6 +44,7 @@ chain with:
 - `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data).
 
 - `0057_expectancy_shadow_index`: concurrent, validated partial index for expectancy-shadow decision rows; no data change.
+- `0058_exclude_no_trade_outcomes`: data-only. Missed-entry/expired outcomes that carry an R get an audited correction (R cleared, original kept in `correction_reason`) and are excluded from performance; outcomes with |R| > 10 (degenerate stops) are excluded with a reason. Nothing is deleted; no schema change.
 
 The current release candidate also includes:
 

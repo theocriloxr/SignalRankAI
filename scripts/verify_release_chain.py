@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0057_expectancy_shadow_index")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0058_exclude_no_trade_outcomes")
 
 
 def main() -> int:
@@ -57,6 +57,9 @@ def main() -> int:
         "0057_expectancy_shadow_index",
         "ix_decision_log_expectancy_shadow_created",
         "expectancy_shadow_index_invalid_or_definition_mismatch",
+        "0058_exclude_no_trade_outcomes",
+        "migration_0058_exclude_no_trade_outcomes",
+        "degenerate_stop_abs_r_gt_10",
         "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
         "shadow_pending_index_invalid_or_definition_mismatch",
