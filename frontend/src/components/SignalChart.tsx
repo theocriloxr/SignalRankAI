@@ -43,7 +43,7 @@ export function SignalChart({ data }: { data: Row }) {
   const targets = targetsFrom(signal.take_profit);
   if (candles.length < 5) {
     return <Card id="ws-chart" title="Price chart">
-      <Notice tone="neutral">No stored candles are available for this instrument and timeframe yet.</Notice>
+      <Notice tone="neutral">We don&rsquo;t have price history for this instrument and timeframe yet.</Notice>
     </Card>;
   }
   const levels = [entry, stop, ...targets].filter((v): v is number => v !== null);
@@ -88,7 +88,7 @@ export function SignalChart({ data }: { data: Row }) {
         {ticks.map(i => <text key={i} className="ws-chart-tick" x={x(i)} y={H - 8} textAnchor="middle">
           {timeTick(candles[i].t, timeframe)}</text>)}
       </svg>
-      <figcaption className="ui-muted">Shaded area: after the signal was issued. Candles are SignalRank&apos;s stored market data and may differ slightly from your broker&apos;s prices.</figcaption>
+      <figcaption className="ui-muted">The shaded part is after the signal was sent. Prices can differ slightly from your broker&rsquo;s.</figcaption>
     </figure>
   </Card>;
 }

@@ -38,7 +38,7 @@ export function PlanAndReferrals(){
     return ()=>{cancelled=true;};
   },[]);
 
-  if(!data)return <section className="ui-card" aria-busy="true"><h2>Plan and referrals</h2><p>Loading plan details…</p></section>;
+  if(!data)return <section className="ui-card" aria-busy="true"><h2>Plan and referrals</h2><p>Loading…</p></section>;
   const plan=data.plan, referral=data.referral;
   const limits=record(plan?.limits);
   const earned=finite(referral?.premium_days_earned), toward=finite(referral?.toward_next), needed=finite(referral?.needed_for_next);
@@ -51,30 +51,30 @@ export function PlanAndReferrals(){
   return <section className="ws-stack" aria-labelledby="plan-title">
     <section className="ui-card">
       
-      <h2 id="plan-title">{plan?`${display(plan.tier,"Current").toUpperCase()} plan`:"Plan details"}</h2>
-      {!plan?<p className="ui-notice ui-notice--neutral">Plan details are unavailable: {statusText(data.planStatus)}</p>:<>
+      <h2 id="plan-title">{plan?`Your plan: ${display(plan.tier,"current").toLowerCase().replace(/^./,c=>c.toUpperCase())}`:"Your plan"}</h2>
+      {!plan?<p className="ui-notice ui-notice--neutral">We couldn&rsquo;t load your plan. {statusText(data.planStatus)}</p>:<>
         <dl className="ui-kv">
           {limitLabels.map(([key,label,format])=>{const v=finite(limits[key]);return <div className="ui-kv-row" key={key}><dt>{label}</dt><dd>{v===null?"Unreported":format(v)}</dd></div>;})}
           <div className="ui-kv-row"><dt>Asset classes</dt><dd>{strings(plan.allowed_asset_classes).map(words).join(", ")||"Unreported"}</dd></div>
           <div className="ui-kv-row"><dt>Risk profiles</dt><dd>{strings(plan.allowed_profiles).map(words).join(", ")||"Unreported"}</dd></div>
         </dl>
-        {strings(plan.features).length>0&&<><h3>Included features</h3><ul className="ui-tags">{strings(plan.features).map(f=><li key={f}><Badge>{words(f)}</Badge></li>)}</ul></>}
+        {strings(plan.features).length>0&&<><h3>Features</h3><ul className="ui-tags">{strings(plan.features).map(f=><li key={f}><Badge>{words(f)}</Badge></li>)}</ul></>}
         <p className="ui-muted">Policy version {display(plan.policy_version,"unreported")}. Limits are enforced by the server; this page only displays them.</p>
       </>}
     </section>
 
     <section className="ui-card">
       
-      <h2>Invite traders</h2>
-      {!referral?<p className="ui-notice ui-notice--neutral">Referral details are unavailable: {statusText(data.referralStatus)}</p>:<>
+      <h2>Invite a friend</h2>
+      {!referral?<p className="ui-notice ui-notice--neutral">We couldn&rsquo;t load your referrals. {statusText(data.referralStatus)}</p>:<>
         <dl className="ui-kv">
           <div className="ui-kv-row"><dt>Your code</dt><dd><code>{display(referral.code)}</code></dd></div>
-          <div className="ui-kv-row"><dt>Referred accounts</dt><dd>{display(referral.total_referrals,"0")}</dd></div>
-          <div className="ui-kv-row"><dt>Premium days earned</dt><dd>{earned===null?"Unreported":earned}</dd></div>
+          <div className="ui-kv-row"><dt>People you&rsquo;ve invited</dt><dd>{display(referral.total_referrals,"0")}</dd></div>
+          <div className="ui-kv-row"><dt>Free days earned</dt><dd>{earned===null?"Unreported":earned}</dd></div>
         </dl>
         {progress!==null&&<div>
           <p>{toward} of {needed} qualifying referrals toward the next {display(referral.reward_days,"reward")} premium days.</p>
-          <div className="ui-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Progress to next referral reward"><span style={{width:`${progress}%`}}/></div>
+          <div className="ui-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Towards your next reward"><span style={{width:`${progress}%`}}/></div>
         </div>}
         <div className="ui-actions">
           {typeof referral.web_url==="string"&&referral.web_url.startsWith("https://")&&<button className="ui-btn" type="button" onClick={()=>copy("Web invite link",String(referral.web_url))}>Copy web invite link</button>}

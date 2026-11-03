@@ -38,25 +38,25 @@ export function AccountCreation({ kind, onCreated }: {
           },
         });
       if (response.response.ok && response.data) {
-        setFeedback({success:true,message:kind==="watchlists"?"Watchlist created in your account.":kind==="support"?"Support ticket submitted.":"Journal entry saved."});
+        setFeedback({success:true,message:kind==="watchlists"?"Watchlist created.":kind==="support"?"Support ticket submitted.":"Journal entry saved."});
         form.reset();
         onCreated();
       } else {
         setFeedback({success:false,message:response.response.status===401
           ?"Your session expired. Sign in to save changes."
-          :response.response.status===403?"Your plan does not permit this action."
+          :response.response.status===403?"Your plan doesn't include this."
           :response.response.status===409?"A record with this name already exists."
-          :response.response.status===429?"The service is rate limiting new requests. Retry later."
-          :"No record was confirmed saved. Check the details and retry."});
+          :response.response.status===429?"Too many requests just now. Try again in a minute."
+          :"That wasn't saved. Check the details and try again."});
       }
     } catch {
-      setFeedback({success:false,message:"The service could not be reached. Nothing has been confirmed saved."});
+      setFeedback({success:false,message:"We couldn't reach the server, so nothing was saved."});
     } finally {setSaving(false);}
   }
   const title=kind==="watchlists"?"New watchlist":kind==="support"?"Create a support ticket":"Add journal entry";
   return <section className="ui-card">
     <h2>{title}</h2>
-    <p>Saved records are linked to the signed-in account. This form never authorizes broker execution.</p>
+    <p>Saved to your account.</p>
     <form onSubmit={submit} className="ui-form">
       {kind==="watchlists" ? <label className="ui-field">Watchlist name
         <input className="ui-input" name="name" required minLength={2} maxLength={90} placeholder="e.g. FX session watch" />

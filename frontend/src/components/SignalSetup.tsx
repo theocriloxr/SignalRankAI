@@ -1,28 +1,38 @@
-import { finite, numberLabel, probabilityLabel, record, type Row } from "../lib/presentation";
+import { finite, numberLabel, record, timeLabel, type Row } from "../lib/presentation";
 
 /** Share of the position the published plan closes at target 1 (home page: "take half off at
  * target 1"). Mirrors SIGNAL_TP1_CLOSE_FRACTION's default in core/partial_exit_accounting.py. */
 const PUBLISHED_TP1_FRACTION = 0.5;
 
 export type SetupRecord = {
-  trades: number | null; wins: number | null; lowerBound: number | null;
-  breakeven: number | null; breakevenSource: "filter" | "levels" | null;
+  trades: number; wins: number; lowerBound: number | null; breakeven: number | null;
+  lookbackDays: number | null; computedAt: string | null;
 };
 
-/** The setup filter's numbers when the signal carries them (``segment_evidence``); otherwise the
- * break-even rate worked out from the signal's own target-1 reward/risk. Nothing is estimated
- * for the record itself: an absent record stays absent. */
-export function setupRecord(signal: Row): SetupRecord {
-  const evidence = record(signal.segment_evidence);
-  const trades = finite(evidence.trades), wins = finite(evidence.wins);
-  const lowerBound = finite(evidence.lower_bound);
-  const filterBreakeven = finite(evidence.breakeven);
-  if (filterBreakeven !== null && filterBreakeven > 0 && filterBreakeven < 1) {
-    return { trades, wins, lowerBound, breakeven: filterBreakeven, breakevenSource: "filter" };
-  }
+/** The setup's measured record, as the API returns it: ``setup_record`` on the detail response,
+ * or ``segment_evidence`` carried on the signal. Null when there is none: nothing is estimated. */
+export function setupRecord(source: unknown): SetupRecord | null {
+  const row = record(source);
+  const trades = finite(row.trades), wins = finite(row.wins);
+  if (trades === null || wins === null || trades <= 0 || wins < 0 || wins > trades) return null;
+  const breakeven = finite(row.breakeven), seconds = finite(row.computed_at);
+  return {
+    trades, wins, lowerBound: finite(row.lower_bound),
+    breakeven: breakeven !== null && breakeven > 0 && breakeven < 1 ? breakeven : null,
+    lookbackDays: finite(row.lookback_days),
+    computedAt: seconds === null ? null : new Date(seconds * 1000).toISOString(),
+  };
+}
+
+/** Break-even TP1 rate from the signal's own levels under the published plan. */
+export function levelsBreakeven(signal: Row): number | null {
   const rr = finite(signal.rr_tp1);
-  const breakeven = rr !== null && rr > 0 ? 1 / (1 + PUBLISHED_TP1_FRACTION * rr) : null;
-  return { trades, wins, lowerBound, breakeven, breakevenSource: breakeven === null ? null : "levels" };
+  return rr !== null && rr > 0 ? 1 / (1 + PUBLISHED_TP1_FRACTION * rr) : null;
+}
+
+/** Whole percent, the way the Telegram card rounds. */
+function pct(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 /** Advisory and recovery signals are stored with ``ml_recovery_mode``; they are for paper trading only. */
@@ -34,41 +44,40 @@ export function PaperOnlyTag() {
   return <span className="ws-tag ws-tag--paper" title="The model scored this setup below its usual bar. Practise it on the paper desk.">PAPER ONLY</span>;
 }
 
-/** One-line summary for a signal card. */
-export function SetupLine({ signal }: { signal: Row }) {
-  const setup = setupRecord(signal);
-  const hasRecord = setup.trades !== null && setup.wins !== null && setup.trades > 0;
-  return <p className="ws-setup-line">
-    {hasRecord
-      ? <>Setup record: <b>{numberLabel(setup.wins, 0)} of {numberLabel(setup.trades, 0)}</b> reached target 1 in the last 60 days</>
-      : <>Setup record not attached to this signal</>}
-    {setup.breakeven !== null && <> · needs <b>{probabilityLabel(setup.breakeven)}</b> to break even</>}
-  </p>;
+/** The Telegram card's sentence, word for word, so both channels say the same thing. */
+function recordSentence(setup: SetupRecord): string {
+  const days = setup.lookbackDays === null ? 60 : Math.round(setup.lookbackDays);
+  const line = `Setup record (${days} days): ${numberLabel(setup.wins, 0)} of ${numberLabel(setup.trades, 0)} similar setups reached TP1 (${pct(setup.wins / setup.trades)}).`;
+  return setup.breakeven === null ? line : `${line} This plan breaks even at ${pct(setup.breakeven)}.`;
 }
 
-/** Detail panel: the record, the cautious estimate, and what this trade needs. */
-export function SetupEvidence({ signal }: { signal: Row }) {
-  const setup = setupRecord(signal);
-  const hasRecord = setup.trades !== null && setup.wins !== null && setup.trades > 0;
-  const raw = hasRecord ? (setup.wins as number) / (setup.trades as number) : null;
-  const locked = signal.exact_levels_locked === true;
+/** One line for a signal card: the record when the signal carries one, otherwise only the
+ * break-even rate its own levels imply. No placeholder for a missing record. */
+export function SetupLine({ signal }: { signal: Row }) {
+  const setup = setupRecord(signal.segment_evidence);
+  if (setup) return <p className="ws-setup-line">{recordSentence(setup)}</p>;
+  const breakeven = levelsBreakeven(signal);
+  return breakeven === null ? null : <p className="ws-setup-line">This plan breaks even at <b>{pct(breakeven)}</b> of trades reaching TP1.</p>;
+}
+
+/** Detail panel for the measured record. Renders nothing when the API has no current record. */
+export function SetupEvidence({ source }: { source: unknown }) {
+  const setup = setupRecord(source);
+  if (!setup) return null;
   return <section className="ui-card" aria-labelledby="ws-setup-title">
     <header className="ui-card-head"><div>
-      <h2 className="ui-card-title" id="ws-setup-title">Why this was sent</h2>
-      <p className="ui-card-desc">A setup is one strategy on one timeframe in one direction. We send a signal only when the
-        cautious end of the setup&rsquo;s 60-day hit rate for target 1 is above the rate this trade needs to break even.</p>
-    </div>{isPaperOnly(signal) && <PaperOnlyTag/>}</header>
+      <h2 className="ui-card-title" id="ws-setup-title">Setup record</h2>
+      <p className="ws-setup-sentence">{recordSentence(setup)}</p>
+    </div></header>
     <dl className="ws-setup-grid">
-      <div><dt>Reached target 1</dt><dd>{hasRecord ? `${numberLabel(setup.wins, 0)} of ${numberLabel(setup.trades, 0)}` : "Not attached"}</dd>
-        <small>{raw === null ? "This signal was stored without its setup record." : `${probabilityLabel(raw)} of resolved trades in 60 days`}</small></div>
-      <div><dt>Cautious estimate</dt><dd>{setup.lowerBound === null ? "Not attached" : probabilityLabel(setup.lowerBound)}</dd>
-        <small>Lower end of a 95% range, so a small sample can&rsquo;t look better than it has shown</small></div>
-      <div><dt>Needed to break even</dt><dd>{locked && setup.breakeven === null ? "Paid plans" : probabilityLabel(setup.breakeven)}</dd>
-        <small>{setup.breakevenSource === "filter" ? "As used by the filter when this signal was sent"
-          : setup.breakevenSource === "levels" ? "From this signal's target 1 and stop, with half the position closed at target 1"
-          : "Needs the entry, stop and target 1 levels"}</small></div>
+      <div><dt>Reached TP1</dt><dd>{numberLabel(setup.wins, 0)} of {numberLabel(setup.trades, 0)}</dd>
+        <small>{pct(setup.wins / setup.trades)} of resolved trades for this strategy, timeframe and direction</small></div>
+      {setup.lowerBound !== null && <div><dt>Cautious estimate</dt><dd>{pct(setup.lowerBound)}</dd>
+        <small>The low end of a 95% range around that rate. It&rsquo;s what the filter compares</small></div>}
+      {setup.breakeven !== null && <div><dt>Breaks even at</dt><dd>{pct(setup.breakeven)}</dd>
+        <small>With half the position closed at TP1 and the rest protected at entry</small></div>}
     </dl>
-    {hasRecord && setup.trades !== null && setup.trades < 30 && <p className="ws-aside">Only {numberLabel(setup.trades, 0)} resolved trades back this setup. Expect the real hit rate to move as more close.</p>}
-    {isPaperOnly(signal) && <p className="ws-aside">The model scored this one below its usual bar, so it&rsquo;s for paper trading only. Try it on the paper desk before risking money on setups like it.</p>}
+    {setup.trades < 30 && <p className="ws-aside">That&rsquo;s only {numberLabel(setup.trades, 0)} resolved trades, so the rate can still move a long way.</p>}
+    {setup.computedAt && <p className="ui-muted">Measured {timeLabel(setup.computedAt)}. This is the record as it stands now, not when the signal was sent.</p>}
   </section>;
 }

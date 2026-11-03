@@ -92,7 +92,7 @@ export function PropDashboard({ connectionId }: { connectionId: string }) {
   return <>
     <section className="ui-card">
       <div className="ui-card-head"><div><h2>Risk limit usage</h2></div>
-        {evidence.stale === true ? <Badge tone="warning">Data not current</Badge> : <Badge tone="positive">Current</Badge>}</div>
+        {evidence.stale === true ? <Badge tone="warning">Out of date</Badge> : <Badge tone="positive">Current</Badge>}</div>
       {unavailable.includes("no_equity_snapshots") && <Notice tone="neutral">No broker equity snapshots yet. Usage appears after the account reconciles; nothing is assumed meanwhile.</Notice>}
       {unavailable.includes("latest_snapshot_stale") && <Notice tone="warning">The latest equity snapshot is older than {Math.round((finite(evidence.stale_after_seconds) ?? 900) / 60)} minutes ({timeLabel(evidence.latest_snapshot_at)}). Usage may be out of date.</Notice>}
       <div className="ws-grid-2">

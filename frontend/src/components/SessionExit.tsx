@@ -22,6 +22,6 @@ export function SessionExit({ compact = false }: { compact?: boolean }) {
     <button type="button" className={compact ? "ui-btn ui-btn--ghost ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm ui-btn--block"} onClick={signOut} disabled={busy}>
       <Icon name="logout"/>{busy?"Signing out…":"Sign out"}
     </button>
-    {error&&<span role="alert" className="ui-muted">Sign-out could not be confirmed. Please retry.</span>}
+    {error&&<span role="alert" className="ui-muted">Sign-out didn&rsquo;t finish. Try again.</span>}
   </div>;
 }

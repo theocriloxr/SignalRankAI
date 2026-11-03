@@ -30,7 +30,7 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
           const result=record(response.data);
           setDetail({ticket:record(result.ticket),messages:rows(result.messages)});
         }else setError(statusText(response.response.status));
-      }catch{if(!cancelled)setError("Ticket messages could not be verified. Retry shortly.");}
+      }catch{if(!cancelled)setError("We couldn't load this conversation. Try again shortly.");}
       finally{if(!cancelled)setLoading(false);}
     }
     void load();
@@ -46,7 +46,7 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
     event.preventDefault();
     const message=text.trim();
     if(!selected||!detail||saving||message.length===0||message.length>20000)return;
-    if(detail.ticket.status==="closed"){setFeedback("The ticket is closed. Replies are unavailable.");return;}
+    if(detail.ticket.status==="closed"){setFeedback("This ticket is closed.");return;}
     setSaving(true);setFeedback("");
     try{
       const response=await client.POST("/api/v1/platform/support/tickets/{ticket_id}/messages",{
@@ -55,16 +55,16 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
       });
       if(response.response.ok && response.data){
         setText("");
-        setFeedback("Your reply was accepted by the support service.");
+        setFeedback("Reply sent.");
         setVersion(x=>x+1);
         onChanged();
-      }else setFeedback(response.response.status===409?"This ticket has been closed. Refresh to confirm.":response.response.status===401?"Sign in again to reply.":"The message was not confirmed sent. Retry.");
-    }catch{setFeedback("The service could not confirm the reply. Please retry.");}
+      }else setFeedback(response.response.status===409?"This ticket has been closed. Refresh to confirm.":response.response.status===401?"Sign in again to reply.":"Your reply didn't send. Try again.");
+    }catch{setFeedback("We couldn't confirm your reply. Refresh to check.");}
     finally{setSaving(false);}
   }
   return <section className="ws-stack">
-    <p className="ui-notice ui-notice--neutral">Tickets and messages are retrieved for the signed-in account only. Ticket status comes from the support service; no response time is promised.</p>
-    {tickets.length===0&&<div className="ui-empty"><strong>No account support tickets returned.</strong><p>Use the form below to open a new request.</p></div>}
+    <p className="ws-aside">A person on our team reads every ticket. We reply as soon as we can.</p>
+    {tickets.length===0&&<div className="ui-empty"><strong>No tickets yet.</strong><p>Use the form below to ask us something.</p></div>}
     <div className="ws-split">
       {tickets.length>0&&<nav className="ws-select-list" aria-label="Your support tickets">
         {tickets.map((ticket,i)=>{
@@ -78,26 +78,26 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
         })}
       </nav>}
       <div className="ws-stack">
-        {!selected&&tickets.length>0&&<div className="ui-empty">Select a ticket to review its message history and reply.</div>}
-        {loading&&<div className="ui-loading" role="status">Retrieving the selected account ticket…</div>}
+        {!selected&&tickets.length>0&&<div className="ui-empty">Pick a ticket to read and reply.</div>}
+        {loading&&<div className="ui-loading" role="status">Loading…</div>}
         {error&&<div className="ui-state" role="alert"><p>{error}</p><button className="ui-btn" type="button" onClick={()=>setVersion(x=>x+1)}>Retry</button></div>}
         {detail&&!loading&&<section className="ui-card">
           <p className="ui-eyebrow">{display(detail.ticket.priority,"Standard")} priority</p>
           <h2>{display(detail.ticket.subject)}</h2>
           <p>State: <strong>{display(detail.ticket.status)}</strong> · Created {timeLabel(detail.ticket.created_at)}</p>
           <div className="ws-thread">
-            {detail.messages.length===0&&<p>No messages returned for this ticket.</p>}
+            {detail.messages.length===0&&<p>No messages yet.</p>}
             {detail.messages.map((message,i)=><article className="ws-message" key={display(message.message_id,String(i))}>
               <div className="ui-pagination"><strong>{message.author_role==="user"?"Your message":"Support team"}</strong><small>{timeLabel(message.created_at)}</small></div>
               <p>{display(message.message,"Message unavailable")}</p>
             </article>)}
           </div>
           {detail.ticket.status!=="closed"&&<form className="ui-form" onSubmit={reply}>
-            <label className="ui-field">Reply to this ticket<textarea className="ui-textarea" value={text} onChange={e=>setText(e.target.value)} maxLength={20000} rows={5} required placeholder="Describe what happened and any relevant non-sensitive details."/></label>
+            <label className="ui-field">Reply to this ticket<textarea className="ui-textarea" value={text} onChange={e=>setText(e.target.value)} maxLength={20000} rows={5} required placeholder="What happened, and what did you expect?"/></label>
             <button type="submit" className="ui-btn ui-btn--primary" disabled={saving||!text.trim()}>{saving?"Sending…":"Send reply"}</button>
-            <p>Avoid sending passwords, broker API keys, one-time codes or card data in a support message.</p>
+            <p>Please don&rsquo;t send passwords, API keys, one-time codes or card details here.</p>
           </form>}
-          {detail.ticket.status==="closed"&&<p className="ui-notice ui-notice--neutral">This ticket is closed and cannot receive new replies.</p>}
+          {detail.ticket.status==="closed"&&<p className="ui-notice ui-notice--neutral">This ticket is closed. Open a new one if you need more help.</p>}
           {feedback&&<p role="status" className="ui-feedback">{feedback}</p>}
         </section>}
       </div>

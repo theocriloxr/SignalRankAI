@@ -23,7 +23,7 @@ export function PrivacyCenter({onChanged}:{onChanged:()=>void}){
     setExporting(true);respond("");
     try{
       const r=await client.GET("/api/v1/platform/account/export");
-      if(!r.response.ok||!r.data){respond(r.response.status===401?"Your session expired. Sign in again.":"The export could not be prepared. Retry later.",true);return;}
+      if(!r.response.ok||!r.data){respond(r.response.status===401?"Your session expired. Sign in again.":"We couldn't prepare the export. Try again later.",true);return;}
       const blob=new Blob([JSON.stringify(r.data,null,2)],{type:"application/json"});
       const url=URL.createObjectURL(blob);
       const link=document.createElement("a");
@@ -32,7 +32,7 @@ export function PrivacyCenter({onChanged}:{onChanged:()=>void}){
       setTimeout(()=>URL.revokeObjectURL(url),1000);
       const missing=Object.keys(record(record(r.data).unavailable));
       respond(missing.length?`Export downloaded. Not included by your plan: ${missing.join(", ").replaceAll("_"," ")}.`:"Export downloaded.");
-    }catch{respond("The export could not be verified. Retry later.",true);}
+    }catch{respond("The download didn't work. Try again later.",true);}
     finally{setExporting(false);}
   }
 
@@ -47,17 +47,17 @@ export function PrivacyCenter({onChanged}:{onChanged:()=>void}){
       if(r.response.ok&&display(data.ticket_id,"")){
         setRetained(Array.isArray(data.retained_records)?data.retained_records.filter((v):v is string=>typeof v==="string"):[]);
         setPhrase("");setReason("");
-        respond(data.already_requested===true?"A deletion review is already open for this account. Support will reply on that ticket.":"Deletion review opened. Support will confirm by ticket before anything is removed.");
+        respond(data.already_requested===true?"A deletion review is already open for this account. Support will reply on that ticket.":"Request sent. We'll reply on a support ticket before anything is removed.");
         onChanged();
-      }else respond(r.response.status===403?"For your protection this needs a fresh sign-in. Sign out, sign back in, then retry within 15 minutes.":r.response.status===401?"Your session expired. Sign in again.":"The request was not confirmed. Retry later.",true);
-    }catch{respond("The request could not be verified. Retry later.",true);}
+      }else respond(r.response.status===403?"For your protection this needs a fresh sign-in. Sign out, sign back in, then retry within 15 minutes.":r.response.status===401?"Your session expired. Sign in again.":"The request didn't go through. Try again later.",true);
+    }catch{respond("We couldn't confirm the request. Check your support tickets.",true);}
     finally{setBusy(false);}
   }
 
   return <section className="ui-card" aria-labelledby="privacy-title">
     
     <h2 id="privacy-title">Your data</h2>
-    <p>Download a copy of the data held for your account. Passwords, session tokens, full API keys and broker credentials are never included.</p>
+    <p>Download everything we hold about your account, minus passwords, sign-in tokens, full API keys and broker logins.</p>
     <div className="ui-actions"><button className="ui-btn" type="button" disabled={exporting} onClick={download}>{exporting?"Preparing…":"Download my data (JSON)"}</button></div>
 
     <h3>Request account deletion</h3>

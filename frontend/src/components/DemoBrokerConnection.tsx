@@ -48,8 +48,8 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
           return name&&servers.length?[{broker:name,servers}]:[];
         });
         setBrokers(groups);
-      }else setError(r.response.status===503?"MetaTrader server discovery is not configured or unavailable. An administrator must restore the provider integration.":"The server search was not verified. Check the spelling or retry.");
-    }catch{setError("Server discovery could not be reached. No connection has been created.");}
+      }else setError(r.response.status===503?"MetaTrader server search isn't working right now. We've been told; try again later.":"That search didn't work. Check the spelling and try again.");
+    }catch{setError("We couldn't reach the server search. Nothing was created.");}
     finally{setSearching(false);}
   }
 
@@ -77,18 +77,18 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
           // Keep the provider link rendered until the user explicitly returns:
           // refreshing WorkspaceLive here would unmount this one-time link.
           setConnectionId(id);
-          if(url){setLink(url);setProviderMessage("A demo account configuration request was created. Complete credentials on the provider site, then return here and verify the connection.");}
-          else {setError("A connection was created but its provider link was missing or unsafe. Do not enter credentials at an unverified address. Contact support with the connection reference.");}
-        }else setError("The provider response had no canonical connection identity. No completed connection is confirmed.");
-      }else setError(r.response.status===503?"MetaTrader integration is unavailable or out of capacity. No working secure link was confirmed.":r.response.status===403?"This account cannot add another broker connection on its current plan.":"The provider did not confirm a secure configuration link. Retry only after checking existing connections.");
-    }catch{setError("The response could not be verified. Check your broker list before resubmitting to avoid duplicate requests.");}
+          if(url){setLink(url);setProviderMessage("Done. Enter your demo login on the provider's page, then come back and check the account.");}
+          else {setError("The link we got back looked wrong, so we're not showing it. Please contact support with the reference below.");}
+        }else setError("The provider didn't confirm the account. Nothing was linked.");
+      }else setError(r.response.status===503?"MetaTrader linking is busy or down. Try again later.":r.response.status===403?"Your plan doesn't allow another broker account.":"The provider didn't send a setup link. Check your broker list before trying again.");
+    }catch{setError("We didn't get an answer. Check your broker list first so you don't create it twice.");}
     finally{setCreating(false);}
   }
 
   return <section className="ui-card" aria-labelledby="sr-demo-link-heading">
     <div><p className="ui-eyebrow">Start with a demo account</p>
       <h2 id="sr-demo-link-heading">Connect a MetaTrader demo account</h2></div>
-    <p className="ui-notice ui-notice--neutral">This flow only requests a provider-hosted credential entry link for an MT4 or MT5 <strong>demo</strong> account. Do not use a live or prop account here. Creating a connection does not turn on auto-execution or certify trading safety.</p>
+    <p className="ui-notice ui-notice--neutral">Link a MetaTrader 4 or 5 <strong>demo</strong> account, not a live or prop one. You type your login on the provider&rsquo;s own page, not here. Linking it does not turn on auto-execution.</p>
     <form className="ui-form" role="search" onSubmit={findServers}>
       <div className="ui-form-grid"><label className="ui-field">MetaTrader version
         <select className="ui-select" value={platform} onChange={e=>{setPlatform(e.target.value as "mt4"|"mt5");setBrokers(null);setSelectedServer("");}}>
@@ -108,19 +108,19 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
       </div>)}
     </div>}
     {selectedServer&&<form className="ui-form ui-card ui-card--muted" onSubmit={requestLink}>
-      <p><strong>Selected:</strong> {brokerName} / {selectedServer} ({platform.toUpperCase()})</p>
+      <p><strong>Selected:</strong> {brokerName}, server {selectedServer} ({platform.toUpperCase()})</p>
       <label className="ui-field">Account label (optional)
         <input className="ui-input" autoComplete="off" value={label} onChange={e=>setLabel(e.target.value)} maxLength={128} placeholder="Practice account"/>
       </label>
       <p>No passwords, API keys or account login IDs are entered here. The provider will collect the needed credentials through its own secure link.</p>
-      <button className="ui-btn ui-btn--primary" type="submit" disabled={creating||Boolean(connectionId)}>{creating?"Requesting provider link…":"Request demo secure link"}</button>
+      <button className="ui-btn ui-btn--primary" type="submit" disabled={creating||Boolean(connectionId)}>{creating?"Getting the link…":"Get setup link"}</button>
     </form>}
     {providerMessage&&<p role="status" className="ui-feedback">{providerMessage}</p>}
     {link&&<div className="ui-confirm">
-      <strong>Provider link available</strong>
-      <p>Check that the destination host belongs to the expected provider before entering your demo credentials: <code>{link.hostname}</code>.</p>
-      <a className="ui-btn" href={link.href} target="_blank" rel="noopener noreferrer">Open provider secure setup ↗</a>
-      <p>Return to SignalRankAI after provider setup. Use read-only verification on the matching broker account before proceeding with any certification.</p>
+      <strong>Your setup link</strong>
+      <p>Check the address belongs to the provider before you type your demo login: <code>{link.hostname}</code>.</p>
+      <a className="ui-btn" href={link.href} target="_blank" rel="noopener noreferrer">Open the provider&rsquo;s page ↗</a>
+      <p>When you&rsquo;re done there, come back and press the button below.</p>
       <button type="button" className="ui-btn" onClick={onChanged}>I finished provider setup — refresh broker accounts</button>
     </div>}
     {connectionId&&<p className="ui-eyebrow">Connection reference: {connectionId}</p>}

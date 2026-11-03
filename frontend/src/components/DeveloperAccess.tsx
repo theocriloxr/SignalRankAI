@@ -17,8 +17,8 @@ type Loaded = {keys:Row[]|null;hooks:Row[]|null;keyStatus:number;hookStatus:numb
 function failure(status:number, fallback:string){
   if(status===401)return "Your session expired. Sign in again.";
   if(status===403)return "This needs a plan that includes developer access, or a fresh sign-in for credential changes. Sign out and back in, then retry within 15 minutes.";
-  if(status===422)return "The service rejected these details. Check the values and retry.";
-  if(status===503)return "Signing-secret encryption is not configured on the server, so webhooks cannot be created yet.";
+  if(status===422)return "Those details weren't accepted. Check them and try again.";
+  if(status===503)return "Webhooks aren't switched on for this server yet.";
   return fallback;
 }
 
@@ -68,8 +68,8 @@ export function DeveloperAccess(){
       if(r.response.ok&&value){
         setSecret({label:`API key “${name}”`,value});setKeyName("");setScopes(["signals:read"]);setDays("90");
         respond("Key created. Copy it now: it is shown once and is not stored in this browser.");setVersion(v=>v+1);
-      }else respond(failure(r.response.status,"The service did not confirm key creation."),true);
-    }catch{respond("Key creation could not be confirmed. Retry later.",true);}
+      }else respond(failure(r.response.status,"The key wasn't created. Try again."),true);
+    }catch{respond("We couldn't confirm the key. Refresh to check.",true);}
     finally{setBusy(false);}
   }
 
@@ -78,9 +78,9 @@ export function DeveloperAccess(){
     setBusy(true);respond("");
     try{
       const r=await client.DELETE("/api/v1/platform/api-keys/{key_id}",{params:{path:{key_id:id}}});
-      if(r.response.ok&&record(r.data).revoked===true){setConfirm("");respond("The service confirmed this key is revoked.");setVersion(v=>v+1);}
-      else respond(failure(r.response.status,"Revocation could not be confirmed. Refresh and retry."),true);
-    }catch{respond("Revocation could not be verified. Retry.",true);}
+      if(r.response.ok&&record(r.data).revoked===true){setConfirm("");respond("Key revoked.");setVersion(v=>v+1);}
+      else respond(failure(r.response.status,"The key is still active. Try again."),true);
+    }catch{respond("We couldn't confirm it. Refresh to check.",true);}
     finally{setBusy(false);}
   }
 
@@ -98,8 +98,8 @@ export function DeveloperAccess(){
       if(r.response.ok&&value){
         setSecret({label:`Signing secret for ${parsed.host}`,value});setHookUrl("");setEvents(["signal.generated","signal.closed"]);
         respond("Webhook registered. Copy the signing secret now: it is shown once.");setVersion(v=>v+1);
-      }else respond(failure(r.response.status,"The service did not confirm webhook registration."),true);
-    }catch{respond("Webhook registration could not be confirmed. Retry later.",true);}
+      }else respond(failure(r.response.status,"The webhook wasn't added. Try again."),true);
+    }catch{respond("We couldn't confirm the webhook. Refresh to check.",true);}
     finally{setBusy(false);}
   }
 
@@ -108,9 +108,9 @@ export function DeveloperAccess(){
     setBusy(true);respond("");
     try{
       const r=await client.DELETE("/api/v1/platform/webhooks/{webhook_endpoint_id}",{params:{path:{webhook_endpoint_id:id}}});
-      if(r.response.ok&&record(r.data).revoked===true){setConfirm("");respond("The service confirmed this webhook is removed.");setVersion(v=>v+1);}
-      else respond(failure(r.response.status,"Removal could not be confirmed. Refresh and retry."),true);
-    }catch{respond("Removal could not be verified. Retry.",true);}
+      if(r.response.ok&&record(r.data).revoked===true){setConfirm("");respond("Webhook removed.");setVersion(v=>v+1);}
+      else respond(failure(r.response.status,"The webhook is still there. Try again."),true);
+    }catch{respond("We couldn't confirm it. Refresh to check.",true);}
     finally{setBusy(false);}
   }
 
@@ -131,7 +131,7 @@ export function DeveloperAccess(){
     <section className="ui-card">
       
       <h2 id="developer-access-title">API keys and webhooks</h2>
-      <p>Read-only API keys and signed outbound webhooks for your own tools. None of these credentials can place broker orders or move money.</p>
+      <p>Read your signals and paper account from your own tools. Keys can only read; they can&rsquo;t trade or move money.</p>
       {secret&&<div className="ui-notice ui-notice--warning" role="status">
         <p><strong>{secret.label}</strong> — shown once. Store it in a password manager or secret store.</p>
         <code className="ui-secret" aria-label={secret.label}>{secret.value}</code>

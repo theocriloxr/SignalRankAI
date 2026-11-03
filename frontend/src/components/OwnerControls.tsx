@@ -110,7 +110,7 @@ function ScopedKillSwitches({ owner }: { owner: boolean }) {
   const engaged = SCOPES.flatMap(item => Object.entries(record(switches[item.value])).map(([name, value]) => ({ scope: item.value, label: item.label, key: name, info: record(value) })));
   const audit = rows(document?.audit).slice().reverse();
   return <Card title="Scoped kill switches" 
-    description="Stop execution for one strategy, instrument or asset class without stopping everything. Engaging a switch never enables trading; releasing one leaves every other control in force.">
+    description="Stop orders for one strategy, instrument or market without stopping everything. Releasing a switch leaves every other control as it was.">
     {!owner && <Notice tone="neutral">Only the owner account can view and change scoped kill switches.</Notice>}
     {owner && loadError && <Feedback error>{loadError} Execution stays blocked while the switch store is unreadable.</Feedback>}
     {owner && document && <>
@@ -133,12 +133,12 @@ function ScopedKillSwitches({ owner }: { owner: boolean }) {
             placeholder={SCOPES.find(item => item.value === scope)?.example} onChange={e => setKey(e.target.value)}/></label>
         </div>
         <label className="ui-field">Reason<input className="ui-input" required minLength={8} maxLength={200} value={reason}
-          placeholder="Why execution must stop (no credentials)" onChange={e => setReason(e.target.value)}/></label>
+          placeholder="Why orders must stop (no passwords)" onChange={e => setReason(e.target.value)}/></label>
         <label className="ui-field">Type ENGAGE to confirm<input className="ui-input" required autoComplete="off" value={phrase} onChange={e => setPhrase(e.target.value)}/></label>
         <div className="ui-actions"><button className="ui-btn ui-btn--primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Engage switch"}</button></div>
       </form>
       {audit.length > 0 && <details><summary>Recent changes ({audit.length})</summary>
-        <TableWrap label="Scoped kill switch audit"><thead><tr><th>When</th><th>Action</th><th>Scope</th><th>Key</th><th>By</th></tr></thead>
+        <TableWrap label="Switch history"><thead><tr><th>When</th><th>Action</th><th>Scope</th><th>Key</th><th>By</th></tr></thead>
           <tbody>{audit.map((entry, i) => <tr key={i}><td>{epochLabel(entry.at)}</td><td>{display(entry.action)}</td><td>{display(entry.scope)}</td><th className="mono">{display(entry.key)}</th><td>{display(entry.actor)}</td></tr>)}</tbody></TableWrap></details>}
     </>}
     {notice && <Feedback error={notice.error}>{notice.text}</Feedback>}
@@ -280,7 +280,7 @@ function AiSpend() {
   const alerts = rows(data?.alerts);
   const unpriced = Array.isArray(data?.unpriced_models) ? (data?.unpriced_models as unknown[]).map(String) : [];
   return <Card title="AI spend" eyebrow="OpenAI and Gemini"
-    description={display(data?.basis, "Estimated cost from the append-only usage ledger.")}
+    description={display(data?.basis, "Estimated cost of AI calls, from the usage log.")}
     actions={<label className="ui-field">Window<select className="ui-select" value={days} onChange={e => setDays(Number(e.target.value))}>
       {[1, 7, 30, 90].map(n => <option key={n} value={n}>{n === 1 ? "Last 24 hours" : `Last ${n} days`}</option>)}</select></label>}>
     {error && <Feedback error>{error}</Feedback>}

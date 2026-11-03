@@ -40,19 +40,19 @@ export function SignalFilters({ onApply }: { onApply: (next: SignalQuery)=>void 
       <div className="ui-form-grid">
         <label className="ui-field">Instrument<input className="ui-input mono" name="asset" maxLength={32} placeholder="e.g. XAUUSD, BTCUSDT" autoComplete="off"/></label>
         <label className="ui-field">Asset class<select className="ui-select" name="asset_class" defaultValue="">
-          <option value="">All entitled classes</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="index">Indices</option><option value="stock">Stocks</option><option value="commodity">Commodities</option>
+          <option value="">All markets</option><option value="crypto">Crypto</option><option value="fx">FX</option><option value="index">Indices</option><option value="stock">Stocks</option><option value="commodity">Commodities</option>
         </select></label>
         <label className="ui-field">Timeframe<select className="ui-select" name="timeframe" defaultValue="">
           <option value="">Any timeframe</option>
           {["5m","15m","30m","1h","4h","1d","1w"].map(time=><option key={time} value={time}>{time}</option>)}
         </select></label>
-        <label className="ui-field">Strategy name contains<input className="ui-input" name="strategy" maxLength={64} placeholder="Strategy filter"/></label>
+        <label className="ui-field">Strategy<input className="ui-input" name="strategy" maxLength={64} placeholder="Part of the name"/></label>
       </div>
       <div className="ui-actions">
         <button type="submit" className="ui-btn ui-btn--primary">Apply filters</button>
         <button type="reset" className="ui-btn ui-btn--ghost" onClick={()=>{setActive(0);onApply({});}}>Clear</button>
       </div>
-      <p className="ui-muted">Filters narrow your delivered-signal history. They never change signal generation or risk gates.</p>
+      <p className="ui-muted">Filters only change what&rsquo;s shown here, not which signals you get.</p>
     </form>}
   </div>;
 }

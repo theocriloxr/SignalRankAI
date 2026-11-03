@@ -164,7 +164,8 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
     return <div className="ws-stack">
       <Link className="ui-link" href="/app/signals"><Icon name="arrowLeft"/> All signals</Link>
       {Object.keys(candidate).length ? <>
-        <div className="ws-detail-top"><SignalRecord signal={candidate} detail /><SetupEvidence signal={candidate}/></div>
+        <div className="ws-detail-top"><SignalRecord signal={candidate} detail /><SetupEvidence source={data.setup_record ?? candidate.segment_evidence}/></div>
+        {isPaperOnly(candidate) && <p className="ws-aside"><PaperOnlyTag/> The model scored this one below its usual bar, so it&rsquo;s for paper trading only. Try it on the paper desk first.</p>}
         <SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
         <p className="ws-aside">A signal is an idea with levels, not an order. Nothing is placed with a broker unless you place it.</p>
       </> : <Empty title="We couldn't find this signal on your account.">It may belong to another account or plan.</Empty>}

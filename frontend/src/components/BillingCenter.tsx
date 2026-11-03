@@ -27,7 +27,7 @@ function Plans({ onError }: { onError: (message: string) => void }) {
       if (cancelled) return;
       if (r.response.ok && r.data) setProducts(rows(record(r.data).products));
       else setLoadError(statusText(r.response.status));
-    }).catch(() => { if (!cancelled) setLoadError("Plans could not be retrieved from the billing service."); });
+    }).catch(() => { if (!cancelled) setLoadError("We couldn't load the plans. Try again shortly."); });
     return () => { cancelled = true; };
   }, []);
 
@@ -45,16 +45,16 @@ function Plans({ onError }: { onError: (message: string) => void }) {
       if (destination) { window.location.assign(destination); return; }
       onError(r.response.status === 409 ? (errorDetail(r.error) || "Verify your email address in Settings before checkout.")
         : r.response.status === 422 ? (errorDetail(r.error) || "This plan is not currently available for checkout.")
-        : r.response.status === 503 ? "Checkout is temporarily unavailable. No payment was started."
+        : r.response.status === 503 ? "Checkout isn't available right now. You haven't been charged."
         : r.response.status === 401 ? "Your session expired. Sign in again."
-        : "Checkout could not be opened safely. No payment was started.");
-    } catch { onError("The billing service could not be reached. No payment was started."); }
+        : "Checkout didn't open. You haven't been charged.");
+    } catch { onError("We couldn't reach billing. You haven't been charged."); }
     finally { setOpening(""); }
   }
 
   if (loadError) return <Notice tone="danger" role="alert">{loadError}</Notice>;
   if (products === null) return <Loading>Loading available plans…</Loading>;
-  if (!products.length) return <Empty title="No plans are currently offered." icon="billing">The billing catalogue returned no active products. Contact support if you expected to see a plan.</Empty>;
+  if (!products.length) return <Empty title="No plans are currently offered." icon="billing">No plans are on sale right now. Contact support if that seems wrong.</Empty>;
   return <div className="ws-cards">{products.map(product => {
     const id = display(product.product_id, "");
     const recurring = product.recurring === true;
@@ -90,11 +90,11 @@ function ConfirmReturn({ reference, onConfirmed }: { reference: string; onConfir
         onConfirmed();
       } else setResult({ ok: false, message: r.response.status === 409 ? (errorDetail(r.error) || "Paystack has not confirmed this payment yet. Try again shortly.")
         : r.response.status === 403 ? "This payment belongs to a different SignalRankAI account."
-        : "Payment confirmation is temporarily unavailable. Nothing has been changed." });
-    } catch { setResult({ ok: false, message: "The confirmation result could not be verified. Retry before contacting support." }); }
+        : "We can't check payments right now. Nothing has changed." });
+    } catch { setResult({ ok: false, message: "We didn't get an answer. Try again before contacting support." }); }
     finally { setBusy(false); }
   }
-  return <Card title="Confirm your payment" description="We verify the transaction directly with Paystack and check it belongs to this account before changing any access.">
+  return <Card title="Confirm your payment" description="We check the payment with Paystack before your plan changes.">
     <KVList><KV label="Payment reference" value={<span className="mono">{reference}</span>} /></KVList>
     {!result?.ok && <div className="ui-actions"><button type="button" className="ui-btn ui-btn--primary" onClick={confirm} disabled={busy}><Icon name="check" />{busy ? "Verifying with Paystack…" : "Verify payment"}</button></div>}
     {result && <Feedback error={!result.ok}>{result.message}</Feedback>}
@@ -111,16 +111,16 @@ function Renewal({ data, onChanged }: { data: Row; onChanged: () => void }) {
     try {
       const r = await client.POST("/api/v1/platform/billing/cancel-auto-renew", { body: { confirm: true } });
       if (r.response.ok && r.data) {
-        setResult({ ok: true, message: display(record(r.data).policy, "Auto-renew cancellation was recorded.") });
+        setResult({ ok: true, message: display(record(r.data).policy, "Auto-renew is off.") });
         setConfirming(false); onChanged();
-      } else setResult({ ok: false, message: r.response.status === 409 ? "There is no active paid subscription to cancel." : "Cancellation was not confirmed. Renewal settings are unchanged." });
-    } catch { setResult({ ok: false, message: "The cancellation result could not be verified. Check your billing status before retrying." }); }
+      } else setResult({ ok: false, message: r.response.status === 409 ? "There is no active paid subscription to cancel." : "That didn't go through. Auto-renew is still on." });
+    } catch { setResult({ ok: false, message: "We didn't get an answer. Check your plan status before trying again." }); }
     finally { setBusy(false); }
   }
   const autoRenew = data.auto_renew === true ? "Enabled" : data.auto_renew === false ? "Disabled" : "Unavailable";
   return <Card title="Automatic renewal">
     <KVList><KV label="Auto-renew" value={<Badge tone={data.auto_renew === true ? "info" : "neutral"}>{autoRenew}</Badge>} />
-      <KV label="Provider subscription" value={data.provider_subscription_linked === true ? "Linked" : data.provider_subscription_linked === false ? "Not linked" : "Unavailable"} /></KVList>
+      <KV label="Paystack subscription" value={data.provider_subscription_linked === true ? "Linked" : data.provider_subscription_linked === false ? "Not linked" : "Unavailable"} /></KVList>
     {data.auto_renew === true && !confirming && <button type="button" className="ui-btn" onClick={() => setConfirming(true)}>Turn off auto-renew</button>}
     {confirming && <div className="ui-confirm" role="group" aria-label="Confirm auto-renew cancellation">
       <h3>Turn off automatic renewal?</h3>
@@ -144,9 +144,9 @@ function RefundRequest() {
         payment_reference: String(values.get("payment_reference") || "").trim(),
         reason: String(values.get("reason") || "").trim(),
       } });
-      if (r.response.ok && r.data) { setResult({ ok: true, message: "Refund review ticket created. A person will verify the payment; no automatic refund was issued." }); form.reset(); }
-      else setResult({ ok: false, message: r.response.status === 404 ? "That payment reference was not found on this account." : r.response.status === 403 ? "Refund requests are not available on this account." : "The request was not confirmed. Retry or open a billing support ticket." });
-    } catch { setResult({ ok: false, message: "The request could not be confirmed. Nothing was submitted." }); }
+      if (r.response.ok && r.data) { setResult({ ok: true, message: "Request sent. A person will check the payment and reply on the ticket." }); form.reset(); }
+      else setResult({ ok: false, message: r.response.status === 404 ? "That payment reference was not found on this account." : r.response.status === 403 ? "Refund requests are not available on this account." : "That didn't go through. Try again or open a support ticket." });
+    } catch { setResult({ ok: false, message: "We couldn't confirm the request. Check your support tickets." }); }
     finally { setBusy(false); }
   }
   return <Card title="Request a refund review" description="This opens a billing ticket about a payment on this account. A person reviews every refund.">
@@ -164,7 +164,7 @@ export function BillingCenter({ data, onChanged }: { data: Row; onChanged: () =>
   const reference = returnedReference(useSearchParams().toString());
   const [checkoutError, setCheckoutError] = useState("");
   return <div className="ws-stack">
-    <Notice>Prices, subscription state and receipts come from the billing service. Opening this page never charges your account; payment happens only on Paystack after you choose a plan.</Notice>
+    <Notice>You&rsquo;re only charged on Paystack, after you pick a plan.</Notice>
     {reference && <ConfirmReturn reference={reference} onConfirmed={onChanged} />}
     <Card title="Plans" description="Your plan decides which features you can use. Prices come from our billing system at checkout.">
       <Plans onError={setCheckoutError} />
@@ -175,7 +175,7 @@ export function BillingCenter({ data, onChanged }: { data: Row; onChanged: () =>
       <RefundRequest />
     </div>
     <Card title="Subscription history">{subscriptions.length ? <TableWrap label="Scrollable subscription history"><thead><tr><th>Plan</th><th>State</th><th>Start</th><th>Expires</th></tr></thead><tbody>{subscriptions.map((p, i) => <tr key={display(p.id, String(i))}><th>{display(p.tier)}</th><td><Badge tone={p.status === "active" ? "positive" : "neutral"}>{display(p.status)}</Badge></td><td>{timeLabel(p.started_at)}</td><td>{timeLabel(p.expires_at)}</td></tr>)}</tbody></TableWrap> : <Empty title="No subscriptions yet." icon="billing" />}</Card>
-    <Card title="Payment receipts" description="Only server-confirmed receipts are listed.">{receipts.length ? <TableWrap label="Scrollable payment receipts"><thead><tr><th>Receipt</th><th>Plan</th><th>Amount</th><th>Payment state</th><th>Date</th></tr></thead><tbody>{receipts.map((r, i) => <tr key={display(r.receipt_number, String(i))}><th className="mono">{display(r.receipt_number)}</th><td>{display(r.plan)}</td><td>{moneyLabel(r.amount, r.currency)}</td><td>{display(r.status)}</td><td>{timeLabel(r.payment_date)}</td></tr>)}</tbody></TableWrap> : <Empty title="No receipts yet." icon="billing" />}</Card>
+    <Card title="Payment receipts" description="Payments Paystack has confirmed.">{receipts.length ? <TableWrap label="Scrollable payment receipts"><thead><tr><th>Receipt</th><th>Plan</th><th>Amount</th><th>Payment state</th><th>Date</th></tr></thead><tbody>{receipts.map((r, i) => <tr key={display(r.receipt_number, String(i))}><th className="mono">{display(r.receipt_number)}</th><td>{display(r.plan)}</td><td>{moneyLabel(r.amount, r.currency)}</td><td>{display(r.status)}</td><td>{timeLabel(r.payment_date)}</td></tr>)}</tbody></TableWrap> : <Empty title="No receipts yet." icon="billing" />}</Card>
     <p className="ui-muted">Read the <Link className="ui-link" href="/pricing">plan guide</Link> and <WorkspaceLink className="ui-link" href="/billing-policy">billing policy</WorkspaceLink>.</p>
   </div>;
 }

@@ -5,9 +5,9 @@ import client from "../lib/client";
 import { display, record, rows, type Row } from "../lib/presentation";
 
 const ADAPTER_LABEL: Record<string, string> = {
-  ready: "Execution adapter ready",
-  integration: "Connection only (execution in progress)",
-  connection_only: "Connection only",
+  ready: "Orders supported",
+  integration: "View only for now",
+  connection_only: "View only",
   custom: "Custom integration",
 };
 

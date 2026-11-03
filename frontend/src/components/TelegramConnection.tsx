@@ -26,14 +26,14 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
     try {
       const response = await client.POST("/api/v1/platform/account/telegram-link", { body: { return_path: "/app/settings" } });
       if (response.response.status === 409) {
-        setMessage("Your connection status has changed. Refreshing your account.");
+        setMessage("Something changed. Refreshing…");
         onRefresh(); return;
       }
       const payload = record(response.data);
       const code = typeof payload.code === "string" ? payload.code : "";
       const expires = typeof payload.expires_at === "string" ? utcTimestamp(payload.expires_at) : NaN;
       if (!response.response.ok || !/^[A-F0-9]{10}$/.test(code) || !Number.isFinite(expires) || expires <= Date.now()) {
-        setMessage("A valid linking code could not be confirmed. Refresh your account and retry."); return;
+        setMessage("We couldn't make a linking code. Refresh and try again."); return;
       }
       let href: string | null = null;
       if (typeof payload.telegram_deep_link === "string") {
@@ -46,18 +46,18 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
         } catch { /* Manual code remains available when a bot URL is unavailable. */ }
       }
       setProof({code, expires, href});
-    } catch { setMessage("Telegram linking is temporarily unavailable. Please retry."); }
+    } catch { setMessage("Telegram linking isn't working right now. Try again shortly."); }
     finally { setBusy(false); }
   }
 
   return <section className="ui-card" aria-labelledby="sr-telegram-title">
     <h2 id="sr-telegram-title">Telegram connection</h2>
     {state === "linked" ? <p role="status">Telegram is connected to this account. You do not need to link it again.</p>
-      : state === "review" ? <p role="status">Telegram ownership is verified. Your account history is awaiting reconciliation; reconnecting is unnecessary.</p>
-      : state === "unknown" ? <p>Connection status is unavailable. Refresh your account before making changes.</p>
-      : <><p>{state === "pending" ? "A linking request is waiting for completion in Telegram." : "Connect Telegram to keep your account and eligible signal deliveries together."}</p>
+      : state === "review" ? <p role="status">Telegram is linked. We&rsquo;re still joining your bot history to this account; you don&rsquo;t need to do anything.</p>
+      : state === "unknown" ? <p>We couldn&rsquo;t check the link. Refresh before changing anything.</p>
+      : <><p>{state === "pending" ? "Finish linking in Telegram." : "Link Telegram to get signals there too, with one account for both."}</p>
         {!proof && <button className="ui-btn" type="button" disabled={busy} onClick={requestLink}>
-          {busy ? "Preparing code…" : state === "pending" ? "Replace linking code" : "Link Telegram"}</button>}
+          {busy ? "Preparing code…" : state === "pending" ? "New code" : "Link Telegram"}</button>}
       </>}
     {proof && ["unlinked", "pending"].includes(state) && <div className="ui-form">
       <p>In the SignalRankAI bot, send <code>/link {proof.code}</code>. Keep this one-time code private.</p>
@@ -65,7 +65,7 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
       {proof.href && <a className="ui-btn" href={proof.href} target="_blank" rel="noopener noreferrer">Open SignalRankAI in Telegram</a>}
       <p>After completing the link, refresh the connection below.</p>
     </div>}
-    <button className="ui-btn" type="button" disabled={busy} onClick={onRefresh}>Refresh Telegram connection</button>
+    <button className="ui-btn" type="button" disabled={busy} onClick={onRefresh}>Check again</button>
     {message && <p role="status">{message}</p>}
   </section>;
 }

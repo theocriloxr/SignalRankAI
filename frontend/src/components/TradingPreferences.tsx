@@ -39,7 +39,7 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
         !allowedProfiles.includes(profile) || !allowedRiskProfiles.includes(risk) ||
         classes.length === 0 || classes.some(c => !allowedClasses.includes(c))) {
       setIsError(true);
-      setResult("Choose entitled settings within the server-provided score and daily limits.");
+      setResult("Pick values within your plan's limits.");
       return;
     }
 
@@ -60,7 +60,7 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
         const gotDaily = finite(confirmed.max_signals_per_day);
         if (gotScore === null || gotDaily === null) {
           setIsError(true);
-          setResult("The update response did not include verified limits. Refresh to confirm before relying on changes.");
+          setResult("Saved, but we couldn't read back your limits. Refresh to check.");
         } else {
           setScore(String(gotScore));
           setDaily(String(gotDaily));
@@ -68,38 +68,38 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
           setRisk(display(confirmed.risk_profile, risk));
           setClasses(allowedValues(confirmed.asset_classes));
           setIsError(false);
-          setResult("Trading signal preferences saved and confirmed by the account service.");
+          setResult("Saved.");
           onSaved();
         }
       } else {
         setIsError(true);
-        setResult(response.response.status===403?"This subscription cannot use one of these settings. Choose entitled options.":response.response.status===401?"Your session has expired. Sign in again.":"The account service did not confirm these changes.");
+        setResult(response.response.status===403?"One of these isn't on your plan.":response.response.status===401?"Your session has expired. Sign in again.":"That didn't save. Try again.");
       }
     } catch {
       setIsError(true);
-      setResult("Preferences could not be confirmed. No save success has been assumed.");
+      setResult("We couldn't confirm the change. Refresh to check.");
     } finally {setSaving(false);}
   }
 
   return <section className="ui-card" aria-labelledby="sr-pref-title">
     
-    <h2 id="sr-pref-title">Signal and screening settings</h2>
-    <p>Plan limits come from your authenticated account. Changes affect personal signal preferences, not broker execution permission, prop rules or platform-wide ML risk gates.</p>
+    <h2 id="sr-pref-title">Which signals you get</h2>
+    <p>These only change which signals reach you. They don&rsquo;t change how signals are chosen.</p>
     <div className="ws-grid-2">
-      <div className="ui-stat"><span>Minimum certified plan score</span><strong>{numberLabel(floor)}</strong><small>Lowest selectable score for your current tier</small></div>
-      <div className="ui-stat"><span>Maximum daily signals</span><strong>{numberLabel(ceiling,0)}</strong><small>Maximum entitled personal limit</small></div>
+      <div className="ui-stat"><span>Lowest score</span><strong>{numberLabel(floor)}</strong><small>The lowest your plan allows</small></div>
+      <div className="ui-stat"><span>Most signals a day</span><strong>{numberLabel(ceiling,0)}</strong><small>The most your plan allows</small></div>
     </div>
-    {!supported&&<p className="ui-feedback ui-feedback--error" role="alert">Server entitlement options are incomplete. Changes are disabled until they can be verified.</p>}
+    {!supported&&<p className="ui-feedback ui-feedback--error" role="alert">We couldn&rsquo;t load your plan&rsquo;s limits, so changes are switched off for now. Refresh to try again.</p>}
     <form className="ui-form" onSubmit={save}>
       <div className="ui-form-grid">
         <label className="ui-field">Trading style
           <select className="ui-select" value={profile} onChange={event=>setProfile(event.target.value)} disabled={!supported||saving}>
-            {allowedProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ")}</option>)}
+            {allowedProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())}</option>)}
           </select>
         </label>
         <label className="ui-field">Risk style
           <select className="ui-select" value={risk} onChange={event=>setRisk(event.target.value)} disabled={!supported||saving}>
-            {allowedRiskProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ")}</option>)}
+            {allowedRiskProfiles.map(value=><option key={value} value={value}>{value.replaceAll("_"," ").replace(/^./,c=>c.toUpperCase())}</option>)}
           </select>
         </label>
         <label className="ui-field">Minimum signal score
@@ -112,12 +112,12 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
         </label>
       </div>
       <fieldset className="ui-fieldset" disabled={!supported||saving}>
-        <legend>Entitled market classes</legend>
-        <p>Select at least one. The service will verify entitlement again on save.</p>
+        <legend>Markets</legend>
+        <p>Pick at least one.</p>
         <div className="ui-check-row">{allowedClasses.map(c=><label className="ui-check" key={c}><input type="checkbox" checked={classes.includes(c)}
           onChange={e=>setClasses(current=>e.target.checked?[...current,c]:current.filter(x=>x!==c))}/><span>{c}</span></label>)}</div>
       </fieldset>
-      <button type="submit" className="ui-btn ui-btn--primary" disabled={!supported||saving}>{saving?"Saving preferences…":"Save signal preferences"}</button>
+      <button type="submit" className="ui-btn ui-btn--primary" disabled={!supported||saving}>{saving?"Saving preferences…":"Save"}</button>
       {result&&<p className={isError?"ui-feedback ui-feedback--error":"ui-feedback"} role={isError?"alert":"status"}>{result}</p>}
     </form>
   </section>;
