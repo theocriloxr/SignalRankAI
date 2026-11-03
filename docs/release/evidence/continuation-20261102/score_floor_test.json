@@ -1,0 +1,16 @@
+{
+  "question": "Does the candidate quality score used by the production quality floor (score >= 82) predict reaching TP1?",
+  "date": "2026-11-03",
+  "source": "production PostgreSQL, read-only transaction (BEGIN READ ONLY ... ROLLBACK)",
+  "population": "ml_rejected_signals shadow rows resolved to sl/tp1/tp2/tp3 in the last 60 days, one row per asset x timeframe x strategy x direction x bar (first logged)",
+  "rows_deduplicated": 105619,
+  "rows_with_score": 6190,
+  "score_recorded_since": "2026-09-04",
+  "metric": "AUC of each feature for TP1-or-better, average ranks for ties (0.5 = no information)",
+  "auc": {"score": 0.489, "adx": 0.487, "strategy_confidence": 0.488, "rr_ratio": 0.457, "ml_probability": {"value": 0.224, "rows": 31, "note": "too few rows to conclude"}},
+  "tp1_rate_by_score": {"75-80": [47, 0.234], "80-82": [340, 0.647], "82-85": [50, 0.34], "85-90": [105, 0.276], "90+": [5647, 0.5]},
+  "tp1_rate_by_class_and_floor": {"commodity": {"below_82": [294, 0.612], "at_or_above_82": [907, 0.423]}, "crypto": {"below_82": [22, 0.455], "at_or_above_82": [2716, 0.398]}},
+  "conclusion": "Score carries no measurable information about reaching TP1 (AUC 0.489, about 1.4 standard errors below 0.5 at n=6190). Candidates below the floor did not do worse.",
+  "limits": ["score is recorded only on 6,190 recent rows, 91% of them scored 90+", "rows are candidates the ML gate rejected, so they are not a random sample of all candidates", "an earlier draft used rank() without tie averaging and understated AUC; corrected here"],
+  "action": "none; replacing the floor is an owner decision"
+}
