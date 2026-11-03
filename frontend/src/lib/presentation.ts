@@ -105,8 +105,8 @@ export function brokerMode(row: Row): string {
 }
 
 export function statusText(status: number | undefined): string {
-  if (status === 401) return "Your session has expired or is not signed in.";
-  if (status === 403) return "Your account does not have permission for this information.";
-  if (status === 429) return "The service is temporarily rate-limited. Retry later.";
-  return "The canonical data service is unavailable. No market or account value has been assumed.";
+  if (status === 401) return "Your session has expired, or you're not signed in.";
+  if (status === 403) return "Your account doesn't have permission to see this.";
+  if (status === 429) return "Too many requests just now (rate-limited). Try again in a minute.";
+  return "The data service is unavailable right now, so we're not showing anything rather than guessing. Try again shortly.";
 }

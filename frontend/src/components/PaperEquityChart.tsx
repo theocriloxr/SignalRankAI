@@ -21,7 +21,7 @@ export function PaperEquityChart({ledger,currency}:{ledger:Row[];currency:unknow
   });
   const samples=series.slice(-250);
   const label=(value:number)=>moneyLabel(value,currency)==="Unavailable" ? value.toLocaleString() : moneyLabel(value,currency);
-  if(samples.length<2)return <Card title="Paper equity history" eyebrow="Simulated ledger">
+  if(samples.length<2)return <Card title="Paper equity over time">
     <Empty title="Not enough ledger records to draw a chart." icon="performance">The chart needs at least two timestamped paper ledger balances. No example or placeholder values are shown.</Empty>
   </Card>;
 
@@ -40,7 +40,7 @@ export function PaperEquityChart({ledger,currency}:{ledger:Row[];currency:unknow
   const last=samples[samples.length-1];
   const first=samples[0];
 
-  return <Card id="ws-paper-ledger" title="Paper equity ledger" eyebrow="Simulated capital · historical records only"
+  return <Card id="ws-paper-ledger" title="Paper equity over time"
     actions={<Badge plain>{samples.length} recorded balances</Badge>}>
     <div className="ui-stat-grid">
       <Stat label="Earliest displayed balance" value={label(first.value)} detail={timeLabel(first.time)}/>

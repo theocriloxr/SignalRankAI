@@ -82,7 +82,7 @@ export function TradingPreferences({ data, onSaved }: { data: Row; onSaved: () =
   }
 
   return <section className="ui-card" aria-labelledby="sr-pref-title">
-    <p className="ui-eyebrow">Account-specific decision preferences</p>
+    
     <h2 id="sr-pref-title">Signal and screening settings</h2>
     <p>Plan limits come from your authenticated account. Changes affect personal signal preferences, not broker execution permission, prop rules or platform-wide ML risk gates.</p>
     <div className="ws-grid-2">

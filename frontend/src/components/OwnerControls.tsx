@@ -109,7 +109,7 @@ function ScopedKillSwitches({ owner }: { owner: boolean }) {
   const switches = record(document?.switches);
   const engaged = SCOPES.flatMap(item => Object.entries(record(switches[item.value])).map(([name, value]) => ({ scope: item.value, label: item.label, key: name, info: record(value) })));
   const audit = rows(document?.audit).slice().reverse();
-  return <Card title="Scoped kill switches" eyebrow="Execution safety"
+  return <Card title="Scoped kill switches" 
     description="Stop execution for one strategy, instrument or asset class without stopping everything. Engaging a switch never enables trading; releasing one leaves every other control in force.">
     {!owner && <Notice tone="neutral">Only the owner account can view and change scoped kill switches.</Notice>}
     {owner && loadError && <Feedback error>{loadError} Execution stays blocked while the switch store is unreadable.</Feedback>}
@@ -207,7 +207,7 @@ function AccountMergeReview({ owner }: { owner: boolean }) {
   }
 
   const failed = Object.keys(record(plan?.failed)).length > 0;
-  return <Card title="Account merges awaiting review" eyebrow="Telegram ↔ web"
+  return <Card title="Account merges awaiting review" eyebrow="Telegram and web"
     description="When a web account links a Telegram identity that already has a bot account, both are kept until a reviewed merge moves the data. Preview first; nothing moves until the owner confirms."
     actions={<button type="button" className="ui-btn" onClick={() => setVersion(v => v + 1)}>Refresh queue</button>}>
     {listError && <Feedback error>{listError}</Feedback>}

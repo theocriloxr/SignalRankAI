@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "./Icon";
+import type { IconName } from "./Icon";
 
 /** Presentational primitives shared by public, account and workspace surfaces.
  * They never fetch data, so they are safe in server and client components alike. */
@@ -31,19 +31,18 @@ export function Badge({ tone = "neutral", children, plain = false }: { tone?: To
   return <span className={`ui-badge${tone === "neutral" ? "" : ` ui-badge--${tone}`}${plain ? " ui-badge--plain" : ""}`}>{children}</span>;
 }
 
-const noticeIcon: Record<string, IconName> = { info: "info", warning: "warning", danger: "warning", success: "check", neutral: "shield" };
-
-/** Context notice for honest scope statements: simulated vs live, receipts vs fills. */
+/** Context notice for honest scope statements: simulated vs live, receipts vs fills.
+ * A tinted rule on the left carries the tone; no icon. */
 export function Notice({ tone = "info", children, role }: { tone?: "info" | "warning" | "danger" | "success" | "neutral"; children: ReactNode; role?: "status" | "alert" }) {
   return <div className={`ui-notice ui-notice--${tone}`} role={role}>
-    <Icon name={noticeIcon[tone]} />
     <div>{children}</div>
   </div>;
 }
 
-export function Stat({ label, value, detail, icon }: { label: string; value: string; detail?: string; icon?: IconName }) {
+/** ``icon`` is accepted for older call sites and ignored: figures read better without one. */
+export function Stat({ label, value, detail }: { label: string; value: string; detail?: string; icon?: IconName }) {
   return <div className="ui-stat">
-    <span className="ui-stat-label">{icon && <Icon name={icon} />}{label}</span>
+    <span className="ui-stat-label">{label}</span>
     <strong className="ui-stat-value" data-unavailable={value === "Unavailable" ? "true" : undefined}>{value}</strong>
     {detail && <small className="ui-stat-detail">{detail}</small>}
   </div>;
@@ -57,9 +56,9 @@ export function KVList({ children, grid = false }: { children: ReactNode; grid?:
   return <dl className={grid ? "ui-kv ui-kv--grid" : "ui-kv"}>{children}</dl>;
 }
 
-export function Empty({ title, children, icon = "layers" }: { title: string; children?: ReactNode; icon?: IconName }) {
+/** ``icon`` is accepted for older call sites and ignored. */
+export function Empty({ title, children }: { title: string; children?: ReactNode; icon?: IconName }) {
   return <div className="ui-empty">
-    <Icon name={icon} />
     <strong>{title}</strong>
     {children && <p>{children}</p>}
   </div>;
@@ -86,9 +85,10 @@ export function TableWrap({ label, children, id, compact = false }: { label: str
   </div>;
 }
 
-/** Direction badge: never infer direction; unknown stays neutral. */
+/** Direction as a coloured word: never infer direction; unknown stays neutral. */
 export function DirectionBadge({ direction }: { direction: string }) {
-  const value = direction.toUpperCase();
+  const value = direction.trim().toUpperCase();
   const tone: Tone = value === "LONG" || value === "BUY" ? "positive" : value === "SHORT" || value === "SELL" ? "negative" : "neutral";
-  return <Badge tone={tone} plain>{value || "Unspecified"}</Badge>;
+  const word = value ? value[0] + value.slice(1).toLowerCase() : "Direction not set";
+  return <span className={`ui-direction ui-direction--${tone}`}>{word}</span>;
 }

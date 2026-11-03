@@ -121,7 +121,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
           <p>Select a connection to inspect its independent policy, reconciliation and ledger. No account is selected automatically for orders.</p></section>}
         {active&&<>
           <section className="ui-card">
-            <div className="ui-card-head"><div><p className="ui-eyebrow">Account-scoped broker evidence</p>
+            <div className="ui-card-head"><div>
               <h2>{display(active.account_label,display(active.broker_name,"Connected account"))}</h2></div>
               <span className="ui-badge">{brokerMode(active)}</span></div>
             <dl className="ui-kv"><Fact name="Classification" value={display(active.account_classification,"Unverified")}/>
@@ -167,7 +167,7 @@ export function BrokerAccounts({data,onChanged}:{data:Row;onChanged:()=>void}){
                 </tr>)}</tbody></table></div>}
               {review.entries!==null&&review.entries.length===0&&<p className="ui-muted">No broker-confirmed ledger records were returned. This does not imply a zero balance.</p>}
             </section>
-            <section className="ui-card ui-card--danger"><p className="ui-eyebrow">Safety-only / No execution activation</p>
+            <section className="ui-card ui-card--danger">
               <h2>Freeze this broker account</h2>
               <p>Use this to suspend new broker execution for this connection. Freezing does not close any existing broker position.</p>
               {!confirmFreeze?<button type="button" className="ui-btn" onClick={()=>setConfirmFreeze(true)}>Begin safety freeze</button>:

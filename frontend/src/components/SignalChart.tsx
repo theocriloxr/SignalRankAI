@@ -42,7 +42,7 @@ export function SignalChart({ data }: { data: Row }) {
   const stop = finite(signal.stop_loss);
   const targets = targetsFrom(signal.take_profit);
   if (candles.length < 5) {
-    return <Card id="ws-chart" title="Price chart" eyebrow="Stored market candles">
+    return <Card id="ws-chart" title="Price chart">
       <Notice tone="neutral">No stored candles are available for this instrument and timeframe yet.</Notice>
     </Card>;
   }
@@ -67,7 +67,7 @@ export function SignalChart({ data }: { data: Row }) {
       <text x={W - PAD.right + 6} y={y(value) + 4}>{label} {numberLabel(value, 5)}</text>
     </g>;
   const last = candles[candles.length - 1];
-  return <Card id="ws-chart" title="Price chart" eyebrow={`Stored market candles · ${timeframe || "timeframe unavailable"}`}>
+  return <Card id="ws-chart" title="Price chart" eyebrow={timeframe ? `${timeframe} candles` : undefined}>
     <figure className="ws-chart">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" preserveAspectRatio="none"
         aria-label={`${String(signal.asset || "Instrument")} ${timeframe} candles with entry, stop and target levels; last close ${numberLabel(last.c, 5)}`}>

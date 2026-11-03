@@ -129,7 +129,7 @@ export function DeveloperAccess(){
 
   return <section className="ws-stack" aria-labelledby="developer-access-title">
     <section className="ui-card">
-      <p className="ui-eyebrow">DEVELOPER ACCESS</p>
+      
       <h2 id="developer-access-title">API keys and webhooks</h2>
       <p>Read-only API keys and signed outbound webhooks for your own tools. None of these credentials can place broker orders or move money.</p>
       {secret&&<div className="ui-notice ui-notice--warning" role="status">
@@ -150,7 +150,7 @@ export function DeveloperAccess(){
           const id=display(k.key_id,"");const name=display(k.name,"Unnamed key");
           const keyScopesList=Array.isArray(k.scopes)?k.scopes.filter((s):s is string=>typeof s==="string"):[];
           return <article className="ui-card" key={id||i}>
-            <p className="ui-eyebrow">{k.active===true?"ACTIVE":"REVOKED"}</p>
+            <p className="ui-eyebrow">{k.active===true?"Active":"Revoked"}</p>
             <h3>{name}</h3>
             <dl className="ui-kv">
               <div className="ui-kv-row"><dt>Prefix</dt><dd><code>{display(k.key_prefix)}</code></dd></div>
@@ -184,7 +184,7 @@ export function DeveloperAccess(){
           const id=display(h.webhook_endpoint_id,"");const url=display(h.url,"Endpoint");
           const subscribed=Array.isArray(h.subscribed_events)?h.subscribed_events.filter((s):s is string=>typeof s==="string"):[];
           return <article className="ui-card" key={id||i}>
-            <p className="ui-eyebrow">{h.active===true?"ACTIVE":"INACTIVE"}</p>
+            <p className="ui-eyebrow">{h.active===true?"Active":"Inactive"}</p>
             <h3 className="ui-break">{url}</h3>
             <dl className="ui-kv">
               <div className="ui-kv-row"><dt>Events</dt><dd>{subscribed.length?subscribed.join(", "):"Unreported"}</dd></div>

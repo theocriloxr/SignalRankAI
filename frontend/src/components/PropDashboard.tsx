@@ -91,7 +91,7 @@ export function PropDashboard({ connectionId }: { connectionId: string }) {
   const minimum = finite(days.minimum);
   return <>
     <section className="ui-card">
-      <div className="ui-card-head"><div><p className="ui-eyebrow">Same formulas and limits as the execution gate</p><h2>Risk limit usage</h2></div>
+      <div className="ui-card-head"><div><h2>Risk limit usage</h2></div>
         {evidence.stale === true ? <Badge tone="warning">Data not current</Badge> : <Badge tone="positive">Current</Badge>}</div>
       {unavailable.includes("no_equity_snapshots") && <Notice tone="neutral">No broker equity snapshots yet. Usage appears after the account reconciles; nothing is assumed meanwhile.</Notice>}
       {unavailable.includes("latest_snapshot_stale") && <Notice tone="warning">The latest equity snapshot is older than {Math.round((finite(evidence.stale_after_seconds) ?? 900) / 60)} minutes ({timeLabel(evidence.latest_snapshot_at)}). Usage may be out of date.</Notice>}

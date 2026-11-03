@@ -8,6 +8,7 @@ import { AccountCreation } from "./AccountCreation";
 import { SignalChart } from "./SignalChart";
 import { SignalEvidence } from "./SignalEvidence";
 import { SignalFeedback } from "./SignalFeedback";
+import { SetupEvidence, SetupLine, PaperOnlyTag, isPaperOnly } from "./SignalSetup";
 import { NotificationCenter } from "./NotificationCenter";
 import { NotificationPreferences } from "./NotificationPreferences";
 import { WatchlistsView } from "./WatchlistsView";
@@ -27,7 +28,7 @@ import { PlanAndReferrals } from "./PlanAndReferrals";
 import { PrivacyCenter } from "./PrivacyCenter";
 import { OwnerControls } from "./OwnerControls";
 import { SignalFilters, type SignalQuery } from "./SignalFilters";
-import { Icon, type IconName } from "./ui/Icon";
+import { Icon } from "./ui/Icon";
 import { Badge, Card, DirectionBadge, Empty, KV, KVList, Notice, Skeleton, Stat, TableWrap, type Tone } from "./ui/primitives";
 import {
   display, finite, moneyLabel, numberLabel, priceLabel,
@@ -43,29 +44,29 @@ type Section =
 type Outcome = { data: Row | null; status: number; success: boolean };
 type State = { kind: "loading" | "ready" | "error" | "auth"; data: Row | null; status?: number };
 const titles: Record<Section, string> = {
-  overview: "Decision overview", signals: "Delivered signals", markets: "Market intelligence",
-  research: "Strategy research", watchlists: "Watchlists", alerts: "Custom alerts", notifications: "Notifications", paper: "Paper trading",
-  portfolio: "Portfolio exposure", performance: "Performance evidence", journal: "Trading journal",
-  brokers: "Broker connections", billing: "Subscription and billing", support: "Support",
-  settings: "Account and trading policy", operations: "Owner operations",
+  overview: "Overview", signals: "Signals", markets: "Markets",
+  research: "Strategies", watchlists: "Watchlists", alerts: "Alerts", notifications: "Notifications", paper: "Paper desk",
+  portfolio: "Portfolio", performance: "Performance", journal: "Journal",
+  brokers: "Brokers", billing: "Plan and billing", support: "Support",
+  settings: "Settings", operations: "Operations",
 };
 const descriptions: Record<Section, string> = {
-  overview: "Your account, recent activity and the fastest routes into your workspace.",
-  signals: "Signals delivered to your account, with levels, model context and recorded outcomes.",
-  markets: "Search the canonical instrument registry and review signal-quality decisions.",
-  research: "Which strategies have produced signals recently. Activity counts are not performance.",
-  watchlists: "Follow recognised instruments. Watching never enables execution.",
-  alerts: "Account-owned monitoring rules for prices, signals and provider status.",
-  notifications: "Recent account notifications and the channels that deliver them.",
-  paper: "Simulated positions, capital and rules. Nothing here reaches a broker.",
-  portfolio: "Exposure and ledger history of your canonical paper account.",
-  performance: "Outcome evidence for evaluated signals, with sample size and disclosure.",
-  journal: "Personal reflections linked to signals and outcomes.",
-  brokers: "Each connected account, its verified environment, policy and ledger.",
-  billing: "Plans, checkout, renewal and receipts from the billing service.",
-  support: "Your support conversations with the SignalRankAI team.",
-  settings: "Signal preferences, identity, security, plan, developer access and privacy.",
-  operations: "Owner-only release posture, execution controls, account merges and AI spend.",
+  overview: "Where your account stands and what came in recently.",
+  signals: "Every signal sent to you, newest first. Open one to see its setup record and how it played out.",
+  markets: "Look up an instrument, and see how many candidates the filters turned away and why.",
+  research: "How many signals each strategy produced recently. Busy isn't the same as good: outcomes are on the Performance page.",
+  watchlists: "Instruments you want to keep an eye on.",
+  alerts: "Rules that tell you when a price, a signal or a data provider does something.",
+  notifications: "Messages we've sent you, and where you'd like to get them.",
+  paper: "Practise with pretend money. Orders here stay on the paper account and never reach a broker.",
+  portfolio: "What your paper account holds right now, grouped by instrument.",
+  performance: "How the signals sent to you turned out, counted the same way the Telegram bot counts them.",
+  journal: "Your own notes on signals and trades.",
+  brokers: "Accounts you've linked, what they're allowed to do and their records.",
+  billing: "Your plan, renewals and receipts.",
+  support: "Your conversations with our team.",
+  settings: "Signal preferences, sign-in and security, plan, API access and privacy.",
+  operations: "Owner tools: what's deployed, the safety switches, account merges and AI spend.",
 };
 
 export const workspaceTitles = titles;
@@ -103,45 +104,57 @@ async function readSection(section: Section, signalId?: string, filters: SignalQ
   }
 }
 
-function outcomeTone(value: string): Tone {
-  const v = value.toLowerCase();
-  if (/(win|tp|target|profit)/.test(v)) return "positive";
-  if (/(loss|sl|stop)/.test(v)) return "negative";
-  if (/(open|active|pending|running)/.test(v)) return "info";
-  return "neutral";
+/** Plain words for stored outcome codes; anything unrecognised is shown as stored. */
+const outcomeWords: Record<string, [string, Tone]> = {
+  tp3: ["Target 3 hit", "positive"], tp: ["Target hit", "positive"], win: ["Won", "positive"],
+  tp2: ["Target 2 hit", "positive"], tp1: ["Target 1 hit", "positive"],
+  stopped_at_tp1: ["Stopped after target 1", "positive"], stopped_at_tp2: ["Stopped after target 2", "positive"],
+  partial_tp: ["Partly taken", "positive"], partial_win_be: ["Partly taken", "positive"],
+  sl: ["Stopped out", "negative"], loss: ["Stopped out", "negative"],
+  breakeven: ["Breakeven", "neutral"], time_stop: ["Closed on time", "neutral"],
+  active: ["Open", "info"], open: ["Open", "info"], pending: ["Waiting for entry", "info"], pending_entry: ["Waiting for entry", "info"],
+  missed_entry: ["Entry never reached", "neutral"], expired: ["Expired", "neutral"], not_triggered: ["Entry never reached", "neutral"],
+};
+
+function outcomeOf(value: unknown): [string, Tone] {
+  const code = display(value, "").toLowerCase();
+  if (!code) return ["No result yet", "neutral"];
+  return outcomeWords[code] ?? [code.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()), "neutral"];
 }
 
 function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolean }) {
   const id = display(signal.signal_id, "");
   const direction = display(signal.direction, "");
   const probability = finite(signal.ml_probability_calibrated);
-  const outcome = display(signal.outcome_status, "Lifecycle not reported");
+  const [outcome, tone] = outcomeOf(signal.outcome_status);
   const targets = targetPrices(signal.take_profit);
   const rr = riskReward(signal.entry, signal.stop_loss, targets, signal.rr_estimate ?? signal.rr_final);
-  return <article className="ws-signal">
+  const locked = signal.exact_levels_locked === true;
+  const level = (value: unknown) => locked && finite(value) === null ? "Paid plans" : priceLabel(value);
+  const Heading = detail ? "h2" : "h3";
+  return <article className="ws-signal" data-paper={isPaperOnly(signal) ? "true" : undefined}>
     <header className="ws-signal-head">
       <div>
-        <p className="ui-eyebrow">{display(signal.asset_class, "Market")} · {display(signal.timeframe, "Timeframe unavailable")}</p>
-        <h3 className="ws-signal-symbol">{display(signal.asset, "Instrument withheld")} <DirectionBadge direction={direction}/></h3>
+        <Heading className="ws-signal-symbol">{display(signal.asset, "Instrument hidden")}</Heading>
+        <p className="ws-signal-sub"><DirectionBadge direction={direction}/> · {display(signal.timeframe, "no timeframe")} · {display(signal.asset_class, "market")}</p>
       </div>
-      <Badge tone={outcomeTone(outcome)}>{outcome}</Badge>
+      <div className="ws-signal-tags">{isPaperOnly(signal) && <PaperOnlyTag/>}<Badge tone={tone} plain>{outcome}</Badge></div>
     </header>
     <dl className="ws-levels">
-      <div className="ws-level"><dt>Entry</dt><dd>{priceLabel(signal.entry)}</dd></div>
-      <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{priceLabel(signal.stop_loss)}</dd></div>
-      <div className="ws-level ws-level--target"><dt>{targets.length > 1 ? `Targets (${targets.length})` : "Target"}</dt>
-        <dd>{targets.length ? targets.map(priceLabel).join(" · ") : "Not set"}</dd></div>
+      <div className="ws-level"><dt>Entry</dt><dd>{level(signal.entry)}</dd></div>
+      <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{level(signal.stop_loss)}</dd></div>
+      {targets.length ? targets.map((price, i) => <div className="ws-level ws-level--target" key={i}>
+        <dt>Target {i + 1}</dt><dd>{priceLabel(price)}</dd></div>)
+        : <div className="ws-level ws-level--target"><dt>Target</dt><dd>Not set</dd></div>}
     </dl>
-    <div className="ws-signal-meta">
-      <span>R/R <b>{rr === null ? "Not set" : `1 : ${numberLabel(rr)}`}</b></span>
-      <span>Strategy <b>{display(signal.strategy_name)}</b></span>
-    </div>
-    {probability !== null && probability >= 0 && probability <= 1 && <div className="ws-prob">
-      <div className="ws-signal-meta"><span>Calibrated probability <b>{probabilityLabel(probability)}</b></span></div>
-      <div className="ws-prob-bar" aria-hidden="true"><span style={{width:`${(probability*100).toFixed(1)}%`}}/></div>
-    </div>}
-    <footer className="ws-signal-foot"><span>Received {timeLabel(signal.delivered_at)}</span>
-      {!detail && id && <Link className="ui-link" href={`/app/signals/${encodeURIComponent(id)}`}>Inspect evidence <Icon name="arrowRight"/></Link>}</footer>
+    {!detail && <SetupLine signal={signal}/>}
+    <p className="ws-signal-meta">
+      <span>Reward to risk <b>{rr === null ? "not set" : `1 : ${numberLabel(rr)}`}</b></span>
+      <span>{display(signal.strategy_name, "Strategy not recorded")}</span>
+      {probability !== null && probability >= 0 && probability <= 1 && <span>Model <b>{probabilityLabel(probability)}</b></span>}
+    </p>
+    <footer className="ws-signal-foot"><span>Sent {timeLabel(signal.delivered_at)}</span>
+      {!detail && id && <Link className="ui-link" href={`/app/signals/${encodeURIComponent(id)}`}>Open signal <Icon name="arrowRight"/></Link>}</footer>
   </article>;
 }
 
@@ -149,62 +162,66 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
   if (detail) {
     const candidate = record(data.signal);
     return <div className="ws-stack">
-      <Link className="ui-link" href="/app/signals"><Icon name="arrowLeft"/> All delivered signals</Link>
-      <Notice tone="warning">Detail is delivered for your account only. <strong>A signal is not broker authorization or an order.</strong></Notice>
-      {Object.keys(candidate).length ? <><SignalRecord signal={candidate} detail /><SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} /></> : <Empty title="No entitled signal detail was returned." icon="signals"/>}
+      <Link className="ui-link" href="/app/signals"><Icon name="arrowLeft"/> All signals</Link>
+      {Object.keys(candidate).length ? <>
+        <div className="ws-detail-top"><SignalRecord signal={candidate} detail /><SetupEvidence signal={candidate}/></div>
+        <SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
+        <p className="ws-aside">A signal is an idea with levels, not an order. Nothing is placed with a broker unless you place it.</p>
+      </> : <Empty title="We couldn't find this signal on your account.">It may belong to another account or plan.</Empty>}
     </div>;
   }
   const items = rows(data.signals);
+  const paper = items.filter(isPaperOnly).length;
   return <div className="ws-stack">
+    {paper > 0 && <p className="ws-aside"><PaperOnlyTag/> {paper === 1 ? "One signal on this page is" : `${paper} signals on this page are`} for practice on the paper desk only, because the model scored {paper === 1 ? "it" : "them"} below its usual bar.</p>}
     {items.length ? <div className="ws-cards">{items.map((s, i) => <SignalRecord key={display(s.signal_id, String(i))} signal={s}/>)}</div>
-      : <Empty title="No delivered signals match this page." icon="signals">New signals appear only when market data, strategy and risk checks qualify. Adjust filters or check back later.</Empty>}
+      : <Empty title="No signals here yet.">We only send a signal when a setup&rsquo;s record beats what the trade needs to break even, so quiet days happen. Try clearing the filters.</Empty>}
     {onPage&&<nav className="ui-pagination" aria-label="Signal history pages">
-      <span>Page {Math.floor(offset/30)+1} · {items.length} records on this page · total count not reported</span>
+      <span>Page {Math.floor(offset/30)+1}, {items.length} signals (total count not reported)</span>
       <div className="ui-actions">
-        <button className="ui-btn ui-btn--sm" type="button" disabled={offset===0} onClick={()=>onPage(Math.max(0,offset-30))}><Icon name="arrowLeft"/>Previous</button>
-        <button className="ui-btn ui-btn--sm" type="button" disabled={items.length<30} onClick={()=>onPage(offset+30)}>Next 30<Icon name="arrowRight"/></button>
+        <button className="ui-btn ui-btn--sm" type="button" disabled={offset===0} onClick={()=>onPage(Math.max(0,offset-30))}><Icon name="arrowLeft"/>Newer</button>
+        <button className="ui-btn ui-btn--sm" type="button" disabled={items.length<30} onClick={()=>onPage(offset+30)}>Older<Icon name="arrowRight"/></button>
       </div>
     </nav>}
   </div>;
 }
 
-const quickLinks: { href: string; label: string; copy: string; icon: IconName }[] = [
-  { href:"/app/signals", label:"Delivered signals", copy:"Levels, model context and outcomes", icon:"signals" },
-  { href:"/app/markets", label:"Market intelligence", copy:"Instrument registry and quality gates", icon:"markets" },
-  { href:"/app/paper", label:"Paper desk", copy:"Practise with simulated capital", icon:"paper" },
-  { href:"/app/brokers", label:"Broker connections", copy:"Verify accounts and policies", icon:"brokers" },
-  { href:"/app/performance", label:"Performance", copy:"Evaluated outcomes and disclosure", icon:"performance" },
-  { href:"/app/alerts", label:"Alerts", copy:"Price and signal monitoring rules", icon:"alerts" },
+const quickLinks: { href: string; label: string; copy: string }[] = [
+  { href:"/app/signals", label:"Signals", copy:"What was sent, with each setup's record" },
+  { href:"/app/performance", label:"Performance", copy:"How those signals turned out" },
+  { href:"/app/paper", label:"Paper desk", copy:"Try signals with pretend money" },
+  { href:"/app/markets", label:"Markets", copy:"Instruments and what the filters turned away" },
+  { href:"/app/alerts", label:"Alerts", copy:"Price and signal rules" },
+  { href:"/app/brokers", label:"Brokers", copy:"Linked accounts and their limits" },
 ];
 
 function OverviewView({ data }: { data: Row }) {
   const summary = record(data.summary), user = record(data.user), subscription = record(data.subscription);
   const name = display(user.display_name, "");
-  const tier = display(subscription.tier, display(user.tier, "Plan unavailable"));
+  const tier = display(subscription.tier, display(user.tier, "unknown"));
   return <div className="ws-stack">
     <section className="ws-hero-card" aria-labelledby="ws-welcome">
-      <div className="ui-actions"><Badge tone="brand">{tier}</Badge><Badge tone={subscription.status==="active"?"positive":"neutral"}>{display(subscription.status, "Subscription unverified")}</Badge></div>
       <h2 id="ws-welcome">{name ? `Welcome back, ${name}.` : "Welcome back."}</h2>
-      <p>New signals appear only when market data, strategy and risk checks all qualify. A quiet feed can be the correct outcome.</p>
-      <div className="ui-actions"><Link className="ui-btn ui-btn--primary" href="/app/signals">Open delivered signals <Icon name="arrowRight"/></Link><Link className="ui-btn" href="/app/settings">Account settings</Link></div>
+      <p>You&rsquo;re on the <b>{tier}</b> plan{subscription.status === "active" ? "" : subscription.status ? ` (${display(subscription.status)})` : ""}.
+        Signals only arrive when a setup has earned it, so some days are quiet.</p>
+      <div className="ui-actions"><Link className="ui-btn ui-btn--primary" href="/app/signals">See your signals</Link><Link className="hm-textlink" href="/app/settings">Settings</Link></div>
     </section>
     <div className="ui-stat-grid">
-      <Stat icon="signals" label="Delivered signals" value={numberLabel(summary.delivered_signals, 0)} detail="Receipt-backed history" />
-      <Stat icon="paper" label="Open paper positions" value={numberLabel(summary.open_positions, 0)} detail="Simulated orders only" />
-      <Stat icon="portfolio" label="Paper cash" value={numberLabel(summary.paper_cash)} detail="Simulated units — not broker funds" />
-      <Stat icon="watchlists" label="Watchlists" value={numberLabel(summary.watchlists, 0)} detail="Account-owned" />
+      <Stat label="Signals received" value={numberLabel(summary.delivered_signals, 0)} />
+      <Stat label="Open paper positions" value={numberLabel(summary.open_positions, 0)} />
+      <Stat label="Paper cash" value={numberLabel(summary.paper_cash)} detail="Pretend money" />
+      <Stat label="Watchlists" value={numberLabel(summary.watchlists, 0)} />
     </div>
-    <div className="ws-quick-links">{quickLinks.map(link=><Link key={link.href} href={link.href} className="ws-quick-link">
-      <span className="ws-quick-icon"><Icon name={link.icon}/></span>
-      <span>{link.label}<Icon name="arrowRight"/></span><small>{link.copy}</small></Link>)}</div>
+    <nav className="ws-quick-links" aria-label="Go to">{quickLinks.map(link=><Link key={link.href} href={link.href} className="ws-quick-link">
+      <span>{link.label}</span><small>{link.copy}</small></Link>)}</nav>
     <div className="ws-grid-2">
-      <Card title="Account and entitlement" eyebrow="Server-verified">
-        <KVList><KV label="Plan" value={tier}/><KV label="Subscription" value={display(subscription.status, "Unverified")}/><KV label="Account" value={display(user.account_status)}/></KVList>
-        <Link className="ui-link" href="/app/billing">Manage plan and billing <Icon name="arrowRight"/></Link>
+      <Card title="Your plan">
+        <KVList><KV label="Plan" value={tier}/><KV label="Subscription" value={display(subscription.status, "Not confirmed")}/><KV label="Account" value={display(user.account_status)}/></KVList>
+        <Link className="ui-link" href="/app/billing">Plan and billing <Icon name="arrowRight"/></Link>
       </Card>
-      <Card title="Trading connections" eyebrow="Separate authorization">
-        <p className="ui-card-desc">Review each broker account, its verified environment and its permissions before trading. Linking an account does not enable automatic execution.</p>
-        <Link className="ui-link" href="/app/brokers">Review broker connections <Icon name="arrowRight"/></Link>
+      <Card title="Broker accounts">
+        <p className="ui-card-desc">Linking a broker lets you see its balance and limits here. It doesn&rsquo;t let us trade for you.</p>
+        <Link className="ui-link" href="/app/brokers">Brokers <Icon name="arrowRight"/></Link>
       </Card>
     </div>
   </div>;
@@ -214,23 +231,22 @@ function PaperView({ data }: { data: Row }) {
   const account = record(data.account), snapshot = record(data.snapshot), positions = rows(data.positions);
   const currency = account.currency;
   return <div className="ws-stack">
-    <Notice tone="warning"><strong>Simulated funds only.</strong> Paper positions and P&amp;L are not proof of live broker fills.</Notice>
     <div className="ui-stat-grid">
-      <Stat icon="portfolio" label="Paper cash" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
-      <Stat icon="performance" label="Paper equity" value={moneyLabel(snapshot.equity, currency)} />
-      <Stat icon="layers" label="Open paper positions" value={numberLabel(snapshot.open_positions, 0)} />
-      <Stat icon="check" label="Paper realized P&L" value={moneyLabel(snapshot.realized_pnl, currency)} />
+      <Stat label="Cash" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
+      <Stat label="Equity" value={moneyLabel(snapshot.equity, currency)} />
+      <Stat label="Open positions" value={numberLabel(snapshot.open_positions, 0)} />
+      <Stat label="Realised profit or loss" value={moneyLabel(snapshot.realized_pnl, currency)} />
     </div>
-    <Card title="Open paper positions">{positions.length ? <TableWrap label="Scrollable paper positions"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Quantity</th><th>Unrealized P&amp;L</th><th>State</th></tr></thead><tbody>{positions.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{display(p.status)}</td></tr>)}</tbody></TableWrap>:<Empty title="No open paper positions." icon="paper"/>}</Card>
+    <Card title="Open positions">{positions.length ? <TableWrap label="Open paper positions"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Size</th><th>Open profit or loss</th><th>State</th></tr></thead><tbody>{positions.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{display(p.status)}</td></tr>)}</tbody></TableWrap>:<Empty title="Nothing open on the paper desk.">Signals you follow on paper show up here.</Empty>}</Card>
   </div>;
 }
 
 function PortfolioView({ data }: { data: Row }) {
   const account = record(data.account), exposures = rows(data.exposures);
   return <div className="ws-stack">
-    <Notice>These values describe the canonical paper-account portfolio, not a consolidated balance across brokers.</Notice>
-    <div className="ui-stat-grid"><Stat icon="portfolio" label="Paper equity" value={moneyLabel(data.equity,account.currency)}/><Stat icon="layers" label="Instruments with exposure" value={numberLabel(exposures.length,0)}/></div>
-    <Card title="Instrument exposure">{exposures.length?<TableWrap label="Scrollable position exposure"><thead><tr><th>Asset</th><th>Class</th><th>Direction</th><th>Positions</th><th>Notional</th><th>Unrealized P&amp;L</th></tr></thead><tbody>{exposures.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.asset_class)}</td><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.positions,0)}</td><td>{moneyLabel(p.notional,account.currency)}</td><td>{moneyLabel(p.unrealized_pnl,account.currency)}</td></tr>)}</tbody></TableWrap>:<Empty title="No exposures." icon="portfolio">Open paper positions will appear here grouped by instrument.</Empty>}</Card>
+    <p className="ws-aside">This is your paper account only. Balances at linked brokers are on the Brokers page.</p>
+    <div className="ui-stat-grid"><Stat label="Paper equity" value={moneyLabel(data.equity,account.currency)}/><Stat label="Instruments held" value={numberLabel(exposures.length,0)}/></div>
+    <Card title="By instrument">{exposures.length?<TableWrap label="Exposure by instrument"><thead><tr><th>Instrument</th><th>Class</th><th>Side</th><th>Positions</th><th>Size</th><th>Open profit or loss</th></tr></thead><tbody>{exposures.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.asset_class)}</td><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.positions,0)}</td><td>{moneyLabel(p.notional,account.currency)}</td><td>{moneyLabel(p.unrealized_pnl,account.currency)}</td></tr>)}</tbody></TableWrap>:<Empty title="Nothing held right now.">Open paper positions appear here, grouped by instrument.</Empty>}</Card>
     <PaperEquityChart ledger={rows(data.equity_curve)} currency={account.currency}/>
   </div>;
 }
@@ -241,30 +257,49 @@ const MIN_SAMPLE = 30;
 function PerformanceView({ data }: { data: Row }) {
   const summary = record(data.summary), breakdown=rows(data.breakdown);
   const sample = finite(summary.signals);
+  const parts: [string, unknown, string][] = [
+    ["Reached target 3", summary.wins, "positive"], ["Took partial profit", summary.partial_wins, "partial"],
+    ["Breakeven or closed on time", summary.breakeven, "neutral"], ["Stopped out", summary.losses, "negative"],
+  ];
+  const shown = sample !== null && sample > 0;
+  const waiting = finite(summary.open) === null || finite(summary.not_triggered) === null ? null : (finite(summary.open) ?? 0) + (finite(summary.not_triggered) ?? 0);
   return <div className="ws-stack">
-    <Notice tone="warning">{display(summary.disclaimer,"Historical performance is not a guarantee of future results.")} Claim certified: <strong>{summary.claim_certified === true ? "yes" : "no"}</strong>.</Notice>
-    {sample !== null && sample < MIN_SAMPLE && <Notice tone="neutral">Only {numberLabel(sample,0)} closed trades. Ratios from fewer than {MIN_SAMPLE} outcomes are statistically weak — treat them as anecdotal.</Notice>}
+    <section className="ui-card" aria-labelledby="ws-score-title">
+      <header className="ui-card-head"><div>
+        <h2 className="ui-card-title" id="ws-score-title">{shown ? `${numberLabel(sample,0)} closed signals` : "No closed signals yet"}</h2>
+        <p className="ui-card-desc">Out of {numberLabel(summary.delivered,0)} sent to you. {waiting === 1 ? "1 is still open or never reached its entry, and isn't counted." : `${numberLabel(waiting,0)} are still open or never reached their entry, and aren't counted.`}</p>
+      </div></header>
+      {shown && <>
+        <div className="ws-outcome-bar" role="img" aria-label={parts.map(([label, value]) => `${label}: ${numberLabel(value,0)}`).join(", ")}>
+          {parts.map(([label, value, kind]) => { const n = finite(value) ?? 0; return n > 0 ? <span key={label} data-kind={kind} style={{flexGrow:n}}/> : null; })}
+        </div>
+        <dl className="ws-outcome-key">{parts.map(([label, value, kind]) => <div key={label} data-kind={kind}><dt>{label}</dt><dd>{numberLabel(value,0)}</dd></div>)}</dl>
+      </>}
+      {sample !== null && sample < MIN_SAMPLE && <p className="ws-aside">{shown ? `That's only ${numberLabel(sample,0)}.` : ""} Below {MIN_SAMPLE} closed signals, the rates below can swing a long way on one trade. Read them as a rough early picture.</p>}
+    </section>
     <div className="ui-stat-grid">
-      <Stat icon="signals" label="Closed trades" value={numberLabel(summary.signals,0)} detail={`${numberLabel(summary.delivered,0)} delivered in total`}/>
-      <Stat icon="check" label="Full wins (TP3)" value={numberLabel(summary.wins,0)} detail={`${numberLabel(summary.partial_wins,0)} partial wins stopped after TP1/TP2`}/>
-      <Stat icon="x" label="Losses (stop hit)" value={numberLabel(summary.losses,0)} detail={`${numberLabel(summary.breakeven,0)} breakeven or time stop`}/>
-      <Stat icon="performance" label="Win ratio (TP3 vs stop)" value={probabilityLabel(summary.win_rate)} detail={`Profitable closes: ${probabilityLabel(summary.profitable_rate)}. Not a forward promise.`}/>
-      <Stat icon="layers" label="Total R (closed)" value={numberLabel(summary.total_r)} detail={`Mean ${numberLabel(summary.average_r)} R per closed trade`}/>
-      <Stat icon="signals" label="Still open or not triggered" value={numberLabel(finite(summary.open) === null || finite(summary.not_triggered) === null ? null : (finite(summary.open) ?? 0) + (finite(summary.not_triggered) ?? 0),0)} detail={`${numberLabel(summary.open,0)} open · ${numberLabel(summary.not_triggered,0)} entry never reached or expired`}/>
+      <Stat label="Full-win rate" value={probabilityLabel(summary.win_rate)} detail="Target 3 hits against stop-outs, ignoring partials and breakevens"/>
+      <Stat label="Closed in profit" value={probabilityLabel(summary.profitable_rate)} detail="Any close above zero, partials included"/>
+      <Stat label="Average result" value={finite(summary.average_r) === null ? "Unavailable" : `${numberLabel(summary.average_r)} R`} detail="Per closed signal, where 1 R is the planned risk"/>
+      <Stat label="Total" value={finite(summary.total_r) === null ? "Unavailable" : `${numberLabel(summary.total_r)} R`} detail="All closed signals added up"/>
     </div>
-    <Card title="Breakdown by instrument" description="Closed trades only. Mean and total R express outcomes in multiples of the planned risk.">{breakdown.length?<TableWrap label="Scrollable performance breakdown"><thead><tr><th>Instrument</th><th>Timeframe</th><th>Closed</th><th>Full wins</th><th>Losses</th><th>Mean R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=><tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}</td><td>{numberLabel(p.wins,0)}</td><td>{numberLabel(p.losses,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>)}</tbody></TableWrap>:<Empty title="No closed trades yet." icon="performance"/>}</Card>
+    <Card title="By instrument" description="Closed signals only. R is the result divided by the planned risk, so a full stop-out is −1 R.">{breakdown.length?<TableWrap label="Performance by instrument"><thead><tr><th>Instrument</th><th>Timeframe</th><th>Closed</th><th>Target 3</th><th>Stopped</th><th>Average R</th><th>Total R</th></tr></thead><tbody>{breakdown.map((p,i)=>{
+      const n = finite(p.signals);
+      return <tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}{n !== null && n < 10 && <span className="ws-few"> (small sample)</span>}</td><td>{numberLabel(p.wins,0)}</td><td>{numberLabel(p.losses,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>;})}</tbody></TableWrap>:<Empty title="Nothing has closed yet.">Rows appear here once signals reach a target, their stop or their time limit.</Empty>}</Card>
+    <p className="ws-aside">{display(summary.disclaimer,"Past results don't promise future ones.")} These figures {summary.claim_certified === true ? "have" : "haven't"} been checked by an outside auditor.</p>
   </div>;
 }
 
 function QualityView({ data }: { data: Row }) {
   const bucket=record(data.reject_buckets),reasons=rows(data.top_reasons);
   const categories=Object.entries(bucket).filter(([key])=>["ml","score","news","stale","slippage","other"].includes(key));
-  return <Card title="Signal quality gate" eyebrow={`Last ${numberLabel(data.window_hours,0)} hours`} description="Quality decisions over the backend-reported window. Not an account return or a promised signal volume.">
-    <div className="ui-stat-grid"><Stat label="Issued decisions" value={numberLabel(data.issued,0)}/><Stat label="Rejected or skipped" value={numberLabel(data.rejected_or_skipped,0)}/><Stat label="Acceptance fraction" value={probabilityLabel(data.acceptance_rate)}/></div>
-    {finite(data.issued)===0&&finite(data.rejected_or_skipped)===0&&<Notice tone="warning">No quality decisions were recorded in this window. A running engine records rejections even when it issues nothing, so an empty window usually means the signal engine did not run — not that markets were quiet.</Notice>}
+  const words: Record<string,string> = { ml:"Model score", score:"Quality score", news:"News window", stale:"Stale data", slippage:"Slippage", other:"Other" };
+  return <Card title="What the filters did" eyebrow={`Last ${numberLabel(data.window_hours,0)} hours`} description="Candidates the engine looked at, and how many it turned away. This is a count of decisions, not a forecast of how many signals you'll get.">
+    <div className="ui-stat-grid"><Stat label="Sent" value={numberLabel(data.issued,0)}/><Stat label="Turned away" value={numberLabel(data.rejected_or_skipped,0)}/><Stat label="Share sent" value={probabilityLabel(data.acceptance_rate)}/></div>
+    {finite(data.issued)===0&&finite(data.rejected_or_skipped)===0&&<Notice tone="warning">No decisions were recorded in this window. The engine logs rejections even when it sends nothing, so this usually means it wasn&rsquo;t running rather than that markets were quiet.</Notice>}
     <div className="ws-grid-2">
-      <div className="ws-subsection"><h3>Rejection categories</h3>{categories.length?<KVList>{categories.map(([key,value])=><KV key={key} label={key} value={numberLabel(value,0)}/>)}</KVList>:<p className="ui-muted">No categories reported.</p>}</div>
-      <div className="ws-subsection"><h3>Most frequent reasons</h3>{reasons.length?<KVList>{reasons.map((r,i)=><KV key={display(r.reason,String(i))} label={display(r.reason)} value={numberLabel(r.rows,0)}/>)}</KVList>:<p className="ui-muted">No rejection reasons reported.</p>}</div>
+      <div className="ws-subsection"><h3>Why candidates were turned away</h3>{categories.length?<KVList>{categories.map(([key,value])=><KV key={key} label={words[key] ?? key} value={numberLabel(value,0)}/>)}</KVList>:<p className="ui-muted">Nothing reported.</p>}</div>
+      <div className="ws-subsection"><h3>Most common reasons</h3>{reasons.length?<KVList>{reasons.map((r,i)=><KV key={display(r.reason,String(i))} label={display(r.reason)} value={numberLabel(r.rows,0)}/>)}</KVList>:<p className="ui-muted">Nothing reported.</p>}</div>
     </div>
     <QualityBreakdowns breakdowns={record(data.breakdowns)}/>
   </Card>;
@@ -276,41 +311,44 @@ const QUALITY_DIMENSIONS: [string,string][] = [["strategy","Strategy"],["asset",
 function QualityBreakdowns({ breakdowns }: { breakdowns: Row }) {
   const sections=QUALITY_DIMENSIONS.map(([key,label])=>[key,label,rows(breakdowns[key])] as const).filter(([,,items])=>items.length);
   if(!sections.length) return null;
-  return <div className="ws-grid-2">{sections.map(([key,label,items])=><div className="ws-subsection" key={key}><h3>Decisions by {label.toLowerCase()}</h3><TableWrap label={`Scrollable decisions by ${label.toLowerCase()}`}><thead><tr><th>{label}</th><th>Issued</th><th>Rejected or skipped</th><th>Acceptance fraction</th></tr></thead><tbody>{items.map((item,i)=><tr key={display(item.value,String(i))+"-"+i}><th>{display(item.value)}</th><td>{numberLabel(item.issued,0)}</td><td>{numberLabel(item.rejected_or_skipped,0)}</td><td>{probabilityLabel(item.acceptance_rate)}</td></tr>)}</tbody></TableWrap></div>)}</div>;
+  return <div className="ws-grid-2">{sections.map(([key,label,items])=><div className="ws-subsection" key={key}><h3>By {label.toLowerCase()}</h3><TableWrap label={`Decisions by ${label.toLowerCase()}`}><thead><tr><th>{label}</th><th>Sent</th><th>Turned away</th><th>Share sent</th></tr></thead><tbody>{items.map((item,i)=><tr key={display(item.value,String(i))+"-"+i}><th>{display(item.value)}</th><td>{numberLabel(item.issued,0)}</td><td>{numberLabel(item.rejected_or_skipped,0)}</td><td>{probabilityLabel(item.acceptance_rate)}</td></tr>)}</tbody></TableWrap></div>)}</div>;
 }
 
 function ResearchView({ data }: { data: Row }) {
   const items=rows(data.strategies);
   const top=Math.max(1,...items.map(item=>finite(item.signals)??0));
-  return <Card title="Strategy activity" eyebrow={`Last ${numberLabel(data.window_days,0)} days`} description="Signals generated per strategy. Volume is not quality: compare outcomes on the Performance page.">
-    {items.length?<ol className="ui-list">{items.map((item,i)=>{
-      const count=finite(item.signals);
-      return <li className="ui-list-row" key={display(item.strategy_name,String(i))}>
-        <strong>{i+1}. {display(item.strategy_name,"Unnamed strategy")}</strong><span className="num">{numberLabel(count,0)}</span>
-        {count!==null&&<small><span className="ws-prob-bar" aria-hidden="true" style={{display:"block"}}><span style={{width:`${(count/top*100).toFixed(1)}%`}}/></span></small>}
-      </li>;})}</ol>:<Empty title="No strategy activity in this window." icon="research"/>}
-  </Card>;
+  return <div className="ws-stack">
+    <Card title="Signals per strategy" eyebrow={`Last ${numberLabel(data.window_days,0)} days`} description="A count of signals each strategy produced. It says nothing about whether they worked: compare outcomes on the Performance page.">
+      {items.length?<ol className="ws-bars">{items.map((item,i)=>{
+        const count=finite(item.signals);
+        return <li key={display(item.strategy_name,String(i))}>
+          <span>{display(item.strategy_name,"Unnamed strategy")}</span><b className="num">{numberLabel(count,0)}</b>
+          <i aria-hidden="true" style={{width:`${((count??0)/top*100).toFixed(1)}%`}}/>
+        </li>;})}</ol>:<Empty title="No strategy produced a signal in this window."/>}
+    </Card>
+    <p className="ws-aside">There&rsquo;s no strategy builder or backtester in the web workspace yet. Each live setup&rsquo;s record is shown on its signals instead.</p>
+  </div>;
 }
 
 function OperationsView({ data }: { data: Row }) {
   const release=record(data.release),execution=record(data.execution);
-  const flag=(value:unknown, dangerOn=false)=>value===true?<Badge tone={dangerOn?"warning":"positive"}>On</Badge>:value===false?<Badge tone={dangerOn?"positive":"neutral"}>Off</Badge>:<Badge>Unavailable</Badge>;
-  return <div className="ws-stack"><Notice tone="warning">Owner-authorized release posture. A healthy process is not evidence of trading readiness. The controls below change only what they name, need confirmation, and never enable live-money trading.</Notice>
+  const flag=(value:unknown, dangerOn=false)=>value===true?<Badge tone={dangerOn?"warning":"positive"}>On</Badge>:value===false?<Badge tone={dangerOn?"positive":"neutral"}>Off</Badge>:<Badge>Unknown</Badge>;
+  return <div className="ws-stack"><p className="ws-aside">A healthy server doesn&rsquo;t mean it&rsquo;s ready to trade. Each control below changes only what it says, asks you to confirm, and can&rsquo;t switch on real-money trading.</p>
     <div className="ws-grid-2">
-      <Card title="Deployed source" eyebrow="Runtime identity"><KVList><KV label="Environment" value={display(release.environment)}/><KV label="Branch" value={display(release.branch)}/><KV label="Commit" value={<span className="mono">{display(release.commit)}</span>}/></KVList></Card>
-      <Card title="Execution controls" eyebrow="Safety posture"><KVList><KV label="Live financial features" value={flag(execution.live_financial_features_enabled,true)}/><KV label="Real execution" value={flag(execution.real_execution_enabled,true)}/><KV label="Automated execution" value={flag(execution.auto_execution_enabled,true)}/><KV label="Global kill switch" value={flag(execution.kill_switch)}/></KVList></Card>
+      <Card title="What's deployed"><KVList><KV label="Environment" value={display(release.environment)}/><KV label="Branch" value={display(release.branch)}/><KV label="Commit" value={<span className="mono">{display(release.commit)}</span>}/></KVList></Card>
+      <Card title="Safety switches"><KVList><KV label="Real-money features" value={flag(execution.live_financial_features_enabled,true)}/><KV label="Real orders" value={flag(execution.real_execution_enabled,true)}/><KV label="Automatic orders" value={flag(execution.auto_execution_enabled,true)}/><KV label="Kill switch" value={flag(execution.kill_switch)}/></KVList></Card>
     </div></div>;
 }
 
 function StatusPanel({ state, section, onRetry, pathname }: { state: State; section: Section; onRetry: () => void; pathname: string }) {
-  if (state.kind === "auth") return <div className="ui-state" role="alert"><Icon name="lock"/><h2>Sign in required</h2><p>Sign in to view your account. We will bring you back to this page.</p>
-    <Link className="ui-btn ui-btn--primary" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in securely</Link></div>;
+  if (state.kind === "auth") return <div className="ui-state" role="alert"><h2>Please sign in</h2><p>Sign in to see this page. We&rsquo;ll bring you straight back.</p>
+    <Link className="ui-btn ui-btn--primary" href={`/login?returnTo=${encodeURIComponent(pathname)}`}>Sign in</Link></div>;
   const restricted = state.status === 403;
-  return <div className="ui-state" role="alert"><Icon name={restricted?"lock":"warning"}/>
-    <h2>{restricted?"Access restricted":"Data could not be verified"}</h2>
-    <p>{restricted && section==="research" ? "Strategy research is available to administrator accounts." : statusText(state.status)}</p>
-    <div className="ui-actions"><button type="button" className="ui-btn" onClick={onRetry}><Icon name="refresh"/>Retry</button>
-      {restricted&&<Link className="ui-btn ui-btn--ghost" href="/app/billing">View plans</Link>}</div></div>;
+  return <div className="ui-state" role="alert">
+    <h2>{restricted?"Not on your plan":"This page didn't load"}</h2>
+    <p>{restricted && section==="research" ? "Strategy counts are for administrators." : statusText(state.status)}</p>
+    <div className="ui-actions"><button type="button" className="ui-btn" onClick={onRetry}>Try again</button>
+      {restricted&&<Link className="ui-btn ui-btn--ghost" href="/app/billing">See plans</Link>}</div></div>;
 }
 
 export function WorkspaceLive({ section, signalId }: { section: Section; signalId?: string }) {
@@ -348,11 +386,11 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
   const refresh=()=>setEpoch(value=>value+1);
   return <>
     <header className="ws-page-head">
-      <div><h1>{signalId?"Signal evidence":titles[section]}</h1><p>{descriptions[section]}</p></div>
-      <button type="button" className="ui-btn" onClick={refresh} disabled={state.kind==="loading"}><Icon name="refresh"/>Refresh</button>
+      <div><h1>{signalId?"Signal":titles[section]}</h1><p>{signalId?"The levels, the setup's record, and everything that happened after it was sent.":descriptions[section]}</p></div>
+      <button type="button" className="ui-btn ui-btn--sm" onClick={refresh} disabled={state.kind==="loading"}>Refresh</button>
     </header>
     {section==="signals"&&!signalId&&<SignalFilters onApply={next=>{setSignalOffset(0);setFilters(next);}} />}
-    {state.kind==="loading"&&<div role="status" aria-live="polite"><span className="visually-hidden">Checking your session and retrieving authorized records…</span><Skeleton rows={3}/></div>}
+    {state.kind==="loading"&&<div role="status" aria-live="polite"><span className="visually-hidden">Loading…</span><Skeleton rows={3}/></div>}
     {(state.kind==="auth"||state.kind==="error")&&<StatusPanel state={state} section={section} onRetry={refresh} pathname={pathname}/>}
     {state.kind==="ready"&&state.data&&(
       section==="overview"?<OverviewView data={state.data}/>:

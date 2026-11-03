@@ -50,7 +50,7 @@ export function PlanAndReferrals(){
 
   return <section className="ws-stack" aria-labelledby="plan-title">
     <section className="ui-card">
-      <p className="ui-eyebrow">YOUR PLAN</p>
+      
       <h2 id="plan-title">{plan?`${display(plan.tier,"Current").toUpperCase()} plan`:"Plan details"}</h2>
       {!plan?<p className="ui-notice ui-notice--neutral">Plan details are unavailable: {statusText(data.planStatus)}</p>:<>
         <dl className="ui-kv">
@@ -64,7 +64,7 @@ export function PlanAndReferrals(){
     </section>
 
     <section className="ui-card">
-      <p className="ui-eyebrow">REFERRALS</p>
+      
       <h2>Invite traders</h2>
       {!referral?<p className="ui-notice ui-notice--neutral">Referral details are unavailable: {statusText(data.referralStatus)}</p>:<>
         <dl className="ui-kv">

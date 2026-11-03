@@ -75,7 +75,7 @@ export function AlertRules({data,onChanged}:{data:Row;onChanged:()=>void}){
         const rule=record(item.condition);
         const destinations=Array.isArray(item.channels)?item.channels.filter((v):v is string=>typeof v==="string"):[];
         return <article className="ui-card" key={id||i}>
-          <p className="ui-eyebrow">{item.active===true?"ACTIVE RULE":"DISABLED RULE"}</p>
+          <p className="ui-eyebrow">{item.active===true?"On":"Off"}</p>
           <h2>{display(item.asset,display(item.instrument_id,"Instrument"))} · {display(item.alert_type).replaceAll("_"," ")}</h2>
           <dl className="ui-kv">
             <div className="ui-kv-row"><dt>Threshold</dt><dd>{item.alert_type==="price_above"||item.alert_type==="price_below"?display(rule.value):"Event based"}</dd></div>

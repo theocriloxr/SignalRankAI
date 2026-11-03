@@ -25,7 +25,7 @@ function NotificationRecord({item,refresh}:{item:Row;refresh:()=>void}) {
   return <article className="ws-note">
     <div className="ws-note-head">
       <div>
-        <p className="ui-eyebrow">{display(item.event_type,"Notification")} / {display(item.severity,"Unclassified")}</p>
+        <p className="ui-eyebrow">{display(item.event_type,"Notification")} · {display(item.severity,"normal")}</p>
         <h3>{display(item.title,"Account notification")}</h3>
       </div>
       <span className="ui-badge">{unread?"UNREAD":"READ"}</span>

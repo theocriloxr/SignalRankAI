@@ -94,7 +94,7 @@ function ConfirmReturn({ reference, onConfirmed }: { reference: string; onConfir
     } catch { setResult({ ok: false, message: "The confirmation result could not be verified. Retry before contacting support." }); }
     finally { setBusy(false); }
   }
-  return <Card title="Confirm your payment" eyebrow="Returned from Paystack" description="We verify the transaction directly with Paystack and check it belongs to this account before changing any access.">
+  return <Card title="Confirm your payment" description="We verify the transaction directly with Paystack and check it belongs to this account before changing any access.">
     <KVList><KV label="Payment reference" value={<span className="mono">{reference}</span>} /></KVList>
     {!result?.ok && <div className="ui-actions"><button type="button" className="ui-btn ui-btn--primary" onClick={confirm} disabled={busy}><Icon name="check" />{busy ? "Verifying with Paystack…" : "Verify payment"}</button></div>}
     {result && <Feedback error={!result.ok}>{result.message}</Feedback>}
@@ -118,7 +118,7 @@ function Renewal({ data, onChanged }: { data: Row; onChanged: () => void }) {
     finally { setBusy(false); }
   }
   const autoRenew = data.auto_renew === true ? "Enabled" : data.auto_renew === false ? "Disabled" : "Unavailable";
-  return <Card title="Automatic renewal" eyebrow="Subscription">
+  return <Card title="Automatic renewal">
     <KVList><KV label="Auto-renew" value={<Badge tone={data.auto_renew === true ? "info" : "neutral"}>{autoRenew}</Badge>} />
       <KV label="Provider subscription" value={data.provider_subscription_linked === true ? "Linked" : data.provider_subscription_linked === false ? "Not linked" : "Unavailable"} /></KVList>
     {data.auto_renew === true && !confirming && <button type="button" className="ui-btn" onClick={() => setConfirming(true)}>Turn off auto-renew</button>}
@@ -149,7 +149,7 @@ function RefundRequest() {
     } catch { setResult({ ok: false, message: "The request could not be confirmed. Nothing was submitted." }); }
     finally { setBusy(false); }
   }
-  return <Card title="Request a refund review" eyebrow="Manual review" description="Creates a billing support ticket for a payment on this account. Refunds are never automatic.">
+  return <Card title="Request a refund review" description="This opens a billing ticket about a payment on this account. A person reviews every refund.">
     <form className="ui-form" onSubmit={submit}>
       <label className="ui-field">Payment reference<input className="ui-input mono" name="payment_reference" required minLength={3} maxLength={128} autoComplete="off" /></label>
       <label className="ui-field">Reason<textarea className="ui-textarea" name="reason" required minLength={3} maxLength={4000} rows={4} /></label>
@@ -166,7 +166,7 @@ export function BillingCenter({ data, onChanged }: { data: Row; onChanged: () =>
   return <div className="ws-stack">
     <Notice>Prices, subscription state and receipts come from the billing service. Opening this page never charges your account; payment happens only on Paystack after you choose a plan.</Notice>
     {reference && <ConfirmReturn reference={reference} onConfirmed={onChanged} />}
-    <Card title="Plans" eyebrow="Server-priced" description="Your plan controls access to features. It never overrides risk controls or authorizes live trading.">
+    <Card title="Plans" description="Your plan decides which features you can use. Prices come from our billing system at checkout.">
       <Plans onError={setCheckoutError} />
       {checkoutError && <Feedback error>{checkoutError}</Feedback>}
     </Card>

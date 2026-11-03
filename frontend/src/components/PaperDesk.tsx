@@ -41,7 +41,7 @@ export function PaperDesk({ onChanged }:{ onChanged:()=>void }) {
         if(response.response.ok&&response.data){
           setState({phase:"ready",data:record(response.data),message:""});
         }else setState({phase:"error",data:null,message:statusText(response.response.status)});
-      }catch{if(!cancelled)setState({phase:"error",data:null,message:"Simulation history could not be retrieved."});}
+      }catch{if(!cancelled)setState({phase:"error",data:null,message:"We couldn't load your paper history."});}
     }
     void load();
     return ()=>{cancelled=true};
@@ -66,33 +66,33 @@ export function PaperDesk({ onChanged }:{ onChanged:()=>void }) {
       risk_pct?:number;max_open_positions?:number;min_signal_score?:number;
       target_mode?:string;allowed_directions?:string;allowed_asset_classes?:string[];
     }={};
-    if(risk.trim()){const n=finite(risk);if(n===null||n<0.1||n>10)return feedback("Paper risk must be between 0.1% and 10%.",true);values.risk_pct=n;}
-    if(maxPositions.trim()){const n=finite(maxPositions);if(n===null||!Number.isInteger(n)||n<1||n>100)return feedback("Open-position limit must be a whole number from 1 to 100.",true);values.max_open_positions=n;}
-    if(minScore.trim()){const n=finite(minScore);if(n===null||n<0||n>100)return feedback("Minimum score must be between 0 and 100.",true);values.min_signal_score=n;}
+    if(risk.trim()){const n=finite(risk);if(n===null||n<0.1||n>10)return feedback("Risk per position must be between 0.1% and 10%.",true);values.risk_pct=n;}
+    if(maxPositions.trim()){const n=finite(maxPositions);if(n===null||!Number.isInteger(n)||n<1||n>100)return feedback("The open-position limit must be a whole number from 1 to 100.",true);values.max_open_positions=n;}
+    if(minScore.trim()){const n=finite(minScore);if(n===null||n<0||n>100)return feedback("The minimum score must be between 0 and 100.",true);values.min_signal_score=n;}
     if(target) values.target_mode=target;
     if(direction) values.allowed_directions=direction;
     if(marketClasses.length) values.allowed_asset_classes=marketClasses;
-    if(!Object.keys(values).length)return feedback("Change at least one simulation setting first.",true);
+    if(!Object.keys(values).length)return feedback("Change at least one setting first.",true);
     setSaving(true);feedback("",false);
     try{
       const response=await client.PUT("/api/v1/platform/paper/settings",{body:values});
       if(response.response.ok&&response.data&&response.data.snapshot){
-        feedback("Simulation settings confirmed by the paper service. No broker settings were changed.",false);
+        feedback("Saved. This only changes your paper account.",false);
         setRisk("");setMaxPositions("");setMinScore("");setTarget("");setDirection("");setMarketClasses([]);
         refresh();
-      }else feedback(response.response.status===401?"Session expired. Sign in again.":"No settings change was confirmed. Review the values and retry.",true);
-    }catch{feedback("The service could not verify the settings change.",true);}
+      }else feedback(response.response.status===401?"Session expired. Sign in again.":"Those settings weren't saved. Check the values and try again.",true);
+    }catch{feedback("We couldn't confirm the change. Refresh to see what was saved.",true);}
     finally{setSaving(false);}
   }
 
   async function applyDestructive(event:FormEvent<HTMLFormElement>){
     event.preventDefault();if(!action||saving)return;
     const phrase=action==="close"?"CLOSE PAPER POSITIONS":action==="reset"?"RESET PAPER ACCOUNT":"RETRY PAPER SIGNAL";
-    if(confirmation!==phrase)return feedback(`Type ${phrase} exactly to confirm the simulation action.`,true);
+    if(confirmation!==phrase)return feedback(`Type ${phrase} exactly to confirm.`,true);
     const start=finite(resetBalance);
-    if(action==="reset"&&(start===null||start<50||start>100_000_000))return feedback("Paper starting balance must be between 50 and 100,000,000 virtual units.",true);
+    if(action==="reset"&&(start===null||start<50||start>100_000_000))return feedback("The starting balance must be between 50 and 100,000,000.",true);
     const reference=signalReference.trim();
-    if(action==="retry"&&(reference.length<4||reference.length>64))return feedback("Enter a valid delivered signal reference.",true);
+    if(action==="retry"&&(reference.length<4||reference.length>64))return feedback("Enter the reference of a signal you received.",true);
     setSaving(true);feedback("",false);
     try{
       const response=action==="close"
@@ -106,104 +106,103 @@ export function PaperDesk({ onChanged }:{ onChanged:()=>void }) {
         response.data.accepted===true
       ));
       if(accepted){
-        feedback(action==="close"?"Paper close request returned a confirmed snapshot. Inspect the positions to verify each individual closure.":
-          action==="reset"?"Paper account reset was confirmed. Prior simulation history may be affected.":
-          "Paper retry request was accepted for simulation. This does not guarantee a simulated fill.",false);
+        feedback(action==="close"?"Done. Check the list below to see each position closed.":
+          action==="reset"?"Your paper account has been reset.":
+          "Queued. It fills on paper only if the price reaches the entry.",false);
         setAction(null);setConfirmation("");setResetBalance("");setSignalReference("");refresh();
-      }else feedback("The paper service did not confirm this action. Check account status and retry only after inspection.",true);
-    }catch{feedback("The response was not verified. Do not repeat the operation until you have checked your account state.",true);}
+      }else feedback("That didn't go through. Refresh and check your positions before trying again.",true);
+    }catch{feedback("We didn't get an answer. Refresh and check your positions before trying again.",true);}
     finally{setSaving(false);}
   }
 
   return <div className="ws-stack">
     <section className="ui-card">
-      <div className="ui-card-head"><div><p className="ui-eyebrow">Paper only / account-owned</p><h2>Simulation controls and history</h2></div>
-        <button type="button" className="ui-btn" onClick={()=>setVersion(v=>v+1)} disabled={saving}>Refresh paper history</button></div>
-      <p className="ui-notice ui-notice--neutral">Virtual capital only. No live or connected broker trades are issued by this page. Paper outcomes cannot be promoted to broker-confirmed results.</p>
-      {state.phase==="loading"&&<p role="status">Retrieving simulation records…</p>}
-      {state.phase==="error"&&<div role="alert" className="ui-state"><p>{state.message}</p><button type="button" className="ui-btn" onClick={()=>{setState({phase:"loading",data:null,message:""});setVersion(v=>v+1);}}>Retry safely</button></div>}
+      <div className="ui-card-head"><div><h2>How your paper account trades</h2>
+        <p className="ui-card-desc">Signals you follow here are filled with pretend money at the prices we see, minus estimated costs.</p></div>
+        <button type="button" className="ui-btn ui-btn--sm" onClick={()=>setVersion(v=>v+1)} disabled={saving}>Refresh</button></div>
+      {state.phase==="loading"&&<p role="status" className="ui-muted">Loading…</p>}
+      {state.phase==="error"&&<div role="alert" className="ui-state"><p>{state.message}</p><button type="button" className="ui-btn" onClick={()=>{setState({phase:"loading",data:null,message:""});setVersion(v=>v+1);}}>Try again</button></div>}
       {state.phase==="ready"&&<div className="ui-stat-grid">
-        <div className="ui-stat"><span>Paper risk per position</span><strong>{finite(snapshot.risk_pct)===null?"Unavailable":`${numberLabel(snapshot.risk_pct)}%`}</strong><small>Simulated sizing only</small></div>
-        <div className="ui-stat"><span>Paper position cap</span><strong>{numberLabel(snapshot.max_open_positions,0)}</strong><small>Enforced by paper service</small></div>
-        <div className="ui-stat"><span>Closed paper positions</span><strong>{numberLabel(snapshot.closed_positions,0)}</strong><small>Simulation history</small></div>
-        <div className="ui-stat"><span>Paper auto mode</span><strong>{snapshot.auto_trade_enabled===true?"Enabled":snapshot.auto_trade_enabled===false?"Disabled":"Unavailable"}</strong><small>No live trade permission inferred</small></div>
+        <div className="ui-stat"><span>Risk per position</span><strong>{finite(snapshot.risk_pct)===null?"Unavailable":`${numberLabel(snapshot.risk_pct)}%`}</strong><small>Of paper equity</small></div>
+        <div className="ui-stat"><span>Most positions open at once</span><strong>{numberLabel(snapshot.max_open_positions,0)}</strong></div>
+        <div className="ui-stat"><span>Closed so far</span><strong>{numberLabel(snapshot.closed_positions,0)}</strong></div>
+        <div className="ui-stat"><span>Follows new signals by itself</span><strong>{snapshot.auto_trade_enabled===true?"Yes":snapshot.auto_trade_enabled===false?"No":"Unavailable"}</strong><small>On paper only</small></div>
       </div>}
     </section>
     {state.phase==="ready"&&<>
       <div className="ws-grid-2">
-        <section className="ui-card"><h2>Simulation performance</h2>
-          <p>Derived from the paper service only; not certified live-broker performance.</p>
-          <dl className="ui-kv"><Value label="Simulated realized P&L" value={numberLabel(performance.realized_pnl,2)}/>
-            <Value label="Paper closed positions" value={numberLabel(performance.total_trades ?? snapshot.closed_positions,0)}/>
-            <Value label="Paper equity" value={numberLabel(snapshot.equity,2)}/>
-            <Value label="Target policy" value={display(snapshot.target_mode)}/></dl>
+        <section className="ui-card"><h2>Results on paper</h2>
+          <p>Paper fills skip things real brokers do, like requotes and partial fills, so treat these as a best case.</p>
+          <dl className="ui-kv"><Value label="Realised profit or loss" value={numberLabel(performance.realized_pnl,2)}/>
+            <Value label="Closed positions" value={numberLabel(performance.total_trades ?? snapshot.closed_positions,0)}/>
+            <Value label="Equity" value={numberLabel(snapshot.equity,2)}/>
+            <Value label="Takes profit at" value={display(snapshot.target_mode)}/></dl>
         </section>
-        <section className="ui-card"><h2>Current paper policy</h2>
+        <section className="ui-card"><h2>Current rules</h2>
           <dl className="ui-kv"><Value label="Minimum signal score" value={numberLabel(snapshot.min_signal_score)}/>
             <Value label="Directions" value={display(snapshot.allowed_directions)}/>
-            <Value label="Spread estimate (bps)" value={numberLabel(snapshot.spread_bps)}/>
-            <Value label="Slippage estimate (bps)" value={numberLabel(snapshot.slippage_bps)}/>
-            <Value label="Fees estimate (bps)" value={numberLabel(snapshot.fee_bps)}/></dl>
-          <p>Allowed classes: {Array.isArray(snapshot.allowed_asset_classes)?snapshot.allowed_asset_classes.map(String).join(", "):"Unavailable"}</p>
+            <Value label="Markets" value={Array.isArray(snapshot.allowed_asset_classes)?snapshot.allowed_asset_classes.map(String).join(", "):"Unavailable"}/>
+            <Value label="Assumed spread (basis points)" value={numberLabel(snapshot.spread_bps)}/>
+            <Value label="Assumed slippage (basis points)" value={numberLabel(snapshot.slippage_bps)}/>
+            <Value label="Assumed fees (basis points)" value={numberLabel(snapshot.fee_bps)}/></dl>
         </section>
       </div>
-      <section className="ui-card"><h2>Paper lifecycle records</h2>
+      <section className="ui-card"><h2>Recent activity</h2>
         <div className="ws-grid-2">
-          <div><h3>Latest paper attempts</h3>
+          <div><h3>Signals the desk tried to follow</h3>
             {activity.length?<div className="ui-list">{activity.slice(0,30).map((entry,i)=><div key={i} className="ui-list-row">
-              <strong>{display(entry.asset,display(entry.signal_id,"Simulation attempt"))}</strong>
+              <strong>{display(entry.asset,display(entry.signal_id,"Signal"))}</strong>
               <span>{display(entry.decision,display(entry.status,"State unavailable"))}</span><small>{timeLabel(entry.created_at ?? entry.attempted_at)}</small>
-            </div>)}</div>:<p className="ui-muted">No paper attempts returned.</p>}
+            </div>)}</div>:<p className="ui-muted">Nothing yet.</p>}
           </div>
-          <div><h3>Latest closed and skipped positions</h3>
+          <div><h3>Recently closed</h3>
             {closed.length?<div className="ui-list">{closed.slice(0,20).map((p,i)=><div key={i} className="ui-list-row">
               <strong>{display(p.asset,"Paper position")}</strong><span>{display(p.status)}</span><small>{timeLabel(p.closed_at)}</small>
-            </div>)}</div>:<p className="ui-muted">No closed paper positions returned.</p>}
-            <p className="ui-muted">Skipped attempts in response: {skipped.length}. A skip is not a trade.</p>
+            </div>)}</div>:<p className="ui-muted">Nothing closed yet.</p>}
+            {skipped.length>0&&<p className="ui-muted">{skipped.length} skipped without opening a position.</p>}
           </div>
         </div>
       </section>
       <section className="ui-card">
-        <div><p className="ui-eyebrow">Limited, simulation-only</p><h2>Adjust paper rules</h2></div>
-        <p>Only supplied fields are updated. Empty fields preserve your existing settings; the backend validates every limit again.</p>
+        <div><h2>Change the rules</h2></div>
+        <p>Fill in only what you want to change. Blank fields keep their current value.</p>
         <form className="ui-form" onSubmit={updateSettings}>
           <div className="ui-form-grid">
-            <label className="ui-field">Paper risk per position (%)<input className="ui-input" type="number" min="0.1" max="10" step="0.1" value={risk} onChange={e=>setRisk(e.target.value)} placeholder={numberLabel(snapshot.risk_pct)} inputMode="decimal"/></label>
-            <label className="ui-field">Maximum open paper positions<input className="ui-input" type="number" min="1" max="100" step="1" value={maxPositions} onChange={e=>setMaxPositions(e.target.value)} placeholder={numberLabel(snapshot.max_open_positions,0)}/></label>
-            <label className="ui-field">Minimum paper signal score<input className="ui-input" type="number" min="0" max="100" step="0.1" value={minScore} onChange={e=>setMinScore(e.target.value)} placeholder={numberLabel(snapshot.min_signal_score)}/></label>
-            <label className="ui-field">Paper take-profit target<select className="ui-select" value={target} onChange={e=>setTarget(e.target.value)}>
-              <option value="">Keep existing ({display(snapshot.target_mode)})</option>
+            <label className="ui-field">Risk per position (%)<input className="ui-input" type="number" min="0.1" max="10" step="0.1" value={risk} onChange={e=>setRisk(e.target.value)} placeholder={numberLabel(snapshot.risk_pct)} inputMode="decimal"/></label>
+            <label className="ui-field">Most positions open at once<input className="ui-input" type="number" min="1" max="100" step="1" value={maxPositions} onChange={e=>setMaxPositions(e.target.value)} placeholder={numberLabel(snapshot.max_open_positions,0)}/></label>
+            <label className="ui-field">Minimum signal score<input className="ui-input" type="number" min="0" max="100" step="0.1" value={minScore} onChange={e=>setMinScore(e.target.value)} placeholder={numberLabel(snapshot.min_signal_score)}/></label>
+            <label className="ui-field">Take profit at<select className="ui-select" value={target} onChange={e=>setTarget(e.target.value)}>
+              <option value="">Keep {display(snapshot.target_mode)}</option>
               {targets.map(t=><option key={t} value={t}>{t}</option>)}
             </select></label>
-            <label className="ui-field">Allowed paper direction<select className="ui-select" value={direction} onChange={e=>setDirection(e.target.value)}>
-              <option value="">Keep existing ({display(snapshot.allowed_directions)})</option>
+            <label className="ui-field">Directions<select className="ui-select" value={direction} onChange={e=>setDirection(e.target.value)}>
+              <option value="">Keep {display(snapshot.allowed_directions)}</option>
               {directions.map(d=><option key={d} value={d}>{d}</option>)}
             </select></label>
           </div>
-          <fieldset className="ui-fieldset"><legend>Replace entitled paper market classes (optional)</legend>
-            <p>If selected, this field replaces your current paper class selection. Leave all unchecked to retain your existing settings.</p>
+          <fieldset className="ui-fieldset"><legend>Markets (optional)</legend>
+            <p>Ticking any of these replaces your current list. Leave them all unticked to keep it.</p>
             <div className="ui-check-row">{classes.map(c=><label className="ui-check" key={c}><input type="checkbox" checked={marketClasses.includes(c)} onChange={e=>setMarketClasses(prev=>e.target.checked?[...prev,c]:prev.filter(x=>x!==c))}/>{c}</label>)}</div>
           </fieldset>
-          <button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Saving simulation rules…":"Save paper rules"}</button>
+          <button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Saving…":"Save rules"}</button>
         </form>
       </section>
       <section className="ui-card ui-card--danger">
-        <div><p className="ui-eyebrow">Destructive simulation operations</p><h2>Manage virtual positions and capital</h2></div>
-        <p>These affect your simulated account and may be irreversible. They never touch external broker balances.</p>
+        <div><h2>Start over</h2></div>
+        <p>These change your paper account and can&rsquo;t be undone. Broker accounts aren&rsquo;t affected.</p>
         <div className="ui-actions">
-          <button type="button" className="ui-btn" onClick={()=>{setAction("close");setConfirmation("");}}>Close open paper positions</button>
-          <button type="button" className="ui-btn" onClick={()=>{setAction("reset");setConfirmation("");}}>Reset virtual capital</button>
-          <button type="button" className="ui-btn" onClick={()=>{setAction("retry");setConfirmation("");}}>Retry a signal in paper mode</button>
+          <button type="button" className="ui-btn" onClick={()=>{setAction("close");setConfirmation("");}}>Close all paper positions</button>
+          <button type="button" className="ui-btn" onClick={()=>{setAction("reset");setConfirmation("");}}>Reset the paper balance</button>
+          <button type="button" className="ui-btn" onClick={()=>{setAction("retry");setConfirmation("");}}>Follow a past signal on paper</button>
         </div>
         {action&&<form className="ui-confirm" onSubmit={applyDestructive}>
-          <h3>{action==="close"?"Close open paper positions":action==="reset"?"Reset your virtual account":"Request a simulated retry"}</h3>
-          {action==="reset"&&<label className="ui-field">New starting virtual balance<input className="ui-input" required type="number" min="50" max="100000000" step="0.01" inputMode="decimal" value={resetBalance} onChange={e=>setResetBalance(e.target.value)}/></label>}
-          {action==="retry"&&<label className="ui-field">Previously delivered signal reference<input className="ui-input" required minLength={4} maxLength={64} value={signalReference} onChange={e=>setSignalReference(e.target.value)} autoComplete="off"/></label>}
+          <h3>{action==="close"?"Close all paper positions":action==="reset"?"Reset your paper balance":"Follow a past signal on paper"}</h3>
+          {action==="reset"&&<label className="ui-field">New starting balance<input className="ui-input" required type="number" min="50" max="100000000" step="0.01" inputMode="decimal" value={resetBalance} onChange={e=>setResetBalance(e.target.value)}/></label>}
+          {action==="retry"&&<label className="ui-field">Signal reference<input className="ui-input" required minLength={4} maxLength={64} value={signalReference} onChange={e=>setSignalReference(e.target.value)} autoComplete="off"/></label>}
           <label className="ui-field">Type {action==="close"?"CLOSE PAPER POSITIONS":action==="reset"?"RESET PAPER ACCOUNT":"RETRY PAPER SIGNAL"} to confirm
             <input className="ui-input" value={confirmation} onChange={e=>setConfirmation(e.target.value)} required autoComplete="off"/>
           </label>
-          <p className="ui-notice ui-notice--neutral">The backend independently enforces simulation permissions and safety rules. A request acknowledgement is not a guarantee that every paper position closed.</p>
-          <div className="ui-actions"><button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Submitting…":"Confirm simulation action"}</button>
+                    <div className="ui-actions"><button type="submit" className="ui-btn ui-btn--primary" disabled={saving}>{saving?"Working…":"Confirm"}</button>
             <button type="button" className="ui-btn" disabled={saving} onClick={()=>{setAction(null);setConfirmation("");}}>Cancel</button></div>
         </form>}
       </section>

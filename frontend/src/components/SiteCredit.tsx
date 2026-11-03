@@ -23,7 +23,7 @@ export function SiteCredit({compact=false,navigation=false}:{compact?:boolean;na
       </nav>
     </div>}
     <div className="site-footer-bottom">
-      <span>© SignalRankAI · Decision intelligence. Trading involves risk of loss.</span>
+      <span>© SignalRankAI · Trading involves risk of loss.</span>
       <span className="site-footer-links">
         <Link href="/risk">Risk disclosure</Link>
         <span>Powered by <a href="https://www.criloxsolutions.com" target="_blank" rel="noopener noreferrer"

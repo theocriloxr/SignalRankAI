@@ -40,7 +40,7 @@ export function SignalFeedback({ signalId }: { signalId: string }) {
     finally { setBusy(false); }
   }
 
-  return <Card title="Rate this signal" eyebrow="Quality feedback" description="Your rating helps reviewers spot stale, duplicate or incorrect signals. It does not change the signal, its outcome or any order.">
+  return <Card title="Rate this signal" description="Tell us if it was late, wrong or hard to follow. A person reads these; the signal itself stays as it was.">
     <form className="ui-form" onSubmit={submit}>
       <div className="ui-field"><span id="ws-rating-label">Rating</span>
         <div className="ui-segmented" role="group" aria-labelledby="ws-rating-label">

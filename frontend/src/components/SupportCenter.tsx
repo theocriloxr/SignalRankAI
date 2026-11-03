@@ -82,7 +82,7 @@ export function SupportCenter({data,onChanged}:{data:Row;onChanged:()=>void}){
         {loading&&<div className="ui-loading" role="status">Retrieving the selected account ticket…</div>}
         {error&&<div className="ui-state" role="alert"><p>{error}</p><button className="ui-btn" type="button" onClick={()=>setVersion(x=>x+1)}>Retry</button></div>}
         {detail&&!loading&&<section className="ui-card">
-          <p className="ui-eyebrow">Account ticket / {display(detail.ticket.priority,"Standard")}</p>
+          <p className="ui-eyebrow">{display(detail.ticket.priority,"Standard")} priority</p>
           <h2>{display(detail.ticket.subject)}</h2>
           <p>State: <strong>{display(detail.ticket.status)}</strong> · Created {timeLabel(detail.ticket.created_at)}</p>
           <div className="ws-thread">

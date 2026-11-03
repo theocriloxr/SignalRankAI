@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
-import { Icon } from "./ui/Icon";
 
 /** Presentation only; the backend enforces owner/admin authorization on every request. */
 export function OperationsNavLink({ active }: { active: boolean }) {
@@ -20,6 +19,5 @@ export function OperationsNavLink({ active }: { active: boolean }) {
     return ()=>{cancelled=true};
   },[]);
   if(!permitted)return null;
-  return <Link href="/app/operations" aria-current={active?"page":undefined}>
-    <Icon name="operations"/>Operations</Link>;
+  return <Link href="/app/operations" aria-current={active?"page":undefined}>Operations</Link>;
 }

@@ -68,7 +68,7 @@ function WatchlistPanel({item,onChanged}:{item:Row;onChanged:()=>void}){
   }
 
   return <article className="ui-card">
-    <header><p className="ui-eyebrow">{item.is_default===true?"Default watchlist":"Account watchlist"}</p>
+    <header><p className="ui-eyebrow">{item.is_default===true?"Default":"Watchlist"}</p>
       <h2>{name}</h2></header>
     <p>Created {timeLabel(item.created_at)} · {existing.size} watched instruments</p>
     {watched.length>0?<ul className="ui-chip-row" aria-label={`Instruments on ${name}`}>{watched.map(x=><li key={x.id} className="ui-chip" title={x.id}>{x.label}
@@ -97,7 +97,7 @@ function WatchlistPanel({item,onChanged}:{item:Row;onChanged:()=>void}){
       <button type="button" className="ui-btn ui-btn--danger" disabled={deleting} onClick={deleteList}>{deleting?"Deleting…":`Delete ${name} and its instruments`}</button>
       <button type="button" className="ui-btn" disabled={deleting} onClick={()=>setConfirmDelete(false)}>Cancel</button></>
       :<button type="button" className="ui-btn ui-btn--ghost" onClick={()=>setConfirmDelete(true)}>Delete watchlist</button>}</div>
-    <p className="ui-eyebrow">A watchlist does not authorize or initiate a broker order. The same lists appear in Telegram under /watchlist.</p>
+    <p className="ui-muted">The same lists show up in Telegram under /watchlist.</p>
   </article>;
 }
 

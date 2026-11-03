@@ -25,7 +25,7 @@ function Entry({entry,onChanged}:{entry:Row;onChanged:()=>void}){
     finally{setBusy(false);}
   }
   return <article className="ui-card">
-    <div className="ui-card-head"><div><p className="ui-eyebrow">{timeLabel(entry.occurred_at)} / Personal trading journal</p>
+    <div className="ui-card-head"><div><p className="ui-eyebrow">{timeLabel(entry.occurred_at)}</p>
       <h2>{display(entry.title,"Untitled reflection")}</h2></div><span className="ui-badge">{display(entry.emotion,"Self-recorded")}</span></div>
     <p>{display(entry.notes,"No notes entered.")}</p>
     <dl className="ui-kv"><div className="ui-kv-row"><dt>Result (R)</dt><dd>{numberLabel(entry.result_r,3)}</dd></div>

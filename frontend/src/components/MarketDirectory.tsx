@@ -47,7 +47,7 @@ export function MarketDirectory(){
 
   return <section className="ui-card" aria-labelledby="sr-market-directory-title">
     <div className="ui-card-head"><div>
-      <p className="ui-eyebrow">Canonical market universe / Provider-backed inventory</p>
+      
       <h2 id="sr-market-directory-title">Discover instruments</h2>
     </div><span className="ui-badge">SOURCE DISCOVERY · NOT LIVE PRICING</span></div>
     <p className="ui-notice ui-notice--neutral">Only active instrument identities returned by your canonical platform appear here. Provider counts describe stored mappings, not a currently healthy price feed or authorization to trade.</p>
@@ -68,7 +68,7 @@ export function MarketDirectory(){
         const venues=Array.isArray(instrument.venues)?instrument.venues.filter((v):v is string=>typeof v==="string"&&v.trim().length>0):[];
         return <article key={display(instrument.instrument_id,String(i))} className="ws-instrument">
           <div className="ws-instrument-head"><div>
-            <p className="ui-eyebrow">{display(instrument.asset_class)} / {display(instrument.instrument_type)}</p>
+            <p className="ui-eyebrow">{display(instrument.asset_class)} · {display(instrument.instrument_type)}</p>
             <h3>{display(instrument.display_symbol,display(instrument.canonical_symbol,"Unidentified asset"))}</h3>
             <span className="mono ui-muted">{display(instrument.canonical_symbol)}</span>
           </div><span className="ui-badge">{instrument.tradable===true?"Mapped tradable flag":instrument.tradable===false?"Not marked tradable":"Tradability unverified"}</span></div>
@@ -78,7 +78,7 @@ export function MarketDirectory(){
             <div className="ui-kv-row"><dt>Discovery</dt><dd>{display(instrument.discovery_status)}</dd></div></dl>
           {providers.length>0&&<div className="ui-chip-row" aria-label="Mapped providers">{providers.slice(0,8).map((v,j)=><span key={v+j}>{v}</span>)}</div>}
           {venues.length>0&&<p className="ui-muted">Mapped venues: {venues.slice(0,8).join(" · ")}</p>}
-          <p className="ui-eyebrow">Mapping evidence only — session, quote and account eligibility separately gated</p>
+          <p className="ui-eyebrow">Which data providers know this symbol. Trading hours and prices are checked separately.</p>
         </article>;
       })}</div>:<div className="ui-empty"><strong>No active instruments matched the search.</strong><p>The directory did not report any matching records. This does not indicate that a market is closed or that every data provider is unavailable.</p></div>}
     </>}

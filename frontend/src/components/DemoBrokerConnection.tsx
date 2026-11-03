@@ -86,7 +86,7 @@ export function DemoBrokerConnection({onChanged}:{onChanged:()=>void}){
   }
 
   return <section className="ui-card" aria-labelledby="sr-demo-link-heading">
-    <div><p className="ui-eyebrow">Onboarding / Demo-first / Provider-hosted credentials</p>
+    <div><p className="ui-eyebrow">Start with a demo account</p>
       <h2 id="sr-demo-link-heading">Connect a MetaTrader demo account</h2></div>
     <p className="ui-notice ui-notice--neutral">This flow only requests a provider-hosted credential entry link for an MT4 or MT5 <strong>demo</strong> account. Do not use a live or prop account here. Creating a connection does not turn on auto-execution or certify trading safety.</p>
     <form className="ui-form" role="search" onSubmit={findServers}>

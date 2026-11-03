@@ -55,7 +55,7 @@ export function PrivacyCenter({onChanged}:{onChanged:()=>void}){
   }
 
   return <section className="ui-card" aria-labelledby="privacy-title">
-    <p className="ui-eyebrow">PRIVACY</p>
+    
     <h2 id="privacy-title">Your data</h2>
     <p>Download a copy of the data held for your account. Passwords, session tokens, full API keys and broker credentials are never included.</p>
     <div className="ui-actions"><button className="ui-btn" type="button" disabled={exporting} onClick={download}>{exporting?"Preparing…":"Download my data (JSON)"}</button></div>

@@ -113,7 +113,7 @@ export function AccountSecurity({onChanged}:{onChanged:()=>void}){
   }
 
   return <section className="ws-stack" aria-labelledby="sr-account-security-title">
-    <div className="ui-card"><div className="ui-card-head"><div><p className="ui-eyebrow">Identity / Your own account only</p><h2 id="sr-account-security-title">Identity and security</h2></div>
+    <div className="ui-card"><div className="ui-card-head"><div><h2 id="sr-account-security-title">Identity and security</h2></div>
       <button type="button" className="ui-btn" onClick={()=>{setLoading(true);refresh();}}>Refresh security status</button></div>
       <p className="ui-notice ui-notice--neutral">Account profile, authenticated sessions and MFA proof are controlled by the backend. This screen never changes broker or prop trading permissions.</p>
       {loading&&<p role="status">Checking account identity and device sessions…</p>}
