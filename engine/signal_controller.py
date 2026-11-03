@@ -555,7 +555,6 @@ class SignalController:
             return None
         if not (entry_f > 0):
             return None
-        long_side = direction == "long"
 
         from data.market_data import fetch_market_data_cached
         from utils.async_runner import run_sync
@@ -566,59 +565,19 @@ class SignalController:
             timeout = 10.0
         md = run_sync(fetch_market_data_cached(asset, [tf]), timeout=timeout) or {}
         tfdata = md.get(tf) or {}
-        highs: List[float] = []
-        lows: List[float] = []
-        closes: List[float] = []
-        for c in tfdata.get("candles") or []:
-            if not isinstance(c, dict):
-                continue
-            try:
-                h, l, cl = float(c.get("high")), float(c.get("low")), float(c.get("close"))
-            except (TypeError, ValueError):
-                continue
-            if h > 0 and l > 0 and cl > 0 and h >= l:
-                highs.append(h)
-                lows.append(l)
-                closes.append(cl)
-        period = 14
-        if len(closes) < period + 1:
-            return None
-        trs = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
-               for i in range(len(closes) - period, len(closes))]
-        atr = sum(trs) / len(trs)
-        if not (atr > 0):
-            return None
+        from core import atr_levels as levels
 
-        try:
-            fraction = float(os.getenv("SIGNAL_ATR_REPAIR_MIN_ATR_FRACTION", "0.25") or 0.25)
-        except ValueError:
-            fraction = 0.25
+        highs, lows, closes = levels.ohlc(tfdata.get("candles") or [])
+        atr = levels.atr(highs, lows, closes)
+        if atr is None:
+            return None
         raw_stop = signal.get("stop_loss")
-        try:
-            old_stop = float(raw_stop) if raw_stop is not None else None
-        except (TypeError, ValueError):
-            old_stop = None
-        if old_stop is not None and old_stop > 0:
-            wrong_side = (old_stop >= entry_f) if long_side else (old_stop <= entry_f)
-            if not wrong_side and abs(entry_f - old_stop) >= fraction * atr:
-                return None  # tight but normal for this asset
-
-        window = max(5, int(os.getenv("SIGNAL_ATR_REPAIR_STRUCTURE_BARS", "20") or 20))
-        recent_low = min(lows[-window:])
-        recent_high = max(highs[-window:])
-        if long_side:
-            stop = max(recent_low - 0.5 * atr, entry_f - 2 * atr)
-            targets = [entry_f + k * atr for k in (2, 3, 5)]
-        else:
-            stop = min(recent_high + 0.5 * atr, entry_f + 2 * atr)
-            targets = [entry_f - k * atr for k in (2, 3, 5)]
-        if stop <= 0 or (long_side and stop >= entry_f) or (not long_side and stop <= entry_f):
+        if raw_stop is not None and not levels.stop_is_degenerate(direction, entry_f, raw_stop, atr):
+            return None  # tight but normal for this asset
+        rebuilt = levels.atr_levels(direction, entry_f, highs, lows, atr)
+        if rebuilt is None:
             return None
-        if abs(entry_f - stop) < fraction * atr:
-            # Structure sits on top of the entry; fall back to 2 ATR.
-            stop = entry_f - 2 * atr if long_side else entry_f + 2 * atr
-        if stop <= 0 or any(t <= 0 for t in targets):
-            return None
+        stop, targets = rebuilt
         risk = abs(entry_f - stop)
         return {
             "stop_loss": stop,
