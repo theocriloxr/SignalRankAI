@@ -434,6 +434,18 @@
       "db_command_timeout_production": 15,
       "hourly_window_max_seconds": 4.0,
       "hourly_windows_total_seconds": 139
+    },
+    "score_floor_mode": {
+      "env": "QUALITY_SCORE_GATE_MODE",
+      "default": "advisory",
+      "requires": "SEGMENT_QUARANTINE_ENABLED",
+      "live_execution": "floor kept; score_floor_advisory signals refused",
+      "evidence": "docs/release/evidence/continuation-20261102/score_floor_test.json",
+      "python_suite": {
+        "passed": 4509,
+        "failed": 4,
+        "result": "first run; then the two production-quality tests were pinned to QUALITY_SCORE_GATE_MODE=enforce and extended to the advisory default (12 pass), governance regenerated; 1 environmental isolated-metadata failure remains"
+      }
     }
   }
 }

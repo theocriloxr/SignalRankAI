@@ -2334,6 +2334,7 @@ def _delivery_signal_snapshot(signal: dict) -> dict[str, Any]:
         "expires_at": signal.get("expires_at"),
         "ml_recovery_mode": signal.get("ml_recovery_mode"),
         "ml_recovery_reason": signal.get("ml_recovery_reason"),
+        "score_floor_advisory": signal.get("score_floor_advisory"),
     }
     return {key: _safe(value) for key, value in snapshot.items() if value is not None}
 

@@ -24,9 +24,10 @@ def test_production_quality_guard_rejects_weak_fx(monkeypatch):
     monkeypatch.delenv("QUALITY_MIN_SCORE_FX", raising=False)
     monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
     monkeypatch.setenv("PREMIUM_SCORE_THRESHOLD", "75")
+    monkeypatch.setenv("QUALITY_SCORE_GATE_MODE", "enforce")
 
-    ok, reason = _production_quality_gate(
-        _base_signal(
+    def weak_fx():
+        return _base_signal(
             asset="EURUSD",
             direction="long",
             entry=1.1000,
@@ -39,10 +40,19 @@ def test_production_quality_guard_rejects_weak_fx(monkeypatch):
             mtf_4h_trend=1.0,
             mtf_1d_trend=1.0,
         )
-    )
+
+    ok, reason = _production_quality_gate(weak_fx())
 
     assert not ok
     assert "quality_score 79.0 < 80.0" in reason
+
+    # Default (owner decision 3 Nov): the floor is recorded, the evidence filter decides.
+    monkeypatch.delenv("QUALITY_SCORE_GATE_MODE")
+    monkeypatch.setenv("SEGMENT_QUARANTINE_ENABLED", "1")
+    signal = weak_fx()
+    ok, reason = _production_quality_gate(signal)
+    assert "quality_score" not in reason
+    assert "quality_score 79.0 < 80.0" in signal["score_floor_advisory"]
 
 
 def test_production_quality_guard_rejects_fx_mtf_mismatch(monkeypatch):
@@ -289,6 +299,7 @@ def test_explicit_class_score_override_remains_authoritative(monkeypatch):
     monkeypatch.setenv("SIGNAL_DELIVERY_QUALITY_FLOOR", "80")
     monkeypatch.setenv("PREMIUM_SCORE_THRESHOLD", "75")
     monkeypatch.setenv("QUALITY_MIN_SCORE_FX", "90")
+    monkeypatch.setenv("QUALITY_SCORE_GATE_MODE", "enforce")
 
     ok, reason = _production_quality_gate(
         _base_signal(

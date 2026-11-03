@@ -1469,7 +1469,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     )
 
     if score < min_score:
-        return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
+        from core.signal_quality_gate import score_floor_advisory
+
+        if not score_floor_advisory():
+            return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
+        signal["score_floor_advisory"] = f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
     if stop_loss_pct > max_stop_loss_pct:
         return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
     rr_epsilon = max(1e-9, _env_float("QUALITY_RR_COMPARISON_EPSILON", 1e-6))
@@ -1752,9 +1756,9 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         snapshot = await segment_evidence.load_snapshot(session)
         await session.rollback()
     if not segment_evidence.snapshot_is_current(snapshot):
-        # With the ML veto advisory this filter is the evidence guard: no current
+        # With the ML veto or score floor advisory this filter is the evidence guard: no current
         # evidence means no signal, not an unchecked one.
-        if _ml_gate_advisory() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+        if _evidence_filter_required() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
             return False, "segment_evidence_unavailable"
         logger.warning("[segment_evidence] snapshot missing or stale; setup filter not applied")
         return True, "segment_evidence_unavailable"
@@ -2388,6 +2392,13 @@ def _ml_gate_advisory() -> bool:
     but does not veto; the setup-evidence filter decides. ML_GATE_MODE=enforce
     restores the veto."""
     return str(os.getenv("ML_GATE_MODE", "advisory") or "advisory").strip().lower() != "enforce"
+
+
+def _evidence_filter_required() -> bool:
+    """The setup-evidence filter is the deciding gate while ML or the score floor is advisory."""
+    from core.signal_quality_gate import score_floor_advisory
+
+    return _ml_gate_advisory() or score_floor_advisory()
 
 
 def _current_ml_prob_threshold(ml_filter: Any | None = None) -> float:
@@ -5051,7 +5062,11 @@ def main_loop(DRY_RUN: bool = False):
                                 pass
 
                         min_score_threshold = _current_min_score_threshold()
-                        if sig.get("score", 0) < min_score_threshold:
+                        from core.signal_quality_gate import score_floor_advisory
+
+                        if sig.get("score", 0) < min_score_threshold and score_floor_advisory():
+                            sig["score_floor_advisory"] = f"score {sig.get('score', 0)} < {min_score_threshold}"
+                        elif sig.get("score", 0) < min_score_threshold:
                             sig["rejection_reason"] = f"score {sig.get('score', 0)} < {min_score_threshold}"
                             pipeline_stats["score_rejected"] += 1
                             _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig["rejection_reason"])
@@ -5445,12 +5460,12 @@ def main_loop(DRY_RUN: bool = False):
                                 timeout=max(1.0, _env_float("SEGMENT_QUARANTINE_TIMEOUT_SECONDS", 4.0)),
                             )
                         except TimeoutError:
-                            # The evidence filter is the guard while ML is advisory.
-                            _segment_ok = not _ml_gate_advisory()
+                            # The evidence filter is the guard while ML or the score floor is advisory.
+                            _segment_ok = not _evidence_filter_required()
                             _segment_reason = "segment_quarantine_deferred:timeout"
                             logger.info("[segment_quarantine] timeout asset=%s allowed=%s", _asset_name, _segment_ok)
                         except Exception as _segment_exc:
-                            if _ml_gate_advisory() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+                            if _evidence_filter_required() or _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
                                 _segment_ok, _segment_reason = (
                                     False,
                                     f"segment_quarantine_error:{type(_segment_exc).__name__}",

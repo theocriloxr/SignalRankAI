@@ -42,6 +42,20 @@ def _targets(value: Any) -> list[float]:
     return out
 
 
+def score_floor_advisory() -> bool:
+    """Owner decision (3 Nov 2026): quality-score floors record but do not veto.
+
+    On production the score carried no information about reaching TP1 (AUC
+    0.489 over 6,190 tracked candidates; docs/release/evidence/
+    continuation-20261102/score_floor_test.json), so the setup-evidence filter
+    decides. Only while that filter is on; QUALITY_SCORE_GATE_MODE=enforce
+    restores the veto. Live execution always keeps the floor.
+    """
+    if str(os.getenv("QUALITY_SCORE_GATE_MODE", "advisory")).strip().lower() == "enforce":
+        return False
+    return str(os.getenv("SEGMENT_QUARANTINE_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class SignalQualityDecision:
     ok: bool
@@ -89,7 +103,7 @@ def evaluate_signal_quality(signal: Mapping[str, Any], *, execution: bool = Fals
         reasons.append("final_rr_below_minimum")
 
     score = _float(signal.get("score_calibrated") or signal.get("score_final") or signal.get("score"))
-    if score < _env_float("QUALITY_GATE_MIN_SCORE", 75.0):
+    if score < _env_float("QUALITY_GATE_MIN_SCORE", 75.0) and (execution or not score_floor_advisory()):
         reasons.append("quality_score_below_minimum")
     strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
     if strategy in {"", "unknown", "none", "generic"}:
@@ -116,6 +130,8 @@ def evaluate_signal_quality(signal: Mapping[str, Any], *, execution: bool = Fals
                 reasons.append("ml_calibration_metrics_failed")
         if not bool(signal.get("quality_gate_passed", False)):
             reasons.append("persisted_quality_gate_not_passed")
+        if signal.get("score_floor_advisory"):
+            reasons.append("score_floor_advisory_paper_only")
 
     return SignalQualityDecision(
         ok=not reasons,
@@ -126,4 +142,4 @@ def evaluate_signal_quality(signal: Mapping[str, Any], *, execution: bool = Fals
     )
 
 
-__all__ = ["SignalQualityDecision", "evaluate_signal_quality"]
+__all__ = ["SignalQualityDecision", "evaluate_signal_quality", "score_floor_advisory"]

@@ -550,6 +550,11 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
 
 
 def _execution_status_line(signal: DictType[str, Any]) -> str:
+    if signal.get("score_floor_advisory") and not bool(signal.get("ml_recovery_mode")):
+        return (
+            "Execution: PAPER ONLY — passed the setup-evidence filter below the quality-score "
+            "floor, so live broker execution is disabled"
+        )
     if bool(signal.get("ml_recovery_mode")):
         if str(signal.get("ml_recovery_reason") or "") == "ml_advisory_mode":
             return (

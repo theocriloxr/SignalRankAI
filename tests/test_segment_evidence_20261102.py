@@ -169,3 +169,68 @@ def test_the_quality_gate_does_not_restore_the_ml_veto_in_advisory_mode():
     advisory_ok, advisory_reason = _production_quality_gate(candidate(ml_recovery_reason="ml_advisory_mode"))
     assert not recovery_ok and recovery_reason.startswith("quality_recovery_ml"), recovery_reason
     assert not advisory_reason.startswith(("quality_recovery_ml", "quality_ml")), advisory_reason
+
+
+def _scored_candidate(**extra):
+    return {"asset": "BTCUSDT", "timeframe": "1h", "direction": "long", "entry": 100.0, "stop_loss": 98.5,
+            "take_profit": [103.5, 104.5, 105.5], "score": 60.0, "ml_probability": 0.9, "confluence": 80,
+            "adx": 30.0, "strategy_name": "EMA Trend", **extra}
+
+
+def test_score_floors_record_but_do_not_veto_while_the_evidence_filter_decides(monkeypatch):
+    from core.signal_quality_gate import evaluate_signal_quality, score_floor_advisory
+    from engine.core import _evidence_filter_required, _production_quality_gate
+
+    monkeypatch.delenv("QUALITY_SCORE_GATE_MODE", raising=False)
+    monkeypatch.setenv("SEGMENT_QUARANTINE_ENABLED", "1")
+    monkeypatch.setenv("ML_GATE_MODE", "enforce")
+    assert score_floor_advisory() and _evidence_filter_required()
+    signal = _scored_candidate()
+    ok, reason = _production_quality_gate(signal)
+    assert not reason.startswith("quality_score"), reason
+    assert signal["score_floor_advisory"].startswith("quality_score 60.0")
+    assert "quality_score_below_minimum" not in evaluate_signal_quality(signal).reasons
+    # Live execution keeps the floor and refuses a signal that passed below it.
+    live = evaluate_signal_quality({**signal, "quality_gate_passed": True}, execution=True).reasons
+    assert "quality_score_below_minimum" in live and "score_floor_advisory_paper_only" in live
+
+
+def test_enforce_mode_or_a_disabled_evidence_filter_restores_the_score_veto(monkeypatch):
+    from core.signal_quality_gate import evaluate_signal_quality, score_floor_advisory
+    from engine.core import _production_quality_gate
+
+    for env in ({"QUALITY_SCORE_GATE_MODE": "enforce", "SEGMENT_QUARANTINE_ENABLED": "1"},
+                {"QUALITY_SCORE_GATE_MODE": "advisory", "SEGMENT_QUARANTINE_ENABLED": "0"}):
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        assert not score_floor_advisory(), env
+        ok, reason = _production_quality_gate(_scored_candidate())
+        assert not ok and reason.startswith("quality_score"), (env, reason)
+        assert "quality_score_below_minimum" in evaluate_signal_quality(_scored_candidate()).reasons
+
+
+def test_score_advisory_signals_say_paper_only():
+    from signalrank_telegram.tier_signal_formatter import _execution_status_line
+
+    line = _execution_status_line({"score_floor_advisory": "quality_score 60.0 < 82.0 (crypto)"})
+    assert "PAPER ONLY" in line and "quality-score floor" in line
+
+
+@pytest.mark.asyncio
+async def test_without_current_evidence_the_filter_blocks_while_the_score_floor_is_advisory(postgres_database, monkeypatch):  # noqa: F811
+    from sqlalchemy import text
+
+    from db.session import get_session
+    from engine.core import _segment_quarantine_gate
+
+    monkeypatch.setenv("ML_GATE_MODE", "enforce")
+    monkeypatch.delenv("QUALITY_SCORE_GATE_MODE", raising=False)
+    monkeypatch.delenv("SEGMENT_QUARANTINE_FAIL_CLOSED", raising=False)
+    async with get_session() as session:
+        await session.execute(text("DELETE FROM runtime_state WHERE key = :k"), {"k": se.SNAPSHOT_KEY})
+        await session.commit()
+    allowed, reason = await _segment_quarantine_gate(_signal())
+    assert not allowed and reason == "segment_evidence_unavailable"
+    monkeypatch.setenv("QUALITY_SCORE_GATE_MODE", "enforce")  # both vetoes back: the old fail-open applies
+    allowed, reason = await _segment_quarantine_gate(_signal())
+    assert allowed and reason == "segment_evidence_unavailable"

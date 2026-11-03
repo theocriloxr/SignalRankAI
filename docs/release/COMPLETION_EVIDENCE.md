@@ -32,6 +32,15 @@ Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`, then `6bfc285b` and `6c3
   - Those floors are hand-set constants in `engine/core.py::_production_quality_gate`. They were left unchanged: lowering them to raise signal counts is excluded, and replacing them is an owner decision.
   - Per-strategy 60-day TP1 rates (one setup per bar): ATR Breakout 47.7% (2,694), MACD 38.1%, RSI 37.4%, ADX Trend 34.8% (18,123), EMA Trend 34.2% (80,751). No strategy with more than 41 setups exceeds 48%.
 
+- **Score floors advisory (owner decision, 3 Nov: "Yes, make it advisory").**
+  - On production the quality score carried no information about reaching TP1: AUC 0.489 over 6,190 tracked candidates (`docs/release/evidence/continuation-20261102/score_floor_test.json`).
+  - With `QUALITY_SCORE_GATE_MODE` at its default `advisory`, the three score floors record `score_floor_advisory` on the signal instead of rejecting it. This holds only while the setup-evidence filter is enabled. The three floors are the production quality gate, the engine score gate and the canonical quality gate.
+  - The evidence filter then decides, and it blocks when its snapshot is missing.
+  - Live execution keeps the score floor, and it refuses any signal marked `score_floor_advisory`. The Telegram card says PAPER ONLY.
+  - `enforce` restores the veto, as does disabling the evidence filter.
+  - Stop width, reward/risk, confluence, AI and geometry checks are unchanged.
+  - Full Python suite with the change: 4509 passed, 4 failed (first run; then the two production-quality tests were pinned to QUALITY_SCORE_GATE_MODE=enforce and extended to the advisory default (12 pass), governance regenerated; 1 environmental isolated-metadata failure remains).
+
 - **Still open:**
   - corrupt historical R values in old outcomes;
   - `DEPLOYMENT_TELEGRAM_SEND_TEST=1` on the server (owner);

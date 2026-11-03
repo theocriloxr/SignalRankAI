@@ -1,5 +1,5 @@
 {
-  "count": 162,
+  "count": 163,
   "flags": [
     {
       "dangerous": false,
@@ -1100,6 +1100,14 @@
     {
       "dangerous": false,
       "name": "SCORE_SOFT_CAP_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "SEGMENT_QUARANTINE_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
