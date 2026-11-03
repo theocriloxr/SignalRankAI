@@ -7331,11 +7331,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 687,
+      "line_count": 691,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "fc4384add3bbdabc5db7d2ecd7ab7e87b7ef2930e051f47761a85f601baed239",
-      "size_bytes": 90333
+      "sha256": "506f9344748e8526559b75b32ea7906dc49192f3a079c16b5fb5fdf1e3d6bbac",
+      "size_bytes": 91175
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
