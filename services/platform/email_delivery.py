@@ -153,6 +153,19 @@ def _send_smtp(row: Mapping[str, Any]) -> None:
         client.send_message(message)
 
 
+# Rows left in 'sending' past the lease are retried while their link is still
+# valid (created_at + context.expires_minutes, default 15, with 2 minutes to
+# spare) and failed otherwise.
+_RECLAIM_STALE_SENDING_SQL = (
+    "UPDATE email_outbox SET "
+    "status=CASE WHEN created_at + ((CASE WHEN context->>'expires_minutes' ~ '^[0-9]{1,5}$' "
+    "THEN (context->>'expires_minutes')::int ELSE 15 END) * INTERVAL '1 minute') "
+    "> NOW() + INTERVAL '2 minutes' THEN 'retry' ELSE 'failed' END,"
+    "last_error='sending_lease_expired',next_attempt_at=NOW(),updated_at=NOW() "
+    "WHERE status='sending' AND updated_at < NOW() - (:lease * INTERVAL '1 second')"
+)
+
+
 async def deliver_email_outbox_batch(limit: int = 25) -> dict[str, int]:
     """Claim and deliver pending messages. Safe to call repeatedly from one worker."""
     if not is_db_configured():
@@ -160,7 +173,13 @@ async def deliver_email_outbox_batch(limit: int = 25) -> dict[str, int]:
     if not _smtp_configured():
         return {"claimed": 0, "sent": 0, "failed": 0, "deferred": 1}
 
+    lease_seconds = _sending_lease_seconds()
     async with get_session() as session:
+        # A claimed row stays 'sending' if the worker stops or the status update
+        # after SMTP fails (production 2 Nov: a magic_login and a verify_email
+        # sat in 'sending' for 16 h).  After the lease, retry it while its link
+        # is still valid; otherwise fail it so the user can request a new one.
+        await session.execute(text(_RECLAIM_STALE_SENDING_SQL), {"lease": lease_seconds})
         rows = (
             (
                 await session.execute(
@@ -193,17 +212,34 @@ async def deliver_email_outbox_batch(limit: int = 25) -> dict[str, int]:
             delay = min(3600, 30 * (2 ** min(attempts, 6)))
             failed += 1
             logger.warning("[email_outbox] delivery failed id=%s type=%s", row["email_id"], type(exc).__name__)
-        async with get_session() as session:
-            await session.execute(
-                text(
-                    "UPDATE email_outbox SET status=:status,last_error=:error,sent_at=CASE WHEN :status='sent' THEN NOW() ELSE sent_at END,"
-                    "next_attempt_at=CASE WHEN :delay>0 THEN NOW()+(:delay * INTERVAL '1 second') ELSE next_attempt_at END,updated_at=NOW() "
-                    "WHERE email_id=:email_id"
-                ),
-                {"status": status, "error": last_error, "delay": delay, "email_id": row["email_id"]},
-            )
-            await session.commit()
+        try:
+            await _record_delivery(row["email_id"], status, last_error, delay)
+        except Exception as exc:  # noqa: BLE001
+            # Keep delivering the rest of the batch; the sending lease recovers this row.
+            logger.warning("[email_outbox] status update failed id=%s status=%s type=%s",
+                           row["email_id"], status, type(exc).__name__)
     return {"claimed": len(rows), "sent": sent, "failed": failed, "deferred": 0}
+
+
+def _sending_lease_seconds() -> int:
+    try:
+        value = int(os.getenv("EMAIL_SENDING_LEASE_SECONDS", "300"))
+    except ValueError:
+        value = 300
+    return max(60, min(value, 86400))
+
+
+async def _record_delivery(email_id: Any, status: str, last_error: str | None, delay: int) -> None:
+    async with get_session() as session:
+        await session.execute(
+            text(
+                "UPDATE email_outbox SET status=:status,last_error=:error,sent_at=CASE WHEN :status='sent' THEN NOW() ELSE sent_at END,"
+                "next_attempt_at=CASE WHEN :delay>0 THEN NOW()+(:delay * INTERVAL '1 second') ELSE next_attempt_at END,updated_at=NOW() "
+                "WHERE email_id=:email_id"
+            ),
+            {"status": status, "error": last_error, "delay": delay, "email_id": email_id},
+        )
+        await session.commit()
 
 
 __all__ = ["QueuedEmail", "deliver_email_outbox_batch", "queue_account_email", "render_account_email"]
