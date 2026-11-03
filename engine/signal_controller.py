@@ -512,71 +512,126 @@ class SignalController:
                     needs_atr = False
 
             if needs_atr and asset:
-                from utils.async_runner import run_sync
-                from data.market_data import fetch_market_data
-                from engine.advanced_exit_manager import AdvancedExitManager
-
-                def _fetch():
-                    return fetch_market_data(asset, [tf])
-
-                try:
-                    md = run_sync(_fetch)
-                    tfdata = md.get(tf, {}) if md else {}
-                    indicators = tfdata.get("indicators") if tfdata else {}
-                    candles = tfdata.get("candles") if tfdata else None
-                    atr = None
-                    if indicators and isinstance(indicators, dict):
-                        # Prefer absolute ATR if provided
-                        atr = indicators.get("atr") or indicators.get("ATR") or indicators.get("atr_14")
-                    if atr is None and candles and isinstance(candles, list):
-                        # Fallback: approx ATR from highs/lows
-                        highs = [
-                            float(c.get("high") or (c[2] if isinstance(c, list) and len(c) > 2 else 0)) for c in candles
-                        ]
-                        lows = [
-                            float(c.get("low") or (c[3] if isinstance(c, list) and len(c) > 3 else 0)) for c in candles
-                        ]
-                        closes = [
-                            float(c.get("close") or (c[4] if isinstance(c, list) and len(c) > 4 else 0))
-                            for c in candles
-                        ]
-                        if len(highs) >= 5:
-                            import numpy as _np
-
-                            trs = []
-                            for i in range(1, len(closes)):
-                                tr = max(
-                                    highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])
-                                )
-                                trs.append(tr)
-                            if trs:
-                                atr = float(_np.mean(trs))
-
-                    if atr and entry_val is not None:
-                        adm = AdvancedExitManager()
-                        entry_f = float(entry_val)
-                        recent_low = min([float(c.get("low") or 0) for c in candles]) if candles else entry_f * 0.995
-                        recent_high = max([float(c.get("high") or 0) for c in candles]) if candles else entry_f * 1.005
-                        stops = adm.calculate_smart_stops(
-                            entry_f,
-                            float(atr),
-                            out.get("direction") or "long",
-                            entry_f,
-                            recent_low,
-                            recent_high,
-                            recent_low,
-                            recent_high,
-                        )
-                        out["stop_loss"] = stops.get("stop_loss")
-                        # set take_profit list using tp1,tp2,tp3
-                        out["take_profit"] = [stops.get("tp1"), stops.get("tp2"), stops.get("tp3")]
-                        out["rr_ratio"] = stops.get("rr_tp1") or out.get("rr_ratio")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                repaired = self._atr_repair_levels(out, asset, tf, min_sl_pct)
+                if repaired:
+                    out.update(repaired)
+                    self.audit_logger.info(
+                        "[atr_stop_repair] asset=%s tf=%s direction=%s entry=%s stop %s -> %s",
+                        asset, tf, out.get("direction"), out.get("entry"),
+                        repaired["atr_stop_repair"]["original_stop_loss"], repaired["stop_loss"],
+                    )
+        except Exception as exc:
+            self.audit_logger.debug("[atr_stop_repair] skipped: %s", type(exc).__name__)
 
         return out
+
+    def _atr_repair_levels(self, signal: Signal, asset: str, tf: str, min_sl_pct: float) -> Optional[Dict[str, Any]]:
+        """Rebuild a missing or degenerate stop and its targets from ATR.
+
+        Owner decision, 3 Nov 2026. This repair never ran before: it imported a
+        function that does not exist (data.market_data.fetch_market_data) and
+        passed a plain function to run_sync, so candidates with SL == entry
+        (ATR Breakout, e.g. 11.005/11.005, 342 rejections a day on LINKUSDT 1d)
+        reached validation unchanged and were rejected there.
+
+        - Called only when the stop is missing or closer than MIN_SL_PCT.
+        - Repairs only when the stop is missing, on the wrong side, or closer
+          than SIGNAL_ATR_REPAIR_MIN_ATR_FRACTION (0.25) of the asset's own
+          ATR(14); a tight but normal stop (FX, short timeframes) is kept.
+        - Levels follow AdvancedExitManager's rule on the real ATR (no 0.5 %
+          floor, which would widen FX stops to tens of pips): stop at the
+          tighter of recent structure +/- 0.5 ATR and 2 ATR; targets 2/3/5 ATR.
+        - The original levels are kept on the signal for audit.
+        SIGNAL_ATR_STOP_REPAIR_ENABLED=0 switches it off.
+        """
+        if str(os.getenv("SIGNAL_ATR_STOP_REPAIR_ENABLED", "1")).strip().lower() in {"0", "false", "no", "off"}:
+            return None
+        direction = str(signal.get("direction") or "").lower().strip()
+        if direction not in {"long", "short"}:
+            return None
+        try:
+            entry_f = float(signal.get("entry"))
+        except (TypeError, ValueError):
+            return None
+        if not (entry_f > 0):
+            return None
+        long_side = direction == "long"
+
+        from data.market_data import fetch_market_data_cached
+        from utils.async_runner import run_sync
+
+        try:
+            timeout = max(1.0, float(os.getenv("SIGNAL_ATR_REPAIR_TIMEOUT_SECONDS", "10") or 10))
+        except ValueError:
+            timeout = 10.0
+        md = run_sync(fetch_market_data_cached(asset, [tf]), timeout=timeout) or {}
+        tfdata = md.get(tf) or {}
+        highs: List[float] = []
+        lows: List[float] = []
+        closes: List[float] = []
+        for c in tfdata.get("candles") or []:
+            if not isinstance(c, dict):
+                continue
+            try:
+                h, l, cl = float(c.get("high")), float(c.get("low")), float(c.get("close"))
+            except (TypeError, ValueError):
+                continue
+            if h > 0 and l > 0 and cl > 0 and h >= l:
+                highs.append(h)
+                lows.append(l)
+                closes.append(cl)
+        period = 14
+        if len(closes) < period + 1:
+            return None
+        trs = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+               for i in range(len(closes) - period, len(closes))]
+        atr = sum(trs) / len(trs)
+        if not (atr > 0):
+            return None
+
+        try:
+            fraction = float(os.getenv("SIGNAL_ATR_REPAIR_MIN_ATR_FRACTION", "0.25") or 0.25)
+        except ValueError:
+            fraction = 0.25
+        raw_stop = signal.get("stop_loss")
+        try:
+            old_stop = float(raw_stop) if raw_stop is not None else None
+        except (TypeError, ValueError):
+            old_stop = None
+        if old_stop is not None and old_stop > 0:
+            wrong_side = (old_stop >= entry_f) if long_side else (old_stop <= entry_f)
+            if not wrong_side and abs(entry_f - old_stop) >= fraction * atr:
+                return None  # tight but normal for this asset
+
+        window = max(5, int(os.getenv("SIGNAL_ATR_REPAIR_STRUCTURE_BARS", "20") or 20))
+        recent_low = min(lows[-window:])
+        recent_high = max(highs[-window:])
+        if long_side:
+            stop = max(recent_low - 0.5 * atr, entry_f - 2 * atr)
+            targets = [entry_f + k * atr for k in (2, 3, 5)]
+        else:
+            stop = min(recent_high + 0.5 * atr, entry_f + 2 * atr)
+            targets = [entry_f - k * atr for k in (2, 3, 5)]
+        if stop <= 0 or (long_side and stop >= entry_f) or (not long_side and stop <= entry_f):
+            return None
+        if abs(entry_f - stop) < fraction * atr:
+            # Structure sits on top of the entry; fall back to 2 ATR.
+            stop = entry_f - 2 * atr if long_side else entry_f + 2 * atr
+        if stop <= 0 or any(t <= 0 for t in targets):
+            return None
+        risk = abs(entry_f - stop)
+        return {
+            "stop_loss": stop,
+            "take_profit": targets,
+            "rr_ratio": abs(targets[0] - entry_f) / risk,
+            "atr_stop_repaired": True,
+            "atr_stop_repair": {
+                "original_stop_loss": raw_stop,
+                "original_take_profit": signal.get("take_profit"),
+                "atr": round(float(atr), 10),
+                "timeframe": tf,
+            },
+        }
 
     def _dedupe(self, signals: List[Signal]) -> List[Signal]:
         seen: Set[Tuple[str, str, str]] = set()

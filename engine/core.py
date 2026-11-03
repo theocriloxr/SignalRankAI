@@ -2694,6 +2694,24 @@ def load_tradable_assets() -> List[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def _empty_batch_sleep_seconds(cycle_sleep_seconds: float) -> float:
+    """Pause after a batch with no candidates.
+
+    ENGINE_EMPTY_CYCLE_SLEEP_SECONDS (default 5, bounded 1..cycle sleep). Batches
+    hold CYCLE_BATCH_SIZE assets, so the full cycle sleep after every empty batch
+    would stretch a whole round several times over; set it equal to
+    ENGINE_CYCLE_SLEEP_SECONDS to wait the full interval.
+    """
+    full = max(5.0, float(cycle_sleep_seconds or 0))
+    try:
+        value = float(os.getenv("ENGINE_EMPTY_CYCLE_SLEEP_SECONDS", "5") or 5)
+    except ValueError:
+        value = 5.0
+    if not math.isfinite(value):
+        value = 5.0
+    return max(1.0, min(value, full))
+
+
 def main_loop(DRY_RUN: bool = False):
     start_outage_alert_job()
 
@@ -5934,6 +5952,10 @@ def main_loop(DRY_RUN: bool = False):
             _cycle_queue.mark_done(assets, signals_generated=0)
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 logger.info(f"[engine] batch_complete {_cycle_queue.round_progress} signals_this_batch=0 dispatched=0")
+            # A batch without candidates used to start the next one at once, so
+            # with providers failing fast the engine scanned every few seconds
+            # (owner decision, 3 Nov 2026). Pause before the next batch.
+            time.sleep(_empty_batch_sleep_seconds(cycle_sleep_seconds))
             continue
 
         try:
