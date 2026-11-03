@@ -1212,7 +1212,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:62",
-        "data/fetcher.py:2361",
+        "data/fetcher.py:2383",
         "data/providers.py:1082",
         "data/providers.py:966",
         "data/startup_selfcheck.py:137"
@@ -1799,7 +1799,7 @@
       "read_locations": [
         "db/pg_features.py:4155",
         "db/pg_features.py:4204",
-        "services/platform/signal_delivery.py:255"
+        "services/platform/signal_delivery.py:256"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2575,7 +2575,7 @@
       "name": "CANDLE_CACHE_PRUNE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:487"
+        "data/fetcher.py:509"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2585,7 +2585,7 @@
       "name": "CANDLE_FORWARD_FILL_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:494"
+        "data/fetcher.py:516"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2595,7 +2595,7 @@
       "name": "CANDLE_REQUEST_CACHE_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1065"
+        "data/fetcher.py:1087"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2855,7 +2855,7 @@
       "name": "CONFLUENCE_MODERATE_RATIO",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:1301"
+        "signalrank_telegram/formatter.py:1314"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2865,7 +2865,7 @@
       "name": "CONFLUENCE_STRONG_RATIO",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:1300"
+        "signalrank_telegram/formatter.py:1313"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2875,8 +2875,8 @@
       "name": "CONFLUENCE_TOTAL",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:103",
-        "signalrank_telegram/formatter.py:229"
+        "signalrank_telegram/formatter.py:112",
+        "signalrank_telegram/formatter.py:238"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3213,7 +3213,7 @@
         "data/connectors/cryptocompare_adapter.py:106",
         "data/connectors/cryptocompare_adapter.py:32",
         "data/cryptocompare_ws.py:69",
-        "data/fetcher.py:2137",
+        "data/fetcher.py:2159",
         "data/get_live_price.py:255",
         "data/get_live_price.py:588",
         "data/pair_discovery.py:388",
@@ -3247,7 +3247,7 @@
       "name": "CRYPTO_DATA_PROVIDER",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2231",
+        "data/fetcher.py:2253",
         "data/pair_discovery.py:1271",
         "data/pair_discovery.py:353",
         "data/pair_discovery.py:805",
@@ -4222,7 +4222,7 @@
       "name": "DEGRADED_MODE_MIN_CANDLES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:777"
+        "data/fetcher.py:799"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6690,7 +6690,7 @@
       "name": "INDEX_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1914"
+        "data/fetcher.py:1936"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6700,7 +6700,7 @@
       "name": "INDEX_DAILY_BREAK_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1934"
+        "data/fetcher.py:1956"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6730,7 +6730,7 @@
       "name": "INDEX_MARKET_MODE",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1904",
+        "data/fetcher.py:1926",
         "data/market_hours.py:266"
       ],
       "required_by_code": true,
@@ -6741,7 +6741,7 @@
       "name": "INDEX_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1913"
+        "data/fetcher.py:1935"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7009,7 +7009,7 @@
       "name": "LIVE_EXECUTION_REQUIRES_CALIBRATED_ML",
       "production_example_default": null,
       "read_locations": [
-        "core/signal_quality_gate.py:121"
+        "core/signal_quality_gate.py:130"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7306,7 +7306,7 @@
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2752"
+        "data/fetcher.py:2776"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8412,7 +8412,7 @@
       "name": "ML_RECOVERY_DELIVERY_AUDIENCE",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/tier_delivery.py:39"
+        "signalrank_telegram/tier_delivery.py:43"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9268,7 +9268,7 @@
       "name": "OHLC_INFLIGHT_WAIT_TIMEOUT_SECONDS",
       "production_example_default": "25",
       "read_locations": [
-        "data/fetcher.py:449"
+        "data/fetcher.py:471"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11929,7 +11929,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:510"
+        "data/fetcher.py:532"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11939,7 +11939,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_OPTIONAL",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:541"
+        "data/fetcher.py:563"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11949,7 +11949,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:518"
+        "data/fetcher.py:540"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11959,7 +11959,7 @@
       "name": "PROVIDER_OUTAGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:502"
+        "data/fetcher.py:524"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11969,7 +11969,7 @@
       "name": "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:533"
+        "data/fetcher.py:555"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13522,7 +13522,7 @@
         "engine/risk.py:676",
         "engine/risk.py:800",
         "engine/risk_manager.py:18",
-        "signalrank_telegram/formatter.py:63"
+        "signalrank_telegram/formatter.py:72"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13532,7 +13532,7 @@
       "name": "RISK_SUGGESTION_BASE_MULT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:76"
+        "signalrank_telegram/formatter.py:85"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13542,7 +13542,7 @@
       "name": "RISK_SUGGESTION_MODERATE_MULT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:74"
+        "signalrank_telegram/formatter.py:83"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13552,7 +13552,7 @@
       "name": "RISK_SUGGESTION_STRONG_MULT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/formatter.py:72"
+        "signalrank_telegram/formatter.py:81"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14126,7 +14126,7 @@
       "name": "SIGNAL_ATR_REPAIR_MIN_ATR_FRACTION",
       "production_example_default": null,
       "read_locations": [
-        "engine/signal_controller.py:593"
+        "core/atr_levels.py:21"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14136,7 +14136,7 @@
       "name": "SIGNAL_ATR_REPAIR_STRUCTURE_BARS",
       "production_example_default": null,
       "read_locations": [
-        "engine/signal_controller.py:606"
+        "core/atr_levels.py:28"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14146,7 +14146,7 @@
       "name": "SIGNAL_ATR_REPAIR_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/signal_controller.py:564"
+        "engine/signal_controller.py:563"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14821,8 +14821,8 @@
       "name": "STOCK_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1914",
-        "data/fetcher.py:1991"
+        "data/fetcher.py:1936",
+        "data/fetcher.py:2013"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14852,8 +14852,8 @@
       "name": "STOCK_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1913",
-        "data/fetcher.py:1990"
+        "data/fetcher.py:1935",
+        "data/fetcher.py:2012"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15036,7 +15036,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:37",
-        "data/fetcher.py:2038",
+        "data/fetcher.py:2060",
         "engine/admin_pulse.py:762",
         "engine/admin_pulse.py:924",
         "engine/core.py:1850",
@@ -16448,7 +16448,7 @@
       "name": "WEB_SIGNAL_FANOUT_DB_WAIT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/signal_delivery.py:191"
+        "services/platform/signal_delivery.py:192"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16458,7 +16458,7 @@
       "name": "WEB_SIGNAL_FANOUT_LOOKBACK_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/signal_delivery.py:176"
+        "services/platform/signal_delivery.py:177"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16468,7 +16468,7 @@
       "name": "WEB_SIGNAL_FANOUT_SIGNAL_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/signal_delivery.py:181"
+        "services/platform/signal_delivery.py:182"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16478,7 +16478,7 @@
       "name": "WEB_SIGNAL_FANOUT_USER_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/signal_delivery.py:231"
+        "services/platform/signal_delivery.py:232"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16488,7 +16488,7 @@
       "name": "WEB_SIGNAL_FINAL_QUOTE_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/signal_delivery.py:329"
+        "services/platform/signal_delivery.py:330"
       ],
       "required_by_code": true,
       "sensitive": false

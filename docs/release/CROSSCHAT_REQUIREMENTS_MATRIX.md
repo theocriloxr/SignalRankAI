@@ -26933,10 +26933,10 @@ Rows: 26956. Reviewed dispositions: 13. Unresolved applicability/acceptance: 269
 | SR-STRATEGY_CALLABLE-d772ee7905d98b81 | strategies/trend.py:80  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-a418c39c8de29d0c | strategies/trend.py:140  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-b5f319148840cf73 | strategies/trend.py:202  | INCOMPLETE |
-| SR-STRATEGY_CALLABLE-07c422c4855341ed | strategies/volatility.py:10  | INCOMPLETE |
-| SR-STRATEGY_CALLABLE-557a10fb0cc03632 | strategies/volatility.py:46  | INCOMPLETE |
-| SR-STRATEGY_CALLABLE-9a40d13070e350f1 | strategies/volatility.py:67  | INCOMPLETE |
-| SR-STRATEGY_CALLABLE-28ccc8cab71e765a | strategies/volatility.py:88  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-07c422c4855341ed | strategies/volatility.py:40  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-557a10fb0cc03632 | strategies/volatility.py:77  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-9a40d13070e350f1 | strategies/volatility.py:99  | INCOMPLETE |
+| SR-STRATEGY_CALLABLE-28ccc8cab71e765a | strategies/volatility.py:121  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-632150c4dc6f1da6 | strategies/zone_rejection.py:51  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-e30e191b0af3d015 | strategies/zone_rejection.py:64  | INCOMPLETE |
 | SR-STRATEGY_CALLABLE-18cab7bf522ca8ef | strategies/zone_rejection.py:72  | INCOMPLETE |

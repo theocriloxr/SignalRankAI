@@ -1,5 +1,40 @@
 # SignalRankAI master execution contract
 
+## Continuation, 3 November 2026 (evening) — advisory signals reach subscribers, volatility stops, index provider attempts (desktop session)
+
+Parent `f7fd8a17`. Production evidence was read with read-only SQL and log greps over SSH on 3 Nov, 18:00–19:30 UTC.
+
+- **Why the two 3 Nov signals were never delivered.** HYPEUSDT 1h short (`6c39bd86`, score 62.8) and BTCUSDT 5m long (`b0f857a4`, score 65.0) are both `ml_advisory_mode`, and neither has a `signal_deliveries` row. Reproduced end to end on PostgreSQL with `dispatch_signals_async`, three filters refused them before anything was reserved:
+  - `recovery_delivery_allowed` limits every `ml_recovery_mode` signal to owner/admin unless `ML_RECOVERY_DELIVERY_AUDIENCE=all`, which is not set on production;
+  - every tier minimum score (80 for Free/Premium/VIP) refused them;
+  - the profile floor (`USER_PROFILE_BASE_MIN_SIGNAL_SCORE` 75 plus the risk boost) and the opportunity ranker's technical floor (`PERSONALIZED_BASE_MIN_SCORE` 75) dropped them as well.
+- **Fix.** `core.signal_quality_gate.meets_tier_score` follows `QUALITY_SCORE_GATE_MODE`.
+  - In the default advisory mode, these system score floors record but do not refuse. This covers the tier manager, both formatters, delivery authorization, the web fan-out, the profile floor and the ranker.
+  - A minimum score a user chose themselves still applies.
+  - ML-advisory signals reach every tier. Starvation-recovery signals stay owner/admin only.
+  - A Premium or VIP card below the tier minimum says PAPER ONLY.
+  - Live execution still refuses these signals, as before. `enforce` restores every floor.
+  - Tests: `tests/test_advisory_signal_delivery_20261103.py` (4). The real dispatch path reserves and sends an advisory signal with score 63 marked PAPER ONLY; with `enforce`, a signal scoring 79 is not sent. The tier-gate tests in `tests/test_single_service_defaults.py` now pin `enforce`, plus one new test for the advisory default.
+- **Volatility strategies (`strategies/volatility.py`).** ATR Breakout, BB Width Volatility and Keltner Volatility put the stop at the bar's low, so a bar closing at its low gave entry == stop.
+  - The ATR repair's level rule now lives in `core/atr_levels.py` and is shared by the strategies and `SignalController._atr_repair_levels`, with unchanged repair behaviour.
+  - The strategies apply it at the source when the low is missing, on the wrong side, or within 0.25 ATR of entry. Normal levels (low stop, 2R target) are unchanged, and no levels are emitted without an ATR.
+  - Tests: `tests/test_volatility_strategy_levels_20261103.py` (8); the 8 repair tests still pass.
+- **ADX Trend wide stops are not a level bug.** 3,011 of 3,028 `SL too wide` ADX Trend rejections in 24 h are on **1d** (median 9.7%, LTC/SUI/AVAX/LINK). The daily ATR is 4–6%, so a 2 ATR stop is 8–12%, and validation refuses anything over 8% for crypto. The levels were left as they are; the options are for the owner.
+- **Indices (`data/fetcher.py`).**
+  - On production, `INDEX_MARKET_DATA_PROVIDERS=fmp,twelvedata,polygon,alphavantage,yfinance` sets a strict order. FMP and Alpha Vantage have no index candle connector, which leaves twelvedata → polygon → yfinance.
+  - Only 2 attempts are allowed per timeframe, and they went to Twelve Data (in rate-limit cooldown) and Polygon. Polygon was tried even for the seven indices it is mapped to `None` for, so yfinance, the configured preferred index provider, was never tried.
+  - Now a provider with no symbol for the asset does not use an attempt, in the async and sync paths. GER40, UK100, JP225, FRA40, EU50, AUS200 and HK50 now reach yfinance; yfinance is installed on production and returns 200-candle series for other assets there.
+  - US500, NAS100 and US30 have real Polygon symbols (`I:SPX` etc.), which need a Polygon indices plan.
+  - **Server env needed (owner or server session):** `INDEX_MARKET_DATA_PROVIDERS=yfinance,twelvedata,polygon`, and `INDEX_TIMEFRAMES=5m,15m,1h,4h,1d` (it is unset, so indices fall back to the global list, which includes 1m).
+  - Tests: `tests/test_index_provider_attempts_20261103.py` (9).
+- **Setup evidence after the re-labelling (snapshot computed 18:32 UTC, 95 setups).**
+  - At the published plan (TP1 close 0.5), the setups whose lower bound is highest are: ATR Breakout 1m long (1,295, lower bound 48.9%) and 4h long (117, 48.8%); MACD Momentum 5m long (112, 44.9%); ADX Trend 1m short (3,296, 43.5%); EMA Trend 1m short (20,104, 43.3%) and long (18,513, 41.9%). Each passes when its TP1 reward/risk exceeds 2.1–2.8.
+  - Recent candidates are mostly EMA/ADX Trend on 5m–4h, at lower bounds of 20–31% against break-evens of 35–42%. Examples: EMA Trend 15m short 2,361/10,917; ADX Trend 15m short 647/2,173. These are mostly WTI, BRENT, XAU and XAG, which the 3 Nov report also found losing.
+  - No signal has been issued since 10:13 UTC: in the 30 minutes read, 55 candidates passed the advisory ML step, and stop width, confluence and the evidence filter refused them all.
+  - Labels from the last 6 h: sl 26,476, tp3 3,685, tp1 553, ambiguous 87, tp2 0. Rows labelled before `974e99a9` keep the TP3-before-SL bias until they leave the 60-day window, which understates TP1 rates for most setups.
+  - Proposals for the owner, nothing changed: re-label recent rows with the new rule, or count only rows labelled after `974e99a9`. Thresholds, confidence level, gate modes and scorecard mode/bounds are unchanged.
+- **Tests (Windows 11, Python 3.13.7, PostgreSQL 17 migrated empty → 0058; not CI, staging or production):** full suite 4565 passed, 1 failed (the 1 failure is environmental: isolated python -I cannot import the user-site alembic).
+
 ## Continuation, 2 November 2026 — evidence-based setup filter, ML advisory, protected exits, performance page (owner request)
 
 Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`, then `6bfc285b` and `6c357aa5` after the first production observation. The owner approved pushing them to `feat/frontend-rebuild-and-stage1-hardening` ("Yes, push and watch"); that branch deploys to the self-hosted production server.

@@ -447,5 +447,25 @@
         "result": "first run; then the two production-quality tests were pinned to QUALITY_SCORE_GATE_MODE=enforce and extended to the advisory default (12 pass), governance regenerated; 1 environmental isolated-metadata failure remains"
       }
     }
+  },
+  "continuation_20261103_evening": {
+    "parent": "f7fd8a17",
+    "advisory_delivery": "ML-advisory and below-tier-floor signals delivered to every tier marked PAPER ONLY while QUALITY_SCORE_GATE_MODE=advisory; refused for live execution",
+    "undelivered_signals_explained": [
+      "6c39bd86 HYPEUSDT 1h short 62.8",
+      "b0f857a4 BTCUSDT 5m long 65.0"
+    ],
+    "volatility_levels": "core/atr_levels.py shared by ATR Breakout, BB Width, Keltner and the engine repair",
+    "index_provider_attempts": "providers mapped to None for an asset are skipped before the attempt budget",
+    "server_env_proposed": {
+      "INDEX_MARKET_DATA_PROVIDERS": "yfinance,twelvedata,polygon",
+      "INDEX_TIMEFRAMES": "5m,15m,1h,4h,1d"
+    },
+    "python_suite": {
+      "passed": "4565",
+      "failed": "1",
+      "result": "the 1 failure is environmental: isolated python -I cannot import the user-site alembic",
+      "scope": "Windows 11, Python 3.13.7, PostgreSQL 17 migrated empty to 0058; not CI, staging or production"
+    }
   }
 }
