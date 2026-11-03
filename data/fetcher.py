@@ -302,12 +302,34 @@ def _max_provider_attempts(asset_kind: str | None = None) -> int:
     return _env_positive_int(env_name, global_limit)
 
 
-def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_kind: str = "", timeframe: str = "") -> list[tuple[str, object]]:
+def _provider_supports_symbol(provider_name: str, asset: str) -> bool:
+    """False only when the asset map says this provider has no symbol for the asset.
+
+    Production, 3 Nov 2026: every index reported no candles. Polygon is mapped
+    to None for seven of the ten indices, yet it took one of the two attempts
+    per timeframe, so yfinance (the configured preferred index provider) was
+    never reached.
+    """
+    if not asset:
+        return True
+    alias = _provider_alias(provider_name)
+    alias = {"yahoo": "yfinance"}.get(alias, alias)
+    try:
+        from services.asset_mapper import _ALL_MAPS, canonicalize_symbol
+
+        entry = _ALL_MAPS.get(canonicalize_symbol(asset)) or {}
+    except Exception:
+        return True
+    return not (alias in entry and entry[alias] is None)
+
+
+def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_kind: str = "", timeframe: str = "", asset: str = "") -> list[tuple[str, object]]:
     from data.connector_registry import provider_order_env_name
 
     env_name = provider_order_env_name(asset_kind)
     strict_order = bool(env_name and (os.getenv(env_name) or "").strip())
     candidates = [item for item in providers if not timeframe or _provider_timeframe_eligible(item[0], timeframe)]
+    candidates = [item for item in candidates if _provider_supports_symbol(item[0], asset)]
     healthy = candidates if strict_order else [item for item in candidates if provider_is_healthy(item[0])]
     degraded = [] if strict_order else [item for item in candidates if not provider_is_healthy(item[0])]
     ordered: list[tuple[str, object]] = []
@@ -373,7 +395,7 @@ def _try_provider_chain(
     asset_kind: str,
 ) -> list:
     attempted: list[str] = []
-    for provider_name, fetch_func in _ordered_provider_candidates(providers, asset_kind=asset_kind, timeframe=timeframe):
+    for provider_name, fetch_func in _ordered_provider_candidates(providers, asset_kind=asset_kind, timeframe=timeframe, asset=asset):
         attempted.append(str(provider_name))
         try:
             candles, latency_ms = _run_provider_request(
@@ -2732,6 +2754,8 @@ async def async_get_candles(asset, timeframe):
         # Apply endpoint/timeframe capability before the attempt budget so an
         # analysis-only daily provider never consumes an intraday attempt.
         ordered_provs = [p for p in ordered_provs if _provider_timeframe_eligible(p[0], timeframe)]
+        # A provider with no symbol for this asset must not use up an attempt either.
+        ordered_provs = [p for p in ordered_provs if _provider_supports_symbol(p[0], asset)]
         ordered_provs = ordered_provs[: _max_provider_attempts(asset_type)]
 
         if str(asset_type or "").lower().strip() == "crypto":
