@@ -2050,6 +2050,10 @@ async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -
     return {"total": total, "top_assets": top_assets, "top_strategies": top_strategies}
 
 
+# Terminal statuses where no position was opened: never book an R-multiple.
+_NO_TRADE_OUTCOME_STATUSES = frozenset({"missed_entry", "missed", "expired"})
+
+
 async def upsert_outcome(
     session: AsyncSession,
     signal_id: str,
@@ -2127,11 +2131,12 @@ async def upsert_outcome(
     changed = False
 
     if oc is None:
+        no_trade = status_l in _NO_TRADE_OUTCOME_STATUSES
         oc = Outcome(
             signal_id=signal_id_str,
             status=status_l,
-            r_multiple=float(r_multiple) if r_multiple is not None else None,
-            percent=float(percent) if percent is not None else None,
+            r_multiple=float(r_multiple) if r_multiple is not None and not no_trade else None,
+            percent=float(percent) if percent is not None and not no_trade else None,
             opened_at=opened_at,
             closed_at=(closed_at or now) if incoming_terminal else closed_at,
             canonical_outcome=str(canonical_outcome).lower()[:16] if canonical_outcome is not None else None,
@@ -2173,6 +2178,12 @@ async def upsert_outcome(
             oc.r_multiple = float(r_multiple)
         if percent is not None:
             oc.percent = float(percent)
+        if status_l in _NO_TRADE_OUTCOME_STATUSES:
+            # No position was opened. A pending projection may already carry a
+            # provisional R (production 2 Nov: BCHUSDT missed_entry kept -1R and
+            # counted as an eligible loss), so clear it instead of keeping it.
+            oc.r_multiple = None
+            oc.percent = None
         if canonical_outcome is not None:
             oc.canonical_outcome = str(canonical_outcome).lower()[:16]
         if vip_fill_outcome is not None:

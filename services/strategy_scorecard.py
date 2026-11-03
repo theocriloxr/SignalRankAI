@@ -410,6 +410,8 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
                     FROM signals s JOIN outcomes o ON o.signal_id = s.signal_id
                     WHERE s.created_at >= :cutoff AND o.r_multiple IS NOT NULL AND o.closed_at IS NOT NULL
                       AND o.performance_inclusion_status = 'eligible'
+                      AND lower(COALESCE(o.status, '')) NOT IN ('missed_entry', 'missed', 'expired')
+                      AND lower(COALESCE(o.canonical_outcome, '')) NOT IN ('missed_entry', 'missed', 'expired')
                     """
                 ),
                 {"cutoff": cutoff},
