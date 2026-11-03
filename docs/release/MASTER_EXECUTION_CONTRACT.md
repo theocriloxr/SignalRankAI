@@ -1,5 +1,38 @@
 # SignalRankAI master execution contract
 
+## Continuation, 3 November 2026 (night) — the truth on every card and in every results view, forex providers, owner steps (desktop session)
+
+Owner: "let it still send signals even when it is not yet on a minimum of 82% win rate, I just want that to be the truth not a brag", plus a full check that every figure matches the database.
+
+- **There is no 82 % gate.** The evidence filter only refuses a setup whose measured TP1 rate (lower bound) is below its own break-even. That is unchanged.
+  - Shadow labels written after `e196aacc` were checked on production. 3,587 of 17,733 setups reached their first target (20 %).
+  - Many candidates carry a single target that the label names `tp3`, which is why `tp2` never appears; wins are still counted as TP1-or-better.
+  - Those setups do lose, so the filter is right to hold them.
+- **The real record on every signal.** Premium and VIP cards now carry, for example: "Setup record (60 days): 663 of 1,295 similar setups reached TP1 (51 %). This plan breaks even at 41 %." It is shown whatever the numbers are.
+  - Signals delivered from the database get the record from the current snapshot (`segment_evidence.attach_records`). Without current evidence nothing is shown.
+  - The web signal detail returns the same record as `setup_record`.
+- **Figures that were not true, removed or corrected:**
+  - "TP1 33 % / TP2 33 % / TP3 34 %" (or 50/50) on cards now shows the published exit plan from `planned_exit_fractions()`: 50 % / 25 % / runner.
+  - "Trade Health %" and "TP1 by 24h %" are no longer shown: they were weighted heuristics with assumed defaults (60/55) for missing inputs.
+  - "Expected Profit / Expected Loss" are renamed "Move to final target / Move to stop": they are price distances, not expectations.
+  - "Signal Quality Score" now reads "Engine score … (ranks setups; not a chance of winning)", and the "high-conviction / strong setup" wording is gone: the score did not predict TP1 (AUC 0.489).
+- **One source for a user's results.**
+  - `/stats` and `/mystats` counted any `tp*` as a win over all outcome rows (open, missed and expired included), ignored the audited ledger exclusions (0058) and could count a signal twice.
+  - The website, `/stats` and `/mystats` now read `services.performance_ledger.ledger_summary`: win rate is TP3 vs SL, as in `/performance`; partial wins and breakevens are listed separately; excluded rows stay out.
+  - `/mystats` keeps broker executions and broker P&L as broker figures.
+- **Forex data.**
+  - Every forex fetch spent both attempts on Twelve Data (in cooldown, 524 in 30 min) and Tiingo (HTTP 429, 340), so yfinance, the configured preferred provider, never ran.
+  - A provider in a recorded rate-limit cooldown no longer uses an attempt.
+  - Tiingo now records a 15-minute cooldown on 429 (`TIINGO_RATE_LIMIT_COOLDOWN_SECONDS`), for its hourly quota.
+- **Indices.** After the owner set `INDEX_MARKET_DATA_PROVIDERS=yfinance,twelvedata,polygon` and `INDEX_TIMEFRAMES=5m,15m,1h,4h,24h`, US500 and NAS100 received yfinance candles on every timeframe at 19:47 UTC, and indices are no longer scanned on 1m.
+- **Owner-only steps** are in `docs/operations/OWNER_STEPS_20261103.md`:
+  - `DEPLOYMENT_TELEGRAM_SEND_TEST=0` on the bot (this session may not write to the server);
+  - the OpenAI key;
+  - Paystack payment channels, live key and webhook URL.
+- **NATA** has its own session and repository (`theocriloxr/NATA-Lagos-Production`), with a fix-and-audit brief.
+- **Tests:** `tests/test_setup_record_display_20261103.py` (6) and `tests/test_results_consistency_20261103.py` (1), the latter on real PostgreSQL; the cooldown tests are in `tests/test_index_provider_attempts_20261103.py` (11 in total).
+  - Full suite (Windows 11, Python 3.13.7, PostgreSQL 17 migrated empty → 0058): 4,573 passed, 2 failed (the environmental isolated-metadata test, and governance freshness, regenerated in this commit).
+
 ## Continuation, 3 November 2026 (evening) — advisory signals reach subscribers, volatility stops, index provider attempts (desktop session)
 
 Parent `f7fd8a17`. Production evidence was read with read-only SQL and log greps over SSH on 3 Nov, 18:00–19:30 UTC.
