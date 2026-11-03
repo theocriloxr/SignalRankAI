@@ -56,6 +56,15 @@ def score_floor_advisory() -> bool:
     return str(os.getenv("SEGMENT_QUARANTINE_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def meets_tier_score(score: Any, minimum: Any) -> bool:
+    """Tier minimum score for delivery; a floor that only records while score_floor_advisory().
+
+    Signals that pass this way below the minimum are delivered marked PAPER
+    ONLY and are refused for live execution (evaluate_signal_quality).
+    """
+    return _float(score) >= _float(minimum) or score_floor_advisory()
+
+
 @dataclass(frozen=True, slots=True)
 class SignalQualityDecision:
     ok: bool
@@ -142,4 +151,4 @@ def evaluate_signal_quality(signal: Mapping[str, Any], *, execution: bool = Fals
     )
 
 
-__all__ = ["SignalQualityDecision", "evaluate_signal_quality", "score_floor_advisory"]
+__all__ = ["SignalQualityDecision", "evaluate_signal_quality", "meets_tier_score", "score_floor_advisory"]

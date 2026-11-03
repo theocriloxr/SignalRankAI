@@ -41,17 +41,26 @@ def _get_user_tier(user_tier: str | None) -> str:
 		return TIER_PREMIUM
 	return TIER_FREE
 
-def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
-	"""Check if signal should be sent to this tier based on quality."""
+def _tier_min_score(user_tier: str) -> float | None:
+	"""Tier minimum score; None for owner/admin."""
 	raw_tier = str(user_tier or "free").lower().strip()
 	if raw_tier in {TIER_ADMIN, TIER_OWNER}:
-		return True
+		return None
 	tier = _get_user_tier(user_tier)
 	try:
-		min_score = float(TIER_SCORE_THRESHOLDS.get(tier, 70) or 70)
+		return float(TIER_SCORE_THRESHOLDS.get(tier, 70) or 70)
 	except Exception:
-		min_score = 70.0
-	return float(score or 0) >= min_score
+		return 70.0
+
+
+def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
+	"""Check if signal should be sent to this tier based on quality."""
+	min_score = _tier_min_score(user_tier)
+	if min_score is None:
+		return True
+	from core.signal_quality_gate import meets_tier_score
+
+	return meets_tier_score(score, min_score)
 
 def _risk_suggestion(score: float | int | None) -> str:
 	try:
@@ -645,6 +654,10 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	score = resolve_score_percent(signal) or 0.0
 	if not _should_send_signal_for_tier(actual_tier, score):
 		return None
+	min_score = _tier_min_score(actual_tier)
+	if min_score is not None and score < min_score and not (signal or {}).get("score_floor_advisory"):
+		# Delivered below the tier floor because the floor is advisory: the card says PAPER ONLY.
+		signal = {**(signal or {}), "score_floor_advisory": f"score {score:.1f} < {min_score:.1f} (tier minimum)"}
 	from core.signal_identity import SIGNAL_ID_LABEL, signal_id_line
 
 	def _with_signal_id(value):

@@ -121,9 +121,22 @@ class TestTierGatedDistribution(unittest.TestCase):
     "At least one deterministic test proves tier-gated distribution behavior."
     """
 
+    def setUp(self):
+        # These cases cover the gate when it vetoes; the advisory default
+        # (owner decision, 3 Nov) is covered by test_advisory_floor_records_but_delivers.
+        env = patch.dict(os.environ, {"QUALITY_SCORE_GATE_MODE": "enforce"})
+        env.start()
+        self.addCleanup(env.stop)
+
     def _make_manager(self):
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         return TierDeliveryManager()
+
+    def test_advisory_floor_records_but_delivers(self):
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
+        with patch.dict(os.environ, {"QUALITY_SCORE_GATE_MODE": "advisory", "SEGMENT_QUARANTINE_ENABLED": "1"}):
+            threshold = float(TIER_SCORE_THRESHOLDS.get("vip", 80))
+            self.assertTrue(self._make_manager().should_send_signal("vip", threshold - 1.0))
 
     # ── free tier ────────────────────────────────────────────────────────────
 

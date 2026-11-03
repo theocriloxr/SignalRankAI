@@ -78,7 +78,9 @@ async def authorize_signal_delivery(
     policy = get_entitlements(tier)
     payload = dict(signal or {})
     score = float(payload.get("score") or 0.0)
-    if payload and score < float(policy.minimum_signal_score):
+    from core.signal_quality_gate import meets_tier_score
+
+    if payload and not meets_tier_score(score, policy.minimum_signal_score):
         return DeliveryAuthorization(False, "SCORE_BELOW_TIER_MINIMUM", tier)
     asset_class = str(payload.get("asset_class") or "").strip().lower()
     if asset_class and asset_class not in set(policy.allowed_asset_classes):

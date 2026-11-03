@@ -17,6 +17,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import func, select, text
 
+from core.signal_quality_gate import meets_tier_score
 from core.tier_policy import get_entitlements
 from db.models import Signal, User
 from db.session import get_session
@@ -357,7 +358,7 @@ async def deliver_recent_web_signals() -> dict[str, int]:
             if math.isfinite(daily_limit) and delivered_today >= int(daily_limit):
                 counters["blocked_quota"] += 1
                 continue
-            if float(signal.get("score") or 0.0) < float(user["minimum_signal_score"]):
+            if not meets_tier_score(signal.get("score"), user["minimum_signal_score"]):
                 counters["blocked_quality"] += 1
                 continue
             if symbol in set(user["locked_assets"]):

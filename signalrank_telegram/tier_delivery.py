@@ -36,6 +36,10 @@ def recovery_delivery_allowed(
     """
     if not bool((signal or {}).get("ml_recovery_mode")):
         return True
+    if str((signal or {}).get("ml_recovery_reason") or "") == "ml_advisory_mode":
+        # Owner decision (2 Nov): with the ML model advisory these are the normal
+        # signal flow, delivered to every tier marked PAPER ONLY.
+        return True
     mode = str(os.getenv("ML_RECOVERY_DELIVERY_AUDIENCE") or "owner_admin").strip().lower()
     if mode in {"all", "public"}:
         return True
@@ -110,9 +114,11 @@ class TierDeliveryManager:
         history so runtime memory usage stays low on constrained hosts.
         """
         import logging
+        from core.signal_quality_gate import meets_tier_score
+
         policy = get_entitlements(user_tier)
         min_score = policy.minimum_signal_score
-        if score < min_score:
+        if not meets_tier_score(score, min_score):
             if user_id is not None:
                 logging.debug(f"[delivery] User {user_id} ({policy.tier.value}) score {score} < {min_score}, not eligible.")
             return False
@@ -122,9 +128,11 @@ class TierDeliveryManager:
     async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
         """Async variant of should_send_signal for async contexts."""
         import logging
+        from core.signal_quality_gate import meets_tier_score
+
         policy = get_entitlements(user_tier)
         min_score = policy.minimum_signal_score
-        if score < min_score:
+        if not meets_tier_score(score, min_score):
             if user_id is not None:
                 logging.debug(f"[delivery] User {user_id} ({policy.tier.value}) score {score} < {min_score}, not eligible.")
             return False

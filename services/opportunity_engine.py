@@ -107,7 +107,10 @@ def score_opportunity(signal: dict[str, Any], prefs: UserTradingPreferences | No
             eligible=False,
             rejection_reason=pref_reason,
         )
-    if technical < required_technical:
+    from core.signal_quality_gate import score_floor_advisory
+
+    # While the score floor is advisory (owner decision, 3 Nov) the score still ranks but does not exclude.
+    if technical < required_technical and not score_floor_advisory():
         reason = f"risk_profile_score_below_{required_technical:.1f}"
         return OpportunityScore(
             asset=str(sig.get("asset") or sig.get("symbol") or ""),

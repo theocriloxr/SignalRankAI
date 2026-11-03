@@ -163,7 +163,13 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
         else:
             lines.append(f"🧠 **AI Confidence:** `{score_val:.1f}%`")
     
-    if bool(signal.get("ml_recovery_mode")):
+    if str(signal.get("ml_recovery_reason") or "") == "ml_advisory_mode" or signal.get("score_floor_advisory"):
+        lines.extend([
+            "————————————————————",
+            "🧪 **Setup evidence:** passed the setup-evidence filter; the ML model and the score floor are advisory.",
+            "🔒 **Execution:** paper-only; live broker execution is disabled for this signal.",
+        ])
+    elif bool(signal.get("ml_recovery_mode")):
         lines.extend([
             "————————————————————",
             "🧪 **Model Health Recovery:** strict deterministic gates passed, but the serving ML champion is currently starving live candidates.",
@@ -174,9 +180,9 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
     keyboard = []
     signal_id = signal.get("signal_id", "")
     
-    if bool(signal.get("ml_recovery_mode")):
+    if bool(signal.get("ml_recovery_mode")) or signal.get("score_floor_advisory"):
         keyboard.append([
-            InlineKeyboardButton("🧪 Paper-only recovery signal", callback_data="nav_paper")
+            InlineKeyboardButton("🧪 Paper-only signal", callback_data="nav_paper")
         ])
     elif evaluate_feature_access(tier, "execution_preflight").allowed:
         keyboard.append([
@@ -216,8 +222,10 @@ def should_user_receive_signal(signal_score: float, user_tier: str) -> bool:
     Returns:
         True if user should receive this signal
     """
+    from core.signal_quality_gate import meets_tier_score
+
     policy = get_entitlements(user_tier)
-    return float(signal_score or 0) >= policy.minimum_signal_score
+    return meets_tier_score(signal_score, policy.minimum_signal_score)
 
 
 def get_paywall_upsell_message() -> str:

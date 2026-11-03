@@ -662,6 +662,12 @@ def risk_profile_settings(name: str | None) -> dict[str, float]:
 
 
 def minimum_score_for_preferences(prefs: UserTradingPreferences) -> float:
+    from core.signal_quality_gate import score_floor_advisory
+
+    if score_floor_advisory():
+        # The system floor only records (owner decision, 3 Nov); a minimum the
+        # user chose stays theirs.
+        return max(0.0, min(100.0, float(prefs.min_signal_score or 0.0)))
     base = _env_float("USER_PROFILE_BASE_MIN_SIGNAL_SCORE", 75.0)
     boost = float(risk_profile_settings(prefs.risk_profile).get("min_score_boost") or 0.0)
     risk_floor = max(0.0, min(100.0, base + boost))
