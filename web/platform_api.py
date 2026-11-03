@@ -2762,6 +2762,7 @@ async def signal_detail(
             .all()
         )
         chart = await _signal_chart_candles(session, row)
+        setup_record = await _setup_record(session, row)
         await session.rollback()
     channel = str(row.get("delivery_channel") or "telegram")
     telegram_proven = bool(
@@ -2787,7 +2788,29 @@ async def signal_detail(
             "signal_age_at_delivery_seconds": row.get("signal_age_at_delivery_seconds"),
         },
         "chart": chart,
+        "setup_record": setup_record,
     }
+
+
+async def _setup_record(session: Any, row: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The setup's measured 60-day TP1 record and this plan's break-even, as the bot shows it.
+
+    From the current evidence snapshot only; None when there is no current
+    evidence for this setup (nothing is estimated or filled in).
+    """
+    from services import segment_evidence
+
+    try:
+        snapshot = await segment_evidence.load_snapshot(session)
+    except Exception:
+        return None
+    if not segment_evidence.snapshot_is_current(snapshot):
+        return None
+    record = segment_evidence.record_for(dict(row), dict((snapshot or {}).get("segments") or {}))
+    if not record:
+        return None
+    return {**record, "computed_at": (snapshot or {}).get("computed_at"),
+            "lookback_days": (snapshot or {}).get("lookback_days")}
 
 
 _CHART_TF_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000,
@@ -6648,80 +6671,14 @@ async def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
 @router.get("/performance")
 async def performance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     _assert_feature(user, "performance_analytics")
-    from services.performance_ledger import COMPLETED_BUCKETS
+    from services.performance_ledger import ledger_summary
 
-    uid = int(user["id"])
-    # The ledger stores canonical upper-case buckets (TP3, STOPPED_AT_TP1, SL,
-    # ...). Matching lower-case names here counted every win and loss as 0.
-    completed = sorted(COMPLETED_BUCKETS)
     async with get_session() as session:
-        counts = {
-            str(bucket or "").upper(): int(count or 0)
-            for bucket, count in (
-                await session.execute(
-                    text(
-                        "SELECT upper(primary_bucket),COUNT(*) FROM performance_ledger_entries "
-                        "WHERE user_id=:uid AND included GROUP BY 1"
-                    ),
-                    {"uid": uid},
-                )
-            ).all()
-        }
-        r_totals = (
-            (
-                await session.execute(
-                    text(
-                        "SELECT COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r,"
-                        "COUNT(*) FILTER (WHERE final_realized_r>0) AS profitable "
-                        "FROM performance_ledger_entries WHERE user_id=:uid AND included "
-                        "AND upper(primary_bucket)=ANY(:completed)"
-                    ),
-                    {"uid": uid, "completed": completed},
-                )
-            )
-            .mappings()
-            .first()
-        )
-        breakdown = (
-            (
-                await session.execute(
-                    text(
-                        "SELECT asset,timeframe,COUNT(*) AS signals,"
-                        "COUNT(*) FILTER (WHERE upper(primary_bucket)='TP3') AS wins,"
-                        "COUNT(*) FILTER (WHERE upper(primary_bucket)='SL') AS losses,"
-                        "COALESCE(AVG(final_realized_r),0) AS average_r,COALESCE(SUM(final_realized_r),0) AS total_r "
-                        "FROM performance_ledger_entries WHERE user_id=:uid AND included "
-                        "AND upper(primary_bucket)=ANY(:completed) "
-                        "GROUP BY asset,timeframe ORDER BY COUNT(*) DESC LIMIT 100"
-                    ),
-                    {"uid": uid, "completed": completed},
-                )
-            )
-            .mappings()
-            .all()
-        )
+        data, breakdown = await ledger_summary(session, int(user["id"]))
         await session.rollback()
-    closed = sum(counts.get(name, 0) for name in completed)
-    wins, losses = counts.get("TP3", 0), counts.get("SL", 0)
-    totals = dict(r_totals or {})
-    data = {
-        # Same definitions as the proof ledger and the Telegram /performance view.
-        "signals": closed,
-        "wins": wins,
-        "partial_wins": counts.get("STOPPED_AT_TP1", 0) + counts.get("STOPPED_AT_TP2", 0),
-        "losses": losses,
-        "breakeven": counts.get("BREAKEVEN", 0) + counts.get("TIME_STOP", 0),
-        "open": counts.get("ACTIVE", 0) + counts.get("PENDING_ENTRY", 0),
-        "not_triggered": counts.get("MISSED_ENTRY", 0) + counts.get("EXPIRED", 0),
-        "delivered": sum(counts.values()),
-        "average_r": float(totals.get("average_r") or 0),
-        "total_r": float(totals.get("total_r") or 0),
-        "win_rate": (wins / (wins + losses)) if (wins + losses) else None,
-        "profitable_rate": (int(totals.get("profitable") or 0) / closed) if closed else None,
-    }
     data["claim_certified"] = False
     data["disclaimer"] = "User-level proof-backed history; not a guaranteed future win rate."
-    return {"summary": data, "breakdown": [dict(row) for row in breakdown]}
+    return {"summary": data, "breakdown": breakdown}
 
 
 @router.get("/billing/products")

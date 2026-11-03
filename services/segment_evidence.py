@@ -229,6 +229,43 @@ def snapshot_is_current(snapshot: Mapping[str, Any] | None, *, now: float | None
     return 0 <= age <= 2 * interval
 
 
+def record_for(signal: Mapping[str, Any], segments: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The setup's real 60-day record for display; None when there is none to show."""
+    decision = evaluate(signal, segments)
+    if decision.trades <= 0:
+        return None
+    return {"key": decision.key, "trades": decision.trades, "wins": decision.wins,
+            "lower_bound": decision.lower_bound, "breakeven": decision.breakeven}
+
+
+async def attach_records(signals: list[dict[str, Any]]) -> None:
+    """Attach the current setup record to signals that do not carry one.
+
+    Signals delivered from the database lose the record the engine attached.
+    The card shows the record as it stands now, or nothing: never an invented one.
+    """
+    pending = [s for s in signals if isinstance(s, dict) and not s.get("segment_evidence")]
+    if not pending:
+        return
+    from db.priority import DBPriority
+    from db.session import get_session
+
+    try:
+        async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_display",
+                               timeout_seconds=3.0) as session:
+            snapshot = await load_snapshot(session)
+            await session.rollback()
+    except Exception:
+        return
+    if not snapshot_is_current(snapshot):
+        return
+    segments = dict((snapshot or {}).get("segments") or {})
+    for signal in pending:
+        record = record_for(signal, segments)
+        if record:
+            signal["segment_evidence"] = record
+
+
 async def refresh_once() -> int:
     """Worker task: recompute and store the snapshot. Returns the number of segments."""
     from db.priority import DBPriority

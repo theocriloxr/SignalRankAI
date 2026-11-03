@@ -4646,6 +4646,12 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     else:
         signals_list = list(strategy_signals or [])
     user_trade_profile = "all"
+    try:
+        from services.segment_evidence import attach_records
+
+        await attach_records(signals_list)
+    except Exception as exc:
+        logger.debug("[dispatch] setup record unavailable: %s", type(exc).__name__)
 
     # Canonical tier quality gate: enforce per-tier score thresholds centrally,
     # independent of caller/source (engine, resend, callbacks, etc.).

@@ -1014,12 +1014,6 @@ def format_signal_premium_new(signal: dict) -> str:
 	lines.append(f"Expected Hold: {expected_duration}")
 	if signal.get("trade_type"):
 		lines.append(f"Trade Type: {signal.get('trade_type')}")
-	if signal.get("trade_health") is not None:
-		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
-	if signal.get("probability_tp_today") is not None:
-		_method = str(signal.get("probability_tp_today_method") or "").lower()
-		_label = "TP1 by 24h estimate" if _method.startswith("heuristic_") else "TP1 by 24h probability"
-		lines.append(f"{_label}: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -1038,10 +1032,10 @@ def format_signal_premium_new(signal: dict) -> str:
 
 	# Add profit/loss expectations
 	if expected_profit is not None:
-		lines.append(f"┃ Expected Profit: +{expected_profit:.2f}%")
+		lines.append(f"┃ Move to final target: +{expected_profit:.2f}%")
 	if expected_loss is not None:
 		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
-		lines.append(f"┃ Expected Loss: {loss_display:.2f}%")
+		lines.append(f"┃ Move to stop: {loss_display:.2f}%")
 
 	# Compute RR if still missing
 	if rr_ratio is None:
@@ -1207,12 +1201,6 @@ def format_signal_vip_new(signal: dict) -> str:
 	lines.append(f"Expected Hold: {expected_duration}")
 	if signal.get("trade_type"):
 		lines.append(f"Trade Type: {signal.get('trade_type')}")
-	if signal.get("trade_health") is not None:
-		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
-	if signal.get("probability_tp_today") is not None:
-		_method = str(signal.get("probability_tp_today_method") or "").lower()
-		_label = "TP1 by 24h estimate" if _method.startswith("heuristic_") else "TP1 by 24h probability"
-		lines.append(f"{_label}: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -1220,14 +1208,16 @@ def format_signal_vip_new(signal: dict) -> str:
 	lines.append("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫")
 	lines.append(f"┃ Stop Loss: {_format_price(stop_loss, asset)}")
 	
-	# Add multiple TPs
+	# Close fractions are the published exit plan, the same ones outcome accounting uses.
+	from core.partial_exit_accounting import planned_exit_fractions
+	_f1, _f2, _f3 = planned_exit_fractions()
 	if len(tp_levels) >= 3:
-		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (33%)")
-		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (33%)")
-		lines.append(f"┃ TP3: {_format_price(tp_levels[2], asset)} (34%)")
+		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (close {_f1:.0%})")
+		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (close {_f2:.0%})")
+		lines.append(f"┃ TP3: {_format_price(tp_levels[2], asset)} (close {_f3:.0%})")
 	elif len(tp_levels) == 2:
-		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (50%)")
-		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (50%)")
+		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (close {_f1:.0%})")
+		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (close {1 - _f1:.0%})")
 	elif len(tp_levels) == 1:
 		lines.append(f"┃ Target: {_format_price(tp_levels[0], asset)}")
 	else:
@@ -1235,10 +1225,10 @@ def format_signal_vip_new(signal: dict) -> str:
 	
 	# Add profit/loss expectations
 	if expected_profit is not None:
-		lines.append(f"┃ Expected Profit: +{expected_profit:.2f}%")
+		lines.append(f"┃ Move to final target: +{expected_profit:.2f}%")
 	if expected_loss is not None:
 		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
-		lines.append(f"┃ Expected Loss: {loss_display:.2f}%")
+		lines.append(f"┃ Move to stop: {loss_display:.2f}%")
 
 	# Compute RR if still missing
 	if rr_ratio is None:

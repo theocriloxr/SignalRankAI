@@ -434,18 +434,9 @@ def _score_blurb(signal: DictType[str, Any]) -> str:
     score = resolve_score_percent(signal) or 0.0
     probability = probability_for_public_display(signal)
     confluence = resolve_confluence_percent(signal)
-    parts: List[str] = []
-    strong_threshold = max(
-        float(TIER_SCORE_THRESHOLDS.get("vip", 75.0) or 75.0),
-        float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0),
-    )
-    mid_threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0)
-    if score >= strong_threshold:
-        parts.append("high-conviction")
-    elif score >= mid_threshold:
-        parts.append("strong setup")
-    else:
-        parts.append("qualified setup")
+    # Plain figures only: on production the score did not predict reaching TP1
+    # (AUC 0.489, 3 Nov 2026), so it is not described as conviction or strength.
+    parts: List[str] = [f"engine score {score:.0f}"]
     if probability.probability is not None:
         parts.append(f"calibrated {probability.probability * 100.0:.0f}%")
     if confluence is not None:
@@ -574,6 +565,24 @@ def _execution_status_line(signal: DictType[str, Any]) -> str:
         return "Execution: Automatic entry requested — not active until a separate execution receipt"
     return "Execution: Manual — confirm trade and size yourself"
 
+def _setup_record_line(signal: DictType[str, Any]) -> str:
+    """The setup's real 60-day record, as measured: the truth, whatever the number."""
+    record = signal.get("segment_evidence")
+    if not isinstance(record, dict):
+        return ""
+    try:
+        trades, wins = int(record.get("trades") or 0), int(record.get("wins") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if trades <= 0:
+        return ""
+    line = f"📈 Setup record (60 days): {wins:,} of {trades:,} similar setups reached TP1 ({wins / trades:.0%})."
+    breakeven = record.get("breakeven")
+    if isinstance(breakeven, (int, float)) and breakeven > 0:
+        line += f" This plan breaks even at {breakeven:.0%}."
+    return line
+
+
 def _best_rr(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_levels: List[float]) -> Optional[float]:
     """Prefer actual target-derived R/R over profile minimum placeholders."""
     rr_calc = _compute_rr(entry, stop_loss, tp_levels[-1] if tp_levels else None)
@@ -675,7 +684,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Signal Quality Score: {score_val:.1f}/100",
+        f"🤖 Engine score: {score_val:.1f}/100 (ranks setups; not a chance of winning)",
         f"⚠️ Volatility: {volatility}",
     ]
 
@@ -720,10 +729,10 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"⚖️ Risk/Reward: 1:{float(rr_tp1):.1f}")
 
     if expected_profit is not None:
-        lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
+        lines.append(f"💰 Move to final target: +{expected_profit:.2f}%")
     if expected_loss is not None:
         loss_display = -abs(expected_loss)
-        lines.append(f"🛡️ Expected Loss: {loss_display:.2f}%")
+        lines.append(f"🛡️ Move to stop: {loss_display:.2f}%")
 
     strategy = signal.get("strategy_name") or signal.get("strategy")
     regime = signal.get("regime") or signal.get("market_regime")
@@ -733,6 +742,8 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🌍 Regime: {_h(str(regime))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    if _setup_record_line(signal):
+        lines.append(_h(_setup_record_line(signal)))
     lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
@@ -839,7 +850,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
-        f"🤖 Signal Quality Score: {score_val:.1f}/100",
+        f"🤖 Engine score: {score_val:.1f}/100 (ranks setups; not a chance of winning)",
     ]
 
     # Order Block — VIP exclusive
@@ -950,10 +961,10 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"⚖️ Risk/Reward: 1:{rr_calc:.1f}")
 
     if expected_profit is not None:
-        lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
+        lines.append(f"💰 Move to final target: +{expected_profit:.2f}%")
     if expected_loss is not None:
         loss_display = -abs(expected_loss)
-        lines.append(f"🛡️ Expected Loss: {loss_display:.2f}%")
+        lines.append(f"🛡️ Move to stop: {loss_display:.2f}%")
 
     # Invalidation level
     invalidation = signal.get("invalidation") or signal.get("invalidation_level")
@@ -973,6 +984,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    if _setup_record_line(signal):
+        lines.append(_h(_setup_record_line(signal)))
     lines.append(_execution_status_line(signal))
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
