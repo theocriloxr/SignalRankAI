@@ -273,12 +273,25 @@ class ShadowOutcomeWorker:
                     return "tp3"
             return None
 
-        async def one(row: dict[str, Any]):
+        # One provider fetch per asset x timeframe per batch. The engine logs the
+        # same setup on every scan, so a 150-row batch holds only a few distinct
+        # series; fetching per row made each batch take ~90 s on production
+        # (3 Nov) while ML-layer rejections arrive at ~165k/day.
+        def _series_key(row: dict[str, Any]) -> tuple[str, str]:
+            return str(row["asset"]), str(row.get("timeframe") or "1h")
+
+        async def fetch_series(key: tuple[str, str]):
             async with semaphore:
                 try:
-                    candles = await async_get_candles(str(row["asset"]), str(row.get("timeframe") or "1h"))
+                    return key, await async_get_candles(key[0], key[1])
                 except Exception:
-                    candles = []
+                    return key, []
+
+        series = dict(await asyncio.gather(*(fetch_series(k) for k in {_series_key(r) for r in rows})))
+
+        async def one(row: dict[str, Any]):
+            async with semaphore:
+                candles = series.get(_series_key(row)) or []
                 historical = historical_terminal(row, candles)
                 if historical == UNVERIFIABLE_OUTCOME:
                     return row, UNVERIFIABLE_OUTCOME
