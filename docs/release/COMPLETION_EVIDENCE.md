@@ -33,6 +33,14 @@ Parent `f7fd8a17`. Production evidence was read with read-only SQL and log greps
   - No signal has been issued since 10:13 UTC: in the 30 minutes read, 55 candidates passed the advisory ML step, and stop width, confluence and the evidence filter refused them all.
   - Labels from the last 6 h: sl 26,476, tp3 3,685, tp1 553, ambiguous 87, tp2 0. Rows labelled before `974e99a9` keep the TP3-before-SL bias until they leave the 60-day window, which understates TP1 rates for most setups.
   - Proposals for the owner, nothing changed: re-label recent rows with the new rule, or count only rows labelled after `974e99a9`. Thresholds, confidence level, gate modes and scorecard mode/bounds are unchanged.
+- **Frontend look (owner request, 3 Nov: the site looked machine-made).**
+  - The near-black and neon-green theme, glow and grid backgrounds, pill badges, accent-coloured slogan headlines, icon-tile cards and the 01–04 stepper are gone.
+  - The tokens are now warm paper and ink by default, plus a warm charcoal dark theme, both meeting the AA contrast test. Headings use a system serif and figures use tabular numbers; there is no web-font download.
+  - The home page was rewritten in plain words: what we send, how the 60-day evidence rule decides, what you get, the markets we cover, and what we won't pretend. It shows one example ticket labelled "Example", not a live signal.
+  - The sign-in page has the same treatment. Section labels are no longer all-caps monospace tags.
+  - `SignalLifecycleExperience` is removed. The design contract tests now pin the example label, the links, the absence of write calls and fictitious metrics, and the evidence-rule copy.
+  - Checks: `tsc`, `eslint`, `test:presentation` (41) and `test:transport` (81) pass. The local production build was checked at 1280 px and 375 px in the light and dark themes, with no horizontal overflow.
+
 - **Tests (Windows 11, Python 3.13.7, PostgreSQL 17 migrated empty → 0058; not CI, staging or production):** full suite 4565 passed, 1 failed (the 1 failure is environmental: isolated python -I cannot import the user-site alembic).
 
 ## Continuation, 3 November 2026 (afternoon) — owner decisions on the open list: shadow labels, 0058, empty-batch pause, ATR stop repair (cloud review session)
