@@ -95,8 +95,9 @@ def _targets(take_profit: Any) -> list[float]:
 def outcome_r(direction: Any, entry: Any, stop: Any, take_profit: Any, outcome: Any) -> float | None:
     """R of a tracked trade, using the target level that was actually reached.
 
-    ``tp1`` is valued at the first target and ``tp3`` at the third, so an early
-    target is not credited with the final target's reward. Ambiguous bars (stop
+    ``tp1``/``tp2`` (target reached, then back to the protected stop) are worth
+    the planned partial closes; ``tp3`` is valued at the third target, so an
+    early target is not credited with the final target's reward. Ambiguous bars (stop
     and target in the same candle) count as losses.
     """
     try:
@@ -111,6 +112,16 @@ def outcome_r(direction: Any, entry: Any, stop: Any, take_profit: Any, outcome: 
         return -1.0
     if not label.startswith("tp"):
         return None
+    if label in {"tp1", "tp2"}:
+        # The plan closes part at TP1/TP2 and protects the rest at entry, so an
+        # intermediate target is worth the planned partial closes, not a full
+        # position at that target.
+        from core.partial_exit_accounting import calculate_partial_exit_result
+
+        partial = calculate_partial_exit_result(entry=entry_f, stop_loss=stop_f, take_profit=take_profit,
+                                                direction=direction, highest_tp=int(label[2]))
+        if partial is not None and partial.realized_r > 0:
+            return min(float(partial.realized_r), _env_float("STRATEGY_SCORECARD_MAX_WIN_R", 10.0, 1.0, 50.0))
     targets = _targets(take_profit)
     if not targets:
         return None

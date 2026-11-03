@@ -229,16 +229,27 @@ class ShadowOutcomeWorker:
                 return None
 
         def historical_terminal(row: dict[str, Any], candles: Any) -> str | None:
+            """Label a rejected setup by the published plan, bar by bar.
+
+            The plan closes part at TP1 and moves the stop to entry, so the label
+            is the highest target reached before the active stop: ``sl`` (stop
+            before any target), ``tp1``/``tp2`` (target reached, then back to
+            entry), ``tp3`` (final target). Until 3 Nov 2026 only the final
+            target was checked, so a setup that reached TP1 and then fell back
+            was labelled ``sl``; the setup-evidence filter, which measures
+            TP1-or-better, then saw 20-45 % where the plan needs 57-67 %.
+            """
             if not isinstance(candles, list):
                 return None
             created_at = row.get("created_at")
             if isinstance(created_at, datetime) and created_at.tzinfo is not None:
                 created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
             direction = str(row.get("direction") or "long").lower()
+            is_long = direction not in {"short", "sell", "bearish"}
             stop = float(row.get("stop_loss") or 0.0)
-            targets = _parse_tp_levels(row.get("take_profit"))
-            final_target = float(targets[-1]) if targets else 0.0
-            if stop <= 0 or final_target <= 0:
+            entry = float(row.get("entry") or 0.0)
+            targets = [float(t) for t in _parse_tp_levels(row.get("take_profit")) if float(t) > 0][:3]
+            if stop <= 0 or not targets:
                 return None
             if isinstance(created_at, datetime) and candles:
                 times = [t for t in (_candle_time(c) for c in candles) if t is not None]
@@ -250,6 +261,13 @@ class ShadowOutcomeWorker:
                 bar = timedelta(seconds=_timeframe_seconds(row.get("timeframe")))
                 if times and min(times) > created_at + bar:
                     return UNVERIFIABLE_OUTCOME
+            final = len(targets)
+            protect = entry > 0 and ((is_long and entry > stop) or (not is_long and entry < stop))
+
+            def label(level: int) -> str:
+                return "tp3" if level >= final else f"tp{level}"
+
+            highest = 0
             for candle in candles:
                 candle_time = _candle_time(candle)
                 # A rejected signal can only be judged on market data observed
@@ -262,15 +280,24 @@ class ShadowOutcomeWorker:
                 low = candle_value(candle, "low", "l")
                 if high is None or low is None:
                     continue
-                sl_hit = low <= stop if direction == "long" else high >= stop
-                tp_hit = high >= final_target if direction == "long" else low <= final_target
-                if sl_hit and tp_hit:
-                    # Candle resolution cannot prove which barrier occurred first.
-                    return "ambiguous"
-                if sl_hit:
-                    return "sl"
-                if tp_hit:
+                active_stop = entry if (highest >= 1 and protect) else stop
+                stop_hit = low <= active_stop if is_long else high >= active_stop
+                reached = highest
+                for index, target in enumerate(targets, start=1):
+                    if (high >= target) if is_long else (low <= target):
+                        reached = max(reached, index)
+                if stop_hit:
+                    if highest == 0 and reached > 0:
+                        # Candle resolution cannot prove which barrier occurred first.
+                        return "ambiguous"
+                    if highest == 0:
+                        return "sl"
+                    # Back to the protected stop; a new target in the same bar is
+                    # not credited because the order inside the bar is unknown.
+                    return label(highest)
+                if reached >= final:
                     return "tp3"
+                highest = reached
             return None
 
         # One provider fetch per asset x timeframe per batch. The engine logs the

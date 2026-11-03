@@ -20,7 +20,9 @@ def _rows(asset, tf, strategy, direction, wins, losses, win_r=2.0, source="shado
 
 def test_outcome_r_uses_the_target_actually_reached():
     # long, entry 100, stop 99, targets 102/103/105
-    assert sc.outcome_r("long", 100, 99, [102, 103, 105], "tp1") == pytest.approx(2.0)
+    # tp1 = TP1 reached, then back to the protected stop: 50 % closed at 2R (3 Nov 2026)
+    assert sc.outcome_r("long", 100, 99, [102, 103, 105], "tp1") == pytest.approx(1.0)
+    assert sc.outcome_r("long", 100, 99, [102, 103, 105], "tp2") == pytest.approx(1.75)
     assert sc.outcome_r("long", 100, 99, "[102, 103, 105]", "tp3") == pytest.approx(5.0)
     assert sc.outcome_r("short", 100, 101, [98], "tp2") == pytest.approx(2.0)
     assert sc.outcome_r("long", 100, 99, [102], "sl") == -1.0

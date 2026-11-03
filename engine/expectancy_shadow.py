@@ -122,6 +122,14 @@ def realized_r(direction: Any, entry: Any, stop: Any, take_profit: Any, outcome:
     outcome = str(outcome or "").lower()
     if outcome in {"sl", "ambiguous"}:
         return -1.0
+    if outcome in {"tp1", "tp2"}:
+        # Reached TP1/TP2, then back to the protected stop at entry: value the
+        # published partial closes, remainder at 0R (3 Nov 2026 tracker labels).
+        from core.partial_exit_accounting import calculate_partial_exit_result
+
+        partial = calculate_partial_exit_result(entry=entry_f, stop_loss=stop_f, take_profit=take_profit,
+                                                direction=direction, highest_tp=int(outcome[2]))
+        return float(partial.realized_r) if partial is not None else None
     if outcome.startswith("tp"):
         target = _final_target(take_profit)
         if target is None:
