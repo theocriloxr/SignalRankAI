@@ -106,6 +106,11 @@ async def _async_get_candles(
         logger.debug("tiingo_adapter: TIINGO_API_KEY not set")
         provider_diagnostics.note("tiingo", "api_key_missing")
         return []
+    from data.providers import _is_cooldown_active
+
+    if _is_cooldown_active("tiingo"):
+        provider_diagnostics.note("tiingo", "rate_limit_cooldown_active")
+        return []
 
     symbol = (symbol or "").upper().strip()
     symbol_clean = symbol.replace("/", "").replace("-", "").replace("_", "")
@@ -166,6 +171,9 @@ async def _async_get_candles(
         if resp.status_code != 200:
             logger.debug(f"tiingo_adapter HTTP {resp.status_code}: {getattr(resp, 'text', '')[:200]}")
             provider_diagnostics.note("tiingo", f"http_{resp.status_code}")
+            from data.providers import _maybe_apply_rate_limit_cooldown
+
+            _maybe_apply_rate_limit_cooldown("tiingo", status_code=resp.status_code)
             return []
 
         data = resp.json()

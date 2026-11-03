@@ -323,6 +323,21 @@ def _provider_supports_symbol(provider_name: str, asset: str) -> bool:
     return not (alias in entry and entry[alias] is None)
 
 
+def _provider_cooling_down(provider_name: str) -> bool:
+    """True while a provider is in a recorded rate-limit cooldown.
+
+    Production, 3 Nov 2026: every forex fetch spent both attempts on twelvedata
+    (cooldown active, 524 in 30 min) and tiingo (HTTP 429, 340), so yfinance, the
+    configured preferred FX provider, was never reached.
+    """
+    try:
+        from data.providers import _is_cooldown_active
+
+        return _is_cooldown_active(_provider_alias(provider_name))
+    except Exception:
+        return False
+
+
 def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_kind: str = "", timeframe: str = "", asset: str = "") -> list[tuple[str, object]]:
     from data.connector_registry import provider_order_env_name
 
@@ -330,6 +345,7 @@ def _ordered_provider_candidates(providers: list[tuple[str, object]], *, asset_k
     strict_order = bool(env_name and (os.getenv(env_name) or "").strip())
     candidates = [item for item in providers if not timeframe or _provider_timeframe_eligible(item[0], timeframe)]
     candidates = [item for item in candidates if _provider_supports_symbol(item[0], asset)]
+    candidates = [item for item in candidates if not _provider_cooling_down(item[0])] or candidates
     healthy = candidates if strict_order else [item for item in candidates if provider_is_healthy(item[0])]
     degraded = [] if strict_order else [item for item in candidates if not provider_is_healthy(item[0])]
     ordered: list[tuple[str, object]] = []
@@ -2756,6 +2772,8 @@ async def async_get_candles(asset, timeframe):
         ordered_provs = [p for p in ordered_provs if _provider_timeframe_eligible(p[0], timeframe)]
         # A provider with no symbol for this asset must not use up an attempt either.
         ordered_provs = [p for p in ordered_provs if _provider_supports_symbol(p[0], asset)]
+        # Nor may one that is in a recorded rate-limit cooldown (it would return nothing).
+        ordered_provs = [p for p in ordered_provs if not _provider_cooling_down(p[0])] or ordered_provs
         ordered_provs = ordered_provs[: _max_provider_attempts(asset_type)]
 
         if str(asset_type or "").lower().strip() == "crypto":

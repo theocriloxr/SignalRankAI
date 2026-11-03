@@ -148,6 +148,11 @@ def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = Non
     elif provider == "polygon":
         if status_code == 429 or any(term in msg for term in ("rate limit", "too many requests", "throttle")):
             return _env_float("POLYGON_RATE_LIMIT_COOLDOWN_SECONDS", 60 * 60)
+    elif provider == "tiingo":
+        # Tiingo's free plan meters requests per hour: after a 429 the quota is
+        # gone for a while, and retrying every scan only burns attempts.
+        if status_code == 429:
+            return _env_float("TIINGO_RATE_LIMIT_COOLDOWN_SECONDS", 15 * 60)
     elif status_code == 429:
         return _env_float(f"{provider.upper()}_RATE_LIMIT_COOLDOWN_SECONDS", 60.0)
     return None
