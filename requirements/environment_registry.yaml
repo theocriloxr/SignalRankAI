@@ -1797,8 +1797,8 @@
       "name": "ASSET_REPEAT_LOCK_HOURS",
       "production_example_default": "4",
       "read_locations": [
-        "db/pg_features.py:4155",
-        "db/pg_features.py:4204",
+        "db/pg_features.py:4188",
+        "db/pg_features.py:4237",
         "services/platform/signal_delivery.py:256"
       ],
       "required_by_code": true,
@@ -4559,7 +4559,7 @@
       "name": "DELIVERY_REQUIRE_QUALITY_GATE",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:4059"
+        "db/pg_features.py:4092"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12582,9 +12582,9 @@
       "name": "REFERRALS_PER_REWARD",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3314",
-        "db/pg_features.py:3448",
-        "db/pg_features.py:3652",
+        "db/pg_features.py:3347",
+        "db/pg_features.py:3481",
+        "db/pg_features.py:3685",
         "web/platform_api.py:3610"
       ],
       "required_by_code": true,
@@ -12595,9 +12595,9 @@
       "name": "REFERRAL_BONUS_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3315",
-        "db/pg_features.py:3449",
-        "db/pg_features.py:3653",
+        "db/pg_features.py:3348",
+        "db/pg_features.py:3482",
+        "db/pg_features.py:3686",
         "web/platform_api.py:3621"
       ],
       "required_by_code": true,
@@ -12608,8 +12608,8 @@
       "name": "REFERRAL_MONTHLY_CAP_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3468",
-        "db/pg_features.py:3688"
+        "db/pg_features.py:3501",
+        "db/pg_features.py:3721"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14315,7 +14315,7 @@
       "name": "SIGNAL_THESIS_DEDUP_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:2885",
+        "db/pg_features.py:2918",
         "db/pg_features.py:985",
         "services/performance_ledger.py:436"
       ],
@@ -15501,7 +15501,7 @@
       "name": "TIME_STOP",
       "production_example_default": null,
       "read_locations": [
-        "db/pg_features.py:3187",
+        "db/pg_features.py:3220",
         "services/performance_ledger.py:1578"
       ],
       "required_by_code": true,
