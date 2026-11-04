@@ -1,5 +1,5 @@
 {
-  "file_count": 2706,
+  "file_count": 2707,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7347,11 +7347,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 785,
+      "line_count": 786,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "a0661aa522e1670efe9fc1247de864f489c242c7cec96c695e3eca87d66b2a4f",
-      "size_bytes": 108191
+      "sha256": "de3a5e74eb9092fa7cfe3be58d94f3dc5f7d0091f119dbddbf537ad3b7e2acad",
+      "size_bytes": 109463
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11531,11 +11531,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 589,
+      "line_count": 630,
       "path": "engine/stale_signal_validator.py",
       "reason": "production/build source",
-      "sha256": "8fbb23b29a6081e12076d7cf24c67205becae27f9a17f67f6c47b236a719c814",
-      "size_bytes": 22279
+      "sha256": "5a0d9ca04d33e404c8b0e56c1294ef324917bd97e236d56e16dc57ff31255898",
+      "size_bytes": 24166
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14062,7 +14062,7 @@
       "line_count": 16668,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "4603a5a58d094490764d6eecf99ec3f60dda812bee1dca4ef6a07fbe3624ad10",
+      "sha256": "576e0f13ad688ecb188c57d273751a9ff073b3f5b0c96e2add3b4ef605755a64",
       "size_bytes": 487505
     },
     {
@@ -18747,6 +18747,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 112,
+      "path": "tests/test_live_price_stale_ticks_20261104.py",
+      "reason": "automated test evidence",
+      "sha256": "34903c41f139253520c7399d6bced2d4fff03f554b07835e67db723037babfef",
+      "size_bytes": 3726
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 65,
       "path": "tests/test_live_production_evidence.py",
       "reason": "automated test evidence",
@@ -21664,6 +21672,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
     "PRESERVE_BEHAVIOUR": 1372,
-    "TEST_ONLY": 455
+    "TEST_ONLY": 456
   }
 }

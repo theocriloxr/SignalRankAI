@@ -14707,7 +14707,7 @@
       "read_locations": [
         "engine/stale_signal_validator.py:192",
         "engine/stale_signal_validator.py:57",
-        "engine/stale_signal_validator.py:586"
+        "engine/stale_signal_validator.py:627"
       ],
       "required_by_code": true,
       "sensitive": false
