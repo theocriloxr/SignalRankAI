@@ -263,6 +263,44 @@ async def _get_secondary_price(symbol: str) -> Optional[float]:
     return None
 
 
+def fresh_tick_price(price: Any, event_time_ms: Any, updated_at: Any, *, now: Any = None) -> Optional[float]:
+    """A ``market_ticks`` price, or None when the tick is older than the allowed age.
+
+    Production, 4 Nov 2026: nothing has written ``market_ticks`` since July
+    (newest row 11 Jul; EURGBP 0.85679 from 2 Jul against a market at 0.8347,
+    WTI 4.37, XAUUSD 4188.5). Every non-Binance symbol read those prices, so the
+    shadow outcome tracker labelled each forex long setup ``tp1`` and each short
+    ``sl`` within minutes, whatever the market did.
+    ``MARKET_TICK_MAX_AGE_SECONDS`` (default 120) bounds the age.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return None
+    if not value > 0:
+        return None
+    max_age = _env_float("MARKET_TICK_MAX_AGE_SECONDS", 120.0)
+    current = now if now is not None else datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    observed = None
+    try:
+        if event_time_ms is not None and float(event_time_ms) > 0:
+            observed = datetime.fromtimestamp(float(event_time_ms) / 1000.0, tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        observed = None
+    if observed is None and isinstance(updated_at, datetime):
+        observed = updated_at if updated_at.tzinfo is not None else updated_at.replace(tzinfo=timezone.utc)
+    if observed is None:
+        return None
+    age = (current - observed).total_seconds()
+    if age > max_age:
+        return None
+    return value
+
+
 async def _get_live_price_async(symbol: str) -> Optional[float]:
     """Attempt to fetch live tick price using available providers.
 
@@ -284,19 +322,22 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
     except Exception:
         pass
 
-    # 2. Try DB market_ticks (populated by WS ingest)
+    # 2. Try DB market_ticks (populated by WS ingest), only while the tick is fresh
     try:
         from db.session import get_session
         from sqlalchemy import text
 
         async with get_session() as session:
             row = await session.execute(
-                text("SELECT price FROM market_ticks WHERE symbol = :sym"),
+                text("SELECT price, event_time_ms, updated_at FROM market_ticks WHERE symbol = :sym"),
                 {"sym": symbol.upper()},
             )
             r = row.fetchone()
-            if r and r[0]:
-                return float(r[0])
+            if r:
+                fresh = fresh_tick_price(r[0], r[1], r[2])
+                if fresh is not None:
+                    return fresh
+                logger.debug("[price] market_ticks symbol=%s stale; trying the next source", symbol.upper())
     except Exception:
         pass
 
