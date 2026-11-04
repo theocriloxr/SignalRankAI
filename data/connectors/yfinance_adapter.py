@@ -55,6 +55,14 @@ def _normalize_symbol(symbol: str) -> str:
         "GER40": "^GDAXI",
         "UK100": "^FTSE",
         "JP225": "^N225",
+        # 4 Nov 2026: these four reached Yahoo as their own names ("HK50"), which
+        # returns nothing (`empty_response:HK50` every scan during the Hong Kong
+        # session), so they had no candles on any timeframe. Same symbols as
+        # services/asset_mapper.py.
+        "FRA40": "^FCHI",
+        "EU50": "^STOXX50E",
+        "AUS200": "^AXJO",
+        "HK50": "^HSI",
     }
     if s in overrides:
         return overrides[s]
