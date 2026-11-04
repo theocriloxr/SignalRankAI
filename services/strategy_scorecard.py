@@ -399,6 +399,26 @@ async def _first_id_after(session: Any, cutoff: Any, max_id: int) -> int:
     return low
 
 
+LAST_SCAN: dict[str, Any] = {}
+
+
+def shadow_scan_start(start_id: int, max_id: int, page: int, max_pages: int) -> tuple[int, int | None]:
+    """First decision_log id to scan, keeping the newest rows when the page budget is short.
+
+    The scan reads ``max_pages`` id ranges of ``page`` ids. Scanning forward from
+    the start of the lookback stopped after the budget, so once the lookback held
+    more ids than the budget the newest rows were never read (4 Nov 2026: 30 days
+    spanned ~2.4 M ids against a 2 M budget, so nothing after ~2 Nov 10:00 UTC
+    reached the scorecard, including every row labelled under the 3 Nov rule).
+    Returns ``(start, None)`` when the whole lookback fits, else
+    ``(newest_start, original_start)``.
+    """
+    budget = max(1, int(page)) * max(1, int(max_pages))
+    if max_id - start_id + 1 <= budget:
+        return start_id, None
+    return max(start_id, max_id - budget + 1), start_id
+
+
 async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
     from sqlalchemy import text
 
@@ -434,6 +454,15 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
         max_id = int((await session.execute(text("SELECT COALESCE(MAX(id), 0) FROM decision_log"))).scalar() or 0)
         start_id = await _first_id_after(session, cutoff, max_id)
 
+    start_id, truncated = shadow_scan_start(start_id, max_id, page, max_pages)
+    LAST_SCAN.clear()
+    LAST_SCAN.update(scan_from_id=start_id, max_id=max_id, truncated=truncated is not None)
+    if truncated:
+        logger.warning(
+            "[strategy_scorecard] window_truncated lookback_days=%s first_id_in_lookback=%s scan_from_id=%s "
+            "max_id=%s pages=%s page_rows=%s (newest rows kept)",
+            lookback_days, truncated, start_id, max_id, max_pages, page,
+        )
     after = start_id - 1
     for _ in range(max_pages):
         async with get_session(priority="analytics", label="strategy_scorecard.shadow", timeout_seconds=timeout,
@@ -498,6 +527,7 @@ async def rebuild_once() -> dict[str, Any]:
         "asset_tf_boosted": boosted,
         "asset_tf_penalised": penalised,
         "build_seconds": scorecard["build_seconds"],
+        "scan": dict(LAST_SCAN),
     }
     logger.info("[strategy_scorecard] rebuilt %s", json.dumps(summary, separators=(",", ":")))
     return summary
@@ -534,6 +564,7 @@ __all__ = [
     "lookup",
     "outcome_r",
     "rebuild_once",
+    "shadow_scan_start",
     "scorecard_adjustment",
     "scorecard_mode",
     "strategy_scorecard_loop",
