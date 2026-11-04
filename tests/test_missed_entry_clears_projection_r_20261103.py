@@ -83,3 +83,56 @@ def test_scorecard_issued_source_skips_no_trade_outcomes():
     assert "NOT IN ('missed_entry', 'missed', 'expired')" in block
     assert "lower(COALESCE(o.status, ''))" in block
     assert "lower(COALESCE(o.canonical_outcome, ''))" in block
+
+
+# 4 Nov 2026: the bot's candle scan writes a terminal status without a canonical
+# outcome; the projection's canonical 'pending' stayed on a closed loss (ZECUSDT
+# 66b151e6: status=sl, r=-1, canonical_outcome=pending), so the ledger counted it open.
+
+
+def test_terminal_write_without_canonical_replaces_pending():
+    oc = _pending()
+    asyncio.run(pgf.upsert_outcome(_Session(oc), "sig", "sl", r_multiple=-1.0, percent=-1.7,
+                                   meta={"source": "candle_scan", "tp_hit_index": None},
+                                   queue_notifications=False))
+    assert oc.status == "sl"
+    assert oc.canonical_outcome == "loss"
+    assert oc.r_multiple == -1.0
+
+
+@pytest.mark.parametrize(
+    "status,meta,expected",
+    [
+        ("tp3", {"tp_hit_index": 3}, "win"),
+        ("sl", {"tp_hit_index": 1}, "partial_win"),
+        ("time_stop", {}, "time_stop"),
+        ("missed_entry", {}, "missed_entry"),
+    ],
+)
+def test_derived_canonical_follows_the_tracker_mapping(status, meta, expected):
+    oc = _pending()
+    asyncio.run(pgf.upsert_outcome(_Session(oc), "sig", status, r_multiple=None, percent=None, meta=meta,
+                                   queue_notifications=False))
+    assert oc.canonical_outcome == expected
+
+
+def test_supplied_or_settled_canonical_is_not_overwritten():
+    oc = _pending()
+    asyncio.run(pgf.upsert_outcome(_Session(oc), "sig", "sl", r_multiple=-1.0, canonical_outcome="partial_win",
+                                   queue_notifications=False))
+    assert oc.canonical_outcome == "partial_win"
+    oc2 = _pending()
+    oc2.canonical_outcome = "partial_win"
+    asyncio.run(pgf.upsert_outcome(_Session(oc2), "sig", "sl", r_multiple=-1.0, queue_notifications=False))
+    assert oc2.canonical_outcome == "partial_win"
+
+
+def test_non_terminal_progress_keeps_pending():
+    oc = _pending()
+    asyncio.run(pgf.upsert_outcome(_Session(oc), "sig", "tp1", r_multiple=None, queue_notifications=False))
+    assert oc.canonical_outcome == "pending"
+
+
+def test_insert_of_a_terminal_status_gets_a_canonical():
+    out = asyncio.run(pgf.upsert_outcome(_Session(None), "sig", "sl", r_multiple=-1.0, queue_notifications=False))
+    assert out.canonical_outcome == "loss"

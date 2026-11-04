@@ -2054,6 +2054,32 @@ async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -
 _NO_TRADE_OUTCOME_STATUSES = frozenset({"missed_entry", "missed", "expired"})
 
 
+def _derived_canonical_outcome(status_l: str, *metas: Any) -> str | None:
+    """Canonical outcome for a terminal status written without one.
+
+    Mirrors ``engine.realtime_outcome_tracker``. The bot's candle scan writes
+    ``sl``/``tp3`` without a canonical outcome; the pending projection's
+    ``canonical_outcome='pending'`` then stayed on a closed trade (production
+    4 Nov 2026: ZECUSDT 5m ``66b151e6`` stored ``status=sl``, ``r=-1``,
+    ``canonical_outcome=pending``), so the ledger treated the loss as open.
+    """
+    tp_hit = 0
+    for meta in metas:
+        try:
+            tp_hit = max(tp_hit, int((meta or {}).get("tp_hit_index") or 0))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    if status_l in {"tp", "tp3", "win"}:
+        return "win"
+    if status_l in {"sl", "loss", "stop", "stop_loss"}:
+        return "partial_win" if tp_hit > 0 else "loss"
+    if status_l in {"partial_win", "partial_win_be"}:
+        return "partial_win"
+    if status_l in {"time_stop", "missed_entry", "expired"}:
+        return status_l
+    return None
+
+
 async def upsert_outcome(
     session: AsyncSession,
     signal_id: str,
@@ -2129,6 +2155,13 @@ async def upsert_outcome(
     )
     oc = result.scalars().first()
     changed = False
+
+    if canonical_outcome is None and incoming_terminal:
+        existing_canonical = str(getattr(oc, "canonical_outcome", "") or "").strip().lower() if oc is not None else ""
+        if existing_canonical in {"", "pending"}:
+            canonical_outcome = _derived_canonical_outcome(
+                status_l, supplied_meta, (getattr(oc, "meta", None) or {}) if oc is not None else None
+            )
 
     if oc is None:
         no_trade = status_l in _NO_TRADE_OUTCOME_STATUSES
