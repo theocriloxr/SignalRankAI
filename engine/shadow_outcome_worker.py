@@ -31,6 +31,15 @@ _TIMEFRAME_SECONDS = {
 # only tp*/sl/win/loss labels exclude it automatically.
 UNVERIFIABLE_OUTCOME = "unverifiable"
 
+# How a shadow label was decided, stored as ``meta.outcome_label_source``.
+# Until 4 Nov 2026 a live price could come from a ``market_ticks`` row last
+# written in July (fixed in ``bec9a5f``); the stored labels did not say which
+# rule produced them, so biased live-price labels could not be told apart from
+# candle-path labels. ``scripts/correct_stale_tick_shadow_labels.py`` re-labels
+# those rows from stored candles.
+LABEL_SOURCE_CANDLES = "candles"
+LABEL_SOURCE_LIVE_PRICE = "live_price"
+
 
 def _timeframe_seconds(timeframe: Any) -> int:
     return _TIMEFRAME_SECONDS.get(str(timeframe or "").strip().lower(), 3600)
@@ -39,6 +48,115 @@ def _timeframe_seconds(timeframe: Any) -> int:
 def _shadow_db_priority() -> str:
     role = str(os.getenv("DB_ROLE") or os.getenv("RUN_MODE") or "").strip().lower()
     return "analytics" if role == "analytics" or role.startswith("analytics-") else "background"
+
+
+def _candle_value(candle: Any, *names: str) -> float | None:
+    if isinstance(candle, dict):
+        for name in names:
+            try:
+                value = float(candle.get(name))
+                if value > 0:
+                    return value
+            except Exception:
+                pass
+    return None
+
+
+def _candle_time(candle: Any) -> datetime | None:
+    if not isinstance(candle, dict):
+        return None
+    raw = None
+    for key in ("timestamp", "time", "datetime", "open_time", "openTime", "date"):
+        if candle.get(key) not in (None, ""):
+            raw = candle.get(key)
+            break
+    if raw is None:
+        return None
+    try:
+        if isinstance(raw, (int, float)):
+            value = float(raw)
+            if value > 10_000_000_000:
+                value /= 1000.0
+            return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+    except Exception:
+        return None
+
+
+def label_from_candles(row: dict[str, Any], candles: Any) -> str | None:
+    """Label a rejected setup by the published plan, bar by bar.
+
+    The plan closes part at TP1 and moves the stop to entry, so the label
+    is the highest target reached before the active stop: ``sl`` (stop
+    before any target), ``tp1``/``tp2`` (target reached, then back to
+    entry), ``tp3`` (final target). Until 3 Nov 2026 only the final
+    target was checked, so a setup that reached TP1 and then fell back
+    was labelled ``sl``; the setup-evidence filter, which measures
+    TP1-or-better, then saw 20-45 % where the plan needs 57-67 %.
+    """
+    from engine.realtime_outcome_tracker import _parse_tp_levels
+
+    if not isinstance(candles, list):
+        return None
+    created_at = row.get("created_at")
+    if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+        created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
+    direction = str(row.get("direction") or "long").lower()
+    is_long = direction not in {"short", "sell", "bearish"}
+    stop = float(row.get("stop_loss") or 0.0)
+    entry = float(row.get("entry") or 0.0)
+    targets = [float(t) for t in _parse_tp_levels(row.get("take_profit")) if float(t) > 0][:3]
+    if stop <= 0 or not targets:
+        return None
+    if isinstance(created_at, datetime) and candles:
+        times = [t for t in (_candle_time(c) for c in candles) if t is not None]
+        # Providers return a fixed number of recent bars (often 200:
+        # under 17 hours of 5m bars). When the tracker reaches a row
+        # after that window has moved past it, the first barrier touch
+        # may be missing; judging the rest of the path would record
+        # false wins and false losses.
+        bar = timedelta(seconds=_timeframe_seconds(row.get("timeframe")))
+        if times and min(times) > created_at + bar:
+            return UNVERIFIABLE_OUTCOME
+    final = len(targets)
+    protect = entry > 0 and ((is_long and entry > stop) or (not is_long and entry < stop))
+
+    def label(level: int) -> str:
+        return "tp3" if level >= final else f"tp{level}"
+
+    highest = 0
+    for candle in candles:
+        candle_time = _candle_time(candle)
+        # A rejected signal can only be judged on market data observed
+        # after the rejection. Using older candles creates false wins
+        # and false losses that the engine could never have traded.
+        if isinstance(created_at, datetime):
+            if candle_time is None or candle_time < created_at:
+                continue
+        high = _candle_value(candle, "high", "h")
+        low = _candle_value(candle, "low", "l")
+        if high is None or low is None:
+            continue
+        active_stop = entry if (highest >= 1 and protect) else stop
+        stop_hit = low <= active_stop if is_long else high >= active_stop
+        reached = highest
+        for index, target in enumerate(targets, start=1):
+            if (high >= target) if is_long else (low <= target):
+                reached = max(reached, index)
+        if stop_hit:
+            if highest == 0 and reached > 0:
+                # Candle resolution cannot prove which barrier occurred first.
+                return "ambiguous"
+            if highest == 0:
+                return "sl"
+            # Back to the protected stop; a new target in the same bar is
+            # not credited because the order inside the bar is unknown.
+            return label(highest)
+        if reached >= final:
+            return "tp3"
+        highest = reached
+    return None
 
 
 class ShadowOutcomeWorker:
@@ -196,110 +314,6 @@ class ShadowOutcomeWorker:
 
         semaphore = asyncio.Semaphore(self._price_concurrency)
 
-        def candle_value(candle: Any, *names: str) -> float | None:
-            if isinstance(candle, dict):
-                for name in names:
-                    try:
-                        value = float(candle.get(name))
-                        if value > 0:
-                            return value
-                    except Exception:
-                        pass
-            return None
-
-        def _candle_time(candle: Any) -> datetime | None:
-            if not isinstance(candle, dict):
-                return None
-            raw = None
-            for key in ("timestamp", "time", "datetime", "open_time", "openTime", "date"):
-                if candle.get(key) not in (None, ""):
-                    raw = candle.get(key)
-                    break
-            if raw is None:
-                return None
-            try:
-                if isinstance(raw, (int, float)):
-                    value = float(raw)
-                    if value > 10_000_000_000:
-                        value /= 1000.0
-                    return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
-                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-                return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
-            except Exception:
-                return None
-
-        def historical_terminal(row: dict[str, Any], candles: Any) -> str | None:
-            """Label a rejected setup by the published plan, bar by bar.
-
-            The plan closes part at TP1 and moves the stop to entry, so the label
-            is the highest target reached before the active stop: ``sl`` (stop
-            before any target), ``tp1``/``tp2`` (target reached, then back to
-            entry), ``tp3`` (final target). Until 3 Nov 2026 only the final
-            target was checked, so a setup that reached TP1 and then fell back
-            was labelled ``sl``; the setup-evidence filter, which measures
-            TP1-or-better, then saw 20-45 % where the plan needs 57-67 %.
-            """
-            if not isinstance(candles, list):
-                return None
-            created_at = row.get("created_at")
-            if isinstance(created_at, datetime) and created_at.tzinfo is not None:
-                created_at = created_at.astimezone(timezone.utc).replace(tzinfo=None)
-            direction = str(row.get("direction") or "long").lower()
-            is_long = direction not in {"short", "sell", "bearish"}
-            stop = float(row.get("stop_loss") or 0.0)
-            entry = float(row.get("entry") or 0.0)
-            targets = [float(t) for t in _parse_tp_levels(row.get("take_profit")) if float(t) > 0][:3]
-            if stop <= 0 or not targets:
-                return None
-            if isinstance(created_at, datetime) and candles:
-                times = [t for t in (_candle_time(c) for c in candles) if t is not None]
-                # Providers return a fixed number of recent bars (often 200:
-                # under 17 hours of 5m bars). When the tracker reaches a row
-                # after that window has moved past it, the first barrier touch
-                # may be missing; judging the rest of the path would record
-                # false wins and false losses.
-                bar = timedelta(seconds=_timeframe_seconds(row.get("timeframe")))
-                if times and min(times) > created_at + bar:
-                    return UNVERIFIABLE_OUTCOME
-            final = len(targets)
-            protect = entry > 0 and ((is_long and entry > stop) or (not is_long and entry < stop))
-
-            def label(level: int) -> str:
-                return "tp3" if level >= final else f"tp{level}"
-
-            highest = 0
-            for candle in candles:
-                candle_time = _candle_time(candle)
-                # A rejected signal can only be judged on market data observed
-                # after the rejection. Using older candles creates false wins
-                # and false losses that the engine could never have traded.
-                if isinstance(created_at, datetime):
-                    if candle_time is None or candle_time < created_at:
-                        continue
-                high = candle_value(candle, "high", "h")
-                low = candle_value(candle, "low", "l")
-                if high is None or low is None:
-                    continue
-                active_stop = entry if (highest >= 1 and protect) else stop
-                stop_hit = low <= active_stop if is_long else high >= active_stop
-                reached = highest
-                for index, target in enumerate(targets, start=1):
-                    if (high >= target) if is_long else (low <= target):
-                        reached = max(reached, index)
-                if stop_hit:
-                    if highest == 0 and reached > 0:
-                        # Candle resolution cannot prove which barrier occurred first.
-                        return "ambiguous"
-                    if highest == 0:
-                        return "sl"
-                    # Back to the protected stop; a new target in the same bar is
-                    # not credited because the order inside the bar is unknown.
-                    return label(highest)
-                if reached >= final:
-                    return "tp3"
-                highest = reached
-            return None
-
         # One provider fetch per asset x timeframe per batch. The engine logs the
         # same setup on every scan, so a 150-row batch holds only a few distinct
         # series; fetching per row made each batch take ~90 s on production
@@ -319,9 +333,9 @@ class ShadowOutcomeWorker:
         async def one(row: dict[str, Any]):
             async with semaphore:
                 candles = series.get(_series_key(row)) or []
-                historical = historical_terminal(row, candles)
+                historical = label_from_candles(row, candles)
                 if historical == UNVERIFIABLE_OUTCOME:
-                    return row, UNVERIFIABLE_OUTCOME
+                    return {**row, "_label_source": LABEL_SOURCE_CANDLES}, UNVERIFIABLE_OUTCOME
                 if not candles and not self._live_price_can_judge(row):
                     # No candle history: a current price cannot tell which
                     # barrier was touched first for an older rejection. Retry
@@ -332,9 +346,9 @@ class ShadowOutcomeWorker:
                     # research result. Retrying forever would leave shadow
                     # pending counts at zero/unknown and could later convert an
                     # unknowable sequence into a false win or false loss.
-                    return row, "ambiguous"
+                    return {**row, "_label_source": LABEL_SOURCE_CANDLES}, "ambiguous"
                 if historical:
-                    return row, historical
+                    return {**row, "_label_source": LABEL_SOURCE_CANDLES}, historical
                 price = await _get_live_price(str(row["asset"]))
             if price is None:
                 return None
@@ -345,7 +359,7 @@ class ShadowOutcomeWorker:
                 _parse_tp_levels(row["take_profit"]),
                 float(price),
             )
-            return (row, str(hit).lower()) if hit else None
+            return ({**row, "_label_source": LABEL_SOURCE_LIVE_PRICE}, str(hit).lower()) if hit else None
 
         results = await asyncio.gather(*(one(row) for row in rows), return_exceptions=True)
         return [item for item in results if isinstance(item, tuple)]
@@ -404,7 +418,8 @@ class ShadowOutcomeWorker:
                         shadow_r = realized_r(source.get("direction"), source.get("entry"), source.get("stop_loss"),
                                               source.get("take_profit"), outcome)
                         record.meta = {**record_meta, "actual_outcome": outcome[:32],
-                                       "outcome_tracked_at": now.isoformat(), "shadow_r": shadow_r}
+                                       "outcome_tracked_at": now.isoformat(), "shadow_r": shadow_r,
+                                       "outcome_label_source": source.get("_label_source")}
                         tracked += 1
                         bucket = "win" if (shadow_r or 0) > 0 else "loss" if shadow_r is not None else "unscored"
                         metric_deltas[f"{self._layer}_shadow:counts:{bucket}"] += 1
@@ -434,6 +449,7 @@ class ShadowOutcomeWorker:
                                 "stop_loss": source.get("stop_loss"),
                                 "take_profit": str(source.get("take_profit")),
                                 "actual_outcome": outcome,
+                                "outcome_label_source": source.get("_label_source"),
                                 "rejection_reason": source.get("rejection_reason"),
                                 "learning_category": source_features.get(
                                     "learning_category",
@@ -450,6 +466,7 @@ class ShadowOutcomeWorker:
                         **record_meta,
                         "actual_outcome": outcome[:32],
                         "outcome_tracked_at": now.isoformat(),
+                        "outcome_label_source": source.get("_label_source"),
                     }
                     tracked += 1
                     if is_candidate_forward:

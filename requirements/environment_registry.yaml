@@ -4024,7 +4024,7 @@
         "db/storage_maintenance.py:16",
         "engine/adaptive/candle_store.py:34",
         "engine/realtime_outcome_tracker.py:292",
-        "engine/shadow_outcome_worker.py:40",
+        "engine/shadow_outcome_worker.py:49",
         "railway_main.py:500",
         "railway_main.py:506",
         "services/instrument_catalogue_refresh.py:23",
@@ -6490,7 +6490,7 @@
         "engine/core.py:1669",
         "engine/core.py:1694",
         "engine/core.py:3379",
-        "engine/shadow_outcome_worker.py:107",
+        "engine/shadow_outcome_worker.py:225",
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:674",
@@ -8323,7 +8323,7 @@
       "name": "ML_MODEL_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:425"
+        "engine/shadow_outcome_worker.py:440"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12193,7 +12193,7 @@
         "engine/core.py:1670",
         "engine/core.py:1695",
         "engine/core.py:3380",
-        "engine/shadow_outcome_worker.py:106",
+        "engine/shadow_outcome_worker.py:224",
         "railway_main.py:1194",
         "web/app.py:557"
       ],
@@ -12286,7 +12286,7 @@
         "engine/core.py:1669",
         "engine/core.py:1694",
         "engine/core.py:3379",
-        "engine/shadow_outcome_worker.py:107",
+        "engine/shadow_outcome_worker.py:225",
         "railway_main.py:3138",
         "railway_main.py:3240",
         "services/account_policies.py:674",
@@ -12799,7 +12799,7 @@
       "name": "REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:60",
+        "engine/shadow_outcome_worker.py:178",
         "engine/signal_deduplicator.py:503"
       ],
       "required_by_code": true,
@@ -13620,7 +13620,7 @@
         "db/storage_maintenance.py:16",
         "engine/adaptive/candle_store.py:34",
         "engine/realtime_outcome_tracker.py:292",
-        "engine/shadow_outcome_worker.py:40",
+        "engine/shadow_outcome_worker.py:49",
         "railway_main.py:498",
         "railway_main.py:671",
         "services/instrument_catalogue_refresh.py:23",
@@ -13957,8 +13957,8 @@
       "name": "SHADOW_OUTCOME_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:150",
-        "engine/shadow_outcome_worker.py:378"
+        "engine/shadow_outcome_worker.py:268",
+        "engine/shadow_outcome_worker.py:392"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13989,7 +13989,7 @@
       "name": "SHADOW_PRICE_CONCURRENCY",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:62"
+        "engine/shadow_outcome_worker.py:180"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13999,7 +13999,7 @@
       "name": "SHADOW_TRACKER_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:61"
+        "engine/shadow_outcome_worker.py:179"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14009,7 +14009,7 @@
       "name": "SHADOW_TRACKER_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:59"
+        "engine/shadow_outcome_worker.py:177"
       ],
       "required_by_code": true,
       "sensitive": false

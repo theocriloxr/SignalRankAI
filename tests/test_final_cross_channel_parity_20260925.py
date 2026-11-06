@@ -16,7 +16,7 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0058_exclude_no_trade_outcomes"
+        "0059_close_pending_terminal"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"

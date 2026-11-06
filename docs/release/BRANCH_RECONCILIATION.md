@@ -1,5 +1,10 @@
 # Branch reconciliation
 
+## Continuation, 6 November 2026 — branch for the 6 Nov work (cloud session)
+
+- `claude/pensive-fermat-hju9hw` was reset to `feat/frontend-rebuild-and-stage1-hardening` at `d9c58ba` (its previous content was `main`, 1,235 commits behind) and carries migration `0059_close_pending_terminal`, the shadow label-source field and `scripts/correct_stale_tick_shadow_labels.py`.
+- It is **not** the deploy branch. The production server deploys `feat/frontend-rebuild-and-stage1-hardening`; merging there runs 0059 on production after the predeploy backup. Details and tests: `COMPLETION_EVIDENCE.md`, 6 November.
+
 ## Continuation, 3 November 2026 (night) — the truth on every card and in every results view, forex providers, owner steps (desktop session)
 
 Owner: "let it still send signals even when it is not yet on a minimum of 82% win rate, I just want that to be the truth not a brag", plus a full check that every figure matches the database.

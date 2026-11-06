@@ -441,7 +441,7 @@ def test_shadow_tracking_is_worker_default_and_ambiguity_is_terminally_recorded(
     worker = Path("worker/worker.py").read_text(encoding="utf-8")
     shadow = Path("engine/shadow_outcome_worker.py").read_text(encoding="utf-8")
     assert '("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"),\n            True,' in worker
-    assert 'return row, "ambiguous"' in shadow
+    assert '"_label_source": LABEL_SOURCE_CANDLES}, "ambiguous"' in shadow
 
 
 def test_live_activation_requires_each_integrity_certification(monkeypatch):
