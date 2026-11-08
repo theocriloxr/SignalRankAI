@@ -267,14 +267,38 @@ function OverviewView({ data }: { data: Row }) {
 function PaperView({ data }: { data: Row }) {
   const account = record(data.account), snapshot = record(data.snapshot), positions = rows(data.positions);
   const currency = account.currency;
+  // Open and closed trades are separate tables. Until 8 Nov 2026 every
+  // position, closed ones included, sat under "Open positions" with its
+  // *open* profit (USD 0.00 once closed), so closed results were never shown.
+  const open = positions.filter(p => display(p.status, "").toLowerCase() === "open");
+  const closed = positions.filter(p => display(p.status, "").toLowerCase() !== "open");
+  const start = finite(snapshot.starting_balance ?? account.starting_balance);
+  const equity = finite(snapshot.equity);
+  const realized = finite(snapshot.realized_pnl);
+  const unrealized = finite(snapshot.unrealized_pnl);
+  const growth = start !== null && start > 0 && equity !== null ? ((equity - start) / start) * 100 : null;
+  const wins = closed.filter(p => (finite(p.realized_pnl) ?? 0) > 0).length;
+  const openFees = open.reduce((sum, p) => sum + (finite(p.entry_fee) ?? 0), 0);
+  const signed = (value: number | null) => value === null ? "—" : moneyLabel(value, currency);
+  const pct = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}%`;
   return <div className="ws-stack">
     <div className="ui-stat-grid">
-      <Stat label="Cash" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
-      <Stat label="Equity" value={moneyLabel(snapshot.equity, currency)} />
-      <Stat label="Open positions" value={numberLabel(snapshot.open_positions, 0)} />
-      <Stat label="Realised profit or loss" value={moneyLabel(snapshot.realized_pnl, currency)} />
+      <Stat label="Starting balance" value={moneyLabel(start, currency)} />
+      <Stat label="Equity now" value={moneyLabel(equity, currency)} />
+      <Stat label="Return" value={pct(growth)} />
+      <Stat label="Cash not in positions" value={moneyLabel(account.cash_balance ?? snapshot.cash_balance, currency)} />
+      <Stat label="Realised profit or loss" value={signed(realized)} />
+      <Stat label="Open profit or loss" value={signed(unrealized)} />
+      <Stat label="Open positions" value={numberLabel(open.length, 0)} />
+      <Stat label="Closed trades won" value={closed.length ? `${wins} of ${closed.length}` : "—"} />
     </div>
-    <Card title="Open positions">{positions.length ? <TableWrap label="Open paper positions"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Size</th><th>Open profit or loss</th><th>State</th></tr></thead><tbody>{positions.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{display(p.status)}</td></tr>)}</tbody></TableWrap>:<Empty title="Nothing open on the paper desk.">Signals you follow on paper show up here.</Empty>}</Card>
+    {start !== null && equity !== null && <p className="ws-aside">
+      Equity = starting balance {moneyLabel(start, currency)} + realised {signed(realized)} + open {signed(unrealized)}
+      {openFees > 0 ? <> − entry fees on open positions {moneyLabel(openFees, currency)}</> : null}. Cash is equity minus the value held in open positions.
+    </p>}
+    <Card title="Open positions">{open.length ? <TableWrap label="Open paper positions"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Now</th><th>Stop</th><th>Target</th><th>Size</th><th>Value</th><th>Open profit or loss</th><th>Opened</th></tr></thead><tbody>{open.map((p,i)=><tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.current_price,6)}</td><td>{numberLabel(p.stop_loss,6)}</td><td>{numberLabel(p.target_price,6)}</td><td>{numberLabel(p.quantity,6)}</td><td>{moneyLabel(p.notional,currency)}</td><td>{moneyLabel(p.unrealized_pnl,currency)}</td><td>{timeLabel(p.opened_at)}</td></tr>)}</tbody></TableWrap>:<Empty title="Nothing open on the paper desk.">Signals you follow on paper show up here.</Empty>}</Card>
+    <Card title="Closed trades">{closed.length ? <TableWrap label="Closed paper trades"><thead><tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>Result</th><th>R</th><th>Fees</th><th>Closed by</th><th>Closed</th></tr></thead><tbody>{closed.map((p,i)=>{const pnl=finite(p.realized_pnl), r=finite(p.r_multiple), fees=(finite(p.entry_fee)??0)+(finite(p.exit_fee)??0);
+      return <tr key={display(p.position_id,String(i))}><th>{display(p.asset)}</th><td><DirectionBadge direction={display(p.direction,"")}/></td><td>{numberLabel(p.fill_entry,6)}</td><td>{numberLabel(p.exit_price,6)}</td><td>{numberLabel(p.quantity,6)}</td><td><Badge tone={pnl===null?"neutral":pnl>0?"positive":pnl<0?"negative":"neutral"} plain>{moneyLabel(pnl,currency)}</Badge></td><td>{r===null?"—":`${r>=0?"+":"−"}${Math.abs(r).toFixed(2)}R`}</td><td>{moneyLabel(fees,currency)}</td><td>{display(p.exit_reason,"—")}</td><td>{timeLabel(p.closed_at)}</td></tr>;})}</tbody></TableWrap>:<Empty title="No closed paper trades yet.">Finished trades and their results appear here.</Empty>}</Card>
   </div>;
 }
 

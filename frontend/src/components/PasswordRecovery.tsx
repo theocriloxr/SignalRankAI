@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { PasswordField } from "./ui/PasswordField";
 import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
 import { BrandLink } from "./AuthFrame";
@@ -48,8 +49,8 @@ export function PasswordRecovery({ initialToken = "" }: { initialToken?: string 
       <p>Recovery changes sign-in credentials only. Broker connections, risk controls and trading permissions keep their existing verification policies.</p>
       {!finished&&<form className="ui-form" onSubmit={submit}>
         {stage==="request"?<label className="ui-field">Email address<input className="ui-input" type="email" name="email" required autoComplete="email" maxLength={255}/></label>:
-        <><label className="ui-field">New password<input className="ui-input" name="password" type="password" required minLength={10} maxLength={256} autoComplete="new-password"/><small>At least 10 characters.</small></label>
-          <label className="ui-field">Confirm password<input className="ui-input" name="confirmation" type="password" required autoComplete="new-password"/></label></>}
+        <><PasswordField label="New password" name="password" minLength={10} autoComplete="new-password" showRules/>
+          <PasswordField label="Confirm password" name="confirmation" autoComplete="new-password"/></>}
         <button className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block" type="submit" disabled={busy}>{busy?"Processing…":stage==="request"?"Send recovery instructions":"Update password"}</button>
       </form>}
       {message&&<p className={finished?"ui-feedback":"ui-feedback ui-feedback--error"} role="status">{message}</p>}

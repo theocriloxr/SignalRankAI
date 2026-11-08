@@ -272,3 +272,18 @@
 .ui-meter { height: 8px; border-radius: var(--radius-xs); background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
 .ui-meter > span { display: block; height: 100%; background: var(--brand); }
 .ui-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+
+/* Password with show/hide (8 Nov 2026: owners asked for the eye toggle other sites have). */
+.ui-field > label { display: block; }
+.ui-password { position: relative; display: flex; align-items: center; }
+.ui-password .ui-input { padding-right: 46px; }
+.ui-password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: inline-grid; place-items: center; width: 38px; height: 34px;
+  border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-3); cursor: pointer;
+}
+.ui-password-toggle:hover { color: var(--text); background: var(--brand-soft); }
+.ui-password-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; color: var(--text); }
+.ui-password-rules { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: var(--text-sm); color: var(--text-3); }
+.ui-password-rules li { display: flex; align-items: center; gap: 6px; }
+.ui-password-rules li[data-ok="true"] { color: var(--positive); }

@@ -10,7 +10,18 @@ export const metadata: Metadata = {
   title: { default: "SignalRankAI — Multi-Asset Trading Intelligence", template: "%s · SignalRankAI" },
   description: "Evidence-driven multi-asset trading intelligence, paper trading, and broker-ready workflows.",
   applicationName: "SignalRankAI",
-  icons: { icon: "/brand/icon.svg" },
+  // The real SignalRank mark everywhere a browser or phone shows an icon. Until
+  // 8 Nov 2026 /favicon.ico was the stock Next.js icon, which browser tabs used.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/brand/icon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/brand/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/brand/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

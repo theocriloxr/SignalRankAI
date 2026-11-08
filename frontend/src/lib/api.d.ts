@@ -2923,6 +2923,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/signals/{signal_id}/candles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signal Live Candles
+         * @description Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.
+         *
+         *     Owner request, 8 Nov 2026: show the candles of a signal flowing in real time.
+         *     Read only; the same delivery proof as the detail view authorizes it. The bar
+         *     still forming is included (its close moves as new prices arrive).
+         */
+        get: operations["signal_live_candles_api_v1_platform_signals__signal_id__candles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -9291,6 +9315,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    signal_live_candles_api_v1_platform_signals__signal_id__candles_get: {
+        parameters: {
+            query?: {
+                after_ms?: number;
+            };
+            header?: never;
+            path: {
+                signal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

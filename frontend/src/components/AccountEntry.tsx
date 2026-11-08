@@ -6,15 +6,48 @@ import Link from "next/link";
 import { SiteCredit } from "./SiteCredit";
 import { AuthAside, BrandLink } from "./AuthFrame";
 import { Icon } from "./ui/Icon";
+import { PasswordField, passwordMeetsRules } from "./ui/PasswordField";
 import client from "../lib/client";
 import { record } from "../lib/presentation";
 import { safeReturnPath } from "../lib/return-path";
+
+/** Plain words for the account service's refusal codes (services/platform/identity, web/platform_api). */
+const AUTH_ERRORS: Record<string, string> = {
+  email_already_registered: "An account with this email already exists. Sign in instead, or reset the password.",
+  invalid_email: "Enter a valid email address.",
+  password_too_short: "The password needs at least 10 characters.",
+  password_too_long: "The password can be at most 256 characters.",
+  password_requires_three_character_categories: "Use three of: lowercase, uppercase, a number, a symbol.",
+  invalid_credentials: "That email and password don't match an account.",
+  telegram_identity_owner_conflict: "This Telegram account is already linked to another web account.",
+  telegram_already_linked: "This account is already linked to Telegram.",
+  email_belongs_to_another_account: "This email belongs to another account.",
+};
+
+/** Turn an error response into a message the person can act on. */
+export function authErrorMessage(status: number, body: unknown): string {
+  const raw = record(body).detail;
+  const detail = typeof raw === "string" ? raw : Array.isArray(raw) ? "validation" : "";
+  if (detail && AUTH_ERRORS[detail]) return AUTH_ERRORS[detail];
+  if (status === 429) return "Too many attempts. Wait a minute before retrying.";
+  if (status === 503) return "Secure account services are unavailable right now. Please try again shortly.";
+  if (status === 401) return AUTH_ERRORS.invalid_credentials;
+  if (status === 403 && /csrf/i.test(detail)) return "Your previous session has expired. Refresh the page and try again.";
+  if (status === 409) return detail ? `This account can't be created: ${detail.replace(/_/g, " ")}.` : "This account already exists.";
+  if (status === 422) return detail && detail !== "validation" ? detail.replace(/_/g, " ") : "Check the highlighted details and try again.";
+  return "The request could not be completed. Check your details and try again.";
+}
 
 export function AccountEntry() {
   // Links from the Telegram bot (/app, /login_code) carry a one-time token.
   const searchParams = useSearchParams();
   const linkedCode = searchParams.get("token") || searchParams.get("activation") || "";
-  const [mode, setMode] = useState<"login"|"register"|"telegram">(linkedCode ? "telegram" : "login");
+  // "Create a free account" links open the Create account tab (?mode=register).
+  // Until 8 Nov 2026 they opened "Welcome back", so new visitors filled in the
+  // sign-in form and were told their details were wrong.
+  const requested = (searchParams.get("mode") || "").toLowerCase();
+  const initialMode = linkedCode ? "telegram" : ["register", "signup", "create"].includes(requested) ? "register" : "login";
+  const [mode, setMode] = useState<"login"|"register"|"telegram">(initialMode);
   const [activationCode, setActivationCode] = useState(linkedCode);
   const [stage, setStage] = useState<"credentials"|"mfa">("credentials");
   const [token, setToken] = useState("");
@@ -54,6 +87,9 @@ export function AccountEntry() {
         });
       } else if (mode === "register") {
         const password = String(data.get("password")||"");
+        if (!passwordMeetsRules(password)) {
+          setMessage(AUTH_ERRORS.password_requires_three_character_categories);return;
+        }
         if (password !== String(data.get("confirm_password")||"")) {
           setMessage("Passwords do not match.");return;
         }
@@ -70,10 +106,7 @@ export function AccountEntry() {
         });
       }
       if (!response.response.ok || !response.data) {
-        setMessage(response.response.status===429
-          ? "Too many attempts. Wait before retrying."
-          : response.response.status===503 ? "Secure account services are unavailable right now."
-          : "The request could not be completed. Check your details and try again.");
+        setMessage(authErrorMessage(response.response.status, response.error));
         return;
       }
       const payload=record(response.data);
@@ -121,9 +154,9 @@ export function AccountEntry() {
               value={activationCode} onChange={event=>setActivationCode(event.target.value)}/></label>}
             {mode==="register"&&<label className="ui-field">Display name<input className="ui-input" name="name" autoComplete="name" maxLength={100}/></label>}
             <label className="ui-field">Email address<input className="ui-input" name="email" type="email" autoComplete="email" required maxLength={255}/></label>
-            <label className="ui-field">Password<input className="ui-input" name="password" type="password" autoComplete={needsConsent?"new-password":"current-password"} minLength={needsConsent?10:undefined} required/>
-              {needsConsent&&<small>At least 10 characters.</small>}</label>
-            {mode==="register"&&<label className="ui-field">Confirm password<input className="ui-input" name="confirm_password" type="password" autoComplete="new-password" required/></label>}
+            <PasswordField key={`${mode}-password`} label="Password" name="password" autoComplete={needsConsent?"new-password":"current-password"}
+              minLength={needsConsent?10:undefined} showRules={needsConsent}/>
+            {mode==="register"&&<PasswordField key="confirm" label="Confirm password" name="confirm_password" autoComplete="new-password"/>}
             {needsConsent&&<fieldset className="ui-fieldset">
               <legend>Account agreements</legend>
               <label className="ui-consent"><input name="platform_terms_accepted" type="checkbox" required/><span>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Use</a>.</span></label>

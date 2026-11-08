@@ -18,7 +18,6 @@ from sqlalchemy.engine import make_url
 import web.platform_api as platform_api
 from web.platform_api import _quality_breakdowns
 
-pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
@@ -71,6 +70,7 @@ def _by(result, dimension, value):
     return next(item for item in result["breakdowns"][dimension] if item["value"] == value)
 
 
+@pytest.mark.asyncio
 async def test_quality_report_breaks_decisions_down_on_real_postgres(isolated_postgres, monkeypatch):
     tag = "QB" + uuid4().hex[:6].upper()
     await _seed(tag)

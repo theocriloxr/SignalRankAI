@@ -22,12 +22,13 @@ export function PublicNav({ current }: { current?: string }) {
       <div className="mk-nav-actions">
         <span className="mk-hide-mobile"><ThemeControl/></span>
         <WorkspaceLink className="ui-btn ui-btn--ghost mk-hide-mobile" href="/login">Sign in</WorkspaceLink>
-        <WorkspaceLink className="ui-btn ui-btn--primary" href="/app">Open workspace</WorkspaceLink>
+        <WorkspaceLink className="ui-btn ui-btn--primary" href="/login?mode=register">Create account</WorkspaceLink>
         <ResponsiveDisclosure className="mk-menu" label="Explore SignalRankAI" desktopFrom={1180}>
           <nav aria-label="Mobile public navigation">{links.map(([label,href])=><Link key={href} href={href}>{label}</Link>)}</nav>
           <div className="mk-menu-actions">
             <WorkspaceLink className="ui-btn ui-btn--lg" href="/login">Sign in</WorkspaceLink>
-            <WorkspaceLink className="ui-btn ui-btn--primary ui-btn--lg" href="/app">Open workspace</WorkspaceLink>
+            <WorkspaceLink className="ui-btn ui-btn--primary ui-btn--lg" href="/login?mode=register">Create free account</WorkspaceLink>
+            <WorkspaceLink className="ui-btn ui-btn--lg" href="/app">Open workspace</WorkspaceLink>
             <ThemeControl/>
           </div>
         </ResponsiveDisclosure>

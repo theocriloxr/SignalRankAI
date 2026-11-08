@@ -9,7 +9,7 @@ test("public site shows the real product with a labelled example, not a fake tra
   // The one illustration is a fixed example ticket, labelled on screen and in its caption.
   assert.match(page,/className="hm-tag">Example</);
   assert.match(page,/An example, not a live signal/);
-  assert.match(page,/href="\/login"/);
+  assert.match(page,/href="\/login\?mode=register"/); // sign-up CTAs open the Create account tab (8 Nov 2026)
   for(const href of ["/app/signals","/app/paper","/app/brokers","/app/performance"]){
     assert.ok(page.includes('href:"'+href+'"')||page.includes('href="'+href+'"'),href);
   }

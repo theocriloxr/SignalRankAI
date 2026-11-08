@@ -406,6 +406,33 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
+_PUBLIC_AUTH_PATHS = frozenset({
+    "/api/v1/platform/auth/login",
+    "/api/v1/platform/auth/register",
+    "/api/v1/platform/auth/telegram/complete",
+    "/api/v1/platform/auth/mfa/complete",
+})
+
+
+def _same_site_request(request: Request) -> bool:
+    """Origin (or Referer) host equals the host the browser addressed."""
+    from urllib.parse import urlsplit
+
+    source = str(request.headers.get("origin") or request.headers.get("referer") or "").strip()
+    if not source or source == "null":
+        return False
+    try:
+        source_host = (urlsplit(source).hostname or "").lower()
+    except ValueError:
+        return False
+    hosts = {
+        str(value or "").split(",")[0].strip().split(":")[0].lower()
+        for value in (request.headers.get("x-forwarded-host"), request.headers.get("host"), request.url.hostname)
+    }
+    hosts.discard("")
+    return bool(source_host) and source_host in hosts
+
+
 @app.middleware("http")
 async def platform_csrf_middleware(request: Request, call_next):
     """Double-submit CSRF protection for cookie-authenticated mutations.
@@ -417,6 +444,15 @@ async def platform_csrf_middleware(request: Request, call_next):
     unsafe = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
     platform_path = request.url.path.startswith("/api/v1/platform/")
     has_auth_cookie = bool(request.cookies.get("sr_access") or request.cookies.get("sr_refresh"))
+    # The docstring always promised this exemption, but it was not coded: a
+    # visitor holding a leftover session cookie without a matching sr_csrf
+    # (expired session, partly cleared cookies, the legacy workspace) got
+    # "CSRF validation failed" on sign-in and on account creation (owner
+    # report, 8 Nov 2026: new users could not join from the site). These
+    # endpoints carry their own credentials; a same-site Origin/Referer is
+    # required instead, so a foreign page cannot sign a visitor in.
+    if unsafe and has_auth_cookie and request.url.path in _PUBLIC_AUTH_PATHS and _same_site_request(request):
+        return await call_next(request)
     # Refresh and some account endpoints can still consume cookies when an
     # Authorization header is present. Header presence is not proof that the
     # request is independent of ambient cookie authority.

@@ -7426,6 +7426,67 @@
           }
         ]
       }
+    },
+    "/api/v1/platform/signals/{signal_id}/candles": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Signal Live Candles",
+        "description": "Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.\n\nOwner request, 8 Nov 2026: show the candles of a signal flowing in real time.\nRead only; the same delivery proof as the detail view authorizes it. The bar\nstill forming is included (its close moves as new prices arrive).",
+        "operationId": "signal_live_candles_api_v1_platform_signals__signal_id__candles_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "signal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Signal Id"
+            }
+          },
+          {
+            "name": "after_ms",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "After Ms"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Signal Live Candles Api V1 Platform Signals  Signal Id  Candles Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

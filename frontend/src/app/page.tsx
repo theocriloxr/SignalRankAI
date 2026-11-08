@@ -34,7 +34,7 @@ export default function Home() {
           <h1 id="hm-title">Trade setups that come with their track record.</h1>
           <p className="hm-lede">SignalRankAI watches crypto, forex, stocks, indices and commodities around the clock. When a setup appears, we look up how that same kind of setup has done over the past two months. It only reaches you if its record beats what the trade needs to break even.</p>
           <div className="hm-actions">
-            <WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
+            <WorkspaceLink href="/login?mode=register" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
             <Link href="#how" className="hm-textlink">How we decide what to send</Link>
           </div>
           <p className="hm-small">There is a free plan. Signals are research to help your own decisions, not financial advice.</p>
@@ -102,7 +102,7 @@ export default function Home() {
         <h2 id="hm-end-title">Start on the free plan</h2>
         <p>Link Telegram in about a minute. Upgrade only if the record convinces you.</p>
         <div className="hm-actions">
-          <WorkspaceLink href="/login" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
+          <WorkspaceLink href="/login?mode=register" className="ui-btn ui-btn--primary ui-btn--lg">Create a free account</WorkspaceLink>
           <Link href="/pricing" className="hm-textlink">Compare plans</Link>
         </div>
       </div>

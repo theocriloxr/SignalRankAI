@@ -2878,6 +2878,85 @@ async def _signal_chart_candles(session: Any, row: Mapping[str, Any]) -> dict[st
     }
 
 
+@router.get("/signals/{signal_id}/candles")
+async def signal_live_candles(
+    signal_id: str,
+    after_ms: int = Query(0, ge=0),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.
+
+    Owner request, 8 Nov 2026: show the candles of a signal flowing in real time.
+    Read only; the same delivery proof as the detail view authorizes it. The bar
+    still forming is included (its close moves as new prices arrive).
+    """
+    ref = str(signal_id or "").strip()
+    if not ref or len(ref) > 64:
+        raise HTTPException(status_code=422, detail="Invalid signal reference")
+    async with get_session(label="platform.signal_live_candles", timeout_seconds=8.0) as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT s.signal_id,s.asset,s.timeframe,s.direction,s.entry,s.stop_loss,s.take_profit,s.created_at,"
+                    "o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,"
+                    "l.state AS lifecycle_state,l.highest_tp_hit,l.last_price,l.last_checked_at,"
+                    "l.closed_at AS lifecycle_closed_at "
+                    "FROM signals s LEFT JOIN outcomes o ON o.signal_id=s.signal_id "
+                    "LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id "
+                    "WHERE s.signal_id=:sid AND (EXISTS(SELECT 1 FROM signal_deliveries d WHERE d.signal_id=s.signal_id "
+                    "AND d.user_id=:uid AND d.sent_ok=TRUE) OR EXISTS(SELECT 1 FROM notification_events ne "
+                    "WHERE ne.user_id=:uid AND ne.event_type='signal' AND ne.channel_data->>'signal_id'=s.signal_id)) "
+                    "LIMIT 1"
+                ),
+                {"uid": int(user["id"]), "sid": ref},
+            )
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Signal not found in your delivery history")
+        timeframe = str(row.get("timeframe") or "").lower()
+        timeframe = {"24h": "1d", "1day": "1d", "60m": "1h"}.get(timeframe, timeframe)
+        bar_ms = _CHART_TF_MS.get(timeframe)
+        candles: list[Any] = []
+        if bar_ms:
+            # Re-send the last known bar too: it may still be forming.
+            floor_ms = max(0, int(after_ms) - bar_ms) if after_ms else int(
+                datetime.now(timezone.utc).timestamp() * 1000) - 300 * bar_ms
+            candles = list((
+                await session.execute(
+                    text(
+                        "SELECT open_time_ms,open,high,low,close FROM market_candles "
+                        "WHERE symbol=:s AND timeframe=:tf AND open_time_ms>=:a "
+                        "ORDER BY open_time_ms DESC LIMIT 300"
+                    ),
+                    {"s": str(row.get("asset") or "").upper(), "tf": timeframe, "a": floor_ms},
+                )
+            ).all())
+            candles.reverse()
+        await session.rollback()
+    from services.trade_status import describe_trade
+
+    status = describe_trade(
+        lifecycle_state=row.get("lifecycle_state"), outcome_status=row.get("outcome_status"),
+        canonical_outcome=row.get("canonical_outcome"), r_multiple=row.get("r_multiple"), pnl_pct=row.get("pnl_pct"),
+        highest_tp_hit=row.get("highest_tp_hit"), entry=row.get("entry"), stop_loss=row.get("stop_loss"),
+        take_profit=row.get("take_profit"), direction=row.get("direction"),
+    ).as_dict()
+    checked = row.get("last_checked_at")
+    return {
+        "timeframe": timeframe,
+        "candles": [
+            {"t": int(c[0]), "o": float(c[1]), "h": float(c[2]), "l": float(c[3]), "c": float(c[4])}
+            for c in candles if c[1] is not None and c[4] is not None
+        ],
+        "last_price": float(row["last_price"]) if row.get("last_price") is not None else None,
+        "last_checked_at": checked.isoformat() if checked is not None else None,
+        "trade_status": status,
+        "closed": bool(status.get("closed")),
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "source": "signalrank_market_candles",
+    }
+
+
 @router.post("/signals/{signal_id}/execute")
 async def execute_signal_from_platform(
     signal_id: str,
@@ -3284,8 +3363,14 @@ async def paper_summary(user: dict[str, Any] = Depends(current_user)) -> dict[st
             (
                 await session.execute(
                     text(
-                        "SELECT position_id,signal_id,asset,asset_class,timeframe,direction,status,fill_entry,current_price,stop_loss,take_profits,target_price,quantity,notional,unrealized_pnl,realized_pnl,r_multiple,opened_at,closed_at,exit_reason "
-                        "FROM paper_positions WHERE user_id=:uid ORDER BY opened_at DESC LIMIT 100"
+                        "SELECT p.position_id,p.signal_id,p.asset,p.asset_class,p.timeframe,p.direction,p.status,p.fill_entry,"
+                        "p.current_price,p.stop_loss,p.take_profits,p.target_price,p.quantity,p.notional,p.unrealized_pnl,"
+                        "p.realized_pnl,p.r_multiple,p.opened_at,p.closed_at,p.exit_reason,p.entry_fee,p.exit_fee,"
+                        # Exit price of a closed position is recorded on its close ledger entry.
+                        "(SELECT CAST(e.meta::jsonb->>'exit_price' AS DOUBLE PRECISION) FROM paper_ledger_entries e "
+                        " WHERE e.position_id=p.position_id AND e.entry_type='POSITION_CLOSED' "
+                        " ORDER BY e.id DESC LIMIT 1) AS exit_price "
+                        "FROM paper_positions p WHERE p.user_id=:uid ORDER BY p.opened_at DESC LIMIT 100"
                     ),
                     {"uid": uid},
                 )

@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import client from "../lib/client";
 import { finite, numberLabel, record, rows, type Row } from "../lib/presentation";
 import { Card, Notice } from "./ui/primitives";
 
@@ -33,11 +37,72 @@ function timeTick(ms: number, timeframe: string): string {
     : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+/** How often to ask for new bars: often enough to watch a 5m bar form, rarely for daily bars. */
+function pollMs(timeframe: string): number {
+  return ["1m", "5m", "15m"].includes(timeframe) ? 15_000 : timeframe === "30m" ? 30_000 : 60_000;
+}
+
+/** Merge newer candles into the series; a bar with the same open time replaces the stored one. */
+export function mergeCandles(current: Candle[], incoming: Candle[], limit = 400): Candle[] {
+  const byTime = new Map(current.map(c => [c.t, c]));
+  for (const c of incoming) byTime.set(c.t, c);
+  return [...byTime.values()].sort((a, b) => a.t - b.t).slice(-limit);
+}
+
+type Live = { candles: Candle[]; lastPrice: number | null; updatedAt: string | null; status: string; closed: boolean };
+
+/** Live candle flow (owner request, 8 Nov 2026): polls the signal's candle endpoint while the tab is
+ * visible and the trade is not closed, so the chart keeps moving with the market. */
+function useLiveCandles(signalId: string, timeframe: string, initial: Candle[], closedAtStart: boolean): Live {
+  const [live, setLive] = useState<Live>({ candles: initial, lastPrice: null, updatedAt: null, status: "", closed: closedAtStart });
+  const latest = useRef(live);
+  useEffect(() => { latest.current = live; }, [live]);
+  useEffect(() => {
+    if (!signalId || closedAtStart) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      if (stopped) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        timer = setTimeout(tick, pollMs(timeframe)); return;
+      }
+      const series = latest.current.candles;
+      const after = series.length ? series[series.length - 1].t : 0;
+      try {
+        const response = await client.GET("/api/v1/platform/signals/{signal_id}/candles", {
+          params: { path: { signal_id: signalId }, query: { after_ms: after } },
+        });
+        const body = record(response.data);
+        if (response.response.ok && !stopped) {
+          const incoming = candlesFrom(body);
+          const status = record(body.trade_status);
+          setLive(prev => ({
+            candles: mergeCandles(prev.candles, incoming),
+            lastPrice: finite(body.last_price),
+            updatedAt: typeof body.server_time === "string" ? body.server_time : null,
+            status: typeof status.label === "string" ? status.label : prev.status,
+            closed: body.closed === true,
+          }));
+          if (body.closed === true) return;
+        }
+      } catch { /* a missed poll is retried on the next tick */ }
+      timer = setTimeout(tick, pollMs(timeframe));
+    };
+    timer = setTimeout(tick, 2_000);
+    const wake = () => { if (document.visibilityState === "visible") { if (timer) clearTimeout(timer); timer = setTimeout(tick, 250); } };
+    document.addEventListener("visibilitychange", wake);
+    return () => { stopped = true; if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
+  }, [signalId, timeframe, closedAtStart]);
+  return live;
+}
+
 export function SignalChart({ data }: { data: Row }) {
   const chart = record(data.chart);
   const signal = record(data.signal);
-  const candles = candlesFrom(chart);
   const timeframe = String(chart.timeframe || "");
+  const tradeStatus = record(signal.trade_status);
+  const live = useLiveCandles(String(signal.signal_id || ""), timeframe, candlesFrom(chart), tradeStatus.closed === true);
+  const candles = live.candles;
   const entry = finite(signal.entry);
   const stop = finite(signal.stop_loss);
   const targets = targetsFrom(signal.take_profit);
@@ -67,6 +132,8 @@ export function SignalChart({ data }: { data: Row }) {
       <text x={W - PAD.right + 6} y={y(value) + 4}>{label} {numberLabel(value, 5)}</text>
     </g>;
   const last = candles[candles.length - 1];
+  const livePrice = !live.closed && live.lastPrice !== null && live.lastPrice >= yMin && live.lastPrice <= yMax ? live.lastPrice : null;
+  const updated = live.updatedAt ? new Date(live.updatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : null;
   return <Card id="ws-chart" title="Price chart" eyebrow={timeframe ? `${timeframe} candles` : undefined}>
     <figure className="ws-chart">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" preserveAspectRatio="none"
@@ -85,10 +152,14 @@ export function SignalChart({ data }: { data: Row }) {
         {line(stop, "Stop", "ws-chart-level--stop")}
         {targets.map((t, i) => <g key={i}>{line(t, targets.length > 1 ? `TP${i + 1}` : "Target", "ws-chart-level--target")}</g>)}
         {line(entry, "Entry", "ws-chart-level--entry")}
+        {livePrice !== null && line(livePrice, "Now", "ws-chart-level--live")}
         {ticks.map(i => <text key={i} className="ws-chart-tick" x={x(i)} y={H - 8} textAnchor="middle">
           {timeTick(candles[i].t, timeframe)}</text>)}
       </svg>
-      <figcaption className="ui-muted">The shaded part is after the signal was sent. Prices can differ slightly from your broker&rsquo;s.</figcaption>
+      <figcaption className="ui-muted">
+        {live.closed ? "This trade is closed; the chart shows its full path. " : <>
+          <span className="ws-chart-live" aria-live="polite"><span className="ws-chart-live-dot" aria-hidden="true"/>Live{updated ? ` · updated ${updated}` : " · connecting"}{live.status ? ` · ${live.status}` : ""}</span>{" "}</>}
+        The shaded part is after the signal was sent. The last bar may still be forming. Prices can differ slightly from your broker&rsquo;s.</figcaption>
     </figure>
   </Card>;
 }
