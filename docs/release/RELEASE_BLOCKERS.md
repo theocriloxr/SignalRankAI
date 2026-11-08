@@ -32,7 +32,7 @@ Production still runs `2076dbde` (schema `0059_close_pending_terminal`), verifie
   - New files: `tests/test_delivery_latency_20261108.py`, `tests/test_setup_records_20261108.py`, `tests/test_notification_channels_20261108.py` (6, one on PostgreSQL), `tests/test_telegram_linking_flows_20261108.py` (3, one on PostgreSQL), `tests/test_claude_reviewer_20261108.py` (5), `tests/test_external_replay_training_20261108.py` (4), `tests/test_target_ladder_and_entry_touch_20261108.py` (7).
   - Related suites: AI 137 passed. Tracker, formatter, profile, quality-gate and paper: 873 passed, 84 skipped.
   - Updated tests: two source-text tests followed the prompt refactor, and one link test followed `core.app_url`.
-  - Full suite: running at commit time; the result follows in the next commit.
+  - Full suite (`pytest tests --ignore=tests/browser`, `SIGNALRANK_TEST_PG_DSN` set, at `1a4364a8` plus the docs commit): 4,483 passed, 215 skipped, 1 failed. The failure was governance freshness, regenerated in the following commit. The status fix `50fe0f9f` came after this run; its 32 related tests passed.
 - **Open:**
   - Owner: `ANTHROPIC_API_KEY`; the EAS APK build (`eas build -p android --profile preview`, needs an Expo account); `/stale_tick_relabel apply` after reviewing the counts; and the earlier items (OpenAI key, Paystack, GitHub billing, `DEPLOYMENT_TELEGRAM_SEND_TEST=0`).
   - Decision: whether strategies should pass their full computed ladder (1R TP1) once the evidence filter is recalibrated.
