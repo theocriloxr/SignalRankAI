@@ -1,5 +1,42 @@
 # Release blockers and exact continuation
 
+## Continuation, 8 November 2026 (night, second round) — latency, setup records, email and app notifications, Telegram linking, Claude reviewer, more training data, target ladders, entry tracking (cloud session)
+
+Production still runs `2076dbde` (schema `0059_close_pending_terminal`), verified from the public `/readyz`. Everything below is on `claude/pensive-fermat-hju9hw` until the deploy recorded at the end. Live execution stays off (`live_execution_requested=false`, kill switch on, ML gate advisory, so signals are PAPER ONLY); nothing here changes trading or payout permissions.
+
+- **Delivery latency** (`services/delivery_latency.py`, `b76e06c0`). It reports p50/p90 per asset class and timeframe for three stages: bar close → signal row, row → send start, and send → Telegram confirmation, plus the share of signals that arrive late. The report appears in Engine Pulse and in the new owner command `/delivery_latency`.
+- **Setup records** (`GET /setup-records`, `SetupRecords.tsx`, `b76e06c0`). Each setup shows its trades, its TP1 rate, the Wilson lower bound, and the minimum TP1 R:R that lower bound pays for.
+- **Email and app notifications by tier** (`3b829c01`, migration `0060_notification_channels`).
+  - `services/notification_channels.py` sends signal, outcome, paper and alert events by email (verified addresses only, rendered at the user's tier, Free gets the locked teaser) and by push (Expo for the mobile app, standard Web Push for the installed web app). Each event goes once per channel, respects quiet hours, and dead devices are removed.
+  - `services/web_push.py` implements RFC 8291 encryption and RFC 8292 VAPID signing using only `cryptography`; the key pair is generated once and stored encrypted.
+  - The web app is installable (manifest, a push-only service worker). `mobile/eas.json` builds an Android APK on the preview profile.
+- **Telegram sign-up, sign-in and linking** (`fd86ca72`). Bot links use the configured app address (`core/app_url.py`), not a leftover Railway domain. The "Open in Telegram" button works without `BOT_USERNAME`, because the username is read from `getMe`. The settings page notices a completed link by itself.
+- **Claude as the AI reviewer while OpenAI is unavailable** (`a4201aff`, `services/claude_ai.py`).
+  - It uses the official `anthropic` SDK 2.6.0; the lock gains anthropic, docstring-parser, httpcore2, httpx2, jiter and truststore, and `pip check` is clean.
+  - Requests use structured JSON output, `claude-opus-5-5` at `low` effort, and server-side refusal fallback (`CLAUDE_REVIEW_FALLBACKS`). They are bounded by an hourly cap, a circuit breaker and the AI cost ledger (provider `claude`, published prices, `AI_BUDGET_CLAUDE_*`).
+  - The default provider order is now `openai,claude,gemini,local`. The prompts and evidence are the same ones the OpenAI reviewer uses. The review is advisory only.
+  - Owner step: add `ANTHROPIC_API_KEY` as a server secret. Until then the rule check stands in, as the 8 Nov BTCUSDT card showed.
+- **More training data** (`ebed6b3d`, `ml/external_replay.py`).
+  - Labelled setups are replayed on years of public history (Binance public data, Yahoo) for the instruments and timeframes the bot trades. They use the trainer's TP1-before-stop label and the live feature contract.
+  - The rows are older than the bot's oldest evidence, capped at 2× its rows and weighted 0.25. They are **fit-only** (`train_model(..., fit_only_mask)`), so calibration, validation, the promotion gate and the champion comparison use only the bot's own outcomes.
+  - On a driftless random walk the label win rate is 0.404 against 0.400 expected for 1.5R, so there is no lookahead.
+  - Not verified: live fetching, because this sandbox's proxy refuses those hosts.
+- **Real TP2/TP3 and entry tracking** (`1a4364a8`; owner report on BTCUSDT 5m `c790abba`: one target only, entries not tracked).
+  - **Ladder.** Signals with one or two strategy targets get TP2/TP3 in 1R steps beyond the last authored target (`SIGNAL_TARGET_LADDER_ENABLED`, `SIGNAL_TARGET_LADDER_STEP_R`). The levels are stored on the signal, so the tracker, the paper desk and the cards all follow 50/25/25.
+  - **Gates unchanged.** Authored targets are kept in `take_profit_authored`. The quality gate's minimum final R:R and the flip-profile match still judge them, so a ladder never helps a setup pass.
+  - **Root cause of the single target.** `strategies/dynamic_targets.py` computes TP1 1R / TP2 / TP3, but 21 strategy returns (trend, momentum, fallback) pass only TP3 as `take_profit`, so the card's "TP1" is the strategy's TP3. Restoring the 1R TP1 would need the setup-evidence filter recalibrated (break-even 67% instead of 41%), so it was not done. This is recorded as an open decision.
+  - **Entry tracking.** The entry check now counts the 1m candle the signal was created in (`ENTRY_TOUCH_CANDLE_GRACE_SECONDS`), plus a 0.1R band around entry (`ENTRY_TOUCH_BAND_R`). Before this, a long that dipped right after delivery stayed `WATCHING_FOR_ENTRY` while the trade ran. TP/SL checks keep the strict rule.
+  - **Cards.** They explain where TP2/TP3 come from and mention the halfway-to-TP1 alert. MACD Momentum no longer says an overbought RSI "confirms momentum".
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 `signalrank_test` at 0060; not CI, staging or production):**
+  - New files: `tests/test_delivery_latency_20261108.py`, `tests/test_setup_records_20261108.py`, `tests/test_notification_channels_20261108.py` (6, one on PostgreSQL), `tests/test_telegram_linking_flows_20261108.py` (3, one on PostgreSQL), `tests/test_claude_reviewer_20261108.py` (5), `tests/test_external_replay_training_20261108.py` (4), `tests/test_target_ladder_and_entry_touch_20261108.py` (7).
+  - Related suites: AI 137 passed. Tracker, formatter, profile, quality-gate and paper: 873 passed, 84 skipped.
+  - Updated tests: two source-text tests followed the prompt refactor, and one link test followed `core.app_url`.
+  - Full suite: running at commit time; the result follows in the next commit.
+- **Open:**
+  - Owner: `ANTHROPIC_API_KEY`; the EAS APK build (`eas build -p android --profile preview`, needs an Expo account); `/stale_tick_relabel apply` after reviewing the counts; and the earlier items (OpenAI key, Paystack, GitHub billing, `DEPLOYMENT_TELEGRAM_SEND_TEST=0`).
+  - Decision: whether strategies should pass their full computed ladder (1R TP1) once the evidence filter is recalibrated.
+  - Gap: candle evidence of 0/100 against the signal's direction is shown but does not block a paper recovery signal.
+
 ## Continuation, 8 November 2026 (after the 13:39 deploy) — owner steps automated, plan decisions recorded (cloud session)
 
 Production runs `38159361` since 13:39 UTC (backend, schema `0059_close_pending_terminal`) and 13:54 UTC (website), verified from the public `/readyz` and `/frontend-health`. `/readyz` reported `degraded` only for `outcome_to_ledger_mismatch` on ZECUSDT `66b151e6`, the outcome 0059 corrected. The ledger rows refresh when each recipient opens their results (5 → 1 within 15 minutes).
