@@ -3412,24 +3412,38 @@ def evaluate_signal_outcome_from_candles(
                     entry_filled_at = c.get("timestamp")
                 continue
 
+            # The published plan moves the stop to entry once TP1 is reached
+            # (as engine.realtime_outcome_tracker does). Until 8 Nov 2026 this
+            # scan kept the original stop, so a pullback after TP1 was booked
+            # as a full -1R loss instead of a protected exit.
+            protected = max_tp_hit >= 1 and (
+                (d == "long" and float(entry) > float(stop_loss))
+                or (d == "short" and float(entry) < float(stop_loss))
+            )
+            active_stop = float(entry) if protected else float(stop_loss)
             if d == "long":
-                hit_sl = lo <= float(stop_loss)
+                hit_sl = lo <= active_stop
                 tp_hit_now = 0
                 for idx, tp_price in enumerate(levels, start=1):
                     if hi >= float(tp_price):
                         tp_hit_now = idx
             else:
-                hit_sl = hi >= float(stop_loss)
+                hit_sl = hi >= active_stop
                 tp_hit_now = 0
                 for idx, tp_price in enumerate(levels, start=1):
                     if lo <= float(tp_price):
                         tp_hit_now = idx
 
             if hit_sl:
-                status = "sl"
+                # Stop and a new target in one bar: the order inside the bar is
+                # unknown, so the stop wins and the new target is not credited.
+                status = "partial_win_be" if protected else "sl"
                 break
             if tp_hit_now > max_tp_hit:
                 max_tp_hit = tp_hit_now
+            if max_tp_hit >= 3:
+                # The final target closes the trade; later bars do not change it.
+                break
 
         if status is None and max_tp_hit > 0:
             status = "tp3" if max_tp_hit >= 3 else ("tp2" if max_tp_hit == 2 else "tp1")
@@ -9007,21 +9021,12 @@ def run_bot() -> None:
 
                     print(f"[DEBUG][outcome] Evaluating signal {sig.signal_id} {asset} {tf} {direction}", flush=True)
 
+                    # Only the signal's own timeframe: another timeframe's bars
+                    # cannot show which level was touched first on this plan.
                     candles = get_candles(asset, tf)
                     if not candles:
-                        tf_order = ["1m", "5m", "15m", "1h", "4h", "1d"]
-                        alt_tfs = [t for t in tf_order if t != tf]
-                        for alt in alt_tfs:
-                            try:
-                                candles = get_candles(asset, alt)
-                                if candles:
-                                    break
-                            except Exception:
-                                candles = []
-                                continue
-                        if not candles:
-                            print(f"[DEBUG][outcome] No candles found for {asset} {tf}", flush=True)
-                            continue
+                        print(f"[DEBUG][outcome] No candles found for {asset} {tf}", flush=True)
+                        continue
 
                     created_ms = _ms(created_at)
                     filtered = []
@@ -9072,12 +9077,28 @@ def run_bot() -> None:
                     if status == "invalidated":
                         print(f"[DEBUG][outcome] Signal {sig.signal_id} invalidated: SL hit before entry", flush=True)
                     elif status == "missed":
+                        # "Entry not triggered" is final only once the signal has
+                        # expired. Until 8 Nov 2026 this scan wrote it whenever the
+                        # bars since creation had not touched entry, so a BCHUSDT 5m
+                        # signal delivered at 06:50 UTC on 4 Nov (expires in 24h) was
+                        # closed as "Entry Not Triggered" at 06:55.
+                        expires_at = getattr(sig, "expires_at", None)
+                        if not isinstance(expires_at, datetime):
+                            expires_at = created_at + timedelta(
+                                hours=float(os.getenv("OUTCOME_MISSED_ENTRY_FALLBACK_HOURS", "24") or 24)
+                            )
+                        if getattr(expires_at, "tzinfo", None) is not None:
+                            from datetime import timezone as _utc_tz
+
+                            expires_at = expires_at.astimezone(_utc_tz.utc).replace(tzinfo=None)
+                        if now < expires_at:
+                            continue
                         print(f"[DEBUG][outcome] Signal {sig.signal_id} missed: entry never touched", flush=True)
                     elif status is None:
                         continue
 
                     # Only progress outcome status, never duplicate or regress
-                    status_order = ["tp1", "tp2", "tp3", "tp", "sl"]
+                    status_order = ["tp1", "tp2", "partial_win_be", "tp3", "tp", "sl"]
                     if prev_status:
                         try:
                             prev_idx = status_order.index(prev_status) if prev_status in status_order else -1
@@ -9095,12 +9116,29 @@ def run_bot() -> None:
                     r_mult = None
                     pct = None
                     try:
-                        if risk > 0:
+                        if status == "partial_win_be":
+                            # Planned partial closes, remainder at entry: the same
+                            # accounting the realtime tracker books.
+                            from core.partial_exit_accounting import calculate_partial_exit_result
+
+                            partial = calculate_partial_exit_result(
+                                entry=entry, stop_loss=sl, take_profit=tp_levels, direction=direction,
+                                highest_tp=min(max_tp_hit, 2),
+                            )
+                            r_mult = float(partial.realized_r) if partial is not None else None
+                            pct = float(partial.realized_percent) if partial is not None else None
+                        elif status in {"missed", "invalidated"}:
+                            # No position was opened: no realized R or P/L.
+                            r_mult = None
+                            pct = None
+                        elif risk > 0:
                             if status.startswith("tp"):
                                 r_mult = reward / risk
                             else:
                                 r_mult = -1.0
-                        if status.startswith("tp"):
+                        if status in {"partial_win_be", "missed", "invalidated"}:
+                            pass
+                        elif status.startswith("tp"):
                             if direction == "long":
                                 pct = ((float(tp_exit) - entry) / entry) * 100.0
                             else:

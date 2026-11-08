@@ -289,6 +289,92 @@ def _build_tp_fallbacks(
     return out
 
 
+def _real_tp_levels(signal: DictType[str, Any], raw: Any) -> List[float]:
+    """Targets the signal really carries, on the profit side of entry, in order.
+
+    Until 6 Nov 2026 the Premium and VIP cards filled missing levels with
+    ``_build_tp_fallbacks`` (2x and 3x the TP1 distance). ADX Trend signals
+    carry one stored target, so cards showed a TP2 "close 25%" and a TP3
+    R:R 1:10.8 that no tracker followed; the booked result (+1.79R: half at
+    TP1, the rest at the protected stop) then contradicted the card.
+    """
+    entry = _safe_float(signal.get("entry"))
+    is_long = str(signal.get("direction") or "long").strip().lower() in ("long", "buy", "bullish")
+    out: List[float] = []
+    for value in _parse_tp_levels(raw):
+        level = _safe_float(value)
+        if level is None or level <= 0:
+            continue
+        if entry is not None and ((is_long and level <= entry) or (not is_long and level >= entry)):
+            continue
+        out.append(level)
+    return sorted(set(out), reverse=not is_long)
+
+
+def _fmt_r(value: float) -> str:
+    return f"{value:+.2f}R"
+
+
+def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_levels: List[float],
+                     asset: Any) -> List[str]:
+    """The result each path books, from the same accounting the ledger uses.
+
+    ``core.partial_exit_accounting`` closes ``planned_exit_fractions()`` at TP1
+    and TP2 and moves the stop to entry after TP1; the final target closes the
+    remainder. Showing these figures keeps the card and the booked outcome
+    in agreement.
+    """
+    try:
+        from core.partial_exit_accounting import calculate_partial_exit_result, planned_exit_fractions
+    except Exception:
+        return []
+    entry_f, stop_f = _safe_float(entry), _safe_float(stop_loss)
+    if entry_f is None or stop_f is None or not tp_levels or entry_f == stop_f:
+        return []
+    direction = str(signal.get("direction") or "long")
+    risk = abs(entry_f - stop_f)
+    is_short = direction.strip().lower() in ("short", "sell", "bearish")
+    rrs = [((entry_f - t) if is_short else (t - entry_f)) / risk for t in tp_levels[:3]]
+    f1, f2, runner = planned_exit_fractions()
+    paths = ["stop first -1.00R"]
+    for stage in (1, 2):
+        if len(tp_levels) < stage:
+            break
+        result = calculate_partial_exit_result(entry=entry_f, stop_loss=stop_f, take_profit=tp_levels,
+                                               direction=direction, highest_tp=stage)
+        if result is not None:
+            paths.append(f"TP{stage} then stop at entry {_fmt_r(result.realized_r)}")
+    if len(tp_levels) >= 3:
+        # Following the plan (f1 at TP1, f2 at TP2, the runner at TP3). The
+        # outcome ledger records a TP3 at the full move to TP3; both are shown
+        # so the card never disagrees with /performance.
+        full = f1 * rrs[0] + f2 * rrs[1] + runner * rrs[2]
+        paths.append(f"TP3 {_fmt_r(full)} with the planned closes (recorded as TP3 {_fmt_r(rrs[2])})")
+    lines = ["📐 Plan result: " + " • ".join(paths)]
+    if len(tp_levels) < 3:
+        open_share = 1.0 - f1 - (f2 if len(tp_levels) >= 2 else 0.0)
+        if open_share > 0:
+            lines.append(
+                f"ℹ️ After TP{len(tp_levels)} the remaining {open_share:.0%} has no further target: "
+                "it closes at the protected stop (entry) or the time limit."
+            )
+    current = _safe_float(signal.get("current_price") or signal.get("live_price"))
+    if current is not None and current > 0 and abs(current - entry_f) / entry_f > 0.0005:
+        first = tp_levels[0]
+        past_target = (current <= first) if is_short else (current >= first)
+        past_stop = (current >= stop_f) if is_short else (current <= stop_f)
+        price_text = _fmt_price_clean(current, asset)
+        if past_target or past_stop:
+            lines.append(f"📍 Now {price_text}: already past the {'first target' if past_target else 'stop'}; "
+                         "do not enter on this plan.")
+        else:
+            reward = (current - first) if is_short else (first - current)
+            stop_gap = (stop_f - current) if is_short else (current - stop_f)
+            if stop_gap > 0:
+                lines.append(f"📍 Now {price_text}: R/R to TP1 from this price 1:{reward / stop_gap:.2f}")
+    return lines
+
+
 def _safe_float(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -519,6 +605,15 @@ def _execution_mode(signal: DictType[str, Any]) -> str:
     return "manual"
 
 
+def _exit_fractions() -> tuple:
+    try:
+        from core.partial_exit_accounting import planned_exit_fractions
+
+        return planned_exit_fractions()
+    except Exception:
+        return 0.5, 0.25, 0.25
+
+
 def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
     mode = _execution_mode(signal)
     if mode in {"broker_managed", "paper_managed"}:
@@ -533,9 +628,10 @@ def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
             "(No automated close is active until that receipt arrives)",
             "(Manual management applies if execution is not confirmed)",
         ]
+    f1, f2, _runner = _exit_fractions()
     return [
-        "(Suggested close 50% &amp; move SL to BE)",
-        "(Suggested close 25%)",
+        f"(Suggested close {f1:.0%} &amp; move SL to BE)",
+        f"(Suggested close {f2:.0%})",
         "(Optional runner; manual execution)",
     ]
 
@@ -658,8 +754,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     volatility = _h(_volatility_label(signal))
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
-    tp_levels = _parse_tp_levels(signal.get("take_profit") or signal.get("tp_levels"))
-    tp_levels = _build_tp_fallbacks(signal, tp_levels, min_levels=2)
+    # Only the targets the signal really carries: these are the levels the
+    # lifecycle tracker follows and the ledger books (see _plan_math_lines).
+    tp_levels = _real_tp_levels(signal, signal.get("take_profit") or signal.get("tp_levels"))
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
@@ -733,6 +830,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     if expected_loss is not None:
         loss_display = -abs(expected_loss)
         lines.append(f"🛡️ Move to stop: {loss_display:.2f}%")
+    lines.extend(_h(line) for line in _plan_math_lines(signal, entry, sl, tp_levels, asset))
 
     strategy = signal.get("strategy_name") or signal.get("strategy")
     regime = signal.get("regime") or signal.get("market_regime")
@@ -817,8 +915,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
 
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
-    tp_levels = _parse_tp_levels(signal.get("tp_levels") or signal.get("take_profit"))
-    tp_levels = _build_tp_fallbacks(signal, tp_levels, min_levels=3)
+    tp_levels = _real_tp_levels(signal, signal.get("tp_levels") or signal.get("take_profit"))
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
@@ -965,6 +1062,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     if expected_loss is not None:
         loss_display = -abs(expected_loss)
         lines.append(f"🛡️ Move to stop: {loss_display:.2f}%")
+    lines.extend(_h(line) for line in _plan_math_lines(signal, entry, sl, tp_levels, asset))
 
     # Invalidation level
     invalidation = signal.get("invalidation") or signal.get("invalidation_level")
