@@ -8188,12 +8188,27 @@ def run_bot() -> None:
                         if protected_stage > 0:
                             realized_r = getattr(oc, "r_multiple", None)
                             realized_text = "n/a" if realized_r is None else f"{float(realized_r):+.2f}R"
+                            # The remainder exits at the protected stop (entry); that
+                            # is the booked fill. The stored close price is that same
+                            # level, so it was shown as "Observed" (LINKUSDT 5 Nov
+                            # 2026: "Observed: 11.069" while the market was 10.859).
+                            # Show a market price only when one was really observed.
+                            market = current_market_price or outcome_meta.get("observation_price")
+                            market_line = ""
+                            try:
+                                if market is not None and entry_v and abs(float(market) - entry_v) / entry_v > 1e-6:
+                                    market_line = (
+                                        f"Market at detection: <b>{float(market):g}</b> | Provider: <b>{provider}</b>\n"
+                                    )
+                            except (TypeError, ValueError):
+                                market_line = ""
                             return (
                                 "✅ <b>Protected Exit</b>\n"
                                 + identity
                                 + f"Highest TP reached: <b>TP{protected_stage}</b>\n"
                                 + f"Final realized result: <b>{realized_text}</b>\n"
-                                + evidence
+                                + f"Exit: protected stop at entry <b>{entry_v:g}</b> | Original stop: <b>{sl_v:g}</b>\n"
+                                + market_line
                                 + timing
                             )
                         risk_pct = planned_pct if planned_pct > 0 else abs(actual_pct)

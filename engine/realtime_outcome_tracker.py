@@ -1783,7 +1783,9 @@ async def _confirmed_notification_recipients(signal_id: str) -> list[tuple[int, 
                      if user_id is not None}.items())
 
 
-async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_idx: int) -> None:
+async def _notify_retrace_warning(
+    signal: Dict[str, Any], price: float, best_tp_idx: int, *, protected_stop: float | None = None
+) -> None:
     """Notify recipients that price retraced dangerously near SL after TP progress."""
     try:
         from signalrank_telegram.bot import _send_message_sync
@@ -1802,8 +1804,13 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             f"🪙 <b>{asset}</b> {direction}\n"
             f"📊 Ref: <code>{signal_id}</code>\n"
             f"✅ Highest TP reached: <b>TP{int(best_tp_idx)}</b>\n"
-            f"📉 Price retraced close to SL danger zone\n"
-            f"💰 Current: <b>{float(price):.5f}</b> | SL: <b>{float(sl):.5f}</b>"
+            + (
+                f"📉 Price is pulling back toward the protected stop at entry\n"
+                f"💰 Current: <b>{float(price):.5f}</b> | Protected stop (entry): <b>{float(protected_stop):.5f}</b>"
+                if protected_stop is not None
+                else f"📉 Price retraced close to SL danger zone\n"
+                f"💰 Current: <b>{float(price):.5f}</b> | SL: <b>{float(sl):.5f}</b>"
+            )
         )
 
         bot_token = (config.TELEGRAM_BOT_TOKEN or "").strip()
@@ -2652,11 +2659,20 @@ class RealtimeOutcomeTracker:
                 ml_prob = signal.get("ml_probability")
                 ml_gate = float(os.getenv("TP_RETRACE_MIN_ML_CONF", "0.55") or 0.55)
                 ml_allows_warning = (ml_prob is None) or (float(ml_prob) <= ml_gate)
-                if ml_allows_warning and _retrace_warning_triggered(
-                    direction, sl, best_tp_price, price, zone_pct=zone_pct
+                # After TP1 the stop that matters is the protected one at entry.
+                # Measured against the original stop, the warning fired with
+                # price already through entry (LINKUSDT 5 Nov 2026: "close to
+                # SL danger zone" at 10.859, entry 11.069, SL 11.00471), next
+                # to the protected-exit message. Once the protected stop is
+                # crossed the exit message is the notice; no warning is sent.
+                protected_stop = float(entry)
+                is_short = str(direction).lower() == "short"
+                crossed = (float(price) >= protected_stop) if is_short else (float(price) <= protected_stop)
+                if ml_allows_warning and not crossed and _retrace_warning_triggered(
+                    direction, protected_stop, best_tp_price, price, zone_pct=zone_pct
                 ):
                     if await _mark_retrace_warned(signal_id):
-                        await _notify_retrace_warning(signal, price, prev_tp)
+                        await _notify_retrace_warning(signal, price, prev_tp, protected_stop=protected_stop)
                         logger.info(
                             "[outcome_tracker] Retrace warning: %s tp=%d price=%.5f sl=%.5f",
                             signal_id[:8],

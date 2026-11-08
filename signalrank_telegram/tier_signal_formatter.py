@@ -564,7 +564,9 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
         reason = "quality checks passed"
 
     if local:
-        label = "Local AI fallback"
+        # Not an AI opinion: the external reviewer was unavailable (production,
+        # Nov 2026: OpenAI key rejected) and a local rule check scored the setup.
+        label = "Rule check (AI reviewer unavailable)"
     elif provider == "openai" or raw_reason.startswith("openai_"):
         label = "OpenAI"
     elif provider == "gemini" or raw_reason.startswith("gemini_"):

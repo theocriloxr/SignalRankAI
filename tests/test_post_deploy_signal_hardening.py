@@ -133,7 +133,7 @@ def test_local_ai_review_fallback_is_visible_for_vip_signals():
 
     assert ok is True
     assert "AI Review:" in msg
-    assert "Local AI" in msg
+    assert "Rule check (AI reviewer unavailable)" in msg  # renamed 8 Nov 2026: not an AI opinion
 
 
 def test_engine_default_timeframes_cover_1m_to_24h():
