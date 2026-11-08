@@ -6,6 +6,8 @@ app/secure provider-link flow.
 """
 from __future__ import annotations
 
+from core.app_url import public_app_base_url as _public_app_base_url
+
 import os
 from urllib.parse import quote
 
@@ -16,13 +18,7 @@ from services.platform.identity import create_telegram_activation
 
 
 def _app_base_url() -> str:
-    raw = str(
-        os.getenv("RAILWAY_PUBLIC_DOMAIN")
-        or os.getenv("APP_BASE_URL")
-        or os.getenv("STAGING_APP_BASE_URL")
-        or os.getenv("WEBHOOK_BASE_URL")
-        or ""
-    ).strip().rstrip("/")
+    raw = _public_app_base_url().strip().rstrip("/")
     if raw and not raw.startswith(("http://", "https://")):
         raw = f"https://{raw}"
     return raw

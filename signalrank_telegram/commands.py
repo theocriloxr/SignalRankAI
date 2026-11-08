@@ -1,3 +1,4 @@
+from core.app_url import public_app_base_url as _public_app_base_url
 from utils.timeutils import now_utc_naive
 import os
 import asyncio
@@ -5421,13 +5422,7 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 display_name=display_name,
             )
             await session.commit()
-        base_url = str(
-            os.getenv("RAILWAY_PUBLIC_DOMAIN")
-            or os.getenv("APP_BASE_URL")
-            or os.getenv("STAGING_APP_BASE_URL")
-            or os.getenv("WEBHOOK_BASE_URL")
-            or ""
-        ).rstrip("/")
+        base_url = _public_app_base_url().rstrip("/")
         if base_url and not base_url.startswith(("http://", "https://")):
             base_url = f"https://{base_url}"
         if not base_url:

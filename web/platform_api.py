@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from decimal import Decimal
@@ -3779,6 +3780,38 @@ async def referral_leaderboard(
     return {"leaders": leaders, "your_valid_referrals": own}
 
 
+_BOT_USERNAME_CACHE: dict[str, str] = {}
+
+
+async def _telegram_bot_username() -> str:
+    """The bot's @username: BOT_USERNAME/TELEGRAM_BOT_USERNAME, else Telegram's getMe (cached).
+
+    Without it the app could not offer the one-tap "Open in Telegram" link and
+    users had to copy the linking code by hand (owner request, 8 Nov 2026).
+    """
+    configured = str(os.getenv("BOT_USERNAME") or os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().lstrip("@")
+    if configured:
+        return configured
+    if "username" in _BOT_USERNAME_CACHE:
+        return _BOT_USERNAME_CACHE["username"]
+    token = str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        return ""
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            response = await http.get(f"https://api.telegram.org/bot{token}/getMe")
+        username = str(((response.json() or {}).get("result") or {}).get("username") or "") if response.status_code == 200 else ""
+    except Exception as exc:
+        logger.info("[telegram_link] bot username lookup unavailable: %s", type(exc).__name__)
+        username = ""
+    if re.fullmatch(r"[A-Za-z0-9_]{5,64}", username or ""):
+        _BOT_USERNAME_CACHE["username"] = username
+        return username
+    return ""
+
+
 @router.post("/account/telegram-link")
 async def create_telegram_link(
     payload: TelegramLinkCreateRequest,
@@ -3812,7 +3845,7 @@ async def create_telegram_link(
                 "message": "Telegram is already verified for this account. Refresh its connection status.",
             }) from exc
         await session.commit()
-    username = str(os.getenv("BOT_USERNAME") or os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().lstrip("@")
+    username = await _telegram_bot_username()
     deep_link = f"https://t.me/{username}?start=link_{request.code}" if username else None
     return {
         "code": request.code,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import client from "../lib/client";
 import { record, telegramLinkState, timeLabel, utcTimestamp, type Row } from "../lib/presentation";
 
@@ -11,6 +11,15 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
   const [proof, setProof] = useState<LinkProof | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const refreshRef = useRef(onRefresh);
+  useEffect(() => { refreshRef.current = onRefresh; }, [onRefresh]);
+  // While a code is open, notice the link completing without a manual refresh
+  // (owner request, 8 Nov 2026: smoother app-to-Telegram linking).
+  useEffect(() => {
+    if (!proof) return;
+    const poll = window.setInterval(() => { refreshRef.current(); }, 5000);
+    return () => window.clearInterval(poll);
+  }, [proof]);
   useEffect(() => {
     if (!proof) return;
     const timer = window.setTimeout(() => {
@@ -63,7 +72,7 @@ export function TelegramConnection({ user, onRefresh }: { user: Row; onRefresh: 
       <p>In the SignalRankAI bot, send <code>/link {proof.code}</code>. Keep this one-time code private.</p>
       <p>Expires {timeLabel(new Date(proof.expires).toISOString())}</p>
       {proof.href && <a className="ui-btn" href={proof.href} target="_blank" rel="noopener noreferrer">Open SignalRankAI in Telegram</a>}
-      <p>After completing the link, refresh the connection below.</p>
+      <p>Tap the button to open the bot and press Start, or send the code yourself. This page updates on its own once Telegram is linked.</p>
     </div>}
     <button className="ui-btn" type="button" disabled={busy} onClick={onRefresh}>Check again</button>
     {message && <p role="status">{message}</p>}
