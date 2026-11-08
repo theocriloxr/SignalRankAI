@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0059_close_pending_terminal")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0060_notification_channels")
 
 
 def main() -> int:
@@ -62,6 +62,8 @@ def main() -> int:
         "degenerate_stop_abs_r_gt_10",
         "0059_close_pending_terminal",
         "migration_0059_close_pending_terminal",
+        "0060_notification_channels",
+        "CREATE TABLE IF NOT EXISTS notification_channel_deliveries",
         "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
         "shadow_pending_index_invalid_or_definition_mismatch",

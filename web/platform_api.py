@@ -209,8 +209,9 @@ class TelegramLinkCreateRequest(BaseModel):
 
 
 class PushDeviceRequest(BaseModel):
-    provider: str = Field(default="expo", pattern=r"^(expo|fcm|apns)$")
-    push_token: str = Field(min_length=10, max_length=512)
+    provider: str = Field(default="expo", pattern=r"^(expo|fcm|apns|webpush)$")
+    # A Web Push subscription is stored as its JSON (endpoint + keys), longer than a device token.
+    push_token: str = Field(min_length=10, max_length=2048)
     platform: str = Field(pattern=r"^(android|ios|web)$")
     device_id: str | None = Field(default=None, max_length=64)
     app_version: str | None = Field(default=None, max_length=32)
@@ -3859,6 +3860,18 @@ async def register_push_device(
         )
         await session.commit()
     return {"registered": True, "provider": payload.provider, "platform": payload.platform}
+
+
+@router.get("/push/vapid-public-key")
+async def web_push_public_key(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """The server's Web Push (VAPID) public key, for the browser's push subscription."""
+    if not is_encryption_available():
+        raise HTTPException(status_code=503, detail="Web push requires ENCRYPTION_KEY")
+    from services.web_push import vapid_public_key
+
+    async with get_session(label="platform.web_push_key", timeout_seconds=8.0) as session:
+        key = await vapid_public_key(session)
+    return {"public_key": key}
 
 
 @router.delete("/push-devices/{push_device_id}")

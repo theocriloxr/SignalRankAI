@@ -128,7 +128,7 @@
     },
     "expectancy_shadow": {
       "commits": "136290b8..698a0191",
-      "schema_head": "0059_close_pending_terminal",
+      "schema_head": "0060_notification_channels",
       "flags": {
         "EXPECTANCY_SHADOW_RECORDING_ENABLED": "default on",
         "EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED": "default off",

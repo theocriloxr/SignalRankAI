@@ -30,7 +30,7 @@ async def evidence_database(monkeypatch):
     engine = create_async_engine(url, pool_size=1, max_overflow=0)
     async with engine.connect() as connection:
         transaction = await connection.begin()
-        assert (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0059_close_pending_terminal"
+        assert (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0060_notification_channels"
         factory = async_sessionmaker(connection, expire_on_commit=False, join_transaction_mode="create_savepoint")
 
         @asynccontextmanager

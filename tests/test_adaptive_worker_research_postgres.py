@@ -242,7 +242,7 @@ async def seed_research_outcomes(get_session, asset):
     from utils.timeutils import now_utc_naive
     start = now_utc_naive() - timedelta(days=10)
     async with get_session() as session:
-        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0059_close_pending_terminal"
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0060_notification_channels"
         for i in range(160):
             signal_id = str(uuid4())
             session.add(Signal(signal_id=signal_id, asset=asset, asset_class="crypto", timeframe="1h", direction="long",

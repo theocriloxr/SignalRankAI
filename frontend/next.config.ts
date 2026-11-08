@@ -53,6 +53,12 @@ const nextConfig: NextConfig = {
       { source: "/recover", headers: privateHeaders },
       { source: "/magic-login", headers: privateHeaders },
       { source: "/api/v1/platform/:path*", headers: privateHeaders },
+      // App-notification service worker: always revalidated, same-origin scripts only.
+      { source: "/sw.js", headers: [
+        { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+        { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+      ] },
     ];
   },
   async rewrites() {

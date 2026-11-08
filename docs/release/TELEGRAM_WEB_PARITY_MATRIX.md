@@ -278,6 +278,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | PATCH | `/profile` | `/profile` |
 | POST | `/push-devices` | — |
 | DELETE | `/push-devices/{push_device_id}` | — |
+| GET | `/push/vapid-public-key` | — |
 | GET | `/quality` | `/quality` |
 | GET | `/recap` | — |
 | GET | `/referrals` | `/referral` |
@@ -310,4 +311,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 125 commands (48 without a web section), 16 web sections, 148 routes (92 without a name-matched command).
+Summary: 125 commands (48 without a web section), 16 web sections, 149 routes (93 without a name-matched command).

@@ -12,6 +12,7 @@ import { SignalFeedback } from "./SignalFeedback";
 import { SetupEvidence, SetupLine, PaperOnlyTag, isPaperOnly } from "./SignalSetup";
 import { NotificationCenter } from "./NotificationCenter";
 import { NotificationPreferences } from "./NotificationPreferences";
+import { DeviceNotifications } from "./DeviceNotifications";
 import { WatchlistsView } from "./WatchlistsView";
 import { JournalView } from "./JournalView";
 import { TradingPreferences } from "./TradingPreferences";
@@ -466,7 +467,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="markets"?<div className="ws-stack"><MarketDirectory/><QualityView data={state.data}/></div>:
       section==="billing"?<BillingCenter data={state.data} onChanged={refresh}/>:
       section==="operations"?<div className="ws-stack"><OperationsView data={state.data}/><OwnerControls authority={display(state.data.authority,"")}/></div>:
-      section==="notifications"?<div className="ws-stack"><NotificationCenter data={state.data} onChanged={refresh}/><NotificationPreferences/></div>:
+      section==="notifications"?<div className="ws-stack"><NotificationCenter data={state.data} onChanged={refresh}/><NotificationPreferences/><DeviceNotifications/></div>:
       section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
       section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:
       section==="journal"?<div className="ws-stack"><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:

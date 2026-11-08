@@ -7516,6 +7516,35 @@
           }
         ]
       }
+    },
+    "/api/v1/platform/push/vapid-public-key": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Web Push Public Key",
+        "description": "The server's Web Push (VAPID) public key, for the browser's push subscription.",
+        "operationId": "web_push_public_key_api_v1_platform_push_vapid_public_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Web Push Public Key Api V1 Platform Push Vapid Public Key Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -9380,13 +9409,13 @@
         "properties": {
           "provider": {
             "type": "string",
-            "pattern": "^(expo|fcm|apns)$",
+            "pattern": "^(expo|fcm|apns|webpush)$",
             "title": "Provider",
             "default": "expo"
           },
           "push_token": {
             "type": "string",
-            "maxLength": 512,
+            "maxLength": 2048,
             "minLength": 10,
             "title": "Push Token"
           },

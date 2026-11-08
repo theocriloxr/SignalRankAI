@@ -186,6 +186,10 @@ class Worker:
         if _env_bool("EMAIL_DELIVERY_ENABLED", True):
             _register_task("email_delivery", lambda: self._email_delivery_loop(), restart_on_failure=True)
 
+        if _env_bool("NOTIFICATION_CHANNELS_ENABLED", True):
+            # Email and app (push) copies of inbox notifications, per tier (8 Nov 2026).
+            _register_task("notification_channels", lambda: self._notification_channels_loop(),
+                           restart_on_failure=True)
         if _env_bool("WEB_SIGNAL_FANOUT_ENABLED", True):
             _register_task(
                 "web_signal_fanout",
@@ -647,6 +651,22 @@ class Worker:
                     logger.info("[email_delivery] %s", result)
             except Exception as exc:
                 logger.warning("[email_delivery] cycle failed: %s", type(exc).__name__)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _notification_channels_loop(self) -> None:
+        from services.notification_channels import dispatch_once
+
+        interval = max(5.0, _env_float("NOTIFICATION_CHANNELS_INTERVAL_SECONDS", 20.0, minimum=5.0))
+        while not self._stop.is_set():
+            try:
+                result = await dispatch_once()
+                if int(result.get("events") or 0):
+                    logger.info("[notification_channels] %s", result)
+            except Exception as exc:
+                logger.warning("[notification_channels] cycle failed: %s", type(exc).__name__)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
