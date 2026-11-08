@@ -880,3 +880,65 @@ async def test_stale_outcome_writer_cannot_override_active_lifecycle(postgres_da
     await _persist_outcome(signal_id, "expired", 100, 99)
     async with get_session() as session:
         assert (await session.execute(select(Outcome).where(Outcome.signal_id == signal_id))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("direction", ["long", "short"])
+async def test_paper_plan_mode_runs_the_plan_like_a_broker_position_on_postgres(postgres_database, direction):
+    """PLAN paper positions (8 Nov 2026): 50 % at TP1 and the stop to entry, 25 % at TP2, the rest at the
+    protected stop or the last target; every fill pays its fee and is in the ledger, and cash reconciles."""
+    from core.paper_trading_service import PaperTradingService
+    from db.models import User, Signal, PaperAccount, PaperPosition, PaperLedgerEntry
+    from db.session import get_session
+    from sqlalchemy import delete
+    signal_id, position_id = str(uuid4()), str(uuid4())
+    short = direction == "short"
+    sign = -1 if short else 1
+    levels = [100 + sign * 10, 100 + sign * 20, 100 + sign * 30]
+    async with get_session() as session:
+        user = User(username="paper-plan-" + uuid4().hex[:12], tier="vip")
+        signal = Signal(signal_id=signal_id, asset="AUDITPLAN", direction=direction, timeframe="1h",
+                        entry=100, stop_loss=100 - sign * 10, take_profit=json.dumps(levels), score=90,
+                        strategy_name="audit", strategy_group="audit", strength=1)
+        session.add_all([user, signal])
+        await session.flush()
+        user_id = user.id
+        account = PaperAccount(user_id=user_id, starting_balance=1000, cash_balance=800, fee_bps=10)
+        session.add(account)
+        await session.flush()
+        account_id = account.id
+        session.add(PaperPosition(position_id=position_id, account_id=account_id, user_id=user_id,
+                                  signal_id=signal_id, asset="AUDITPLAN", direction=direction,
+                                  signal_entry=100, fill_entry=100, current_price=100, quantity=2.0,
+                                  stop_loss=100 - sign * 10, target_price=levels[-1], take_profits=json.dumps(levels),
+                                  reserved_cash=200, notional=200, entry_fee=0.2, meta={"target_mode": "PLAN"}))
+        await session.commit()
+    try:
+        service = PaperTradingService()
+        assert await service._mark_one(position_id, levels[0]) is False      # TP1: 1.0 closed, stop to entry
+        assert await service._mark_one(position_id, levels[1]) is False      # TP2: 0.5 closed
+        assert await service._mark_one(position_id, 100 - sign * 1) is True  # back through entry: protected exit
+        async with get_session() as session:
+            stored = (await session.execute(select(PaperPosition).where(PaperPosition.position_id == position_id))).scalar_one()
+            acct = (await session.execute(select(PaperAccount).where(PaperAccount.id == account_id))).scalar_one()
+            kinds = [k for (k,) in (await session.execute(
+                select(PaperLedgerEntry.entry_type).where(PaperLedgerEntry.position_id == position_id)
+                .order_by(PaperLedgerEntry.id))).all()]
+        # TP1: +10 x 1.0 - fee 0.11 - entry-fee share 0.1; TP2: +20 x 0.5 - fee 0.06 (0.04 short) - 0.05;
+        # remainder 0.5 exits at 99 (101 short): -0.5 - fee 0.0495 (0.0505) - 0.05.
+        tp1_fee, tp2_fee, exit_fee = 1.0 * levels[0] * 0.001, 0.5 * levels[1] * 0.001, 0.5 * (100 - sign) * 0.001
+        expected = (10 - tp1_fee - 0.1) + (10 - tp2_fee - 0.05) + (-0.5 - exit_fee - 0.05)
+        assert kinds == ["POSITION_PARTIAL_CLOSE", "POSITION_PARTIAL_CLOSE", "POSITION_CLOSED"]
+        assert stored.status == "closed" and stored.exit_reason == "BE"
+        assert stored.realized_pnl == pytest.approx(expected)
+        assert stored.r_multiple == pytest.approx(expected / 20.0)  # risk at entry: 10 x 2.0
+        assert float(acct.realized_pnl) == pytest.approx(expected)
+        assert float(acct.cash_balance) == pytest.approx(800 + 200 + expected + 0.2)  # entry fee was paid at open
+    finally:
+        async with get_session() as session:
+            await session.execute(delete(PaperLedgerEntry).where(PaperLedgerEntry.position_id == position_id))
+            await session.execute(delete(PaperPosition).where(PaperPosition.position_id == position_id))
+            await session.execute(delete(PaperAccount).where(PaperAccount.id == account_id))
+            await session.execute(delete(Signal).where(Signal.signal_id == signal_id))
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()

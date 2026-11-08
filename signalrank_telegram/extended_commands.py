@@ -270,7 +270,7 @@ async def paper_settings_command(update, context) -> None:
                     "/paper_settings risk 1\n"
                     "/paper_settings max_positions 5\n"
                     "/paper_settings min_score 80\n"
-                    "/paper_settings target tp1|tp2|tp3\n"
+                    "/paper_settings target tp1|tp2|tp3|plan  (plan: 50% at TP1 + stop to entry, 25% at TP2, rest at the last target)\n"
                     "/paper_settings direction both|long|short\n"
                     "/paper_settings asset_classes crypto,fx,stock,index,commodity\n"
                     "/paper_settings spread 2\n"

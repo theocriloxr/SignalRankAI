@@ -248,7 +248,7 @@ class PaperSettingsUpdateRequest(BaseModel):
     spread_bps: float | None = Field(default=None, ge=0.0, le=500.0)
     slippage_bps: float | None = Field(default=None, ge=0.0, le=500.0)
     fee_bps: float | None = Field(default=None, ge=0.0, le=500.0)
-    target_mode: str | None = Field(default=None, pattern=r"^(?i:tp1|tp2|tp3)$")
+    target_mode: str | None = Field(default=None, pattern=r"^(?i:tp1|tp2|tp3|plan)$")
     allowed_directions: str | None = Field(default=None, pattern=r"^(both|long|short)$")
     allowed_asset_classes: list[str] | None = Field(default=None, max_length=5)
 

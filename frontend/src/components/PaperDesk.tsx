@@ -8,7 +8,9 @@ type State = { phase:"loading"|"ready"|"error"; data:Row|null; message:string };
 type Action = "close"|"reset"|"retry"|null;
 const classes = ["crypto","fx","stock","index","commodity"] as const;
 const directions = ["both","long","short"] as const;
-const targets = ["TP1","TP2","TP3"] as const;
+const targets = ["TP1","TP2","TP3","PLAN"] as const;
+/** PLAN runs the published plan like a managed broker position: 50% at TP1 and the stop to entry, 25% at TP2, the rest at the last target. */
+const targetLabels: Record<string,string> = { TP1:"TP1 (close all)", TP2:"TP2 (close all)", TP3:"TP3 (close all)", PLAN:"Follow the plan, like a broker position" };
 function Value({label,value}:{label:string;value:string}) {
   return <div className="ui-kv-row"><dt>{label}</dt><dd>{value}</dd></div>;
 }
@@ -173,7 +175,7 @@ export function PaperDesk({ onChanged }:{ onChanged:()=>void }) {
             <label className="ui-field">Minimum signal score<input className="ui-input" type="number" min="0" max="100" step="0.1" value={minScore} onChange={e=>setMinScore(e.target.value)} placeholder={numberLabel(snapshot.min_signal_score)}/></label>
             <label className="ui-field">Take profit at<select className="ui-select" value={target} onChange={e=>setTarget(e.target.value)}>
               <option value="">Keep {display(snapshot.target_mode)}</option>
-              {targets.map(t=><option key={t} value={t}>{t}</option>)}
+              {targets.map(t=><option key={t} value={t}>{targetLabels[t] ?? t}</option>)}
             </select></label>
             <label className="ui-field">Directions<select className="ui-select" value={direction} onChange={e=>setDirection(e.target.value)}>
               <option value="">Keep {display(snapshot.allowed_directions)}</option>

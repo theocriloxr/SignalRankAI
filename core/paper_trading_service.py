@@ -500,8 +500,8 @@ class PaperTradingService:
                     value = max(0.0, min(500.0, _safe_float(value)))
                 elif key == "target_mode":
                     value = str(value or "TP1").strip().upper()
-                    if value not in {"TP1", "TP2", "TP3"}:
-                        raise ValueError("target_mode must be TP1, TP2, or TP3")
+                    if value not in {"TP1", "TP2", "TP3", "PLAN"}:
+                        raise ValueError("target_mode must be TP1, TP2, TP3, or PLAN")
                 elif key == "allowed_directions":
                     value = str(value or "both").strip().lower()
                     if value not in {"both", "long", "short"}:
@@ -1972,7 +1972,10 @@ class PaperTradingService:
                                 bps = (_safe_float(account.spread_bps) + _safe_float(account.slippage_bps)) / 10000.0
                                 fill = live * (1.0 + bps if direction == "long" else 1.0 - bps)
                                 risk_per_unit = abs(fill - stop)
-                                target_idx = {"TP1": 0, "TP2": 1, "TP3": 2}.get(
+                                # PLAN follows the published plan like a managed broker
+                                # position (partial closes, stop to entry); its final
+                                # exit is the last target.
+                                target_idx = {"TP1": 0, "TP2": 1, "TP3": 2, "PLAN": 2}.get(
                                     str(account.target_mode or "TP1").upper(), 0
                                 )
                                 target = targets[min(target_idx, len(targets) - 1)]
@@ -2637,6 +2640,12 @@ class PaperTradingService:
             position.unrealized_pnl = gross
             position.updated_at = now_utc_naive()
             exit_reason: str | None = str(force_exit_reason or "").strip().upper() or None
+            plan_meta = dict(position.meta or {})
+            if exit_reason is None and str(plan_meta.get("target_mode") or "").upper() == "PLAN":
+                quantity, gross = self._advance_plan(session, account, position, direction, fill, current_price)
+                if quantity <= 0:  # fractions never close everything; defensive only
+                    await session.commit()
+                    return False
             target = _safe_float(position.target_price)
             stop = _safe_float(position.stop_loss)
             if exit_reason is None and direction == "long":
@@ -2656,11 +2665,21 @@ class PaperTradingService:
             exit_fee = exit_notional * (_safe_float(account.fee_bps) / 10000.0)
             net_pnl = gross - _safe_float(position.entry_fee) - exit_fee
             risk_amount = abs(fill - stop) * quantity
+            plan_meta = dict(position.meta or {})
+            if str(plan_meta.get("target_mode") or "").upper() == "PLAN" and plan_meta.get("plan_initial_quantity"):
+                # Result of the whole trade: earlier partial closes plus this one,
+                # against the risk taken at entry (the stop now sits at entry).
+                if exit_reason == "SL" and int(plan_meta.get("plan_stage") or 0) > 0:
+                    exit_reason = "BE"
+                net_pnl += _safe_float(plan_meta.get("plan_realized_pnl"))
+                risk_amount = abs(fill - _safe_float(plan_meta.get("plan_original_stop") or stop)) * _safe_float(
+                    plan_meta.get("plan_initial_quantity"))
             r_multiple = net_pnl / risk_amount if risk_amount > 0 else 0.0
             account.cash_balance = (
                 _safe_float(account.cash_balance) + _safe_float(position.reserved_cash) + gross - exit_fee
             )
-            account.realized_pnl = _safe_float(account.realized_pnl) + net_pnl
+            account.realized_pnl = _safe_float(account.realized_pnl) + net_pnl - _safe_float(
+                plan_meta.get("plan_realized_pnl") if str(plan_meta.get("target_mode") or "").upper() == "PLAN" else 0.0)
             account.updated_at = now_utc_naive()
             position.status = "closed"
             position.exit_fee = exit_fee
@@ -2692,6 +2711,81 @@ class PaperTradingService:
                 r_multiple,
             )
             return True
+
+    def _advance_plan(self, session, account, position, direction: str, fill: float,
+                      price: float) -> tuple[float, float]:
+        """Run the published plan on a PLAN paper position, as a managed broker position would.
+
+        Owner request, 8 Nov 2026: paper trades follow the same process as a
+        trade on a linked MT5/broker account. At TP1 close
+        ``planned_exit_fractions()[0]`` of the opening size and move the stop to
+        entry (engine.trade_manager does the same on a broker position); at TP2
+        close the second fraction; the remainder exits at the final target or
+        at the protected stop. Each partial close is a fill: it pays the fee,
+        releases its share of reserved cash and is written to the ledger.
+        Returns the open quantity and its gross P/L at ``price``.
+        """
+        from core.partial_exit_accounting import planned_exit_fractions
+
+        meta = dict(position.meta or {})
+        levels = parse_targets(position.take_profits)
+        levels = sorted(levels, reverse=(direction == "short"))
+        quantity = _safe_float(position.quantity)
+        if not meta.get("plan_initial_quantity"):
+            meta.update(plan_initial_quantity=quantity, plan_original_stop=_safe_float(position.stop_loss),
+                        plan_stage=0, plan_realized_pnl=0.0, plan_fills=[])
+        stage = int(meta.get("plan_stage") or 0)
+        initial = _safe_float(meta.get("plan_initial_quantity"))
+        fractions = planned_exit_fractions()[:2]
+        fee_rate = _safe_float(account.fee_bps) / 10000.0
+        while stage < min(2, len(levels) - 1):
+            level = levels[stage]
+            reached = price >= level if direction == "long" else price <= level
+            if not reached:
+                break
+            close_qty = min(quantity, initial * fractions[stage])
+            if close_qty <= 0:
+                break
+            share = close_qty / quantity
+            gross_part = (level - fill) * close_qty if direction == "long" else (fill - level) * close_qty
+            exit_fee = close_qty * level * fee_rate
+            entry_fee_part = _safe_float(position.entry_fee) * share
+            reserved_part = _safe_float(position.reserved_cash) * share
+            net = gross_part - entry_fee_part - exit_fee
+            account.cash_balance = _safe_float(account.cash_balance) + reserved_part + gross_part - exit_fee
+            account.realized_pnl = _safe_float(account.realized_pnl) + net
+            position.quantity = quantity - close_qty
+            position.reserved_cash = _safe_float(position.reserved_cash) - reserved_part
+            position.entry_fee = _safe_float(position.entry_fee) - entry_fee_part
+            position.notional = _safe_float(position.notional) * (1.0 - share)
+            position.exit_fee = _safe_float(position.exit_fee) + exit_fee
+            quantity = _safe_float(position.quantity)
+            stage += 1
+            position.stop_loss = fill  # protected at entry after TP1, as on a broker position
+            meta["plan_stage"] = stage
+            meta["plan_realized_pnl"] = _safe_float(meta.get("plan_realized_pnl")) + net
+            meta["plan_fills"] = list(meta.get("plan_fills") or []) + [{
+                "stage": f"TP{stage}", "price": level, "quantity": close_qty, "net_pnl": net,
+                "exit_fee": exit_fee, "at": now_utc_naive().isoformat()}]
+            session.add(
+                PaperLedgerEntry(
+                    account_id=int(account.id),
+                    user_id=int(position.user_id),
+                    position_id=position.position_id,
+                    entry_type="POSITION_PARTIAL_CLOSE",
+                    amount=reserved_part + gross_part - exit_fee,
+                    balance_after=_safe_float(account.cash_balance),
+                    description=f"Closed {fractions[stage - 1]:.0%} of paper {position.asset} at TP{stage}; stop moved to entry",
+                    meta={"exit_price": level, "quantity": close_qty, "net_pnl": net, "stage": stage},
+                )
+            )
+            logger.info("[paper_plan] position=%s asset=%s stage=TP%s qty=%.8g net=%.4f stop=entry",
+                        position.position_id, position.asset, stage, close_qty, net)
+        position.meta = meta
+        position.realized_pnl = _safe_float(meta.get("plan_realized_pnl"))
+        gross = (price - fill) * quantity if direction == "long" else (fill - price) * quantity
+        position.unrealized_pnl = gross
+        return quantity, gross
 
     async def close_all_positions(
         self,

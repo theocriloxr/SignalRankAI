@@ -244,6 +244,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             from .discovered import discovered_candidates
 
             _run_group("discovered", lambda: discovered_candidates(asset, timeframe, data))
+        # Chart-structure setups from the owner's strategy deck (zone flip retest,
+        # trendline break-retest, channel break). Shadow by default: recorded for
+        # forward tracking, never delivered until STRUCTURE_SETUPS_MODE=live.
+        from .structure_setups import structure_setup_candidates
+
+        _run_group("structure_setups", lambda: structure_setup_candidates(asset, timeframe, data))
 
     # Queue canonical candle snapshots for asynchronous sequence learning.
     if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):

@@ -287,6 +287,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/shadow-report` | — |
 | GET | `/signals` | `/signals`, `/signal` |
 | GET | `/signals/{signal_id}` | `/signals`, `/signal` |
+| GET | `/signals/{signal_id}/candles` | `/signals`, `/signal` |
 | POST | `/signals/{signal_id}/execute` | `/signals`, `/signal` |
 | POST | `/signals/{signal_id}/feedback` | `/signals`, `/signal`, `/feedback` |
 | POST | `/simulation` | — |
@@ -306,4 +307,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 123 commands (46 without a web section), 16 web sections, 146 routes (91 without a name-matched command).
+Summary: 123 commands (46 without a web section), 16 web sections, 147 routes (91 without a name-matched command).
