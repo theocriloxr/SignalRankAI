@@ -1,5 +1,5 @@
 {
-  "file_count": 2719,
+  "file_count": 2721,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3131,11 +3131,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2959,
+      "line_count": 2985,
       "path": "core/paper_trading_service.py",
       "reason": "production/build source",
-      "sha256": "3dd3a38d1d8294458830eaca2a06b857fb3ec304f3228afc354a6efb05f23923",
-      "size_bytes": 137271
+      "sha256": "049b147feba63eba33410f64a04a89fb3d652bb9b42f7295273913fd7526bd0d",
+      "size_bytes": 138277
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7355,11 +7355,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 846,
+      "line_count": 852,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "c4d9bf5c9ab44a8338e68e081469f5a9130cb99c66532091bf4f2d3291d4b8d9",
-      "size_bytes": 127351
+      "sha256": "e152070b6a6b581126c2d78caefdfb7a308f9a48c4d41c79ca7b4629d9550778",
+      "size_bytes": 128991
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7403,11 +7403,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 672,
+      "line_count": 678,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "806e59edfe3ddd1019d84757951c13c41d48f1483a2c2c65d322c7292ed32be1",
-      "size_bytes": 101395
+      "sha256": "abfaef80d6fec298514c6101ace5e5624ad5f30749bfd8f8897bd4aa0721039d",
+      "size_bytes": 103035
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14070,7 +14070,7 @@
       "line_count": 16678,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "34d3ba57ae8c7417a8d99ebb5a1a0931aae4b5c6537e8cf536c82c94241b2c0a",
+      "sha256": "a4ffb5ba003d9903e0a819a43516f9054f1e1b19ade0f7f438126e8287055bbb",
       "size_bytes": 487783
     },
     {
@@ -15763,11 +15763,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 557,
+      "line_count": 559,
       "path": "services/economic_calendar.py",
       "reason": "production/build source",
-      "sha256": "1f2a9d9101f89272b2c30453f6f07e7c911630369330aeec4f2ce73268477773",
-      "size_bytes": 22432
+      "sha256": "452b2cc703d5f00478522d5f727698ac0fa06f021d600fe89bfc0d033b28d508",
+      "size_bytes": 22633
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -17571,6 +17571,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 350,
+      "path": "strategies/structure_setups.py",
+      "reason": "production/build source",
+      "sha256": "f4c5d15b1cba8754ff40fe09dc3967c741a5d3a24add984bb33f4de0256fb2d2",
+      "size_bytes": 16111
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 454,
       "path": "strategies/tradingview.py",
       "reason": "production/build source",
@@ -18390,8 +18398,8 @@
       "line_count": 282,
       "path": "tests/test_economic_calendar_20261030.py",
       "reason": "automated test evidence",
-      "sha256": "a224d8bb41d286265e410a56f6bfdf58dcb85c3a95ff61dba4ed5bf84364e746",
-      "size_bytes": 13304
+      "sha256": "e1d8d2a9c7ac5fbb91ab0b3226a5860e9f7603051a17edbe6b64f5aeb8f7b19c",
+      "size_bytes": 13364
     },
     {
       "disposition": "TEST_ONLY",
@@ -18803,11 +18811,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 78,
+      "line_count": 89,
       "path": "tests/test_live_candles_and_paper_desk_20261108.py",
       "reason": "automated test evidence",
-      "sha256": "be9c504b0a76db6bdddc4dedfba8833e19a085df0ec5528d60440c785ddd767b",
-      "size_bytes": 4624
+      "sha256": "810c7f04994b2c7e692befff655e3f99d4ccf2baebdb7b9a9b3e1b52b895b681",
+      "size_bytes": 5269
     },
     {
       "disposition": "TEST_ONLY",
@@ -20667,6 +20675,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 120,
+      "path": "tests/test_structure_setups_20261108.py",
+      "reason": "automated test evidence",
+      "sha256": "ff69dc6d7b24a0674d3d00165f0bb1d27c5c3d6746323e955a4600e9888c51fd",
+      "size_bytes": 4856
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 70,
       "path": "tests/test_telegram_broker_linking_security.py",
       "reason": "automated test evidence",
@@ -21767,7 +21783,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1376,
-    "TEST_ONLY": 464
+    "PRESERVE_BEHAVIOUR": 1377,
+    "TEST_ONLY": 465
   }
 }

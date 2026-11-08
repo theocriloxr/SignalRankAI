@@ -145,7 +145,7 @@ def test_an_unavailable_gate_is_logged_once_not_silently(monkeypatch, caplog):
         raise ConnectionError("calendar down")
 
     monkeypatch.setattr(ec, "fetch_economic_events", broken)
-    monkeypatch.setattr(ec, "_LAST_GATE_WARNING", 0.0)
+    monkeypatch.setattr(ec, "_LAST_GATE_WARNING", None)  # never warned (0.0 failed on a host booted < 10 min ago)
     caplog.set_level("WARNING")
     assert ec.is_no_trade_zone_sync("EURUSD") is False  # existing policy: do not block
     assert ec.is_no_trade_zone_sync("GBPUSD") is False

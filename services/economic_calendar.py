@@ -42,7 +42,9 @@ _FALLBACK_RETRY_SECONDS = 300
 # The engine calls the gate from an executor thread; a first fetch may wait on two providers.
 _SYNC_GATE_TIMEOUT_SECONDS = 20.0
 _GATE_WARNING_INTERVAL_SECONDS = 600.0
-_LAST_GATE_WARNING = 0.0
+# None = never warned. A 0.0 start compared against time.monotonic() (seconds
+# since boot) suppressed the first warning for ten minutes after a host boot.
+_LAST_GATE_WARNING: float | None = None
 _REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_SECONDS", "8") or 8))
 _FOREX_FACTORY_URL = (
     os.getenv("FOREX_FACTORY_CALENDAR_URL") or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -499,7 +501,7 @@ def is_no_trade_zone_sync(
         return bool(run_sync(is_no_trade_zone(symbol, dt, buffer_minutes), timeout=_SYNC_GATE_TIMEOUT_SECONDS))
     except Exception as exc:
         global _LAST_GATE_WARNING
-        if time.monotonic() - _LAST_GATE_WARNING >= _GATE_WARNING_INTERVAL_SECONDS:
+        if _LAST_GATE_WARNING is None or time.monotonic() - _LAST_GATE_WARNING >= _GATE_WARNING_INTERVAL_SECONDS:
             _LAST_GATE_WARNING = time.monotonic()
             logger.warning("[economic_calendar] news gate unavailable, not blocking %s: %s", symbol, type(exc).__name__)
         return False

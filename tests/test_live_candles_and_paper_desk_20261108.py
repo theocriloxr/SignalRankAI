@@ -76,3 +76,14 @@ def test_live_candles_endpoint_on_postgres(monkeypatch):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_paper_desk_refuses_pegged_tokens():
+    """Owner screenshot, 8 Nov 2026: an XAUTUSDT (tokenised gold) paper short. Pegged tokens are excluded
+    from scanning since 1 Nov; the paper desk now also refuses them, quietly, as a recorded skip."""
+    from core.paper_trading_service import _is_pegged_paper_asset
+
+    assert _is_pegged_paper_asset("XAUTUSDT") and _is_pegged_paper_asset("PAXGUSDT")
+    assert not any(_is_pegged_paper_asset(a) for a in ("BTCUSDT", "PEPEUSDT", "XAUUSD", "USDJPY"))
+    source = (ROOT / "core" / "paper_trading_service.py").read_text(encoding="utf-8")
+    assert 'reason="pegged_asset_excluded"' in source

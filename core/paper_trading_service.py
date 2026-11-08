@@ -146,6 +146,15 @@ def _snapshot_or(snapshot: dict[str, Any], key: str, fallback: Any) -> Any:
     return fallback if value is None or value == "" else value
 
 
+def _is_pegged_paper_asset(asset: Any) -> bool:
+    try:
+        from core.pegged_assets import is_pegged_crypto
+
+        return bool(is_pegged_crypto(asset))
+    except Exception:
+        return False
+
+
 def parse_targets(raw: Any) -> list[float]:
     if raw is None:
         return []
@@ -1698,6 +1707,23 @@ class PaperTradingService:
                 )
                 await session.commit()
                 notify = {"decision": "SKIPPED", "reason": "auto_trade_disabled"}
+                result_status = "skipped"
+            elif _is_pegged_paper_asset(candidate.get("asset")):
+                # Stablecoins and tokenised gold/treasuries are excluded from
+                # scanning (core.pegged_assets, 1 Nov 2026); a signal stored
+                # earlier must not open a paper trade either (owner screenshot,
+                # 8 Nov 2026: an XAUTUSDT paper short).
+                await self._record_attempt(
+                    session,
+                    account=account,
+                    user=user,
+                    candidate=candidate,
+                    decision="SKIPPED",
+                    reason="pegged_asset_excluded",
+                    retryable=False,
+                    finalized=True,
+                )
+                await session.commit()
                 result_status = "skipped"
             elif not (admission := focused_admission(candidate.get("asset")))[0]:
                 # Same new-entry boundary as live/demo execution when the opt-in
