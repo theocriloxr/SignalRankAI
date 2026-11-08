@@ -900,6 +900,18 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             f"  of the TP1-or-better, stopped at entry after TP1/TP2: {sh.get('partial_win', 0)}\n"
             f"Share of tracked blocks that reached TP1+: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
         )
+        # Where delivery time goes (owner finding, 8 Nov 2026: entries arrive late).
+        try:
+            from db.session import get_session as _lat_session
+            from services.delivery_latency import delivery_latency_report, format_latency_lines
+
+            async with _lat_session(label="admin_pulse.latency", timeout_seconds=10) as _ls:
+                _latency = await delivery_latency_report(_ls, hours=max(24, int(window_hours or 1)))
+                await _ls.rollback()
+            if _latency.get("groups"):
+                txt += "\n" + "\n".join(format_latency_lines(_latency, limit=4)) + "\n"
+        except Exception as _lat_err:
+            logger.debug("[admin_pulse] latency section unavailable: %s", _lat_err)
         providers = stats.get("providers") or {}
         if providers:
             txt += (

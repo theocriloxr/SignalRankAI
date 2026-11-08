@@ -1393,6 +1393,25 @@ async def performance_rebuild_command(update: Update, context: ContextTypes.DEFA
     )
 
 
+async def delivery_latency_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only: where signal delivery time goes, by asset class and timeframe (8 Nov 2026)."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    try:
+        hours = max(1, min(24 * 30, int(context.args[0]))) if context.args else 24
+    except (TypeError, ValueError):
+        hours = 24
+    from services.delivery_latency import delivery_latency_report, format_latency_lines
+
+    async with get_session() as session:
+        report = await delivery_latency_report(session, hours=hours)
+        await session.rollback()
+    await update.message.reply_text("\n".join(format_latency_lines(report, limit=20))[:3900])
+
+
 async def stale_tick_relabel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only review and apply of the stale-tick shadow label correction (8 Nov 2026).
 

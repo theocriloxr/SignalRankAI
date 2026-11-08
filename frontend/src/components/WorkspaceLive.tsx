@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import client from "../lib/client";
 import { AccountCreation } from "./AccountCreation";
 import { SignalChart } from "./SignalChart";
+import { SetupRecords } from "./SetupRecords";
 import { SignalEvidence } from "./SignalEvidence";
 import { SignalFeedback } from "./SignalFeedback";
 import { SetupEvidence, SetupLine, PaperOnlyTag, isPaperOnly } from "./SignalSetup";
@@ -348,6 +349,7 @@ function PerformanceView({ data }: { data: Row }) {
       const n = finite(p.signals);
       return <tr key={display(p.asset,String(i))+"-"+i}><th>{display(p.asset)}</th><td>{display(p.timeframe)}</td><td>{numberLabel(p.signals,0)}{n !== null && n < 10 && <span className="ws-few"> (small sample)</span>}</td><td>{numberLabel(p.wins,0)}</td><td>{numberLabel(p.losses,0)}</td><td>{numberLabel(p.average_r)}</td><td>{numberLabel(p.total_r)}</td></tr>;})}</tbody></TableWrap>:<Empty title="Nothing has closed yet.">Rows appear here once signals reach a target, their stop or their time limit.</Empty>}</Card>
     <p className="ws-aside">{display(summary.disclaimer,"Past results don't promise future ones.")} These figures {summary.claim_certified === true ? "have" : "haven't"} been checked by an outside auditor.</p>
+    <SetupRecords/>
   </div>;
 }
 

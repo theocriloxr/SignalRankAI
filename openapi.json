@@ -7487,6 +7487,35 @@
           }
         }
       }
+    },
+    "/api/v1/platform/setup-records": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Setup Records",
+        "description": "Each setup's measured record and what it allows (owner request, 8 Nov 2026).\n\nA setup (strategy x timeframe x direction) may signal only while the lower\nbound of its TP1 rate beats the break-even of the plan it publishes,\n``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk\nthe record supports; a setup with no record supports none. Read only; the\nsame 60-day snapshot the engine uses.",
+        "operationId": "setup_records_api_v1_platform_setup_records_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Setup Records Api V1 Platform Setup Records Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {

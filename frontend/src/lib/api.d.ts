@@ -2947,6 +2947,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/setup-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Records
+         * @description Each setup's measured record and what it allows (owner request, 8 Nov 2026).
+         *
+         *     A setup (strategy x timeframe x direction) may signal only while the lower
+         *     bound of its TP1 rate beats the break-even of the plan it publishes,
+         *     ``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk
+         *     the record supports; a setup with no record supports none. Read only; the
+         *     same 60-day snapshot the engine uses.
+         */
+        get: operations["setup_records_api_v1_platform_setup_records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -9350,6 +9376,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    setup_records_api_v1_platform_setup_records_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

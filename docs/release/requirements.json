@@ -486,11 +486,11 @@
     "requirements_and_source_sections": 10051,
     "source_clauses": 60385,
     "interfaces": {
-      "ENDPOINT": 188,
-      "API": 174,
+      "ENDPOINT": 189,
+      "API": 175,
       "WEB": 54,
       "MOBILE": 14,
-      "COMMAND": 197,
+      "COMMAND": 198,
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
@@ -510964,9 +510964,27 @@
       ]
     },
     {
-      "id": "SR-ENDPOINT-86fb1194e64aadac",
+      "id": "SR-ENDPOINT-6fe9e3251a965cda",
       "kind": "ENDPOINT",
       "source": "web/platform_api.py:5233",
+      "requirement": "GET /api/v1/platform/setup-records",
+      "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
+      "responsible_component": "web/platform_api.py::setup_records",
+      "verification_method": "Test authenticated/anonymous, roles, cross-user ownership, invalid input, retries and failure recovery.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "endpoint": "/api/v1/platform/setup-records",
+      "method": "GET",
+      "handler": "setup_records",
+      "dependencies": [
+        "current_user"
+      ]
+    },
+    {
+      "id": "SR-ENDPOINT-86fb1194e64aadac",
+      "kind": "ENDPOINT",
+      "source": "web/platform_api.py:5272",
       "requirement": "GET /api/v1/platform/broker/risk-presets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_risk_presets",
@@ -510984,7 +511002,7 @@
     {
       "id": "SR-ENDPOINT-7c3f8903f841e031",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5254",
+      "source": "web/platform_api.py:5293",
       "requirement": "GET /api/v1/platform/broker/platforms",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_platforms",
@@ -511002,7 +511020,7 @@
     {
       "id": "SR-ENDPOINT-00ecba61c2900fa4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5270",
+      "source": "web/platform_api.py:5309",
       "requirement": "GET /api/v1/platform/broker/connections",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_connections",
@@ -511020,7 +511038,7 @@
     {
       "id": "SR-ENDPOINT-1b1f9ed743540b01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5278",
+      "source": "web/platform_api.py:5317",
       "requirement": "POST /api/v1/platform/broker/exchange",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_exchange",
@@ -511038,7 +511056,7 @@
     {
       "id": "SR-ENDPOINT-316ecd2398684639",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5380",
+      "source": "web/platform_api.py:5419",
       "requirement": "GET /api/v1/platform/broker/metatrader/servers",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::search_broker_metatrader_servers",
@@ -511056,7 +511074,7 @@
     {
       "id": "SR-ENDPOINT-870b5c1400602f2a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5413",
+      "source": "web/platform_api.py:5452",
       "requirement": "POST /api/v1/platform/broker/metatrader",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_metatrader",
@@ -511074,7 +511092,7 @@
     {
       "id": "SR-ENDPOINT-bee7ad83c626fdb1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5487",
+      "source": "web/platform_api.py:5526",
       "requirement": "POST /api/v1/platform/broker/metatrader/secure-link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_broker_metatrader_secure_link",
@@ -511092,7 +511110,7 @@
     {
       "id": "SR-ENDPOINT-ed7b6d20e66f9d26",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5552",
+      "source": "web/platform_api.py:5591",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/demo-certification/prepare",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::prepare_broker_demo_certification",
@@ -511110,7 +511128,7 @@
     {
       "id": "SR-ENDPOINT-12753304a9b67866",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5586",
+      "source": "web/platform_api.py:5625",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_policy",
@@ -511128,7 +511146,7 @@
     {
       "id": "SR-ENDPOINT-5b458fe707dc5770",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5602",
+      "source": "web/platform_api.py:5641",
       "requirement": "GET /api/v1/platform/broker/prop-presets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_prop_presets",
@@ -511146,7 +511164,7 @@
     {
       "id": "SR-ENDPOINT-bc62521fd9ef3d7b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5623",
+      "source": "web/platform_api.py:5662",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/prop-preset",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::apply_broker_prop_preset",
@@ -511164,7 +511182,7 @@
     {
       "id": "SR-ENDPOINT-3e72a83839d89c97",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5666",
+      "source": "web/platform_api.py:5705",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/prop-dashboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_prop_dashboard",
@@ -511182,7 +511200,7 @@
     {
       "id": "SR-ENDPOINT-07a034d298d3b168",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5681",
+      "source": "web/platform_api.py:5720",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/prop-objectives",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_broker_prop_objectives",
@@ -511200,7 +511218,7 @@
     {
       "id": "SR-ENDPOINT-34464c56a3584c3f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5700",
+      "source": "web/platform_api.py:5739",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/ledger",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_ledger",
@@ -511218,7 +511236,7 @@
     {
       "id": "SR-ENDPOINT-91c3d78111c80161",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5729",
+      "source": "web/platform_api.py:5768",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_broker_account_policy",
@@ -511236,7 +511254,7 @@
     {
       "id": "SR-ENDPOINT-2251b79adbcd8e3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5798",
+      "source": "web/platform_api.py:5837",
       "requirement": "POST /api/v1/platform/admin/broker/connections/{connection_id}/prop-certification",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::certify_broker_prop_policy",
@@ -511254,7 +511272,7 @@
     {
       "id": "SR-ENDPOINT-7391679969127546",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5853",
+      "source": "web/platform_api.py:5892",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/credentials/rotate",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::rotate_broker_connection_credential_envelope",
@@ -511272,7 +511290,7 @@
     {
       "id": "SR-ENDPOINT-30618e635acdcaa3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5890",
+      "source": "web/platform_api.py:5929",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/safety-freeze",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_safety_freeze",
@@ -511290,7 +511308,7 @@
     {
       "id": "SR-ENDPOINT-f497cda59a2bc6eb",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5927",
+      "source": "web/platform_api.py:5966",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/verify",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::verify_broker_connection",
@@ -511308,7 +511326,7 @@
     {
       "id": "SR-ENDPOINT-f9b6866aa8bada27",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5961",
+      "source": "web/platform_api.py:6000",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/execution",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::toggle_broker_connection_execution",
@@ -511326,7 +511344,7 @@
     {
       "id": "SR-ENDPOINT-5cc5492032763510",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6003",
+      "source": "web/platform_api.py:6042",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/default",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::set_broker_default",
@@ -511344,7 +511362,7 @@
     {
       "id": "SR-ENDPOINT-54e067952f750dba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6021",
+      "source": "web/platform_api.py:6060",
       "requirement": "DELETE /api/v1/platform/broker/connections/{connection_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_broker_connection",
@@ -511362,7 +511380,7 @@
     {
       "id": "SR-ENDPOINT-a36fb932636dfb7b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6038",
+      "source": "web/platform_api.py:6077",
       "requirement": "GET /api/v1/platform/broker",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_status",
@@ -511380,7 +511398,7 @@
     {
       "id": "SR-ENDPOINT-f0f9fc4cf1373891",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6489",
+      "source": "web/platform_api.py:6528",
       "requirement": "POST /api/v1/platform/broker/mt5",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_mt5",
@@ -511398,7 +511416,7 @@
     {
       "id": "SR-ENDPOINT-78aaabf4ac5be230",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6532",
+      "source": "web/platform_api.py:6571",
       "requirement": "POST /api/v1/platform/execution-terms/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_execution_terms",
@@ -511416,7 +511434,7 @@
     {
       "id": "SR-ENDPOINT-ba2d8eb55b7d6707",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6560",
+      "source": "web/platform_api.py:6599",
       "requirement": "PUT /api/v1/platform/execution-settings",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_settings",
@@ -511434,7 +511452,7 @@
     {
       "id": "SR-ENDPOINT-79eef13a479feaa6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6685",
+      "source": "web/platform_api.py:6724",
       "requirement": "DELETE /api/v1/platform/devices/{session_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_device_session",
@@ -511452,7 +511470,7 @@
     {
       "id": "SR-ENDPOINT-698e7065d9eccb15",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6697",
+      "source": "web/platform_api.py:6736",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_watchlist",
@@ -511470,7 +511488,7 @@
     {
       "id": "SR-ENDPOINT-e25d54e640fdd265",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6709",
+      "source": "web/platform_api.py:6748",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}/items/{instrument_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_watchlist_item",
@@ -511488,7 +511506,7 @@
     {
       "id": "SR-ENDPOINT-db93639fcbf12fba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6725",
+      "source": "web/platform_api.py:6764",
       "requirement": "GET /api/v1/platform/portfolio",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::portfolio",
@@ -511506,7 +511524,7 @@
     {
       "id": "SR-ENDPOINT-4c419a10037388e5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6777",
+      "source": "web/platform_api.py:6816",
       "requirement": "GET /api/v1/platform/performance",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::performance",
@@ -511524,7 +511542,7 @@
     {
       "id": "SR-ENDPOINT-db4ff5ace2cabb37",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6790",
+      "source": "web/platform_api.py:6829",
       "requirement": "GET /api/v1/platform/billing/products",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_products",
@@ -511542,7 +511560,7 @@
     {
       "id": "SR-ENDPOINT-d35820a5dabbb8c0",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6827",
+      "source": "web/platform_api.py:6866",
       "requirement": "POST /api/v1/platform/billing/checkout",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_billing_checkout",
@@ -511560,7 +511578,7 @@
     {
       "id": "SR-ENDPOINT-b1825e067dd404ea",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6882",
+      "source": "web/platform_api.py:6921",
       "requirement": "POST /api/v1/platform/billing/confirm",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_billing_checkout",
@@ -511578,7 +511596,7 @@
     {
       "id": "SR-ENDPOINT-49df927ec6c642e3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6952",
+      "source": "web/platform_api.py:6991",
       "requirement": "GET /api/v1/platform/billing",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing",
@@ -511596,7 +511614,7 @@
     {
       "id": "SR-ENDPOINT-5c5ca073b4d9c4e7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7004",
+      "source": "web/platform_api.py:7043",
       "requirement": "POST /api/v1/platform/billing/cancel-auto-renew",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::cancel_billing_auto_renew",
@@ -511614,7 +511632,7 @@
     {
       "id": "SR-ENDPOINT-674e316aeda299ba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7051",
+      "source": "web/platform_api.py:7090",
       "requirement": "POST /api/v1/platform/billing/refund-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_refund_request",
@@ -511632,7 +511650,7 @@
     {
       "id": "SR-ENDPOINT-67027cf38ee1c0e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7110",
+      "source": "web/platform_api.py:7149",
       "requirement": "GET /api/v1/platform/notifications",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::notification_center",
@@ -511650,7 +511668,7 @@
     {
       "id": "SR-ENDPOINT-fdefeb1022ff1bbd",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7137",
+      "source": "web/platform_api.py:7176",
       "requirement": "POST /api/v1/platform/notifications/{notification_id}/read",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mark_notification_read",
@@ -511668,7 +511686,7 @@
     {
       "id": "SR-ENDPOINT-3c1cd32628b7b5b7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7164",
+      "source": "web/platform_api.py:7203",
       "requirement": "GET /api/v1/platform/organizations/{organization_id}/members",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organization_members",
@@ -511686,7 +511704,7 @@
     {
       "id": "SR-ENDPOINT-3acf1f74fa43d703",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7187",
+      "source": "web/platform_api.py:7226",
       "requirement": "POST /api/v1/platform/organizations/{organization_id}/invitations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization_invitation",
@@ -511704,7 +511722,7 @@
     {
       "id": "SR-ENDPOINT-d4de9fdb8142fba5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7244",
+      "source": "web/platform_api.py:7283",
       "requirement": "POST /api/v1/platform/organizations/invitations/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_organization_invitation",
@@ -511722,7 +511740,7 @@
     {
       "id": "SR-ENDPOINT-bdc42b349a9081fc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7285",
+      "source": "web/platform_api.py:7324",
       "requirement": "GET /api/v1/platform/support/tickets/{ticket_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_ticket_detail",
@@ -511740,7 +511758,7 @@
     {
       "id": "SR-ENDPOINT-31a500340874efdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7320",
+      "source": "web/platform_api.py:7359",
       "requirement": "POST /api/v1/platform/support/tickets/{ticket_id}/messages",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_support_message",
@@ -511758,7 +511776,7 @@
     {
       "id": "SR-ENDPOINT-520729a67d5508a6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7357",
+      "source": "web/platform_api.py:7396",
       "requirement": "GET /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_alerts",
@@ -511776,7 +511794,7 @@
     {
       "id": "SR-ENDPOINT-8e1206fb0fa123cf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7378",
+      "source": "web/platform_api.py:7417",
       "requirement": "POST /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_alert",
@@ -511794,7 +511812,7 @@
     {
       "id": "SR-ENDPOINT-4c034f12b196e597",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7411",
+      "source": "web/platform_api.py:7450",
       "requirement": "DELETE /api/v1/platform/alerts/{alert_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_alert",
@@ -511812,7 +511830,7 @@
     {
       "id": "SR-ENDPOINT-7711087f0093e257",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7425",
+      "source": "web/platform_api.py:7464",
       "requirement": "POST /api/v1/platform/analytics/events",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::analytics_event",
@@ -518823,6 +518841,47 @@
       }
     },
     {
+      "id": "SR-API-22a4e33545306faf",
+      "kind": "API",
+      "source": "openapi.json::paths::/api/v1/platform/setup-records",
+      "requirement": "GET /api/v1/platform/setup-records",
+      "current_implementation": "Mounted in the generated canonical application schema; auth and behavior require separate tests.",
+      "responsible_component": "setup_records_api_v1_platform_setup_records_get",
+      "verification_method": "OpenAPI regeneration parity plus actual request/ownership/side-effect and failure-path tests.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "endpoint": "/api/v1/platform/setup-records",
+      "method": "GET",
+      "operation": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Setup Records",
+        "description": "Each setup's measured record and what it allows (owner request, 8 Nov 2026).\n\nA setup (strategy x timeframe x direction) may signal only while the lower\nbound of its TP1 rate beats the break-even of the plan it publishes,\n``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk\nthe record supports; a setup with no record supports none. Read only; the\nsame 60-day snapshot the engine uses.",
+        "operationId": "setup_records_api_v1_platform_setup_records_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Setup Records Api V1 Platform Setup Records Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    {
       "id": "SR-API-ea557c862a06a93c",
       "kind": "API",
       "source": "openapi.json::paths::/api/v1/platform/shadow-report",
@@ -522328,7 +522387,7 @@
     {
       "id": "SR-COMMAND-a4262e1c9bcbc172",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6554",
+      "source": "signalrank_telegram/bot.py:6555",
       "requirement": "/about",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::about_command",
@@ -522342,7 +522401,7 @@
     {
       "id": "SR-COMMAND-9af211329b2fc82e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6663",
+      "source": "signalrank_telegram/bot.py:6664",
       "requirement": "/account",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::account_command",
@@ -522356,7 +522415,7 @@
     {
       "id": "SR-COMMAND-663548e90717cb50",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6691",
+      "source": "signalrank_telegram/bot.py:6692",
       "requirement": "/account_merges",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::account_merges_command",
@@ -522370,7 +522429,7 @@
     {
       "id": "SR-COMMAND-8b378522d62ecbdd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6728",
+      "source": "signalrank_telegram/bot.py:6729",
       "requirement": "/adaptive_pause",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_pause_command",
@@ -522384,7 +522443,7 @@
     {
       "id": "SR-COMMAND-340a99b8f9154a24",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6730",
+      "source": "signalrank_telegram/bot.py:6731",
       "requirement": "/adaptive_promote",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_promote_command",
@@ -522398,7 +522457,7 @@
     {
       "id": "SR-COMMAND-5d13a7e7fd4741f6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6729",
+      "source": "signalrank_telegram/bot.py:6730",
       "requirement": "/adaptive_resume",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_resume_command",
@@ -522412,7 +522471,7 @@
     {
       "id": "SR-COMMAND-635c656bc7c648a1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6732",
+      "source": "signalrank_telegram/bot.py:6733",
       "requirement": "/adaptive_rollback",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_rollback_command",
@@ -522426,7 +522485,7 @@
     {
       "id": "SR-COMMAND-ac4a0615ab254a43",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6726",
+      "source": "signalrank_telegram/bot.py:6727",
       "requirement": "/adaptive_status",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_status_command",
@@ -522440,7 +522499,7 @@
     {
       "id": "SR-COMMAND-2af07e19ac2c6da7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6731",
+      "source": "signalrank_telegram/bot.py:6732",
       "requirement": "/adaptive_suspend",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::adaptive_suspend_command",
@@ -522454,7 +522513,7 @@
     {
       "id": "SR-COMMAND-8c6976e5b5410415",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6853",
+      "source": "signalrank_telegram/bot.py:6855",
       "requirement": "/admin",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522468,7 +522527,7 @@
     {
       "id": "SR-COMMAND-e4e98a66ad16d8b2",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6855",
+      "source": "signalrank_telegram/bot.py:6857",
       "requirement": "/admin_broadcast",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_broadcast_command",
@@ -522482,7 +522541,7 @@
     {
       "id": "SR-COMMAND-66c5ba138e2eec55",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6854",
+      "source": "signalrank_telegram/bot.py:6856",
       "requirement": "/admin_dashboard",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_dashboard",
@@ -522496,7 +522555,7 @@
     {
       "id": "SR-COMMAND-fb0cae5ac4634300",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6710",
+      "source": "signalrank_telegram/bot.py:6711",
       "requirement": "/admin_feedback",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522510,7 +522569,7 @@
     {
       "id": "SR-COMMAND-dd407f8ae91b64ef",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6594",
+      "source": "signalrank_telegram/bot.py:6595",
       "requirement": "/admin_payment_lookup",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522524,7 +522583,7 @@
     {
       "id": "SR-COMMAND-94b4414bb3a8c745",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6595",
+      "source": "signalrank_telegram/bot.py:6596",
       "requirement": "/admin_receipt_lookup",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522538,7 +522597,7 @@
     {
       "id": "SR-COMMAND-3db034b5e322a307",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6709",
+      "source": "signalrank_telegram/bot.py:6710",
       "requirement": "/admin_signal_lookup",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522552,7 +522611,7 @@
     {
       "id": "SR-COMMAND-783e0579a5bc4b61",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6708",
+      "source": "signalrank_telegram/bot.py:6709",
       "requirement": "/admin_subscription_fix",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522566,7 +522625,7 @@
     {
       "id": "SR-COMMAND-1995f1b608fd795b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6704",
+      "source": "signalrank_telegram/bot.py:6705",
       "requirement": "/admin_top_assets",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_top_assets_command",
@@ -522580,7 +522639,7 @@
     {
       "id": "SR-COMMAND-80ad7b1a2d884f90",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6705",
+      "source": "signalrank_telegram/bot.py:6706",
       "requirement": "/admin_top_strategies",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_top_strategies_command",
@@ -522594,7 +522653,7 @@
     {
       "id": "SR-COMMAND-4a647de78d0d1b74",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6707",
+      "source": "signalrank_telegram/bot.py:6708",
       "requirement": "/admin_user",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_command",
@@ -522608,7 +522667,7 @@
     {
       "id": "SR-COMMAND-6c45ba4d82c12608",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6706",
+      "source": "signalrank_telegram/bot.py:6707",
       "requirement": "/admin_user_engagement",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::admin_user_engagement_command",
@@ -522622,7 +522681,7 @@
     {
       "id": "SR-COMMAND-32e83e92d45d71f6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6601",
+      "source": "signalrank_telegram/bot.py:6602",
       "requirement": "/ai",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_command",
@@ -522636,7 +522695,7 @@
     {
       "id": "SR-COMMAND-9969f219a3e2a0a3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6603",
+      "source": "signalrank_telegram/bot.py:6604",
       "requirement": "/ai_analyze",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_analyze_command",
@@ -522650,7 +522709,7 @@
     {
       "id": "SR-COMMAND-dd48e77c3381ffce",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6604",
+      "source": "signalrank_telegram/bot.py:6605",
       "requirement": "/ai_audit",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_audit_command",
@@ -522664,7 +522723,7 @@
     {
       "id": "SR-COMMAND-5e331e1f9a3c5993",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6608",
+      "source": "signalrank_telegram/bot.py:6609",
       "requirement": "/ai_improve",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::ai_improve_command",
@@ -522678,7 +522737,7 @@
     {
       "id": "SR-COMMAND-90403b9b76b9dd07",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6605",
+      "source": "signalrank_telegram/bot.py:6606",
       "requirement": "/ai_predict",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_predict_command",
@@ -522692,7 +522751,7 @@
     {
       "id": "SR-COMMAND-911fabd24e4ca82d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6602",
+      "source": "signalrank_telegram/bot.py:6603",
       "requirement": "/ai_review",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_review_command",
@@ -522706,7 +522765,7 @@
     {
       "id": "SR-COMMAND-f7b2e7a9572239df",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6606",
+      "source": "signalrank_telegram/bot.py:6607",
       "requirement": "/ai_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ai_status_command",
@@ -522720,7 +522779,7 @@
     {
       "id": "SR-COMMAND-626fe5fd05e9ac2d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6607",
+      "source": "signalrank_telegram/bot.py:6608",
       "requirement": "/ai_test",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ai_test_command",
@@ -522734,7 +522793,7 @@
     {
       "id": "SR-COMMAND-deb3e366c077c228",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6631",
+      "source": "signalrank_telegram/bot.py:6632",
       "requirement": "/alerts",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::alerts_command",
@@ -522748,7 +522807,7 @@
     {
       "id": "SR-COMMAND-8327589fe0faa974",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6660",
+      "source": "signalrank_telegram/bot.py:6661",
       "requirement": "/all_asset_test_status",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::all_asset_test_status_command",
@@ -522762,7 +522821,7 @@
     {
       "id": "SR-COMMAND-09cbad3beca70ddb",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6667",
+      "source": "signalrank_telegram/bot.py:6668",
       "requirement": "/analyze",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::analyze_command",
@@ -522776,7 +522835,7 @@
     {
       "id": "SR-COMMAND-6c793695171e793d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6696",
+      "source": "signalrank_telegram/bot.py:6697",
       "requirement": "/apikey",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::apikey_command",
@@ -522790,7 +522849,7 @@
     {
       "id": "SR-COMMAND-a172cedcae47474b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6683",
+      "source": "signalrank_telegram/bot.py:6684",
       "requirement": "/app",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::app_command",
@@ -522804,7 +522863,7 @@
     {
       "id": "SR-COMMAND-4e77ed830d874f56",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6658",
+      "source": "signalrank_telegram/bot.py:6659",
       "requirement": "/asset_capability",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::asset_capability_command",
@@ -522818,7 +522877,7 @@
     {
       "id": "SR-COMMAND-4d3bed6cccff3ddd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6659",
+      "source": "signalrank_telegram/bot.py:6660",
       "requirement": "/asset_class_test",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::asset_class_test_command",
@@ -522832,7 +522891,7 @@
     {
       "id": "SR-COMMAND-8bf729ffe074caee",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6711",
+      "source": "signalrank_telegram/bot.py:6712",
       "requirement": "/assets",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::assets_command",
@@ -522846,7 +522905,7 @@
     {
       "id": "SR-COMMAND-48bc54731080932b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6580",
+      "source": "signalrank_telegram/bot.py:6581",
       "requirement": "/automaton_pause",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::automaton_pause_command",
@@ -522860,7 +522919,7 @@
     {
       "id": "SR-COMMAND-69e53e53ae924ec3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6561",
+      "source": "signalrank_telegram/bot.py:6562",
       "requirement": "/automaton_report",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::automaton_report_command",
@@ -522874,7 +522933,7 @@
     {
       "id": "SR-COMMAND-fd54c0269dc0a35a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6582",
+      "source": "signalrank_telegram/bot.py:6583",
       "requirement": "/automaton_reset_paper",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::automaton_reset_paper_command",
@@ -522888,7 +522947,7 @@
     {
       "id": "SR-COMMAND-e41bbbe4974493ed",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6581",
+      "source": "signalrank_telegram/bot.py:6582",
       "requirement": "/automaton_resume",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::automaton_resume_command",
@@ -522902,7 +522961,7 @@
     {
       "id": "SR-COMMAND-19a2b53c27ca550a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6560",
+      "source": "signalrank_telegram/bot.py:6561",
       "requirement": "/automaton_status",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::automaton_status_command",
@@ -522916,7 +522975,7 @@
     {
       "id": "SR-COMMAND-b20d9eca8e484b61",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6857",
+      "source": "signalrank_telegram/bot.py:6859",
       "requirement": "/blast_terms",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::blast_terms_command",
@@ -522930,7 +522989,7 @@
     {
       "id": "SR-COMMAND-e88199c423228a45",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6751",
+      "source": "signalrank_telegram/bot.py:6752",
       "requirement": "/broadcast",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::broadcast_command",
@@ -522944,7 +523003,7 @@
     {
       "id": "SR-COMMAND-2374d91794b79f4f",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6796",
+      "source": "signalrank_telegram/bot.py:6798",
       "requirement": "/cancel",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::cancel_command",
@@ -522958,7 +523017,7 @@
     {
       "id": "SR-COMMAND-5d77b407ebdc161b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6609",
+      "source": "signalrank_telegram/bot.py:6610",
       "requirement": "/codex_audit",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codex_audit_command",
@@ -522972,7 +523031,7 @@
     {
       "id": "SR-COMMAND-9633afbde167eefa",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6611",
+      "source": "signalrank_telegram/bot.py:6612",
       "requirement": "/codex_fix_plan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -522986,7 +523045,7 @@
     {
       "id": "SR-COMMAND-7d6359ada3334385",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6617",
+      "source": "signalrank_telegram/bot.py:6618",
       "requirement": "/codex_generate_issue",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523000,7 +523059,7 @@
     {
       "id": "SR-COMMAND-fb5e9dee9eaad097",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6610",
+      "source": "signalrank_telegram/bot.py:6611",
       "requirement": "/codex_log_review",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523014,7 +523073,7 @@
     {
       "id": "SR-COMMAND-f06d14ab6a177cf6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6616",
+      "source": "signalrank_telegram/bot.py:6617",
       "requirement": "/codex_pr_summary",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523028,7 +523087,7 @@
     {
       "id": "SR-COMMAND-7bc43c104e8bf4ea",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6615",
+      "source": "signalrank_telegram/bot.py:6616",
       "requirement": "/codex_refactor_plan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523042,7 +523101,7 @@
     {
       "id": "SR-COMMAND-63cdeeec1144545a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6613",
+      "source": "signalrank_telegram/bot.py:6614",
       "requirement": "/codex_release_check",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523056,7 +523115,7 @@
     {
       "id": "SR-COMMAND-124acc7b304b72c5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6612",
+      "source": "signalrank_telegram/bot.py:6613",
       "requirement": "/codex_security_scan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523070,7 +523129,7 @@
     {
       "id": "SR-COMMAND-8d899453d904e29d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6614",
+      "source": "signalrank_telegram/bot.py:6615",
       "requirement": "/codex_test_plan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::codexops_command",
@@ -523084,7 +523143,7 @@
     {
       "id": "SR-COMMAND-9b110f7030863fd4",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6782",
+      "source": "signalrank_telegram/bot.py:6784",
       "requirement": "/connect_broker",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -523098,7 +523157,7 @@
     {
       "id": "SR-COMMAND-dec30770ee1f9294",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6578",
+      "source": "signalrank_telegram/bot.py:6579",
       "requirement": "/contact_admin",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::contact_admin_command",
@@ -523112,7 +523171,7 @@
     {
       "id": "SR-COMMAND-030c8fdd2b7e4835",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6748",
+      "source": "signalrank_telegram/bot.py:6749",
       "requirement": "/correct_signal",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::correct_signal",
@@ -523126,7 +523185,7 @@
     {
       "id": "SR-COMMAND-66cd9688a2ae0682",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6664",
+      "source": "signalrank_telegram/bot.py:6665",
       "requirement": "/dashboard",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::dashboard_command",
@@ -523140,7 +523199,7 @@
     {
       "id": "SR-COMMAND-1f730d10a46a1eb3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6650",
+      "source": "signalrank_telegram/bot.py:6651",
       "requirement": "/db_health",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::db_health_command",
@@ -523154,7 +523213,7 @@
     {
       "id": "SR-COMMAND-1bad2caa98472c04",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6763",
+      "source": "signalrank_telegram/bot.py:6765",
       "requirement": "/dead_letter_replay",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dead_letter_replay_command",
@@ -523168,7 +523227,7 @@
     {
       "id": "SR-COMMAND-1306f916246a3a5a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6762",
+      "source": "signalrank_telegram/bot.py:6764",
       "requirement": "/dead_letter_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dead_letter_status_command",
@@ -523182,7 +523241,7 @@
     {
       "id": "SR-COMMAND-cae8f81e9deee7db",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6757",
+      "source": "signalrank_telegram/bot.py:6759",
       "requirement": "/dedup_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dedup_audit_command",
@@ -523196,7 +523255,7 @@
     {
       "id": "SR-COMMAND-0d7f86bff62d9981",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6651",
+      "source": "signalrank_telegram/bot.py:6652",
       "requirement": "/delivery_debug",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::delivery_debug_command",
@@ -523210,7 +523269,7 @@
     {
       "id": "SR-COMMAND-817dda744650067e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6656",
+      "source": "signalrank_telegram/bot.py:6657",
       "requirement": "/delivery_eligibility",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::delivery_eligibility_command",
@@ -523222,9 +523281,23 @@
       "role_scope": "ADMIN"
     },
     {
+      "id": "SR-COMMAND-e2acc5c7373dd18e",
+      "kind": "COMMAND",
+      "source": "signalrank_telegram/bot.py:6755",
+      "requirement": "/delivery_latency",
+      "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
+      "responsible_component": "signalrank_telegram::delivery_latency_command",
+      "verification_method": "Registry/runtime match; positive/negative role and account scope; real dedicated-bot round trip.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "minimum_tier": "OWNER",
+      "role_scope": "OWNER"
+    },
+    {
       "id": "SR-COMMAND-c42ccca408de8054",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6743",
+      "source": "signalrank_telegram/bot.py:6744",
       "requirement": "/dev_force_signal",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_force_signal",
@@ -523238,7 +523311,7 @@
     {
       "id": "SR-COMMAND-a7eb0eb40bcac1b6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6745",
+      "source": "signalrank_telegram/bot.py:6746",
       "requirement": "/dev_invalidate",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_invalidate",
@@ -523252,7 +523325,7 @@
     {
       "id": "SR-COMMAND-375265cfe213bc2e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6741",
+      "source": "signalrank_telegram/bot.py:6742",
       "requirement": "/dev_pause",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_pause",
@@ -523266,7 +523339,7 @@
     {
       "id": "SR-COMMAND-091eeac2f03c4853",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6742",
+      "source": "signalrank_telegram/bot.py:6743",
       "requirement": "/dev_resume",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::dev_resume",
@@ -523280,7 +523353,7 @@
     {
       "id": "SR-COMMAND-ade15a1287dabe92",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6687",
+      "source": "signalrank_telegram/bot.py:6688",
       "requirement": "/devices",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::devices_command",
@@ -523294,7 +523367,7 @@
     {
       "id": "SR-COMMAND-c9479b65293d6205",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6556",
+      "source": "signalrank_telegram/bot.py:6557",
       "requirement": "/disclaimer",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::disclaimer_command",
@@ -523308,7 +523381,7 @@
     {
       "id": "SR-COMMAND-287942197469f9d7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6791",
+      "source": "signalrank_telegram/bot.py:6793",
       "requirement": "/drawdown",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::drawdown_command",
@@ -523322,7 +523395,7 @@
     {
       "id": "SR-COMMAND-f408830bcc7fab37",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6641",
+      "source": "signalrank_telegram/bot.py:6642",
       "requirement": "/early",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::early_command",
@@ -523336,7 +523409,7 @@
     {
       "id": "SR-COMMAND-1a80b0691b696fe1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6640",
+      "source": "signalrank_telegram/bot.py:6641",
       "requirement": "/elite",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::elite_command",
@@ -523350,7 +523423,7 @@
     {
       "id": "SR-COMMAND-4862bea5f2097b37",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6654",
+      "source": "signalrank_telegram/bot.py:6655",
       "requirement": "/engine_debug",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::engine_debug_command",
@@ -523364,7 +523437,7 @@
     {
       "id": "SR-COMMAND-a402c4336ebfd782",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6792",
+      "source": "signalrank_telegram/bot.py:6794",
       "requirement": "/execution",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::execution_command",
@@ -523378,7 +523451,7 @@
     {
       "id": "SR-COMMAND-30de18cc4ea2bf46",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6555",
+      "source": "signalrank_telegram/bot.py:6556",
       "requirement": "/faq",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::faq_command",
@@ -523392,7 +523465,7 @@
     {
       "id": "SR-COMMAND-59bda3f8ee98128d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6666",
+      "source": "signalrank_telegram/bot.py:6667",
       "requirement": "/feedback",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::feedback_command",
@@ -523406,7 +523479,7 @@
     {
       "id": "SR-COMMAND-dfc3376b8266c66e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6669; signalrank_telegram/bot.py:6681",
+      "source": "signalrank_telegram/bot.py:6670; signalrank_telegram/bot.py:6682",
       "requirement": "/filter",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::filter_command",
@@ -523420,7 +523493,7 @@
     {
       "id": "SR-COMMAND-e9745ed81d0cf9b5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6856",
+      "source": "signalrank_telegram/bot.py:6858",
       "requirement": "/force_market_scan",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::force_market_scan_command",
@@ -523434,7 +523507,7 @@
     {
       "id": "SR-COMMAND-caa17d0368d18d9d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6744",
+      "source": "signalrank_telegram/bot.py:6745",
       "requirement": "/force_signal",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::dev_force_signal",
@@ -523448,7 +523521,7 @@
     {
       "id": "SR-COMMAND-e86aef11b05e2cd5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6653",
+      "source": "signalrank_telegram/bot.py:6654",
       "requirement": "/format_debug",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::format_debug_command",
@@ -523462,7 +523535,7 @@
     {
       "id": "SR-COMMAND-5d72436256ada538",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6596",
+      "source": "signalrank_telegram/bot.py:6597",
       "requirement": "/gemini",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_command",
@@ -523476,7 +523549,7 @@
     {
       "id": "SR-COMMAND-7da0d82e38de9be4",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6598",
+      "source": "signalrank_telegram/bot.py:6599",
       "requirement": "/gemini_analyze",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_analyze_command",
@@ -523490,7 +523563,7 @@
     {
       "id": "SR-COMMAND-b1ded72e28b9db4d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6599",
+      "source": "signalrank_telegram/bot.py:6600",
       "requirement": "/gemini_audit",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_audit_command",
@@ -523504,7 +523577,7 @@
     {
       "id": "SR-COMMAND-26816e352fb090d1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6600",
+      "source": "signalrank_telegram/bot.py:6601",
       "requirement": "/gemini_predict",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_predict_command",
@@ -523518,7 +523591,7 @@
     {
       "id": "SR-COMMAND-d0522b9ce2d8ba47",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6597",
+      "source": "signalrank_telegram/bot.py:6598",
       "requirement": "/gemini_review",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::gemini_review_command",
@@ -523532,7 +523605,7 @@
     {
       "id": "SR-COMMAND-106a5842fc5fce6f",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6553",
+      "source": "signalrank_telegram/bot.py:6554",
       "requirement": "/help",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::help_command",
@@ -523546,7 +523619,7 @@
     {
       "id": "SR-COMMAND-259aa8ef98a8b91d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6628",
+      "source": "signalrank_telegram/bot.py:6629",
       "requirement": "/history",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::history_command",
@@ -523560,7 +523633,7 @@
     {
       "id": "SR-COMMAND-5014f9af3a684fdd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6624",
+      "source": "signalrank_telegram/bot.py:6625",
       "requirement": "/invite",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::invite_command",
@@ -523574,7 +523647,7 @@
     {
       "id": "SR-COMMAND-81dd6b775afcccb6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6695",
+      "source": "signalrank_telegram/bot.py:6696",
       "requirement": "/journal",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::journal_command",
@@ -523588,7 +523661,7 @@
     {
       "id": "SR-COMMAND-0157ff8c94d8c93b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6770",
+      "source": "signalrank_telegram/bot.py:6772",
       "requirement": "/kill_switch",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::kill_switch_command",
@@ -523602,7 +523675,7 @@
     {
       "id": "SR-COMMAND-a4ef304ba42a200b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6697",
+      "source": "signalrank_telegram/bot.py:6698",
       "requirement": "/language",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::language_command",
@@ -523616,7 +523689,7 @@
     {
       "id": "SR-COMMAND-6a86dd616a5812d9",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6800",
+      "source": "signalrank_telegram/bot.py:6802",
       "requirement": "/leaderboard",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::leaderboard_command",
@@ -523630,7 +523703,7 @@
     {
       "id": "SR-COMMAND-96d4f63a1dc16eb6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6764",
+      "source": "signalrank_telegram/bot.py:6766",
       "requirement": "/ledger_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ledger_audit_command",
@@ -523644,7 +523717,7 @@
     {
       "id": "SR-COMMAND-b1b1bdb480c61d07",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6686",
+      "source": "signalrank_telegram/bot.py:6687",
       "requirement": "/link",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::link_command",
@@ -523658,7 +523731,7 @@
     {
       "id": "SR-COMMAND-4b8aa4ce5de357ee",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6635",
+      "source": "signalrank_telegram/bot.py:6636",
       "requirement": "/liveprice",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::liveprice_command",
@@ -523672,7 +523745,7 @@
     {
       "id": "SR-COMMAND-f7193d5de6eaea61",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6685",
+      "source": "signalrank_telegram/bot.py:6686",
       "requirement": "/login_code",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::login_code_command",
@@ -523686,7 +523759,7 @@
     {
       "id": "SR-COMMAND-e4d693d24e646cb7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6637",
+      "source": "signalrank_telegram/bot.py:6638",
       "requirement": "/market",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::market_command",
@@ -523700,7 +523773,7 @@
     {
       "id": "SR-COMMAND-ceb00a91525da64f",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6588",
+      "source": "signalrank_telegram/bot.py:6589",
       "requirement": "/mission",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mission_command",
@@ -523714,7 +523787,7 @@
     {
       "id": "SR-COMMAND-220903792034ada4",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6768",
+      "source": "signalrank_telegram/bot.py:6770",
       "requirement": "/ml_candidate",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ml_candidate_command",
@@ -523728,7 +523801,7 @@
     {
       "id": "SR-COMMAND-d437f77e16f4299e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6769",
+      "source": "signalrank_telegram/bot.py:6771",
       "requirement": "/ml_candidate_promote",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::ml_candidate_promote_command",
@@ -523742,7 +523815,7 @@
     {
       "id": "SR-COMMAND-e642b12901a6ee51",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6632",
+      "source": "signalrank_telegram/bot.py:6633",
       "requirement": "/mode",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mode_command",
@@ -523756,7 +523829,7 @@
     {
       "id": "SR-COMMAND-7cc50a21f4fb6972",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6785",
+      "source": "signalrank_telegram/bot.py:6787",
       "requirement": "/mt5",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -523770,7 +523843,7 @@
     {
       "id": "SR-COMMAND-fa8e940cec5bcf44",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6781",
+      "source": "signalrank_telegram/bot.py:6783",
       "requirement": "/mt5_link",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -523784,7 +523857,7 @@
     {
       "id": "SR-COMMAND-f01d06c7183abe13",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6786",
+      "source": "signalrank_telegram/bot.py:6788",
       "requirement": "/mt5_status",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_status_command",
@@ -523798,7 +523871,7 @@
     {
       "id": "SR-COMMAND-eec7f1dd8727836a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6784",
+      "source": "signalrank_telegram/bot.py:6786",
       "requirement": "/mt5link",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mt5_link_command",
@@ -523812,7 +523885,7 @@
     {
       "id": "SR-COMMAND-c589244f4d5c8e64",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6662",
+      "source": "signalrank_telegram/bot.py:6663",
       "requirement": "/myid",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::myid_command",
@@ -523826,7 +523899,7 @@
     {
       "id": "SR-COMMAND-61f1a9acd27f8b09",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6794",
+      "source": "signalrank_telegram/bot.py:6796",
       "requirement": "/mystats",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::mystats_command",
@@ -523840,7 +523913,7 @@
     {
       "id": "SR-COMMAND-03fb92a8151f4d87",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6758",
+      "source": "signalrank_telegram/bot.py:6760",
       "requirement": "/notification_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::notification_audit_command",
@@ -523854,7 +523927,7 @@
     {
       "id": "SR-COMMAND-6cd6f41455d78245",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6665",
+      "source": "signalrank_telegram/bot.py:6666",
       "requirement": "/notify",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::notify_command",
@@ -523868,7 +523941,7 @@
     {
       "id": "SR-COMMAND-27db9f1ced25829c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6657",
+      "source": "signalrank_telegram/bot.py:6658",
       "requirement": "/ohlc_health",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::ohlc_health_command",
@@ -523882,7 +523955,7 @@
     {
       "id": "SR-COMMAND-43e200102776a832",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6684",
+      "source": "signalrank_telegram/bot.py:6685",
       "requirement": "/open_app",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::app_command",
@@ -523896,7 +523969,7 @@
     {
       "id": "SR-COMMAND-29dc7998b3d8103e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6648",
+      "source": "signalrank_telegram/bot.py:6649",
       "requirement": "/ops_health",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::ops_health_command",
@@ -523910,7 +523983,7 @@
     {
       "id": "SR-COMMAND-25a63e52a98f6fda",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6623",
+      "source": "signalrank_telegram/bot.py:6624",
       "requirement": "/outcome",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::outcome_command",
@@ -523924,7 +523997,7 @@
     {
       "id": "SR-COMMAND-4c84304f13f872cd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6756",
+      "source": "signalrank_telegram/bot.py:6758",
       "requirement": "/outcome_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::outcome_audit_command",
@@ -523938,7 +524011,7 @@
     {
       "id": "SR-COMMAND-a44a4bcf1be1ac8d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6755",
+      "source": "signalrank_telegram/bot.py:6757",
       "requirement": "/outcome_rebuild",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::outcome_rebuild_command",
@@ -523952,7 +524025,7 @@
     {
       "id": "SR-COMMAND-1b77082aec18a120",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6747",
+      "source": "signalrank_telegram/bot.py:6748",
       "requirement": "/owner_revenue",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::owner_revenue",
@@ -523966,7 +524039,7 @@
     {
       "id": "SR-COMMAND-6d3cd7ff7c5f0a0c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6661",
+      "source": "signalrank_telegram/bot.py:6662",
       "requirement": "/owner_test_delivery",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::owner_test_delivery_command",
@@ -523980,7 +524053,7 @@
     {
       "id": "SR-COMMAND-628eb93ff2000818",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6746",
+      "source": "signalrank_telegram/bot.py:6747",
       "requirement": "/owner_users",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::owner_users",
@@ -523994,7 +524067,7 @@
     {
       "id": "SR-COMMAND-386d162c55366993",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6570",
+      "source": "signalrank_telegram/bot.py:6571",
       "requirement": "/paper_activity",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_activity_command",
@@ -524008,7 +524081,7 @@
     {
       "id": "SR-COMMAND-4568189f847411ab",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6759",
+      "source": "signalrank_telegram/bot.py:6761",
       "requirement": "/paper_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::paper_audit_command",
@@ -524022,7 +524095,7 @@
     {
       "id": "SR-COMMAND-5d4609cd90b30551",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6562",
+      "source": "signalrank_telegram/bot.py:6563",
       "requirement": "/paper_balance",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_balance_command",
@@ -524036,7 +524109,7 @@
     {
       "id": "SR-COMMAND-2c26049bc959582c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6566",
+      "source": "signalrank_telegram/bot.py:6567",
       "requirement": "/paper_close_all",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_close_all_command",
@@ -524050,7 +524123,7 @@
     {
       "id": "SR-COMMAND-85fffc25b36601f8",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6565",
+      "source": "signalrank_telegram/bot.py:6566",
       "requirement": "/paper_history",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_history_command",
@@ -524064,7 +524137,7 @@
     {
       "id": "SR-COMMAND-96198faa2db1d205",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6564",
+      "source": "signalrank_telegram/bot.py:6565",
       "requirement": "/paper_performance",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_performance_command",
@@ -524078,7 +524151,7 @@
     {
       "id": "SR-COMMAND-982742923d2929ae",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6563",
+      "source": "signalrank_telegram/bot.py:6564",
       "requirement": "/paper_positions",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_positions_command",
@@ -524092,7 +524165,7 @@
     {
       "id": "SR-COMMAND-57b89a40dbc9402c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6567",
+      "source": "signalrank_telegram/bot.py:6568",
       "requirement": "/paper_reset",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_reset_command",
@@ -524106,7 +524179,7 @@
     {
       "id": "SR-COMMAND-f5a6bea629f21fd3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6572",
+      "source": "signalrank_telegram/bot.py:6573",
       "requirement": "/paper_retry",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_retry_command",
@@ -524120,7 +524193,7 @@
     {
       "id": "SR-COMMAND-01d7cb64a951214e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6568",
+      "source": "signalrank_telegram/bot.py:6569",
       "requirement": "/paper_settings",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_settings_command",
@@ -524134,7 +524207,7 @@
     {
       "id": "SR-COMMAND-e6c734eb86adac7e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6571",
+      "source": "signalrank_telegram/bot.py:6572",
       "requirement": "/paper_skips",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_skips_command",
@@ -524148,7 +524221,7 @@
     {
       "id": "SR-COMMAND-b6718999fe388934",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6569",
+      "source": "signalrank_telegram/bot.py:6570",
       "requirement": "/paper_status",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::paper_status_command",
@@ -524162,7 +524235,7 @@
     {
       "id": "SR-COMMAND-2f7f30caf1306cfc",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6576",
+      "source": "signalrank_telegram/bot.py:6577",
       "requirement": "/payment_help",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::payment_help_command",
@@ -524176,7 +524249,7 @@
     {
       "id": "SR-COMMAND-25876e364032b85e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6765",
+      "source": "signalrank_telegram/bot.py:6767",
       "requirement": "/payment_reconcile",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::payment_reconcile_command",
@@ -524190,7 +524263,7 @@
     {
       "id": "SR-COMMAND-4a1898716ef67796",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6585",
+      "source": "signalrank_telegram/bot.py:6586",
       "requirement": "/performance",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::performance_command",
@@ -524204,7 +524277,7 @@
     {
       "id": "SR-COMMAND-d806cbbdc21e6063",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6754",
+      "source": "signalrank_telegram/bot.py:6756",
       "requirement": "/performance_audit",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::performance_audit_command",
@@ -524218,7 +524291,7 @@
     {
       "id": "SR-COMMAND-e6a19e289522bbf1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6752",
+      "source": "signalrank_telegram/bot.py:6753",
       "requirement": "/performance_rebuild",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::performance_rebuild_command",
@@ -524232,7 +524305,7 @@
     {
       "id": "SR-COMMAND-e9c0c25555476607",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6583",
+      "source": "signalrank_telegram/bot.py:6584",
       "requirement": "/performance_truth",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::performance_truth_command",
@@ -524246,7 +524319,7 @@
     {
       "id": "SR-COMMAND-823412d1eacb6795",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6644",
+      "source": "signalrank_telegram/bot.py:6645",
       "requirement": "/policy",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::policy_command",
@@ -524260,7 +524333,7 @@
     {
       "id": "SR-COMMAND-0e6a8e0b849ed9b0",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6636",
+      "source": "signalrank_telegram/bot.py:6637",
       "requirement": "/portfolio",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::portfolio_command",
@@ -524274,7 +524347,7 @@
     {
       "id": "SR-COMMAND-1e2ea6d9b72e685b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6618",
+      "source": "signalrank_telegram/bot.py:6619",
       "requirement": "/pricing",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::pricing_command",
@@ -524288,7 +524361,7 @@
     {
       "id": "SR-COMMAND-a4cc6bc01a927e2a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6690",
+      "source": "signalrank_telegram/bot.py:6691",
       "requirement": "/privacy",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::privacy_command",
@@ -524302,7 +524375,7 @@
     {
       "id": "SR-COMMAND-1900eab6c028483d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6586",
+      "source": "signalrank_telegram/bot.py:6587",
       "requirement": "/profile",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::profile_command",
@@ -524316,7 +524389,7 @@
     {
       "id": "SR-COMMAND-ee5be367a746e2de",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6587",
+      "source": "signalrank_telegram/bot.py:6588",
       "requirement": "/profile_debug",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::profile_debug_command",
@@ -524330,7 +524403,7 @@
     {
       "id": "SR-COMMAND-c1cda26362828b69",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6621",
+      "source": "signalrank_telegram/bot.py:6622",
       "requirement": "/proof",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::proof_command",
@@ -524344,7 +524417,7 @@
     {
       "id": "SR-COMMAND-3367a377767d4f2e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6584",
+      "source": "signalrank_telegram/bot.py:6585",
       "requirement": "/provider_health",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::provider_health_command",
@@ -524358,7 +524431,7 @@
     {
       "id": "SR-COMMAND-0a0f5ec14769f489",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6749",
+      "source": "signalrank_telegram/bot.py:6750",
       "requirement": "/provider_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::provider_status_command",
@@ -524372,7 +524445,7 @@
     {
       "id": "SR-COMMAND-356713038dc18dd8",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6558",
+      "source": "signalrank_telegram/bot.py:6559",
       "requirement": "/public_test_status",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::public_test_status_command",
@@ -524386,7 +524459,7 @@
     {
       "id": "SR-COMMAND-ac530dee51550f36",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6750",
+      "source": "signalrank_telegram/bot.py:6751",
       "requirement": "/qa_report",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::qa_report_command",
@@ -524400,7 +524473,7 @@
     {
       "id": "SR-COMMAND-acef2c15bcd349db",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6589",
+      "source": "signalrank_telegram/bot.py:6590",
       "requirement": "/quality",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::quality_command",
@@ -524414,7 +524487,7 @@
     {
       "id": "SR-COMMAND-1a6c7ae6cdebebcb",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6761",
+      "source": "signalrank_telegram/bot.py:6763",
       "requirement": "/queue_replay",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::queue_replay_command",
@@ -524428,7 +524501,7 @@
     {
       "id": "SR-COMMAND-20c7a4cba0d3bbf1",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6760",
+      "source": "signalrank_telegram/bot.py:6762",
       "requirement": "/queue_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::queue_status_command",
@@ -524442,7 +524515,7 @@
     {
       "id": "SR-COMMAND-a3a6e0df57e9e3ae",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6646",
+      "source": "signalrank_telegram/bot.py:6647",
       "requirement": "/recap",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::recap_command",
@@ -524456,7 +524529,7 @@
     {
       "id": "SR-COMMAND-6f32860910ca0fb2",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6573",
+      "source": "signalrank_telegram/bot.py:6574",
       "requirement": "/receipt",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::receipt_command",
@@ -524470,7 +524543,7 @@
     {
       "id": "SR-COMMAND-3619a1d05b1fe41a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6574",
+      "source": "signalrank_telegram/bot.py:6575",
       "requirement": "/receipts",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::receipts_command",
@@ -524484,7 +524557,7 @@
     {
       "id": "SR-COMMAND-44574c4ba2ea74ad",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6795",
+      "source": "signalrank_telegram/bot.py:6797",
       "requirement": "/referral",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::referral_command",
@@ -524498,7 +524571,7 @@
     {
       "id": "SR-COMMAND-e08d9861f3f67a6a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6702",
+      "source": "signalrank_telegram/bot.py:6703",
       "requirement": "/referral_leaderboard",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::referral_leaderboard_command",
@@ -524512,7 +524585,7 @@
     {
       "id": "SR-COMMAND-e3eb08bdc038d5cd",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6703",
+      "source": "signalrank_telegram/bot.py:6704",
       "requirement": "/referral_rewards",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::referral_rewards_command",
@@ -524526,7 +524599,7 @@
     {
       "id": "SR-COMMAND-ca4182a66a950113",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6577",
+      "source": "signalrank_telegram/bot.py:6578",
       "requirement": "/refund_request",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::refund_request_command",
@@ -524540,7 +524613,7 @@
     {
       "id": "SR-COMMAND-4fdc1db8ceef1064",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6645",
+      "source": "signalrank_telegram/bot.py:6646",
       "requirement": "/refunds",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::policy_command",
@@ -524554,7 +524627,7 @@
     {
       "id": "SR-COMMAND-f028de5e2094f439",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6559",
+      "source": "signalrank_telegram/bot.py:6560",
       "requirement": "/release_guard",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::release_guard_command",
@@ -524568,7 +524641,7 @@
     {
       "id": "SR-COMMAND-ba141cc7f26d26e5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6767",
+      "source": "signalrank_telegram/bot.py:6769",
       "requirement": "/release_status",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::release_status_command",
@@ -524582,7 +524655,7 @@
     {
       "id": "SR-COMMAND-845e91831319e89c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6642",
+      "source": "signalrank_telegram/bot.py:6643",
       "requirement": "/report",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::report_command",
@@ -524596,7 +524669,7 @@
     {
       "id": "SR-COMMAND-ff669150bd5ca4e7",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6575",
+      "source": "signalrank_telegram/bot.py:6576",
       "requirement": "/report_issue",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::report_issue_command",
@@ -524610,7 +524683,7 @@
     {
       "id": "SR-COMMAND-7f26104f77a7ce47",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6701",
+      "source": "signalrank_telegram/bot.py:6702",
       "requirement": "/reports",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::reports_command",
@@ -524624,7 +524697,7 @@
     {
       "id": "SR-COMMAND-66f62d1807d3821a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6727",
+      "source": "signalrank_telegram/bot.py:6728",
       "requirement": "/research",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::research_command",
@@ -524638,7 +524711,7 @@
     {
       "id": "SR-COMMAND-2c6ef0f0d0e4cc6e",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6630",
+      "source": "signalrank_telegram/bot.py:6631",
       "requirement": "/risk",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::risk_command",
@@ -524652,7 +524725,7 @@
     {
       "id": "SR-COMMAND-5d2d3ceb7abe5523",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6688",
+      "source": "signalrank_telegram/bot.py:6689",
       "requirement": "/security",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::security_command",
@@ -524666,7 +524739,7 @@
     {
       "id": "SR-COMMAND-60578b9bd31fdfee",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6647",
+      "source": "signalrank_telegram/bot.py:6648",
       "requirement": "/selfcheck",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::selfcheck_command",
@@ -524680,7 +524753,7 @@
     {
       "id": "SR-COMMAND-016b7459f11d5cd3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6788",
+      "source": "signalrank_telegram/bot.py:6790",
       "requirement": "/setlot",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::setlot_command",
@@ -524694,7 +524767,7 @@
     {
       "id": "SR-COMMAND-d5388a5d5c1e6262",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6789",
+      "source": "signalrank_telegram/bot.py:6791",
       "requirement": "/setrisk",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::setrisk_command",
@@ -524708,7 +524781,7 @@
     {
       "id": "SR-COMMAND-cde0fb0dec1400c5",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6700",
+      "source": "signalrank_telegram/bot.py:6701",
       "requirement": "/settings",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::settings_command",
@@ -524722,7 +524795,7 @@
     {
       "id": "SR-COMMAND-34d001ae737a032b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6790",
+      "source": "signalrank_telegram/bot.py:6792",
       "requirement": "/setwebhook",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::setwebhook_command",
@@ -524736,7 +524809,7 @@
     {
       "id": "SR-COMMAND-cf522e9119ac8b80",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6592",
+      "source": "signalrank_telegram/bot.py:6593",
       "requirement": "/shadow_report",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::performance_truth_command",
@@ -524750,7 +524823,7 @@
     {
       "id": "SR-COMMAND-d041924c15885af6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6622",
+      "source": "signalrank_telegram/bot.py:6623",
       "requirement": "/signal",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::signal_command",
@@ -524764,7 +524837,7 @@
     {
       "id": "SR-COMMAND-256b01e7c31eb723",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6652",
+      "source": "signalrank_telegram/bot.py:6653",
       "requirement": "/signal_debug",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::signal_debug_command",
@@ -524778,7 +524851,7 @@
     {
       "id": "SR-COMMAND-1330a96e0a3060bf",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6590",
+      "source": "signalrank_telegram/bot.py:6591",
       "requirement": "/signal_quality",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::quality_command",
@@ -524792,7 +524865,7 @@
     {
       "id": "SR-COMMAND-c1d2c1df9eabd696",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6620",
+      "source": "signalrank_telegram/bot.py:6621",
       "requirement": "/signals",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::signals_command",
@@ -524806,7 +524879,7 @@
     {
       "id": "SR-COMMAND-b9efe3955cb8a70c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6629",
+      "source": "signalrank_telegram/bot.py:6630",
       "requirement": "/simulate",
       "current_implementation": "Registered command; minimum tier VIP; role VIP",
       "responsible_component": "signalrank_telegram::simulate_command",
@@ -524820,7 +524893,7 @@
     {
       "id": "SR-COMMAND-d879e26361224d84",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6753",
+      "source": "signalrank_telegram/bot.py:6754",
       "requirement": "/stale_tick_relabel",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::stale_tick_relabel_command",
@@ -524834,7 +524907,7 @@
     {
       "id": "SR-COMMAND-cced28c6dc3f99c2",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6551",
+      "source": "signalrank_telegram/bot.py:6552",
       "requirement": "/start",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::start_command",
@@ -524848,7 +524921,7 @@
     {
       "id": "SR-COMMAND-4b5af442229cf356",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6627",
+      "source": "signalrank_telegram/bot.py:6628",
       "requirement": "/stats",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::stats_command",
@@ -524862,7 +524935,7 @@
     {
       "id": "SR-COMMAND-073c1634c496cdb6",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6552",
+      "source": "signalrank_telegram/bot.py:6553",
       "requirement": "/status",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::status_command",
@@ -524876,7 +524949,7 @@
     {
       "id": "SR-COMMAND-a88ef2bb33946f2d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6593",
+      "source": "signalrank_telegram/bot.py:6594",
       "requirement": "/strategy_leaderboard",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::admin_top_strategies_command",
@@ -524890,7 +524963,7 @@
     {
       "id": "SR-COMMAND-a18603086e5bdf9d",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6557",
+      "source": "signalrank_telegram/bot.py:6558",
       "requirement": "/support",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::support_command",
@@ -524904,7 +524977,7 @@
     {
       "id": "SR-COMMAND-bbc5e661e106c6dc",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6649",
+      "source": "signalrank_telegram/bot.py:6650",
       "requirement": "/system",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::system_command",
@@ -524918,7 +524991,7 @@
     {
       "id": "SR-COMMAND-82e770253d869a48",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6766",
+      "source": "signalrank_telegram/bot.py:6768",
       "requirement": "/system_health",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::system_health_command",
@@ -524932,7 +525005,7 @@
     {
       "id": "SR-COMMAND-bc2b069ed7cb7ea3",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6579",
+      "source": "signalrank_telegram/bot.py:6580",
       "requirement": "/tester_feedback",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::tester_feedback_command",
@@ -524946,7 +525019,7 @@
     {
       "id": "SR-COMMAND-db5c59b93f6cd5ed",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6793",
+      "source": "signalrank_telegram/bot.py:6795",
       "requirement": "/tiers",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::tiers_command",
@@ -524960,7 +525033,7 @@
     {
       "id": "SR-COMMAND-3962edee9c25c9b9",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6698",
+      "source": "signalrank_telegram/bot.py:6699",
       "requirement": "/timezone",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::timezone_command",
@@ -524974,7 +525047,7 @@
     {
       "id": "SR-COMMAND-8e59765c8e5c25ae",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6699",
+      "source": "signalrank_telegram/bot.py:6700",
       "requirement": "/travelmode",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::travelmode_command",
@@ -524988,7 +525061,7 @@
     {
       "id": "SR-COMMAND-787600ebe6d6c75b",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6740",
+      "source": "signalrank_telegram/bot.py:6741",
       "requirement": "/unlock",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::unlock",
@@ -525002,7 +525075,7 @@
     {
       "id": "SR-COMMAND-7fef9479c8bc5a3c",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6619",
+      "source": "signalrank_telegram/bot.py:6620",
       "requirement": "/upgrade",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::upgrade_command",
@@ -525016,7 +525089,7 @@
     {
       "id": "SR-COMMAND-272eb95449c9d2a8",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6787",
+      "source": "signalrank_telegram/bot.py:6789",
       "requirement": "/verifybroker",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::verifybroker_command",
@@ -525030,7 +525103,7 @@
     {
       "id": "SR-COMMAND-5ca4f3850ccc331a",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6772",
+      "source": "signalrank_telegram/bot.py:6774",
       "requirement": "/version",
       "current_implementation": "Registered command; minimum tier OWNER; role OWNER",
       "responsible_component": "signalrank_telegram::version_command",
@@ -525044,7 +525117,7 @@
     {
       "id": "SR-COMMAND-89b318f8766fe1c2",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6694",
+      "source": "signalrank_telegram/bot.py:6695",
       "requirement": "/watchlist",
       "current_implementation": "Registered command; minimum tier FREE; role FREE",
       "responsible_component": "signalrank_telegram::watchlist_command",
@@ -525058,7 +525131,7 @@
     {
       "id": "SR-COMMAND-1639954687d6df18",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6655",
+      "source": "signalrank_telegram/bot.py:6656",
       "requirement": "/why_no_signal",
       "current_implementation": "Registered command; minimum tier ADMIN; role ADMIN",
       "responsible_component": "signalrank_telegram::why_no_signal_command",
@@ -525072,7 +525145,7 @@
     {
       "id": "SR-COMMAND-a63e0590cec9e466",
       "kind": "COMMAND",
-      "source": "signalrank_telegram/bot.py:6591",
+      "source": "signalrank_telegram/bot.py:6592",
       "requirement": "/winrate",
       "current_implementation": "Registered command; minimum tier PREMIUM; role PREMIUM",
       "responsible_component": "signalrank_telegram::performance_command",
@@ -525152,7 +525225,7 @@
     {
       "id": "SR-CALLBACK-19e83e418cf475e9",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7518",
+      "source": "signalrank_telegram/bot.py:7520",
       "requirement": "^broker_pick_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_broker_account_trade_callback",
@@ -525167,7 +525240,7 @@
         "pattern": "^broker_pick_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7518",
+        "source": "signalrank_telegram/bot.py:7520",
         "status": "IMPLEMENTED"
       }
     },
@@ -525218,7 +525291,7 @@
     {
       "id": "SR-CALLBACK-5edc62e9fc9cffcb",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7743",
+      "source": "signalrank_telegram/bot.py:7745",
       "requirement": "^check_outcome_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_check_outcome_callback",
@@ -525233,7 +525306,7 @@
         "pattern": "^check_outcome_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7743",
+        "source": "signalrank_telegram/bot.py:7745",
         "status": "IMPLEMENTED"
       }
     },
@@ -525328,7 +525401,7 @@
     {
       "id": "SR-CALLBACK-85708ed41242f5d5",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7214",
+      "source": "signalrank_telegram/bot.py:7216",
       "requirement": "^monitor_signal_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_monitor_callback",
@@ -525343,7 +525416,7 @@
         "pattern": "^monitor_signal_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7214",
+        "source": "signalrank_telegram/bot.py:7216",
         "status": "IMPLEMENTED"
       }
     },
@@ -525438,7 +525511,7 @@
     {
       "id": "SR-CALLBACK-0436d73e22def408",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7406",
+      "source": "signalrank_telegram/bot.py:7408",
       "requirement": "^mt5_trade_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_mt5_trade_callback",
@@ -525453,7 +525526,7 @@
         "pattern": "^mt5_trade_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7406",
+        "source": "signalrank_telegram/bot.py:7408",
         "status": "IMPLEMENTED"
       }
     },
@@ -525504,7 +525577,7 @@
     {
       "id": "SR-CALLBACK-481a8512b765abd6",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7574",
+      "source": "signalrank_telegram/bot.py:7576",
       "requirement": "^open_signal_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_open_signal_callback",
@@ -525519,7 +525592,7 @@
         "pattern": "^open_signal_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7574",
+        "source": "signalrank_telegram/bot.py:7576",
         "status": "IMPLEMENTED"
       }
     },
@@ -525548,7 +525621,7 @@
     {
       "id": "SR-CALLBACK-4d797f2234aa33f2",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:7213",
+      "source": "signalrank_telegram/bot.py:7215",
       "requirement": "^sigmon_(?:continue|stop)_[12]_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_monitoring_action_callback",
@@ -525563,7 +525636,7 @@
         "pattern": "^sigmon_(?:continue|stop)_[12]_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:7213",
+        "source": "signalrank_telegram/bot.py:7215",
         "status": "IMPLEMENTED"
       }
     },
@@ -525592,7 +525665,7 @@
     {
       "id": "SR-CALLBACK-72e0760528d8f1a5",
       "kind": "CALLBACK",
-      "source": "signalrank_telegram/bot.py:6952",
+      "source": "signalrank_telegram/bot.py:6954",
       "requirement": "^signal_reaction_",
       "current_implementation": "Registered callback pattern; untrusted payload requires ownership and role validation.",
       "responsible_component": "_signal_reaction_callback",
@@ -525607,7 +525680,7 @@
         "pattern": "^signal_reaction_",
         "payload_trust": "untrusted",
         "route_class": "specific_before_catchall",
-        "source": "signalrank_telegram/bot.py:6952",
+        "source": "signalrank_telegram/bot.py:6954",
         "status": "IMPLEMENTED"
       }
     },

@@ -133,6 +133,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/broadcast` | OWNER | Owner | — (Telegram-only) |
 | `/performance_rebuild` | OWNER | Owner | — (Telegram-only) |
 | `/stale_tick_relabel` | OWNER | Owner | — (Telegram-only) |
+| `/delivery_latency` | OWNER | Owner | — (Telegram-only) |
 | `/performance_audit` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_rebuild` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_audit` | OWNER | Owner | — (Telegram-only) |
@@ -285,6 +286,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/security/mfa/disable` | `/security` |
 | POST | `/security/mfa/enable` | `/security` |
 | POST | `/security/mfa/setup` | `/security` |
+| GET | `/setup-records` | — |
 | GET | `/shadow-report` | — |
 | GET | `/signals` | `/signals`, `/signal` |
 | GET | `/signals/{signal_id}` | `/signals`, `/signal` |
@@ -308,4 +310,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 124 commands (47 without a web section), 16 web sections, 147 routes (91 without a name-matched command).
+Summary: 125 commands (48 without a web section), 16 web sections, 148 routes (92 without a name-matched command).

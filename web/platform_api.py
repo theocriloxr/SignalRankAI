@@ -5229,6 +5229,45 @@ async def strategy_leaderboard(
     return {"window_days": int(days), "strategies": [dict(row) for row in rows]}
 
 
+@router.get("/setup-records")
+async def setup_records(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Each setup's measured record and what it allows (owner request, 8 Nov 2026).
+
+    A setup (strategy x timeframe x direction) may signal only while the lower
+    bound of its TP1 rate beats the break-even of the plan it publishes,
+    ``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk
+    the record supports; a setup with no record supports none. Read only; the
+    same 60-day snapshot the engine uses.
+    """
+    from core.partial_exit_accounting import planned_exit_fractions
+    from services import segment_evidence
+
+    deck = {"zone flip retest", "trendline break retest", "channel break"}
+    async with get_session(label="platform.setup_records", timeout_seconds=8.0) as session:
+        snapshot = await segment_evidence.load_snapshot(session) or {}
+        await session.rollback()
+    f1 = planned_exit_fractions()[0] or 0.5
+    z = segment_evidence.confidence_z()
+    rows = []
+    for key, row in dict(snapshot.get("segments") or {}).items():
+        strategy, _, rest = str(key).partition("|")
+        timeframe, _, direction = rest.partition("|")
+        trades, wins = int(row.get("n") or 0), int(row.get("wins") or 0)
+        lower = segment_evidence.wilson_lower_bound(wins, trades, z)
+        min_rr = ((1.0 / lower) - 1.0) / f1 if lower > 0 else None
+        rows.append({
+            "strategy": strategy, "timeframe": timeframe, "direction": direction, "trades": trades, "wins": wins,
+            "tp1_rate": (wins / trades) if trades else None, "lower_bound": lower,
+            "min_tp1_rr": None if min_rr is None else round(min_rr, 2), "deck_strategy": strategy in deck,
+        })
+    rows.sort(key=lambda r: (not r["deck_strategy"], -r["trades"]))
+    return {
+        "computed_at": snapshot.get("computed_at"), "lookback_days": snapshot.get("lookback_days"),
+        "current": segment_evidence.snapshot_is_current(snapshot), "tp1_close_fraction": f1,
+        "setups": rows[:120],
+    }
+
+
 @router.get("/broker/risk-presets")
 async def broker_risk_presets(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     """Expose safe account-policy starting points; external rules may only tighten them."""
