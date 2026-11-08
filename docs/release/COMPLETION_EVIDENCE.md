@@ -1,5 +1,22 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 8 November 2026 (after the 13:39 deploy) — owner steps automated, plan decisions recorded (cloud session)
+
+Production runs `38159361` since 13:39 UTC (backend, schema `0059_close_pending_terminal`) and 13:54 UTC (website), verified from the public `/readyz` and `/frontend-health`. `/readyz` reported `degraded` only for `outcome_to_ledger_mismatch` on ZECUSDT `66b151e6`, the outcome 0059 corrected. The ledger rows refresh when each recipient opens their results (5 → 1 within 15 minutes).
+
+- **Owner steps now run by analytics (`services/post_deploy_maintenance.py`, new; `POST_DEPLOY_MAINTENANCE_ENABLED`).** Two minutes after start:
+  - It re-reconciles the performance ledgers of users who hold a ledger row for an outcome corrected by migration 0059. This clears the readiness mismatch on every deploy, without waiting for users to open their results. Switch: `POST_DEPLOY_LEDGER_REFRESH`.
+  - It runs `scripts/correct_stale_tick_shadow_labels.py` as a **dry run** once, for labels tracked between 5 Sep and 4 Nov 08:00 UTC. That is when the stale-tick fix `bec9a5f` went live; it is not today's deploy, which the 8 Nov evening handoff wrongly suggested. It pauses 0.5 s between id windows and stores the counts (`maintenance:stale_tick_relabel:v1:preview`). Switch: `POST_DEPLOY_STALE_TICK_RELABEL`.
+  - Applying stays the owner's decision, as the owner asked (dry run first, then apply). The new owner-only Telegram command `/stale_tick_relabel` shows the counts; `/stale_tick_relabel preview` runs the dry run again; `/stale_tick_relabel apply` applies the audited correction (only after a dry run) and messages the result. A marker keeps the apply to once, and the script skips rows already corrected or tagged with their label source.
+- **Deck strategies are gated by their own record (`STRUCTURE_SETUPS_MODE=auto`, the new default).** Every setup is recorded in shadow and also offered as a candidate. The engine's setup-evidence filter (`_segment_quarantine_gate`, fail-closed while the ML gate is advisory) refuses a setup until its measured TP1 rate's Wilson lower bound beats that plan's break-even. A setup with no record has a lower bound of 0 and is refused. This implements "live only once the record is good" per setup, with no manual switch. If `SEGMENT_QUARANTINE_ENABLED=0`, `auto` stays shadow-only. `shadow`, `live` and `off` still exist.
+- **Plan decisions (owner asked the session to decide, 8 Nov):**
+  1. Strategy ladders are **not** restored. The engine keeps publishing the strategy's final target as the plan's target (`engine/core.py`: `take_profit` before `targets`). Each card's setup record and the evidence filter were measured on this plan. A closer TP1 would raise break-even (for example from 36 % to about 57 % at 1.5R), so setups would be refused while their record still reflects the old plan.
+  2. TP3 stays recorded at the full move to TP3. Cards show both that figure and the result with the 50 %/25 % closes. Single-target signals (ADX Trend) never record a TP3.
+
+  Both are reversible on the owner's word.
+- **Still owner-only (accounts or server shell):** `DEPLOYMENT_TELEGRAM_SEND_TEST=0` on the bot; the OpenAI key; Paystack channels, live key and webhook; the GitHub billing lock.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 at 0059):** `tests/test_post_deploy_maintenance_20261108.py` (3, one on PostgreSQL: the ledger-user query runs, the correction runs once and the marker makes a repeat skip); `tests/test_structure_setups_20261108.py` (7, including `auto` with and without the evidence filter).
+
 ## Continuation, 8 November 2026 (late night) — the strategy scorecard sees the whole 30-day window (cloud session)
 
 - **Scorecard coverage.** `services/strategy_scorecard._load_rows` reads `decision_log` in id pages (`STRATEGY_SCORECARD_MAX_PAGES` × `STRATEGY_SCORECARD_PAGE_ROWS`, 400 × 5,000). Since 4 Nov, when the 30-day lookback held more ids than that budget, it kept only the newest ids: about 5 of the 30 days. With the same budget, `shadow_scan_pages` now reads the newest half of the pages contiguously and spreads the other half evenly over the rest of the lookback, so every part of the window feeds the per-setup hit rates. The rebuild log says `window_sampled … older_pages_sampled=N`, and `LAST_SCAN` carries the count. Mode (`shadow`), bounds, sample minimums and budget are unchanged. Also fixed: a lookback starting at id 0 was not reported as truncated (`if truncated` → `is not None`).

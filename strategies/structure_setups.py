@@ -16,11 +16,12 @@ synthetic indices on 5m/15m, with MT5 position lists). The recurring setups:
    of the channel height.
 
 Everything here is additive and does not change any existing strategy. The
-family runs in ``STRUCTURE_SETUPS_MODE=shadow`` by default: candidates are
+family runs in ``STRUCTURE_SETUPS_MODE=auto`` by default: every setup is
 recorded for the shadow outcome tracker (the same path as discovered
-strategies), so the setup-evidence filter measures each one before it can
-ever reach a user. ``live`` returns them as ordinary candidates, which still
-pass every gate; ``off`` disables them. Levels come from the chart: no target
+strategies) and also offered as a candidate, which the engine's
+setup-evidence filter refuses until that setup's own measured record beats its
+break-even, so nothing reaches a user on an untested setup. ``shadow`` records
+only; ``live`` returns candidates only; ``off`` disables them. Levels come from the chart: no target
 is invented, and a setup whose structure does not offer at least 1R to TP1
 is skipped.
 """
@@ -44,8 +45,16 @@ _seen_lock = threading.Lock()
 
 
 def mode() -> str:
-    value = str(os.getenv("STRUCTURE_SETUPS_MODE", "shadow") or "shadow").strip().lower()
-    return value if value in {"off", "shadow", "live"} else "shadow"
+    """``auto`` (default since 8 Nov 2026): always recorded in shadow; also offered as a candidate,
+    which reaches users only once its own setup record beats break-even (engine segment-evidence
+    filter). ``shadow``: recorded only. ``live``: candidate only. ``off``: nothing."""
+    value = str(os.getenv("STRUCTURE_SETUPS_MODE", "auto") or "auto").strip().lower()
+    return value if value in {"off", "shadow", "auto", "live"} else "auto"
+
+
+def _evidence_filter_on() -> bool:
+    raw = os.getenv("SEGMENT_QUARANTINE_ENABLED")
+    return raw is None or str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +350,14 @@ def structure_setup_candidates(asset: str, timeframe: str, data: Mapping[str, An
             continue
         if current == "live":
             out.append(setup)
-        else:
-            _record_shadow(setup)
+            continue
+        _record_shadow(setup)
+        # auto: the owner's rule (8 Nov 2026) "live only once the record is good",
+        # per setup: the engine's segment-evidence filter refuses a setup whose
+        # measured TP1 rate does not beat its break-even. Without that filter,
+        # stay shadow-only.
+        if current == "auto" and _evidence_filter_on():
+            out.append(dict(setup))
     return out
 
 

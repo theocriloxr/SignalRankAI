@@ -128,6 +128,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("ai_test", "Verify the OpenAI Responses API connection", "OWNER", "Owner"),
     CommandSpec("broadcast", "Send an owner announcement", "OWNER", "Owner"),
     CommandSpec("performance_rebuild", "Run bounded performance projection rebuild", "OWNER", "Owner"),
+    CommandSpec("stale_tick_relabel", "Review and apply the stale-tick shadow label correction", "OWNER", "Owner"),
     CommandSpec("performance_audit", "Audit performance projection integrity", "OWNER", "Owner"),
     CommandSpec("outcome_rebuild", "Run bounded outcome and outbox rebuild", "OWNER", "Owner"),
     CommandSpec("outcome_audit", "Audit outcome projection and notification state", "OWNER", "Owner"),

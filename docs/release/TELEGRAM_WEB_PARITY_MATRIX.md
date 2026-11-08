@@ -132,6 +132,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/ai_test` | OWNER | Owner | — (Telegram-only) |
 | `/broadcast` | OWNER | Owner | — (Telegram-only) |
 | `/performance_rebuild` | OWNER | Owner | — (Telegram-only) |
+| `/stale_tick_relabel` | OWNER | Owner | — (Telegram-only) |
 | `/performance_audit` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_rebuild` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_audit` | OWNER | Owner | — (Telegram-only) |
@@ -307,4 +308,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 123 commands (46 without a web section), 16 web sections, 147 routes (91 without a name-matched command).
+Summary: 124 commands (47 without a web section), 16 web sections, 147 routes (91 without a name-matched command).

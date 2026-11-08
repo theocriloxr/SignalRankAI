@@ -180,7 +180,7 @@ async def _load_candles(conn: Any, asset: str, timeframe: str, start: datetime, 
 
 
 async def run(dsn: str, *, since: datetime, until: datetime, apply: bool, batch: int, id_window: int,
-              all_assets: bool, out=print) -> Counter:
+              all_assets: bool, out=print, pause_seconds: float = 0.0) -> Counter:
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -210,6 +210,8 @@ async def run(dsn: str, *, since: datetime, until: datetime, apply: bool, batch:
                     {"a": cursor, "b": upper},
                 )).mappings().all()
             cursor = upper
+            if pause_seconds > 0:
+                await asyncio.sleep(pause_seconds)  # gentle on a shared production database
             records = []
             for r in rows:
                 record = dict(r)

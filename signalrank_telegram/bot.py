@@ -1041,6 +1041,7 @@ from .owner_commands import (
     qa_report_command,
     broadcast_command,
     performance_rebuild_command,
+    stale_tick_relabel_command,
     performance_audit_command,
     outcome_rebuild_command,
     outcome_audit_command,
@@ -6749,6 +6750,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("qa_report", _audit_handler("qa_report", qa_report_command)))
     application.add_handler(CommandHandler("broadcast", _audit_handler("broadcast", broadcast_command)))
     application.add_handler(CommandHandler("performance_rebuild", _audit_handler("performance_rebuild", performance_rebuild_command)))
+    application.add_handler(CommandHandler("stale_tick_relabel", _audit_handler("stale_tick_relabel", stale_tick_relabel_command)))
     application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
     application.add_handler(CommandHandler("outcome_rebuild", _audit_handler("outcome_rebuild", outcome_rebuild_command)))
     application.add_handler(CommandHandler("outcome_audit", _audit_handler("outcome_audit", outcome_audit_command)))

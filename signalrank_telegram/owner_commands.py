@@ -1393,6 +1393,62 @@ async def performance_rebuild_command(update: Update, context: ContextTypes.DEFA
     )
 
 
+async def stale_tick_relabel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only review and apply of the stale-tick shadow label correction (8 Nov 2026).
+
+    /stale_tick_relabel          show the dry-run counts (analytics runs the dry run after deploy)
+    /stale_tick_relabel preview  run the dry run again
+    /stale_tick_relabel apply    apply the audited correction (only after a dry run)
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    from services import post_deploy_maintenance as pdm
+
+    action = str(context.args[0] if context.args else "status").strip().lower()
+    if action not in {"status", "preview", "apply"}:
+        await update.message.reply_text("Usage: /stale_tick_relabel [preview | apply]")
+        return
+    preview = state.get_sync(pdm.PREVIEW_KEY)
+    done = state.get_sync(pdm.RELABEL_MARKER)
+    if action == "status":
+        await update.message.reply_text(
+            "Stale-tick label correction (labels tracked before "
+            f"{pdm.RELABEL_UNTIL.isoformat()} UTC from July market_ticks prices)\n"
+            f"Dry run: {preview or 'not run yet (analytics runs it after deploy; or /stale_tick_relabel preview)'}\n"
+            f"Applied: {done or 'no'}\n"
+            "Apply with /stale_tick_relabel apply. Every change keeps the previous label in meta.label_correction."
+        )
+        return
+    if action == "apply" and done:
+        await update.message.reply_text(f"Already applied: {done}")
+        return
+    if action == "apply" and not preview:
+        await update.message.reply_text("Run the dry run first: /stale_tick_relabel preview")
+        return
+    chat_id = int(update.effective_chat.id) if update.effective_chat else int(update.effective_user.id)
+    await update.message.reply_text(f"Started the {'correction' if action == 'apply' else 'dry run'}; "
+                                    "it takes several minutes. I will message you when it finishes.")
+
+    async def _job() -> None:
+        try:
+            summary = await pdm.run_stale_tick_relabel(apply=(action == "apply"))
+            text = f"Stale-tick label {'correction applied' if action == 'apply' else 'dry run'}:\n" + json.dumps(
+                summary, sort_keys=True)
+        except Exception as exc:
+            text = f"Stale-tick label {action} failed: {type(exc).__name__}"
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=text[:3900])
+        except Exception:
+            _owner_logger.warning("[stale_tick_relabel] result message failed")
+
+    import asyncio as _asyncio
+
+    _asyncio.create_task(_job(), name=f"stale-tick-relabel-{action}")
+
+
 async def performance_audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only production-readiness audit for the proof-backed ledger."""
     if update.effective_user is None or update.message is None:

@@ -102,9 +102,19 @@ def test_modes(monkeypatch):
     recorded = []
     monkeypatch.setattr(ss, "_record_shadow", lambda c: recorded.append(c))
     monkeypatch.setattr(ss, "_seen", {})
-    monkeypatch.delenv("STRUCTURE_SETUPS_MODE", raising=False)
+    monkeypatch.setenv("STRUCTURE_SETUPS_MODE", "shadow")
     assert structure_setup_candidates("XAUUSD", "15m", {"candles": channel()}) == []
     assert recorded and recorded[0]["asset"] == "XAUUSD"
+    # auto (default): recorded in shadow and offered to the evidence-gated engine.
+    monkeypatch.setattr(ss, "_seen", {})
+    recorded.clear()
+    monkeypatch.delenv("STRUCTURE_SETUPS_MODE", raising=False)
+    monkeypatch.delenv("SEGMENT_QUARANTINE_ENABLED", raising=False)
+    auto = structure_setup_candidates("XAUUSD", "15m", {"candles": channel()})
+    assert auto and recorded
+    monkeypatch.setattr(ss, "_seen", {})
+    monkeypatch.setenv("SEGMENT_QUARANTINE_ENABLED", "0")  # no evidence filter: shadow only
+    assert structure_setup_candidates("XAUUSD", "15m", {"candles": channel()}) == []
     monkeypatch.setattr(ss, "_seen", {})
     monkeypatch.setenv("STRUCTURE_SETUPS_MODE", "live")
     live = structure_setup_candidates("XAUUSD", "15m", {"candles": channel()})
