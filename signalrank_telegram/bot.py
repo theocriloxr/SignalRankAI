@@ -1985,6 +1985,9 @@ async def _render_signal_card_for_user(
     text = format_signal(payload, user_tier=tier, display_tier=display_tier)
     if not text or not str(text).strip():
         text = format_signal_free_limited(payload)
+    banner = await _load_signal_status_banner(str(payload.get("signal_id") or signal_ref))
+    if banner:
+        text = f"{banner}\n\n{text}"
     counts = await _load_signal_engagement_counts(str(payload.get("signal_id") or signal_ref))
     keyboard = _build_signal_keyboard(
         str(payload.get("signal_id") or signal_ref),
@@ -1992,6 +1995,32 @@ async def _render_signal_card_for_user(
         counts=counts,
     )
     return payload, str(text), keyboard
+
+
+async def _load_signal_status_banner(signal_id: str) -> str | None:
+    """What has already happened to a delivered signal (see signal_status_banner)."""
+    try:
+        from core.signal_lifecycle import highest_tp_for_state
+        from db.models import Outcome, SignalLifecycle
+        from db.session import get_session
+        from signalrank_telegram.signal_status_banner import signal_status_banner
+        from sqlalchemy import select
+
+        async with get_session(priority="interactive", label="signal_status_banner", timeout_seconds=5) as session:
+            lifecycle = (await session.execute(
+                select(SignalLifecycle).where(SignalLifecycle.signal_id == str(signal_id))
+            )).scalars().first()
+            outcome = (await session.execute(
+                select(Outcome).where(Outcome.signal_id == str(signal_id))
+            )).scalars().first()
+        if lifecycle is None:
+            return None
+        state = str(getattr(lifecycle, "state", "") or "")
+        realized = getattr(outcome, "r_multiple", None) if getattr(lifecycle, "closed_at", None) else None
+        return signal_status_banner(state, highest_tp=highest_tp_for_state(state), realized_r=realized)
+    except Exception as exc:
+        logger.debug("[open_signal] status banner unavailable signal=%s err=%s", str(signal_id)[:12], exc)
+        return None
 
 
 async def _send_signal_card_for_user(

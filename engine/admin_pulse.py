@@ -392,6 +392,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     db_profile_counts: dict[str, int] = {}
     db_timeframe_counts: dict[str, int] = {}
     db_signal_quality: dict[str, float] = {}
+    db_window_failed = False
+    db_shadow_ok = False
     db_shadow = {
         "db_total": 0,
         "db_pending": 0,
@@ -407,15 +409,31 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         from sqlalchemy import text
         from core.redis_state import state
 
-        since = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours or 1)))
-        params = {"since": since}
+        # Naive UTC: decision_log, signals and signal_deliveries store
+        # ``timestamp without time zone``, and asyncpg refuses an aware
+        # datetime for them ("can't subtract offset-naive and offset-aware
+        # datetimes"). With an aware value every window query here failed and
+        # the pulse silently showed lifetime counters (found 8 Nov 2026).
+        since = (datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours or 1)))).replace(tzinfo=None)
+        params = {"since": since, "min_id": 0}
 
         async with get_session() as session:
+            # Bound every decision_log read by primary key as well as time: the
+            # table holds millions of rows, and a window query that times out
+            # silently dropped the pulse to the engine's lifetime counters
+            # (owner report, 4-6 Nov 2026: "ml: 736224" in every hourly pulse).
+            try:
+                from services.strategy_scorecard import _first_id_after
+
+                max_id = int((await session.execute(text("SELECT COALESCE(MAX(id), 0) FROM decision_log"))).scalar() or 0)
+                params["min_id"] = await _first_id_after(session, since, max_id)
+            except Exception as bound_err:
+                logger.warning("[admin_pulse] decision_log id bound unavailable: %s", bound_err)
             # Check if created_at column exists in decision_log
             try:
                 scanned_row = (
                     await session.execute(
-                        text("SELECT COUNT(*) FROM decision_log WHERE created_at >= :since"),
+                        text("SELECT COUNT(*) FROM decision_log WHERE id >= :min_id AND created_at >= :since"),
                         params,
                     )
                 ).first()
@@ -427,7 +445,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 rej_rows = (
                     await session.execute(
                         text(
-                            "SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"
+                            "SELECT decision, COUNT(*) FROM decision_log WHERE id >= :min_id AND created_at >= :since "
+                            "GROUP BY decision"
                         ),
                         params,
                     )
@@ -437,7 +456,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     await session.execute(
                         text(
                             "SELECT reason, decision, COUNT(*) FROM decision_log "
-                            "WHERE created_at >= :since "
+                            "WHERE id >= :min_id AND created_at >= :since "
                             "AND decision IN ('rejected','skipped','delayed','suppressed') "
                             "GROUP BY reason, decision ORDER BY COUNT(*) DESC"
                         ),
@@ -446,14 +465,10 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 ).fetchall()
                 db_reason_rows = list(reason_rows or [])
             except Exception as e:
-                # Fallback if created_at column doesn't exist yet
-                if "created_at" in str(e):
-                    logger.warning("[admin_pulse] created_at column missing in decision_log - using fallback")
-                    db_scanned = 0
-                    db_rejected_by = {}
-                else:
-                    db_scanned = 0
-                    db_rejected_by = {}
+                logger.warning("[admin_pulse] decision_log window query failed: %s: %s", type(e).__name__, e)
+                db_scanned = 0
+                db_rejected_by = {}
+                db_window_failed = True
 
                 # Compatibility SQL contract: FROM signal_deliveries WHERE delivered_at >= :since AND sent_ok IS TRUE
                 # SignalDelivery uses delivered_at in the ORM; some old tables
@@ -574,7 +589,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                             "SUM(CASE WHEN actual_outcome LIKE 'tp%' THEN 1 ELSE 0 END), "
                             "SUM(CASE WHEN actual_outcome IN ('sl','stop','stopped') THEN 1 ELSE 0 END), "
                             "SUM(CASE WHEN actual_outcome IN ('tp1','tp2','partial_win') THEN 1 ELSE 0 END) "
-                            "FROM ml_rejected_signals WHERE created_at >= :since"
+                            "FROM ml_rejected_signals WHERE id >= :min_id AND created_at >= :since"
                         ),
                         params,
                     )
@@ -588,10 +603,13 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                         "db_correct_block": int(shadow_row[4] or 0),
                         "db_partial_win": int(shadow_row[5] or 0),
                     }
-            except Exception:
-                pass
+                    db_shadow_ok = True
+            except Exception as shadow_err:
+                logger.warning("[admin_pulse] shadow window query failed: %s: %s", type(shadow_err).__name__, shadow_err)
     except Exception as db_err:
-        logger.debug("[admin_pulse] DB query failed: %s", db_err)
+        logger.warning("[admin_pulse] DB query failed: %s: %s", type(db_err).__name__, db_err)
+        db_window_failed = True
+        db_shadow_ok = False
         db_scanned = 0
         db_delivered = 0
         db_issued = 0
@@ -608,10 +626,17 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     except Exception:
         total_tracked = false_neg = correct_block = partial_win = 0
 
-    total_tracked = max(int(total_tracked or 0), int(db_shadow.get("db_tracked") or 0))
-    false_neg = max(int(false_neg or 0), int(db_shadow.get("db_false_negative") or 0))
-    correct_block = max(int(correct_block or 0), int(db_shadow.get("db_correct_block") or 0))
-    partial_win = max(int(partial_win or 0), int(db_shadow.get("db_partial_win") or 0))
+    # Window figures from the database when the query worked; otherwise the
+    # Redis lifetime counters, labelled as such. Mixing the two with max()
+    # reported lifetime totals under a "trailing 1h" heading.
+    if db_shadow_ok:
+        total_tracked = int(db_shadow.get("db_tracked") or 0)
+        false_neg = int(db_shadow.get("db_false_negative") or 0)
+        correct_block = int(db_shadow.get("db_correct_block") or 0)
+        partial_win = int(db_shadow.get("db_partial_win") or 0)
+        shadow_source = "window"
+    else:
+        shadow_source = "lifetime_counters"
     shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
 
     latest_cycle = _latest_cycle_state()
@@ -669,12 +694,16 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             )
     if db_rejection_buckets or db_rejected_by:
         rejected_by = db_rejection_buckets or db_rejected_by
+        rejected_source = "window"
     elif cycle_rejected_by:
         rejected_by = cycle_rejected_by
+        rejected_source = "latest_cycle"
     elif use_global_stats and global_total > 0:
         rejected_by = dict(global_vetoed or {})
+        rejected_source = "lifetime_counters"
     else:
         rejected_by = {}
+        rejected_source = "none"
 
     # Account decision rows by decision classification, not by recipient fanout.
     # A generated/accepted/observed decision is still accounted even when zero
@@ -716,6 +745,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         "scanned": scanned,
         "delivered": delivered,
         "rejected_by": rejected_by,
+        "rejected_source": rejected_source,
+        "db_window_failed": bool(db_window_failed),
         "accounted": accounted,
         "unaccounted": unaccounted,
         "latest_cycle": latest_cycle,
@@ -746,9 +777,18 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "partial_win": partial_win,
             "shadow_winner_rate_pct": shadow_winner_rate,
             "tracker": _shadow_tracker_health(),
+            "source": shadow_source,
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _source_note(source: Any) -> str:
+    return {
+        "window": "",
+        "latest_cycle": " (latest engine cycle only)",
+        "lifetime_counters": " (lifetime totals since the counters started, not this window)",
+    }.get(str(source or ""), "")
 
 
 async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
@@ -789,8 +829,11 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             f"Confirmed recipient deliveries: {stats.get('delivered', 0)}\n"
             f"Accounted: {stats.get('accounted', 0)}\n"
             f"Unaccounted: {stats.get('unaccounted', 0)}\n"
-            "Rejected breakdown:\n"
         )
+        if stats.get("db_window_failed"):
+            txt += ("⚠️ Decision log unavailable for this window; decision figures below come from the "
+                    "latest engine cycle, not the whole window.\n")
+        txt += "Rejected breakdown" + _source_note(stats.get("rejected_source")) + ":\n"
         for k, v in (stats.get("rejected_by") or {}).items():
             txt += f"- {k}: {v}\n"
         cycle = stats.get("latest_cycle") or {}
@@ -848,12 +891,14 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                 txt += f"- {item.get('bucket')}: {item.get('reason')} ({item.get('count')})\n"
         sh = stats.get("shadow") or {}
         txt += (
-            f"\nShadow (tracked rejects): {sh.get('total_tracked', 0)}\n"
+            f"\nShadow{_source_note(sh.get('source'))} (tracked rejects): {sh.get('total_tracked', 0)}\n"
             f"Shadow Pending: {sh.get('pending', 0)} / DB total {sh.get('db_total', 0)}\n"
-            f"False Negatives (would have hit TP3): {sh.get('false_negative', 0)}\n"
-            f"Correct Blocks (would have hit SL): {sh.get('correct_block', 0)}\n"
-            f"Partial Wins: {sh.get('partial_win', 0)}\n"
-            f"Shadow Winner Rate: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
+            # Labels follow the plan since 3 Nov 2026: tp1/tp2/tp3 = highest
+            # target reached before the stop, so "would have hit TP3" was wrong.
+            f"Blocked setups that reached TP1 or better: {sh.get('false_negative', 0)}\n"
+            f"Blocked setups that hit the stop first: {sh.get('correct_block', 0)}\n"
+            f"  of the TP1-or-better, stopped at entry after TP1/TP2: {sh.get('partial_win', 0)}\n"
+            f"Share of tracked blocks that reached TP1+: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
         )
         providers = stats.get("providers") or {}
         if providers:

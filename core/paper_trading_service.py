@@ -1414,7 +1414,9 @@ class PaperTradingService:
             "incomplete_signal_levels",
             "paper_entry_no_longer_valid",
             "paper_entry_retry_deadline_expired",
-            "auto_trade_disabled",
+            # Not "auto_trade_disabled": the user switched automatic entries
+            # off, so a "Paper Trade Not Opened" after every signal (owner
+            # report, 4 Nov 2026) is noise. The attempt is still recorded.
             "signal_stale",
             "generated_at_missing",
             "duplicate_open_asset",

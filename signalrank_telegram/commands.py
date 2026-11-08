@@ -4417,7 +4417,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			engine = get_engine_for_event_loop()
 			if engine is None:
 				raise RuntimeError("Postgres not configured")
-			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+			# Naive UTC: the outcome/signal timestamps are timestamp without time
+			# zone and asyncpg refuses an aware datetime for them.
+			cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).replace(tzinfo=None)
 			recorded_at_expr = func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at)
 			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				user_row = (
