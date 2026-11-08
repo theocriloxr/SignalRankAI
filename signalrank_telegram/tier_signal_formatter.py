@@ -376,6 +376,13 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
         full = f1 * rrs[0] + f2 * rrs[1] + runner * rrs[2]
         paths.append(f"TP3 {_fmt_r(full)} with the planned closes (recorded as TP3 {_fmt_r(rrs[2])})")
     lines = ["📐 Plan result: " + " • ".join(paths)]
+    ladder = signal.get("target_ladder")
+    if isinstance(ladder, dict) and int(ladder.get("authored_targets") or 0) in (1, 2):
+        authored = int(ladder["authored_targets"])
+        added = "TP2 and TP3" if authored == 1 else "TP3"
+        step = _safe_float(ladder.get("step_r")) or 1.0
+        lines.append(f"🪜 The strategy set TP{'1' if authored == 1 else '1-2'}; {added} are {step:g}R steps beyond it. "
+                     "Every target is tracked, on paper trades too.")
     if len(tp_levels) < 3:
         open_share = 1.0 - f1 - (f2 if len(tp_levels) >= 2 else 0.0)
         if open_share > 0:
@@ -383,6 +390,8 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
                 f"ℹ️ After TP{len(tp_levels)} the remaining {open_share:.0%} has no further target: "
                 "it closes at the protected stop (entry) or the time limit."
             )
+    lines.append("🔔 Halfway to TP1 you get an alert that you can move the stop to entry (optional; "
+                 "the recorded result follows the plan above).")
     lines.extend(_money_plan_lines(signal, tp_levels))
     current = _safe_float(signal.get("current_price") or signal.get("live_price"))
     if current is not None and current > 0 and abs(current - entry_f) / entry_f > 0.0005:

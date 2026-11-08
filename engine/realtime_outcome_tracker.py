@@ -1246,6 +1246,48 @@ def _range_is_new_for_signal(signal: Dict[str, Any], observation: OutcomePriceOb
     return range_start >= baseline_dt - timedelta(seconds=2)
 
 
+def _entry_touch_range(
+    signal: Dict[str, Any],
+    observation: OutcomePriceObservation,
+    range_high: float | None,
+    range_low: float | None,
+) -> tuple[float | None, float | None]:
+    """High/low usable for the entry check only (owner finding, 8 Nov 2026).
+
+    The strict range rule drops the 1m candle the signal was created in, so a
+    long whose price dipped just after delivery and stayed below entry was
+    never "entered" although that candle traded at the entry price. Entry is
+    the market price at creation, so for the entry check the creation candle
+    counts. TP/SL checks keep the strict rule.
+    """
+    if range_high is not None and range_low is not None:
+        return range_high, range_low
+    if not observation.range_trusted or not observation.range_time or observation.high is None:
+        return None, None
+    range_start = _candle_timestamp_utc(observation.range_time)
+    created = _candle_timestamp_utc(signal.get("created_at"))
+    if range_start is None or created is None:
+        return None, None
+    grace = max(0.0, float(os.getenv("ENTRY_TOUCH_CANDLE_GRACE_SECONDS", "90") or 90))
+    if range_start >= created - timedelta(seconds=grace):
+        return observation.high, observation.low
+    return None, None
+
+
+def _within_entry_band(entry: float, stop_loss: float, price: float) -> bool:
+    """Price is close enough to entry that a trader filled the plan as published."""
+    try:
+        entry_f, price_f = float(entry), float(price)
+        risk = abs(entry_f - float(stop_loss))
+        if entry_f <= 0 or risk <= 0:
+            return False
+        band_r = max(0.0, float(os.getenv("ENTRY_TOUCH_BAND_R", "0.10") or 0.10))
+        band = min(entry_f * ENTRY_ZONE_PCT, band_r * risk)
+        return abs(price_f - entry_f) <= band
+    except (TypeError, ValueError):
+        return False
+
+
 def _halfway_to_tp1_reached(direction: str, entry: float, tp1: float, price: float) -> bool:
     """True when price reaches 50% of path to TP1 but TP1 is not yet hit."""
     try:
@@ -2583,12 +2625,10 @@ class RealtimeOutcomeTracker:
                     await _persist_outcome(signal_id, "missed_entry", entry, price)
                 await publish_snapshot()
                 return
-            if not entry_was_touched(
-                direction,
-                entry,
-                price,
-                high=range_high,
-                low=range_low,
+            entry_high, entry_low = _entry_touch_range(signal, observation, range_high, range_low)
+            if not (
+                entry_was_touched(direction, entry, price, high=entry_high, low=entry_low)
+                or _within_entry_band(entry, sl, price)
             ):
                 await publish_snapshot()
                 return

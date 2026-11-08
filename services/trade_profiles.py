@@ -289,6 +289,8 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
             sig["stop_loss"] = stop
             sig["take_profit"] = list(original_levels)
         sig["target_model"] = str(sig.get("target_model") or "strategy_preserved")
+        if geometry_valid:
+            _extend_target_ladder(sig, entry, stop, original_levels, is_long)
 
     # Canonical R:R is always recalculated from the geometry that will actually
     # be displayed/persisted.
@@ -305,6 +307,13 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
         sig["rr_estimate"] = sig["rr_ratio"]
         sig["rr_tp1"] = sig["rr_ratio"]
         sig["rr_final"] = round(float(target_rrs[-1]), 4)
+        if sig.get("take_profit_authored"):
+            # Profile matching (e.g. flip) keeps judging the strategy's own final target.
+            authored = _parse_tp_levels(sig.get("take_profit_authored"))
+            authored_rrs = [abs(float(level) - entry) / risk for level in authored if risk > 0]
+            if authored_rrs:
+                sig["rr_ladder_final"] = sig["rr_final"]
+                sig["rr_final"] = round(float(authored_rrs[-1]), 4)
 
     sig["trade_profile"] = profile.name
     sig["trade_profile_label"] = profile.label
@@ -329,6 +338,42 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     else:
         sig["profile_score_blended"] = False
     return sig
+
+
+def _extend_target_ladder(sig: dict[str, Any], entry: float, stop: float, levels: list[float],
+                          is_long: bool) -> None:
+    """Give one- and two-target signals a real TP2/TP3 (owner request, 8 Nov 2026).
+
+    The tracker, the paper desk and broker trade management all work the plan
+    50% at TP1 (stop to entry), 25% at TP2, the rest at TP3. Strategies that
+    author only TP1 left half the position with no target. Missing levels are
+    added in steps of ``SIGNAL_TARGET_LADDER_STEP_R`` (default 1R) beyond the
+    last authored target; they are stored on the signal, so the tracker,
+    paper trades and cards all follow the same levels. Authored targets are
+    never moved; ``take_profit_authored`` keeps them for audit.
+    """
+    if not _env_bool("SIGNAL_TARGET_LADDER_ENABLED", True) or not levels or len(levels) >= 3:
+        return
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return
+    try:
+        step_r = float(os.getenv("SIGNAL_TARGET_LADDER_STEP_R", "1.0") or 1.0)
+    except (TypeError, ValueError):
+        step_r = 1.0
+    step_r = max(0.25, min(5.0, step_r))
+    ordered = sorted(levels, reverse=not is_long)
+    sign = 1.0 if is_long else -1.0
+    ladder = list(ordered)
+    while len(ladder) < 3:
+        nxt = ladder[-1] + sign * step_r * risk
+        if nxt <= 0:
+            return
+        ladder.append(round(float(nxt), 8))
+    sig["take_profit_authored"] = list(ordered)
+    sig["take_profit"] = ladder
+    sig["target_ladder"] = {"source": "r_steps", "step_r": step_r, "authored_targets": len(ordered)}
+    sig["target_model"] = f"{sig.get('target_model') or 'strategy_preserved'}+ladder"
 
 
 def _max_target_rr(signal: dict[str, Any]) -> float:

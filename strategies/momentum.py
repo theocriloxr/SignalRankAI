@@ -119,6 +119,15 @@ class RSIMomentumStrategy(BaseStrategy):
         return None
 
 
+def _rsi_read(rsi: float, side: str) -> str:
+    """Honest RSI wording (owner report, 8 Nov 2026: "RSI 76.8 confirms momentum" on a LONG)."""
+    if side == "LONG" and rsi >= 70:
+        return f"RSI ({rsi:.1f}) is overbought: momentum is strong but stretched, so a pullback is likely"
+    if side == "SHORT" and rsi <= 30:
+        return f"RSI ({rsi:.1f}) is oversold: momentum is strong but stretched, so a bounce is likely"
+    return f"RSI ({rsi:.1f}) confirms momentum for {side}"
+
+
 class MACDMomentumStrategy(BaseStrategy):
     """MACD histogram crossover with RSI confirmation."""
 
@@ -159,7 +168,7 @@ class MACDMomentumStrategy(BaseStrategy):
                 "targets": levels["tp_levels"],
                 "confidence": confidence,
                 "rr_ratio": levels["rr_ratio"],
-                "reasoning": f"MACD histogram positive ({macd_hist:.4f}), RSI ({rsi:.1f}) confirms momentum for LONG. R:R={levels['rr_ratio']:.2f}",
+                "reasoning": f"MACD histogram positive ({macd_hist:.4f}), {_rsi_read(rsi, 'LONG')}. R:R={levels['rr_ratio']:.2f}",
             }
 
         # SELL: MACD histogram negative AND RSI below 60 (not overbought, but losing momentum)
@@ -187,7 +196,7 @@ class MACDMomentumStrategy(BaseStrategy):
                 "targets": levels["tp_levels"],
                 "confidence": confidence,
                 "rr_ratio": levels["rr_ratio"],
-                "reasoning": f"MACD histogram negative ({macd_hist:.4f}), RSI ({rsi:.1f}) confirms momentum for SHORT. R:R={levels['rr_ratio']:.2f}",
+                "reasoning": f"MACD histogram negative ({macd_hist:.4f}), {_rsi_read(rsi, 'SHORT')}. R:R={levels['rr_ratio']:.2f}",
             }
         return None
 

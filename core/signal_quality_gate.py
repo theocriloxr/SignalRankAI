@@ -106,6 +106,12 @@ def evaluate_signal_quality(signal: Mapping[str, Any], *, execution: bool = Fals
 
     tp1_rr = abs(valid_targets[0] - entry) / risk if valid_targets and risk > 0 else 0.0
     final_rr = abs(valid_targets[-1] - entry) / risk if valid_targets and risk > 0 else 0.0
+    # Ladder levels (services.trade_profiles, 8 Nov 2026) never help a setup pass:
+    # the minimum final R:R is judged on the strategy's own targets.
+    authored = _targets(signal.get("take_profit_authored")) if signal.get("take_profit_authored") else []
+    authored = [tp for tp in authored if (tp > entry if direction == "long" else tp < entry)]
+    if authored and risk > 0:
+        final_rr = min(final_rr, max(abs(tp - entry) for tp in authored) / risk)
     if tp1_rr < _env_float("QUALITY_GATE_MIN_TP1_RR", 1.0):
         reasons.append("tp1_rr_below_minimum")
     if final_rr < _env_float("QUALITY_GATE_MIN_FINAL_RR", 2.0):
