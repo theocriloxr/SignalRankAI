@@ -122,11 +122,46 @@ function outcomeOf(value: unknown): [string, Tone] {
   return outcomeWords[code] ?? [code.replace(/_/g, " ").replace(/^./, c => c.toUpperCase()), "neutral"];
 }
 
+const statusTones: Record<string, Tone> = { info: "info", positive: "positive", negative: "negative", neutral: "neutral" };
+
+/** Where the trade stands: the server's lifecycle-first status, else the stored outcome. */
+function statusOf(signal: Row): [string, Tone] {
+  const status = record(signal.trade_status);
+  const label = display(status.label, "");
+  if (label) return [label, statusTones[display(status.tone, "neutral")] ?? "neutral"];
+  return outcomeOf(signal.outcome_status);
+}
+
+/** What the trade has made, in R, per $100 risked and as a price move. */
+function TradeResult({ signal }: { signal: Row }) {
+  const status = record(signal.trade_status);
+  const realized = finite(status.realized_r);
+  const banked = finite(status.banked_r);
+  const per100 = finite(status.result_per_100_risk);
+  const move = finite(status.realized_pct);
+  const openShare = finite(status.open_share);
+  const signed = (value: number, digits = 2) => `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(digits)}`;
+  if (realized !== null) {
+    return <p className="ws-signal-meta"><span>Result <b>{signed(realized)}R</b></span>
+      {per100 !== null && <span><b>{signed(per100)}</b> per $100 risked</span>}
+      {move !== null && <span>Price move <b>{signed(move)}%</b></span>}</p>;
+  }
+  if (banked !== null) {
+    return <p className="ws-signal-meta"><span>Banked so far <b>{signed(banked)}R</b></span>
+      {per100 !== null && <span><b>{signed(per100)}</b> per $100 risked</span>}
+      {openShare !== null && openShare > 0 && <span><b>{Math.round(openShare * 100)}%</b> still open, stop at entry</span>}</p>;
+  }
+  if (status.closed === true && status.entry_triggered === false) {
+    return <p className="ws-signal-meta"><span>No position was opened, so no profit or loss.</span></p>;
+  }
+  return null;
+}
+
 function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolean }) {
   const id = display(signal.signal_id, "");
   const direction = display(signal.direction, "");
   const probability = finite(signal.ml_probability_calibrated);
-  const [outcome, tone] = outcomeOf(signal.outcome_status);
+  const [outcome, tone] = statusOf(signal);
   const targets = targetPrices(signal.take_profit);
   const rr = riskReward(signal.entry, signal.stop_loss, targets, signal.rr_estimate ?? signal.rr_final);
   const locked = signal.exact_levels_locked === true;
@@ -147,6 +182,7 @@ function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolea
         <dt>Target {i + 1}</dt><dd>{priceLabel(price)}</dd></div>)
         : <div className="ws-level ws-level--target"><dt>Target</dt><dd>Not set</dd></div>}
     </dl>
+    <TradeResult signal={signal}/>
     {!detail && <SetupLine signal={signal}/>}
     <p className="ws-signal-meta">
       <span>Reward to risk <b>{rr === null ? "not set" : `1 : ${numberLabel(rr)}`}</b></span>

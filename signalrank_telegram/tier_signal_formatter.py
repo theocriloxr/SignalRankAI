@@ -311,6 +311,31 @@ def _real_tp_levels(signal: DictType[str, Any], raw: Any) -> List[float]:
     return sorted(set(out), reverse=not is_long)
 
 
+def _money_plan_lines(signal: DictType[str, Any], tp_levels: List[float]) -> List[str]:
+    """Money figures for the size shown on the card (engine.signal_calculations)."""
+    size = _safe_float(signal.get("suggested_position_size") or signal.get("position_size") or signal.get("lot_size"))
+    if size is None or size <= 0:
+        return []
+    try:
+        from engine.signal_calculations import calculate_money_plan
+
+        plan = calculate_money_plan(dict(signal, take_profit=tp_levels), position_size=size)
+    except Exception:
+        plan = None
+    if not plan:
+        return []
+    labels = {"stop_first": "stop", "tp1_then_entry": "TP1 then entry", "tp2_then_entry": "TP2 then entry",
+              "tp3_planned_closes": "TP3 with planned closes"}
+    paths = " • ".join(f"{labels.get(p['path'], p['path'])} {'+' if p['money'] >= 0 else '−'}${abs(p['money']):,.2f}"
+                       for p in plan["paths"])
+    full = plan["targets"][0]["profit_if_all_closed"] if plan["targets"] else None
+    full_text = f" • all closed at TP1 +${full:,.2f}" if full is not None else ""
+    return [
+        f"💵 At the suggested size: ${plan['risk_amount']:,.2f} at risk, position value ${plan['position_value']:,.2f}",
+        f"💵 Result: {paths}{full_text} (before fees and slippage)",
+    ]
+
+
 def _fmt_r(value: float) -> str:
     return f"{value:+.2f}R"
 
@@ -358,6 +383,7 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
                 f"ℹ️ After TP{len(tp_levels)} the remaining {open_share:.0%} has no further target: "
                 "it closes at the protected stop (entry) or the time limit."
             )
+    lines.extend(_money_plan_lines(signal, tp_levels))
     current = _safe_float(signal.get("current_price") or signal.get("live_price"))
     if current is not None and current > 0 and abs(current - entry_f) / entry_f > 0.0005:
         first = tp_levels[0]
@@ -372,6 +398,16 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
             stop_gap = (stop_f - current) if is_short else (current - stop_f)
             if stop_gap > 0:
                 lines.append(f"📍 Now {price_text}: R/R to TP1 from this price 1:{reward / stop_gap:.2f}")
+                moved_r = ((entry_f - current) if is_short else (current - entry_f)) / risk
+                if moved_r >= 0.25:
+                    # Owner finding, 8 Nov 2026: entries "arrive late". When
+                    # price has already run toward TP1, chasing it shrinks the
+                    # R/R; the tracker keeps waiting for an entry touch until
+                    # the signal expires, so a limit order keeps the plan.
+                    lines.append(
+                        f"⏳ Price is {moved_r:.2f}R past entry. To keep the planned R/R, use a limit order at "
+                        f"{_fmt_price_clean(entry_f, asset)}; the signal is tracked until it expires."
+                    )
     return lines
 
 

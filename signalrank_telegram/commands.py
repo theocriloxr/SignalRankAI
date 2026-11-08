@@ -4293,6 +4293,42 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				sig_dict["entry_status"] = entry_status
 				sig_dict["current_price"] = price
 				sig_dict["distance_pct"] = distance_pct
+		# Where the trade really stands, from the lifecycle record first
+		# (services.trade_status). Owner, 8 Nov 2026: a trade whose entry had
+		# triggered still read "Awaiting entry", because this view guessed from
+		# the distance between price and entry, and a 'pending' outcome row was
+		# reported as a completed outcome.
+		trade = None
+		try:
+			from db.models import SignalLifecycle as _Lifecycle
+			from db.session import get_session as _lc_session
+			from services.trade_status import describe_trade, trade_status_line
+			from sqlalchemy import select as _lc_select
+
+			async with _lc_session(priority="interactive", label="position.lifecycle", timeout_seconds=5) as _lcs:
+				_lc = (await _lcs.execute(
+					_lc_select(_Lifecycle).where(_Lifecycle.signal_id == str(getattr(sig, "signal_id", "") or ""))
+				)).scalars().first()
+			trade = describe_trade(
+				lifecycle_state=getattr(_lc, "state", None),
+				outcome_status=getattr(oc, "status", None) if oc is not None else None,
+				canonical_outcome=getattr(oc, "canonical_outcome", None) if oc is not None else None,
+				r_multiple=getattr(oc, "r_multiple", None) if oc is not None else None,
+				pnl_pct=getattr(oc, "percent", None) if oc is not None else None,
+				highest_tp_hit=getattr(_lc, "highest_tp_hit", None),
+				entry=entry, stop_loss=sl, take_profit=sig_dict.get("take_profit"),
+				direction=sig_dict.get("direction"),
+			)
+			if trade.source != "none":
+				position_lines.append(f"📍 Trade status: {trade_status_line(trade)}")
+				if trade.entry_triggered or trade.closed:
+					sig_dict["entry_status"] = "TRIGGERED"
+		except Exception as _lc_err:
+			import logging
+			logging.getLogger(__name__).debug(f"position lifecycle status unavailable: {_lc_err}")
+			trade = None
+		if oc is not None and trade is not None and not trade.closed:
+			oc = None  # an open or pending projection is not a completed outcome
 		if oc is not None:
 			status: str = str(getattr(oc, "status", "") or "").lower()
 			r: os.Any | None = getattr(oc, "r_multiple", None)
@@ -4323,6 +4359,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 					position_lines.append(f"✅ Entry Status: At entry zone ({distance_pct:+.2f}%)")
 				elif entry_status == "PENDING_ENTRY":
 					position_lines.append(f"⏳ Entry Status: Awaiting entry ({distance_pct:+.2f}%)")
+				elif entry_status == "TRIGGERED":
+					pass  # stated by the trade status line above
 				else:
 					position_lines.append(f"❓ Entry Status: Unknown")
 				position_lines.append(f"Current price: {current_price:.6g}")

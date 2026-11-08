@@ -320,6 +320,11 @@ def format_enhanced_signal_data(signal: Dict) -> Dict:
             risk_pct=float(signal.get("risk_pct") or 1.0),
         ),
         "position_size_unit": "asset_units",
+        "money_plan": calculate_money_plan(
+            signal,
+            account_balance=float(signal.get("account_balance") or 10000),
+            risk_pct=float(signal.get("risk_pct") or 1.0),
+        ),
         "signal_age_minutes": calculate_signal_age_minutes(signal),
         "price_status_indicator": get_price_status_indicator(signal),
     }
@@ -339,3 +344,74 @@ def format_enhanced_signal_data(signal: Dict) -> Dict:
     if entry > 0 and stop_loss > 0:
         enhanced["pips_to_sl"] = calculate_pips(asset, entry, stop_loss)
     return enhanced
+
+
+def calculate_money_plan(signal: Dict, position_size: Any = None, account_balance: Any = None,
+                         risk_pct: Any = None) -> Optional[Dict[str, Any]]:
+    """Profit and loss in money for one position, from the signal's own geometry.
+
+    Owner finding, 8 Nov 2026: "the calculator isn't calculating actual profit
+    against the R/R". Cards showed a size in units and R/R ratios but no money
+    figures. Sizing: ``position_size`` if given (the size shown on the card),
+    else ``account_balance x risk_pct`` at the stop. Plan paths use
+    ``core.partial_exit_accounting`` (the rule the ledger books). Fees,
+    spread and slippage are not included; asset units, not broker lots.
+    """
+    try:
+        entry = float(signal.get("entry", 0) or 0)
+        stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
+    except (TypeError, ValueError):
+        return None
+    direction = _normalize_direction(signal.get("direction"))
+    if entry <= 0 or stop <= 0 or direction is None:
+        return None
+    if (direction == "long" and stop >= entry) or (direction == "short" and stop <= entry):
+        return None
+    risk_per_unit = abs(entry - stop)
+    size = None
+    try:
+        if position_size is not None and float(position_size) > 0:
+            size = float(position_size)
+    except (TypeError, ValueError):
+        size = None
+    if size is None:
+        try:
+            size = (float(account_balance) * float(risk_pct) / 100.0) / risk_per_unit
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+    if size <= 0:
+        return None
+    risk_amount = size * risk_per_unit
+    targets = [t for t in _parse_target_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
+               if _valid_target_for_direction(entry, t, direction)][:3]
+    rows = []
+    for index, target in enumerate(targets, start=1):
+        rr = abs(target - entry) / risk_per_unit
+        rows.append({"target": index, "price": target, "rr": round(rr, 4),
+                     "profit_if_all_closed": round(risk_amount * rr, 2)})
+    paths: list[Dict[str, Any]] = [{"path": "stop_first", "r": -1.0, "money": round(-risk_amount, 2)}]
+    try:
+        from core.partial_exit_accounting import calculate_partial_exit_result, planned_exit_fractions
+
+        for stage in (1, 2):
+            if len(targets) < stage:
+                break
+            result = calculate_partial_exit_result(entry=entry, stop_loss=stop, take_profit=targets,
+                                                   direction=direction, highest_tp=stage)
+            if result is not None:
+                paths.append({"path": f"tp{stage}_then_entry", "r": round(float(result.realized_r), 4),
+                              "money": round(risk_amount * float(result.realized_r), 2)})
+        if len(targets) >= 3:
+            f1, f2, runner = planned_exit_fractions()
+            r = f1 * rows[0]["rr"] + f2 * rows[1]["rr"] + runner * rows[2]["rr"]
+            paths.append({"path": "tp3_planned_closes", "r": round(r, 4), "money": round(risk_amount * r, 2)})
+    except Exception as exc:
+        logger.debug(f"money plan partial paths unavailable: {exc}")
+    return {
+        "position_size": round(size, 8),
+        "position_value": round(size * entry, 2),
+        "risk_amount": round(risk_amount, 2),
+        "targets": rows,
+        "paths": paths,
+        "costs_included": False,
+    }

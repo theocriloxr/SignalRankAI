@@ -585,6 +585,20 @@ def _present_signal_for_tier(
     payload = dict(row or {})
     policy = get_entitlements(tier)
     targets = _signal_targets_for_presentation(payload.get("take_profit"))
+    # Where the trade stands and what it has made, from the lifecycle first
+    # (services.trade_status). Computed before tier projection hides levels.
+    try:
+        from services.trade_status import describe_trade
+
+        payload["trade_status"] = describe_trade(
+            lifecycle_state=payload.get("lifecycle_state"), outcome_status=payload.get("outcome_status"),
+            canonical_outcome=payload.get("canonical_outcome"), r_multiple=payload.get("r_multiple"),
+            pnl_pct=payload.get("pnl_pct"), highest_tp_hit=payload.get("highest_tp_hit"),
+            entry=payload.get("entry"), stop_loss=payload.get("stop_loss"), take_profit=targets,
+            direction=payload.get("direction"),
+        ).as_dict()
+    except Exception:
+        payload["trade_status"] = None
     # Compute canonical geometry from the complete stored trade before tier
     # projection truncates target depth. This keeps web and Telegram R:R/pip
     # values consistent.
@@ -2668,9 +2682,11 @@ async def signal_feed(
         " s.ml_recovery_certified_threshold,s.ml_recovery_challenger_probability,"
         " s.ml_recovery_challenger_threshold,s.ml_recovery_challenger_version,"
         " d.delivered_at,d.delivery_latency_seconds,d.signal_age_at_delivery_seconds,d.delivery_channel,"
-        " o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,"
+        " l.state AS lifecycle_state,l.highest_tp_hit"
         " FROM receipts d JOIN signals s ON s.signal_id=d.signal_id"
         " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id"
         " WHERE d.rn=1"
         " AND (CAST(:asset AS TEXT) IS NULL OR s.asset=:asset)"
         " AND (CAST(:asset_class AS TEXT) IS NULL OR lower(COALESCE(s.asset_class,''))=:asset_class)"
@@ -4030,10 +4046,12 @@ async def professional_signal_feed(
         " s.ml_recovery_mode,s.ml_recovery_reason,s.ml_recovery_champion_raw_probability,"
         " s.ml_recovery_certified_threshold,s.ml_recovery_challenger_probability,"
         " s.ml_recovery_challenger_threshold,s.ml_recovery_challenger_version,"
-        " d.delivered_at,d.delivery_channel,o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " d.delivered_at,d.delivery_channel,o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,"
+        " l.state AS lifecycle_state,l.highest_tp_hit"
         " FROM receipts d"
         " JOIN signals s ON s.signal_id=d.signal_id"
         " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id"
         " WHERE d.rn=1"
         " ORDER BY d.delivered_at DESC LIMIT :limit OFFSET :offset"
     )
@@ -4981,9 +4999,11 @@ async def elite_signal_feed(
         " SELECT s.signal_id,s.display_id,s.asset,s.asset_class,s.timeframe,s.direction,"
         " s.entry,s.stop_loss,s.take_profit,s.rr_estimate,s.score,s.strategy_name,"
         " s.strategy_group,s.regime,s.created_at,s.ml_probability_calibrated,"
-        " r.delivered_at,o.status AS outcome_status,o.r_multiple,o.pnl_pct"
+        " r.delivered_at,o.status AS outcome_status,o.canonical_outcome,o.r_multiple,o.pnl_pct,"
+        " l.state AS lifecycle_state,l.highest_tp_hit"
         " FROM receipts r JOIN signals s ON s.signal_id=r.signal_id"
         " LEFT JOIN outcomes o ON o.signal_id=s.signal_id"
+        " LEFT JOIN signal_lifecycles l ON l.signal_id=s.signal_id"
         " WHERE r.rn=1 AND s.created_at>=:cutoff AND s.score>=85"
         " ORDER BY s.score DESC,r.delivered_at DESC LIMIT 5"
     )
