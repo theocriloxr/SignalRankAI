@@ -681,7 +681,8 @@ def test_direction_arbitration_receives_uncertainty_and_current_market_evidence(
     gemini = (root / "services" / "gemini_ml.py").read_text(encoding="utf-8")
 
     for source, marker in (
-        (openai, "async def choose_direction("),
+        # Prompt and candidate fields are shared with Claude since 8 Nov 2026.
+        (openai, "DIRECTION_SYSTEM = ("),
         (gemini, "async def choose_direction_structured("),
     ):
         block = source[source.index(marker):]

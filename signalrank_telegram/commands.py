@@ -6227,6 +6227,20 @@ async def quality_command(update, context) -> None:
 		await update.message.reply_text(safe_command_error("Could not build the quality report.", exc))
 
 
+def _claude_status_line() -> str:
+	try:
+		from services.claude_ai import provider_status as _claude_status
+		c = _claude_status()
+	except Exception:
+		return "unavailable"
+	if not c.get("configured"):
+		return "not configured (ANTHROPIC_API_KEY)"
+	text = f"{c.get('model')} · effort {c.get('effort')} · {c.get('calls_this_hour')}/{c.get('max_calls_per_hour')} calls this hour"
+	if c.get("circuit_open_seconds"):
+		text += f" · paused {c.get('circuit_reason')} {c.get('circuit_open_seconds')}s"
+	return text
+
+
 async def ai_status_command(update, context) -> None:
 	"""Owner/admin: show secret-safe AI provider routing and OpenAI circuit state."""
 	if update.effective_user is None or update.message is None:
@@ -6250,6 +6264,7 @@ async def ai_status_command(update, context) -> None:
 			f"OpenAI configured: {'yes' if status.get('configured') else 'no'}",
 			f"OpenAI available: {'yes' if status.get('available') else 'no'}",
 			f"Gemini fallback configured: {'yes' if gemini_configured else 'no'}",
+			f"Claude reviewer: {_claude_status_line()}",
 			f"Signal model: {status.get('signal_model', 'n/a')}",
 			f"Deep model: {status.get('deep_model', 'n/a')}",
 			f"Responses API: {'enabled' if status.get('responses_api') else 'off'}",
@@ -6263,6 +6278,7 @@ async def ai_status_command(update, context) -> None:
 		if not status.get("configured"):
 			lines += [
 				"",
+				"Claude reviews signals while OpenAI is missing: add ANTHROPIC_API_KEY as a server secret.",
 				"To connect OpenAI, add OPENAI_API_KEY as a Railway secret and redeploy.",
 				"Do not paste the API key into Telegram or chat logs.",
 			]

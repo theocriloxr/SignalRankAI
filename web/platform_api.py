@@ -1108,6 +1108,15 @@ async def command_catalog(user: dict[str, Any] = Depends(current_user)) -> dict[
     }
 
 
+def _claude_provider_status() -> dict[str, Any]:
+    try:
+        from services.claude_ai import provider_status
+
+        return dict(provider_status())
+    except Exception:
+        return {"provider": "claude", "available": False}
+
+
 @router.get("/operator/overview")
 async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     authority = _platform_operator_authority(user)
@@ -1123,7 +1132,7 @@ async def operator_overview(user: dict[str, Any] = Depends(current_user)) -> dic
             "commit": str(os.getenv("RAILWAY_GIT_COMMIT_SHA") or os.getenv("GIT_COMMIT") or ""),
             "environment": str(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("SIGNALRANK_ENV_PROFILE") or ""),
         },
-        "ai": dict(openai_provider_status() or {}),
+        "ai": {**dict(openai_provider_status() or {}), "claude": _claude_provider_status()},
         "execution": {
             "live_financial_features_enabled": env_bool("LIVE_FINANCIAL_FEATURES_ENABLED", False),
             "real_execution_enabled": env_bool("REAL_EXECUTION_ENABLED", False),

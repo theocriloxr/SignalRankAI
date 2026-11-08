@@ -41,7 +41,7 @@ from uuid import uuid4
 logger = logging.getLogger("AICostLedger")
 
 PERIODS = ("daily", "monthly")
-PROVIDERS = ("openai", "gemini")
+PROVIDERS = ("openai", "claude", "gemini")
 DEFAULT_ALERT_THRESHOLDS = (0.5, 0.8, 1.0)
 # Unpriced models are costed high on purpose: over-counting trips a budget
 # early, under-counting would let real spend pass it.
@@ -64,7 +64,7 @@ _TASK_WORKLOADS = {
     "signalrank_provider_connectivity": "diagnostics",
 }
 _WORKLOAD_RE = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
-_LIMIT_RE = re.compile(r"^AI_BUDGET_(?:(WORKLOAD)_([A-Z0-9_]+)_|(OPENAI|GEMINI)_|(PER_USER)_)?(DAILY|MONTHLY)_USD$")
+_LIMIT_RE = re.compile(r"^AI_BUDGET_(?:(WORKLOAD)_([A-Z0-9_]+)_|(OPENAI|CLAUDE|GEMINI)_|(PER_USER)_)?(DAILY|MONTHLY)_USD$")
 
 _ATTRIBUTION: contextvars.ContextVar["Attribution | None"] = contextvars.ContextVar(
     "signalrank_ai_usage_attribution", default=None
@@ -237,6 +237,14 @@ def _fallback_price(env: Mapping[str, str], name: str, default: float) -> float:
     return value if math.isfinite(value) and value >= default else default
 
 
+# Published list prices (USD per 1M tokens). AI_MODEL_PRICING_JSON overrides them.
+_PUBLISHED_PRICES = {
+    "claude:claude-opus-5-5": (4.0, 20.0),
+    "claude:claude-sonnet-5-5": (2.0, 10.0),
+    "claude:claude-haiku-5-5": (0.10, 0.50),
+}
+
+
 def price_for(provider: str, model: str, env: Mapping[str, str] | None = None) -> tuple[float, float, str]:
     """Return (input USD per 1M tokens, output USD per 1M tokens, pricing source)."""
     env = os.environ if env is None else env
@@ -246,6 +254,9 @@ def price_for(provider: str, model: str, env: Mapping[str, str] | None = None) -
     for key in (f"{provider}:{model}", f"{provider}:*"):
         if key in table:
             return table[key][0], table[key][1], "configured"
+    if f"{provider}:{model}" in _PUBLISHED_PRICES:
+        input_price, output_price = _PUBLISHED_PRICES[f"{provider}:{model}"]
+        return input_price, output_price, "published"
     return (
         _fallback_price(env, "AI_UNPRICED_INPUT_PER_1M", DEFAULT_UNPRICED_INPUT_PER_1M),
         _fallback_price(env, "AI_UNPRICED_OUTPUT_PER_1M", DEFAULT_UNPRICED_OUTPUT_PER_1M),
@@ -717,6 +728,16 @@ def openai_usage_tokens(usage: Mapping[str, Any] | None) -> tuple[int | None, in
     except (TypeError, ValueError):
         return None, None
     return prompt, completion
+
+
+def claude_usage_tokens(usage: Mapping[str, Any] | None) -> tuple[int | None, int | None]:
+    """Billed input (including cache reads/writes) and output tokens from a Claude response."""
+    if not isinstance(usage, Mapping):
+        return None, None
+    prompt = sum(int(usage.get(k) or 0) for k in
+                 ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    completion = usage.get("output_tokens")
+    return prompt, (int(completion) if isinstance(completion, (int, float)) else None)
 
 
 def gemini_usage_tokens(response: Any, prompt: str = "") -> tuple[int, int, bool]:

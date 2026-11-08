@@ -114,17 +114,21 @@ def _invalid_structure(signal: Mapping[str, Any]) -> bool:
     return direction not in {"long", "buy", "short", "sell"}
 
 
+# Claude joined on 8 Nov 2026 as the reviewer while OpenAI is unavailable.
+_EXTERNAL = ("openai", "claude", "gemini")
+
+
 def _provider_order() -> tuple[str, ...]:
     try:
         from services.openai_ai import provider_order
 
         return tuple(provider_order())
     except Exception:
-        raw = str(os.getenv("AI_PROVIDER_ORDER") or "openai,gemini,local")
+        raw = str(os.getenv("AI_PROVIDER_ORDER") or "openai,claude,gemini,local")
         order: list[str] = []
         for item in raw.split(","):
             value = item.strip().lower()
-            if value in {"openai", "gemini", "local"} and value not in order:
+            if value in {*_EXTERNAL, "local"} and value not in order:
                 order.append(value)
         if "local" not in order:
             order.append("local")
@@ -155,6 +159,18 @@ async def _review_gemini(
     return await review_signal_structured(signal, candles, news_sentiment)
 
 
+async def _review_claude(
+    signal: Mapping[str, Any],
+    candles: Sequence[Mapping[str, Any]] | None,
+    news_sentiment: float | None,
+) -> Mapping[str, Any]:
+    from services.claude_ai import claude_available, review_signal
+
+    if not claude_available():
+        return {"ok": False, "provider": "claude", "error": "not_available"}
+    return await review_signal(signal, candles, news_sentiment)
+
+
 async def _call_provider(
     provider: str,
     signal: Mapping[str, Any],
@@ -163,6 +179,8 @@ async def _call_provider(
 ) -> Mapping[str, Any]:
     if provider == "openai":
         return await _review_openai(signal, candles, news_sentiment)
+    if provider == "claude":
+        return await _review_claude(signal, candles, news_sentiment)
     if provider == "gemini":
         return await _review_gemini(signal, candles, news_sentiment)
     return {"ok": False, "provider": provider, "error": "local_fallback"}
@@ -265,7 +283,7 @@ async def review_signal(
         }
 
     order = _provider_order()
-    external = [name for name in order if name in {"openai", "gemini"}]
+    external = [name for name in order if name in _EXTERNAL]
     mode = str(os.getenv("AI_SIGNAL_REVIEW_MODE") or "failover").strip().lower()
     if mode not in {"failover", "consensus"}:
         mode = "failover"
@@ -388,6 +406,12 @@ async def _call_direction_provider(
         if not openai_available():
             return {"ok": False, "provider": "openai", "error": "not_available"}
         return dict(await choose_direction(asset, timeframe, long_candidates, short_candidates))
+    if provider == "claude":
+        from services.claude_ai import choose_direction as claude_choose_direction, claude_available
+
+        if not claude_available():
+            return {"ok": False, "provider": "claude", "error": "not_available"}
+        return dict(await claude_choose_direction(asset, timeframe, long_candidates, short_candidates))
     if provider == "gemini":
         from services.gemini_ml import choose_direction_structured, gemini_available
 
@@ -432,7 +456,7 @@ async def choose_direction(
     short_candidates: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Provider-neutral conflict arbitration with conservative disagreement handling."""
-    providers = [name for name in _provider_order() if name in {"openai", "gemini"}]
+    providers = [name for name in _provider_order() if name in _EXTERNAL]
     mode = str(os.getenv("AI_DIRECTION_MODE") or "failover").strip().lower()
     min_confidence = _env_float(
         "AI_INLINE_MIN_CONFIDENCE",

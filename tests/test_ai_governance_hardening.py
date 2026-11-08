@@ -5,7 +5,8 @@ def test_openai_defaults_use_current_cost_tiered_models_and_local_fallback() -> 
     source = Path("services/openai_ai.py").read_text(encoding="utf-8")
     assert '"gpt-6-luna"' in source
     assert '"gpt-6-sol"' in source
-    assert 'AI_PROVIDER_ORDER") or "openai,gemini,local"' in source
+    # Claude joined the default chain on 8 Nov 2026 (owner request while OpenAI is down).
+    assert 'AI_PROVIDER_ORDER") or "openai,claude,gemini,local"' in source
     assert '"store": False' in source
     assert '"prompt_cache_key"' in source
     assert "OPENAI_SIGNAL_CACHE_TTL_SECONDS" in source
