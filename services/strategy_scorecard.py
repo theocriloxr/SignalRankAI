@@ -419,6 +419,31 @@ def shadow_scan_start(start_id: int, max_id: int, page: int, max_pages: int) -> 
     return max(start_id, max_id - budget + 1), start_id
 
 
+def shadow_scan_pages(start_id: int, max_id: int, page: int, max_pages: int) -> list[int]:
+    """Page start ids to read: the whole lookback, or newest pages plus an even sample of older ones.
+
+    Keeping only the newest pages (4 Nov 2026) left the scorecard ~5 of its 30
+    days. Its cells are hit rates per setup, so with the same page budget half
+    now reads the newest ids contiguously and the other half is spread evenly
+    over the rest of the lookback; every part of the window is represented.
+    """
+    page = max(1, int(page))
+    max_pages = max(1, int(max_pages))
+    if max_id < start_id:
+        return []
+    if max_id - start_id + 1 <= page * max_pages:
+        return list(range(start_id, max_id + 1, page))
+    newest_pages = max(1, (max_pages + 1) // 2)
+    newest_start = max(start_id, max_id - newest_pages * page + 1)
+    starts = list(range(newest_start, max_id + 1, page))[:newest_pages]
+    older = max_pages - len(starts)
+    span = newest_start - start_id
+    if older > 0 and span > 0:
+        step = span / older
+        starts = sorted({start_id + int(i * step) for i in range(older)} | set(starts))
+    return starts
+
+
 async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
     from sqlalchemy import text
 
@@ -454,17 +479,21 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
         max_id = int((await session.execute(text("SELECT COALESCE(MAX(id), 0) FROM decision_log"))).scalar() or 0)
         start_id = await _first_id_after(session, cutoff, max_id)
 
-    start_id, truncated = shadow_scan_start(start_id, max_id, page, max_pages)
+    first_in_lookback = start_id
+    newest_from, truncated = shadow_scan_start(start_id, max_id, page, max_pages)
+    page_starts = shadow_scan_pages(first_in_lookback, max_id, page, max_pages)
+    older_sampled = sum(1 for p in page_starts if p < newest_from) if truncated is not None else 0
     LAST_SCAN.clear()
-    LAST_SCAN.update(scan_from_id=start_id, max_id=max_id, truncated=truncated is not None)
-    if truncated:
+    LAST_SCAN.update(scan_from_id=page_starts[0] if page_starts else newest_from, max_id=max_id,
+                     truncated=truncated is not None, older_pages_sampled=older_sampled)
+    if truncated is not None:
         logger.warning(
-            "[strategy_scorecard] window_truncated lookback_days=%s first_id_in_lookback=%s scan_from_id=%s "
-            "max_id=%s pages=%s page_rows=%s (newest rows kept)",
-            lookback_days, truncated, start_id, max_id, max_pages, page,
+            "[strategy_scorecard] window_sampled lookback_days=%s first_id_in_lookback=%s max_id=%s pages=%s "
+            "page_rows=%s older_pages_sampled=%s (newest half contiguous, older half evenly sampled)",
+            lookback_days, truncated, max_id, max_pages, page, older_sampled,
         )
-    after = start_id - 1
-    for _ in range(max_pages):
+    for page_start in page_starts:
+        after = page_start - 1
         async with get_session(priority="analytics", label="strategy_scorecard.shadow", timeout_seconds=timeout,
                                drop_if_busy=False) as session:
             batch = (
@@ -489,9 +518,6 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
             if r is not None:
                 rows.append({"asset": asset, "timeframe": tf, "strategy": strategy, "direction": direction,
                              "r": r, "source": "shadow", "bar": bar_index(created_at, tf)})
-        after += page
-        if after >= max_id:
-            break
         await asyncio.sleep(0)
     return rows
 

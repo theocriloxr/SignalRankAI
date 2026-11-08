@@ -97,7 +97,7 @@ def test_load_rows_reads_the_newest_rows_when_lookback_exceeds_budget(monkeypatc
     assert len(rows) == 500
     newest = max(r["bar"] for r in rows)
     assert newest == sc.bar_index(log.created(1_000), "1h")
-    assert sc.LAST_SCAN == {"scan_from_id": 501, "max_id": 1_000, "truncated": True}
+    assert sc.LAST_SCAN == {"scan_from_id": 501, "max_id": 1_000, "truncated": True, "older_pages_sampled": 0}
 
 
 def test_load_rows_scans_the_whole_lookback_when_it_fits(monkeypatch):
@@ -113,3 +113,27 @@ def test_load_rows_scans_the_whole_lookback_when_it_fits(monkeypatch):
     assert log.scanned[0][0] <= 1
     assert len(rows) == 1_000
     assert sc.LAST_SCAN["truncated"] is False
+
+
+def test_older_part_of_the_lookback_is_sampled_not_dropped(monkeypatch):
+    """8 Nov 2026: with the budget short, half the pages read the newest ids and half are spread over the
+    rest of the 30 days (before, only the newest ~5 days reached the scorecard)."""
+    assert sc.shadow_scan_pages(1, 1_000, 100, 4) == [1, 401, 801, 901]
+    assert sc.shadow_scan_pages(1, 300, 100, 4) == [1, 101, 201]
+    start = datetime(2026, 10, 1)
+    log = _FakeDecisionLog(max_id=1_000, start=start)
+    now = log.created(1_000) + timedelta(minutes=1)
+    _install(monkeypatch, log, now)
+    monkeypatch.setenv("STRATEGY_SCORECARD_PAGE_ROWS", "500")
+    monkeypatch.setenv("STRATEGY_SCORECARD_MAX_PAGES", "500")  # page rows are clamped to >= 500
+    rows = asyncio.run(sc._load_rows(lookback_days=30))
+    assert len(rows) == 1_000 and sc.LAST_SCAN["truncated"] is False
+    monkeypatch.setenv("STRATEGY_SCORECARD_MAX_PAGES", "2")
+    log.scanned.clear()
+    big = _FakeDecisionLog(max_id=5_000, start=start)
+    _install(monkeypatch, big, big.created(5_000) + timedelta(minutes=1))
+    rows = asyncio.run(sc._load_rows(lookback_days=30))
+    assert big.scanned[0][0] <= 1 and big.scanned[-1] == (4_501, 5_000) and len(big.scanned) == 2
+    bars = sorted(r["bar"] for r in rows)
+    assert bars[0] == sc.bar_index(big.created(1), "1h") and bars[-1] == sc.bar_index(big.created(5_000), "1h")
+    assert sc.LAST_SCAN["older_pages_sampled"] == 1

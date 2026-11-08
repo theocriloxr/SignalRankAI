@@ -1,5 +1,10 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 8 November 2026 (late night) — the strategy scorecard sees the whole 30-day window (cloud session)
+
+- **Scorecard coverage.** `services/strategy_scorecard._load_rows` reads `decision_log` in id pages (`STRATEGY_SCORECARD_MAX_PAGES` × `STRATEGY_SCORECARD_PAGE_ROWS`, 400 × 5,000). Since 4 Nov, when the 30-day lookback held more ids than that budget, it kept only the newest ids: about 5 of the 30 days. With the same budget, `shadow_scan_pages` now reads the newest half of the pages contiguously and spreads the other half evenly over the rest of the lookback, so every part of the window feeds the per-setup hit rates. The rebuild log says `window_sampled … older_pages_sampled=N`, and `LAST_SCAN` carries the count. Mode (`shadow`), bounds, sample minimums and budget are unchanged. Also fixed: a lookback starting at id 0 was not reported as truncated (`if truncated` → `is not None`).
+- **Tests (Linux, Python 3.11.18):** scorecard tests 16 passed, including `test_older_part_of_the_lookback_is_sampled_not_dropped`.
+
 ## Continuation, 8 November 2026 (night) — pegged tokens refused by the paper desk; news-gate warning after a host boot (cloud session)
 
 - **Paper desk refuses pegged tokens.** The owner's screenshot shows an XAUTUSDT (tokenised gold) paper short. Since 1 Nov the engine excludes pegged tokens before scanning (`core.pegged_assets`), so that trade most likely predates the filter. As a last-line guard, `PaperTradingService` now records `pegged_asset_excluded` and opens nothing for a pegged token (quietly, no Telegram notice). PEPE, TRUMP and XSPCX are not pegged; they come from the server's trending discovery (`ASSET_DISCOVERY_MODE=auto`, top 15), which is the owner's configuration and was not changed.

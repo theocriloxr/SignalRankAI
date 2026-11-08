@@ -7355,11 +7355,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 852,
+      "line_count": 857,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e152070b6a6b581126c2d78caefdfb7a308f9a48c4d41c79ca7b4629d9550778",
-      "size_bytes": 128991
+      "sha256": "8c92d90296faff327b0d0228ddbc91f3b6c374493657bd24535bec1947d2879b",
+      "size_bytes": 130039
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7403,11 +7403,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 678,
+      "line_count": 683,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "abfaef80d6fec298514c6101ace5e5624ad5f30749bfd8f8897bd4aa0721039d",
-      "size_bytes": 103035
+      "sha256": "2888348defc9595d20e7f9c92b76c0637dd350260264b39299c50a1da4392d6c",
+      "size_bytes": 104083
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16075,11 +16075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 572,
+      "line_count": 598,
       "path": "services/strategy_scorecard.py",
       "reason": "production/build source",
-      "sha256": "4e38871882a0879916dc14aaf3db3dc354236853bc0ecab83158990734a5d759",
-      "size_bytes": 23428
+      "sha256": "d14ff87e46c22930e720898537c842be9632514938e88dfd18a9a765d0252b75",
+      "size_bytes": 24890
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -20667,11 +20667,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 115,
+      "line_count": 139,
       "path": "tests/test_strategy_scorecard_window_20261104.py",
       "reason": "automated test evidence",
-      "sha256": "1ceaf560eb3e49945035ba4123542d45bbb925392ec9bd202fd6a69c5bb055a3",
-      "size_bytes": 4147
+      "sha256": "9d63a6e7261ce766b9746b72613f8551997a722444576591aabdec3eeb376232",
+      "size_bytes": 5607
     },
     {
       "disposition": "TEST_ONLY",
