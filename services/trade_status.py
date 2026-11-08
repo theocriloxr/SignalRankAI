@@ -102,18 +102,25 @@ def describe_trade(
     direction: Any = None,
 ) -> TradeStatus:
     state = str(lifecycle_state or "").strip().upper()
+    lifecycle_highest = _HIGHEST_TP.get(state, 0)
     source = "lifecycle"
+    status = str(outcome_status or "").strip().lower()
+    outcome_state = _OUTCOME.get(status) or _OUTCOME.get(str(canonical_outcome or "").strip().lower(), "")
     if state not in _LIFECYCLE:
-        status = str(outcome_status or "").strip().lower()
-        state = _OUTCOME.get(status) or _OUTCOME.get(str(canonical_outcome or "").strip().lower(), "")
+        state = outcome_state
         source = "outcome" if state else "none"
+    elif (outcome_state in _LIFECYCLE and _LIFECYCLE[outcome_state][4] and not _LIFECYCLE[state][4]):
+        # A recorded close beats a lifecycle row that never caught up (owner
+        # report, 8 Nov 2026: BTCUSDT c790abba closed at the stop on Telegram at
+        # 20:11 while the website still said "Waiting for entry" at 20:23).
+        state, source = outcome_state, "outcome"
     if state not in _LIFECYCLE:
         state = "WATCHING_FOR_ENTRY"
     code, label, tone, triggered, closed = _LIFECYCLE[state]
     try:
-        highest = max(_HIGHEST_TP.get(state, 0), int(highest_tp_hit or 0))
+        highest = max(_HIGHEST_TP.get(state, 0), lifecycle_highest, int(highest_tp_hit or 0))
     except (TypeError, ValueError):
-        highest = _HIGHEST_TP.get(state, 0)
+        highest = max(_HIGHEST_TP.get(state, 0), lifecycle_highest)
     realized_r = _float(r_multiple) if closed and triggered else None
     realized_pct = _float(pnl_pct) if closed and triggered else None
     if state == "SL_HIT" and highest > 0:

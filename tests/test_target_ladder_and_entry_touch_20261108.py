@@ -80,3 +80,17 @@ def test_creation_candle_counts_for_the_entry_check_only():
 def test_entry_band_is_a_tenth_of_the_risk():
     assert tracker._within_entry_band(75969.40, 75857.77, 75960.0)       # 9.4 away, band 11.2
     assert not tracker._within_entry_band(75969.40, 75857.77, 75940.0)   # 29.4 away
+
+
+def test_recorded_close_beats_a_lifecycle_that_never_caught_up():
+    """c790abba: Telegram said 'Trade Closed' at 20:11; the website said 'Waiting for entry' at 20:23."""
+    from services.trade_status import describe_trade
+
+    status = describe_trade(lifecycle_state="WATCHING_FOR_ENTRY", outcome_status="sl", r_multiple=-1.0,
+                            pnl_pct=-0.15)
+    assert status.label == "Closed at the stop" and status.closed and status.entry_triggered
+    assert status.realized_r == -1.0 and status.source == "outcome"
+    protected = describe_trade(lifecycle_state="TP1_HIT", outcome_status="sl", r_multiple=1.41)
+    assert protected.label == "Closed at the protected stop after a target" and protected.highest_tp == 1
+    # An open outcome never overrides the lifecycle.
+    assert describe_trade(lifecycle_state="ACTIVE_TRADE", outcome_status="pending").label.startswith("Entry triggered")

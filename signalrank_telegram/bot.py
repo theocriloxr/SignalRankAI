@@ -8177,6 +8177,14 @@ def run_bot() -> None:
                             f"<b>{asset} {str(direction or '').upper()} • {timeframe}</b>\n"
                             f"Signal ID: <code>{ref}</code>\n"
                         )
+                        try:
+                            # The entry price is not an observation of the exit (owner
+                            # report, BTCUSDT c790abba 8 Nov 2026: "Observed: 75969.4"
+                            # on a stop-loss close).
+                            if observed_price is not None and entry_v and abs(float(observed_price) - entry_v) <= entry_v * 1e-9:
+                                observed_price = None
+                        except (TypeError, ValueError):
+                            observed_price = None
                         evidence = (
                             f"Entry: <b>{entry_v:g}</b> | Invalidation: <b>{sl_v:g}</b>\n"
                             f"Observed: <b>{float(observed_price):g}</b> | Provider: <b>{provider}</b>\n"
