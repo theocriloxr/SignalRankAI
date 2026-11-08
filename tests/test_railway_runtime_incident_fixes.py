@@ -199,12 +199,21 @@ def test_runtime_diagnostics_probe_the_launching_container() -> None:
 
 
 def test_railway_app_links_prefer_the_current_service_domain(monkeypatch) -> None:
+    # Since 8 Nov 2026 bot links use core.app_url: the configured address wins in
+    # production (production left Railway); staging keeps its own address and the
+    # current Railway domain, so production links never leak into staging.
+    from core.app_url import public_app_base_url
+
     command_source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
-    for source in (command_source,):
-        railway = source.index('os.getenv("RAILWAY_PUBLIC_DOMAIN")')
-        configured = source.index('os.getenv("APP_BASE_URL")', railway)
-        assert railway < configured
-        assert 'f"https://{base_url}"' in source or 'f"https://{configured}"' in source
+    assert "_public_app_base_url()" in command_source
+    monkeypatch.setenv("RAILWAY_PUBLIC_DOMAIN", "current-staging.up.railway.app")
+    monkeypatch.setenv("APP_BASE_URL", "https://production.example")
+    monkeypatch.delenv("STAGING_APP_BASE_URL", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    assert public_app_base_url() == "https://current-staging.up.railway.app"
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    assert public_app_base_url() == "https://production.example"
+    monkeypatch.delenv("ENVIRONMENT")
     from web.platform_api import _app_base_url_from_env
     import core.env
 

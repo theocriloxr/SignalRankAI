@@ -2043,7 +2043,7 @@ def _select_classification_threshold(y_true, probabilities) -> float:
     return float(best_threshold if best_key is not None else fallback_threshold)
 
 
-def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
+def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None, fit_only_mask=None):
     """Train and calibrate an XGBoost classifier without validation leakage.
 
     Rows are ordered chronologically and split into three non-overlapping
@@ -2068,7 +2068,19 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if timestamps is not None:
         ts = pd.to_datetime(timestamps, errors="coerce")
         ts_filled = ts.fillna(pd.Timestamp(now_utc_naive()))
-        idx = np.argsort(ts_filled.values)
+        idx = np.argsort(ts_filled.values, kind="stable")
+    # Rows marked fit-only (external replay, 8 Nov 2026) join the model-fit
+    # window only. The chronological split runs over the bot's own rows, so
+    # calibration, validation and every promotion gate use only those.
+    fit_only_idx = np.array([], dtype=int)
+    if fit_only_mask is not None:
+        flags = np.asarray(fit_only_mask, dtype=bool)
+        if len(flags) == n and flags.any():
+            fit_only_idx = idx[flags[idx]]
+            idx = idx[~flags[idx]]
+            n = len(idx)
+            if n < 20:
+                raise ValueError("Insufficient rows for time-series training")
 
     train_ratio = min(0.85, max(0.55, float(os.getenv("ML_MODEL_FIT_RATIO", "0.70") or 0.70)))
     calibration_ratio = min(
@@ -2096,6 +2108,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         minimum_calibration_rows=minimum_calibration_fit_rows,
         minimum_validation_rows=calibration_min_rows,
     )
+    if len(fit_only_idx):
+        idx_tr = np.concatenate([fit_only_idx, idx_tr])
     logger.info(
         "[ml_temporal_split] total=%s train=%s calibration=%s validation=%s "
         "required_validation=%s",
@@ -2574,6 +2588,23 @@ async def main(lookback_days: int | None = None):
 
     # CPU-heavy feature engineering and XGBoost fitting must not block Telegram
     # callback acknowledgement or the realtime outcome loop.
+    # More data from long public history (8 Nov 2026), never for bootstrap runs.
+    external_replay_evidence: dict[str, Any] = {"enabled": False}
+    if not used_bootstrap:
+        try:
+            from ml import external_replay
+
+            df, external_replay_evidence = await asyncio.to_thread(external_replay.augment, df)
+            logger.info("[ml_external_replay] id=%s %s", run_id,
+                        {k: external_replay_evidence.get(k) for k in ("applied", "rows", "internal_rows",
+                                                                      "before", "win_rate", "reason")})
+        except Exception as replay_error:
+            logger.warning("[ml_external_replay] id=%s skipped error=%s", run_id, type(replay_error).__name__)
+    fit_only_mask = (
+        df["source_type"].astype(str).eq("external_replay").to_numpy()
+        if "source_type" in df.columns else None
+    )
+    source_counts = dict(df.attrs.get("source_counts") or source_counts)
     X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(engineer_features, df)
 
     from ml.model_registry import (
@@ -2653,7 +2684,11 @@ async def main(lookback_days: int | None = None):
         feature_cols,
         sample_weights,
         timestamps,
+        fit_only_mask,
     )
+    if isinstance(metrics, dict):
+        metrics["external_replay"] = {k: external_replay_evidence.get(k) for k in
+                                      ("applied", "rows", "internal_rows", "before", "win_rate")}
 
     candidate_first_requested = bool(
         deployed_runtime and parent_model_hash_sha256 and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
