@@ -49,8 +49,53 @@ def test_disabled_by_switch(monkeypatch):
 
     monkeypatch.setattr(pdm, "refresh_ledgers_for_corrected_outcomes", boom)
     monkeypatch.setattr(pdm, "stale_tick_relabel_preview_once", boom)
-    asyncio.run(pdm.post_deploy_maintenance(asyncio.Event()))
+    asyncio.run(pdm._run_maintenance(asyncio.Event()))
     assert calls == []
+
+
+def test_task_stays_alive_after_its_work_until_stop(monkeypatch):
+    """9 Nov 2026: analytics treats a supervised task that returns as a crash and restarts the
+    service. The one-shot maintenance returned after ~2 min, so analytics restarted 260 times in
+    10 h (``analytics_task_stopped_unexpectedly:post-deploy-maintenance``)."""
+    calls = []
+    monkeypatch.setenv("POST_DEPLOY_MAINTENANCE_DELAY_SECONDS", "0")
+
+    async def work():
+        calls.append("work")
+
+    monkeypatch.setattr(pdm, "refresh_ledgers_for_corrected_outcomes", work)
+    monkeypatch.setattr(pdm, "stale_tick_relabel_preview_once", work)
+
+    async def scenario():
+        stop = asyncio.Event()
+        task = asyncio.create_task(pdm.post_deploy_maintenance(stop))
+        await asyncio.sleep(0.2)
+        assert calls == ["work", "work"]
+        assert not task.done()  # finished its work but must not look like a stopped task
+        stop.set()
+        await asyncio.wait_for(task, timeout=1)
+
+    asyncio.run(scenario())
+
+
+def test_task_survives_failing_work(monkeypatch):
+    monkeypatch.setenv("POST_DEPLOY_MAINTENANCE_DELAY_SECONDS", "0")
+
+    async def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(pdm, "refresh_ledgers_for_corrected_outcomes", boom)
+    monkeypatch.setattr(pdm, "stale_tick_relabel_preview_once", boom)
+
+    async def scenario():
+        stop = asyncio.Event()
+        task = asyncio.create_task(pdm.post_deploy_maintenance(stop))
+        await asyncio.sleep(0.2)
+        assert not task.done()
+        stop.set()
+        await asyncio.wait_for(task, timeout=1)
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.skipif(not _PG_DSN, reason="set SIGNALRANK_TEST_PG_DSN to an owned scratch PostgreSQL at head")

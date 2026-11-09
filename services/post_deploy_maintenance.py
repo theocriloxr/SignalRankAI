@@ -123,7 +123,20 @@ async def stale_tick_relabel_preview_once() -> dict:
 
 
 async def post_deploy_maintenance(stop: asyncio.Event) -> None:
-    """Run once per analytics start; never raises into the service."""
+    """Run once per analytics start; never raises into the service.
+
+    The work is one-shot, but analytics supervises its tasks and treats any task
+    that *returns* before ``stop`` as a crash (``analytics_task_stopped_unexpectedly``)
+    and restarts the whole service. Production restarted analytics every ~2-3
+    minutes from 8 Nov 18:20 UTC (260 restarts in 10 h), which killed the
+    scorecard rebuild, ML training and strategy discovery before they could run.
+    So after the work this coroutine idles until ``stop`` is set.
+    """
+    await _run_maintenance(stop)
+    await stop.wait()
+
+
+async def _run_maintenance(stop: asyncio.Event) -> None:
     try:
         await asyncio.wait_for(stop.wait(), timeout=float(os.getenv("POST_DEPLOY_MAINTENANCE_DELAY_SECONDS", "120")))
         return
