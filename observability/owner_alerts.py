@@ -39,6 +39,12 @@ RUNBOOK = {
         "HTTP status, rate limit, region block). Check the provider's key, plan and status page; "
         "signals for affected assets pause until it recovers."
     ),
+    "signal_drought": (
+        "Runbook: the reasons listed are the most common rejections in the decision log. "
+        "A single dominant gate (e.g. quality_rr, quality_score, setup evidence) usually means one "
+        "change or a data/provider issue blocks everything; check the engine log's "
+        "[engine_post_ml_funnel] lines and the last deploy. Never loosen risk gates just to restore volume."
+    ),
     "queue_age": (
         "Runbook: confirm the worker service is running and its logs show the relay or consumer "
         "loop; check Postgres and Redis health. Old items are delivered when the consumer "
@@ -219,6 +225,58 @@ def queue_age_alert(finding: dict[str, Any], *, post: Callable[[str, int, str], 
     return send_owner_alert("queue_age", {"queue": finding["queue"]}, text, ttl_seconds=3600, post=post)
 
 
+async def signal_drought_finding() -> dict[str, Any] | None:
+    """No signal issued for ``OWNER_ALERT_SIGNAL_DROUGHT_HOURS`` (default 8), with the top reasons.
+
+    Production, 9 Nov 2026: a change made one gate reject every candidate and
+    no signal went out all day, but nothing alerted the owner. Read-only.
+    """
+    from sqlalchemy import text
+
+    from db.session import get_session
+
+    hours = _float_env("OWNER_ALERT_SIGNAL_DROUGHT_HOURS", 8.0, 1.0)
+    window_rows = int(_float_env("OWNER_ALERT_SIGNAL_DROUGHT_DECISION_ROWS", 40000.0, 1000.0))
+    async with get_session(
+        priority="background", label="owner_alerts.signal_drought", timeout_seconds=3.0, drop_if_busy=True
+    ) as session:
+        age = (
+            await session.execute(
+                text("SELECT EXTRACT(EPOCH FROM ((NOW() AT TIME ZONE 'utc') - MAX(created_at))) FROM signals")
+            )
+        ).scalar()
+        if age is not None and float(age) <= hours * 3600:
+            await session.rollback()
+            return None
+        rows = (
+            await session.execute(
+                text(
+                    "SELECT LEFT(REGEXP_REPLACE(COALESCE(reason, decision), '[0-9]+([.][0-9]+)?', 'N', 'g'), 90) AS r, "
+                    "COUNT(*) AS n FROM decision_log "
+                    "WHERE id > (SELECT COALESCE(MAX(id), 0) FROM decision_log) - :rows AND decision <> 'issued' "
+                    "GROUP BY 1 ORDER BY 2 DESC LIMIT 3"
+                ),
+                {"rows": window_rows},
+            )
+        ).all()
+        await session.rollback()
+    return {
+        "hours_since_last_signal": None if age is None else round(float(age) / 3600.0, 1),
+        "limit_hours": hours,
+        "top_reasons": [{"reason": str(r[0]), "count": int(r[1])} for r in rows],
+    }
+
+
+def signal_drought_alert(finding: dict[str, Any], *, post: Callable[[str, int, str], bool] | None = None) -> int:
+    since = finding.get("hours_since_last_signal")
+    since_text = "no signal has ever been issued" if since is None else f"no signal issued for {since:.1f} h"
+    reasons = "; ".join(f"{row['reason']} ×{row['count']}" for row in finding.get("top_reasons") or [])
+    text = f"📭 Signal drought: {since_text}. Top rejection reasons: {reasons or 'none recorded'}."
+    # The dominant reason is the evidence key: a new cause alerts again at once.
+    key = (finding.get("top_reasons") or [{"reason": "none"}])[0]["reason"]
+    return send_owner_alert("signal_drought", {"reason": key}, text, ttl_seconds=6 * 3600, post=post)
+
+
 async def run_checks_once(*, read_heartbeat: Callable[[], Any] | None = None) -> dict[str, Any]:
     """One worker pass: engine heartbeat and queue ages. Returns what was found."""
     import asyncio
@@ -236,7 +294,14 @@ async def run_checks_once(*, read_heartbeat: Callable[[], Any] | None = None) ->
     queues = await queue_age_findings()
     for finding in queues:
         await asyncio.to_thread(queue_age_alert, finding)
-    return {"engine": engine, "queues": queues}
+    drought = None
+    try:
+        drought = await signal_drought_finding()
+        if drought is not None:
+            await asyncio.to_thread(signal_drought_alert, drought)
+    except Exception as exc:
+        logger.debug("[owner_alert] signal drought check unavailable: %s", type(exc).__name__)
+    return {"engine": engine, "queues": queues, "signal_drought": drought}
 
 
 __all__ = [
@@ -248,4 +313,6 @@ __all__ = [
     "queue_age_findings",
     "run_checks_once",
     "send_owner_alert",
+    "signal_drought_alert",
+    "signal_drought_finding",
 ]

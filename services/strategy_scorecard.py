@@ -312,6 +312,12 @@ def adjustment_for_cell(cell: Mapping[str, Any] | None) -> tuple[float, str]:
     margin = _env_float("STRATEGY_SCORECARD_EDGE_MARGIN", 0.02, 0.0, 0.2)
     lower = float(cell.get("win_lower_95") or 0.0)
     upper = float(cell.get("win_upper_95") or 1.0)
+    # Multiple comparisons (9 Nov 2026): ~1,180 cells tested at 95% leave ~5% of
+    # them "decisive" by chance. Decide on a stricter interval (default 99%).
+    z = _env_float("STRATEGY_SCORECARD_DECISION_Z", 2.576, 1.96, 4.0)
+    wins = cell.get("wins")
+    if wins is not None and n > 0:
+        lower, upper = wilson_interval(int(wins), n, z=z)
     breakeven = float(cell.get("breakeven_win_rate") or 1.0)
     avg_r = float(cell.get("avg_r") or 0.0)
     if lower > breakeven + margin and avg_r > 0:

@@ -5218,6 +5218,14 @@ def main_loop(DRY_RUN: bool = False):
                                 },
                             )
                             continue
+                        try:
+                            # TP2/TP3 are added only after every gate passed, so no
+                            # gate ever measures them (9 Nov 2026 no-signal day).
+                            from services.trade_profiles import apply_target_ladder
+
+                            apply_target_ladder(sig)
+                        except Exception as _ladder_exc:
+                            logger.debug("[engine] target ladder skipped: %s", _ladder_exc)
                         sig["post_ml_stage"] = "accepted"
                         final_signals.append(sig)
                     except Exception as _post_ml_exc:

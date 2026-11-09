@@ -56,3 +56,65 @@ def test_scanner_server_action_requests_are_answered_by_the_proxy():
     assert 'request.headers.has("next-action")' in proxy and "status: 404" in proxy
     assert not any("use server" in p.read_text("utf-8", errors="ignore")
                    for p in root.rglob("*.ts*")), "a real Server Action now exists; revisit the proxy rule"
+
+
+@pytest.mark.skipif(not _PG_DSN, reason="set SIGNALRANK_TEST_PG_DSN to an owned scratch PostgreSQL at head")
+def test_signal_drought_alert_names_the_dominant_rejection(monkeypatch):
+    """9 Nov: no signal all day, every FX candidate rejected by one gate, and no owner alert."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from db.session import _normalize_database_url
+    from observability import owner_alerts
+
+    url = _normalize_database_url(_PG_DSN, async_driver=True)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("OWNER_ALERT_SIGNAL_DROUGHT_HOURS", "1")
+
+    async def scenario():
+        from db.session import dispose_engine_for_event_loop
+
+        engine = create_async_engine(url)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM decision_log WHERE asset='DROUGHTFX'"))
+                for value in ("4.88", "4.76", "4.91"):
+                    await conn.execute(text(
+                        "INSERT INTO decision_log(asset, timeframe, decision, reason, meta, created_at) VALUES "
+                        "('DROUGHTFX','5m','skipped',:r,'{}', NOW() AT TIME ZONE 'utc')"),
+                        {"r": f"production_quality:quality_rr {value} > 4.50 (fx)"})
+                newest = (await conn.execute(text("SELECT MAX(created_at) FROM signals"))).scalar()
+            finding = await owner_alerts.signal_drought_finding()
+            return newest, finding
+        finally:
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM decision_log WHERE asset='DROUGHTFX'"))
+            await engine.dispose()
+            await dispose_engine_for_event_loop()
+
+    newest, finding = asyncio.run(scenario())
+    if finding is None:
+        pytest.skip(f"the scratch database has a signal newer than 1 h ({newest})")
+    top = finding["top_reasons"][0]
+    assert top["reason"] == "production_quality:quality_rr N > N (fx)" and top["count"] >= 3
+    sent = []
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:test")
+    monkeypatch.setattr(owner_alerts, "_owner_ids", lambda: [42])
+    monkeypatch.setattr("core.health_notifications.claim_health_notification", lambda *a, **k: (True, None))
+    owner_alerts.signal_drought_alert(finding, post=lambda token, chat, text: sent.append(text) or True)
+    assert sent and "Signal drought" in sent[0] and "quality_rr N > N (fx)" in sent[0]
+
+
+def test_scorecard_needs_99_percent_evidence_before_moving_a_score():
+    """~1,180 cells tested at 95% leave ~59 'decisive' by chance; decisions now use 99%."""
+    from services.strategy_scorecard import _Cell, adjustment_for_cell, summarise_cell
+
+    def cell(wins, losses, win_r=2.0):
+        c = _Cell()
+        c.wins, c.losses, c.sum_win_r, c.sum_r = wins, losses, wins * win_r, wins * win_r - losses
+        return summarise_cell(c)
+
+    borderline = cell(30, 30)  # 50% vs 33% break-even: significant at 95%, not at 99%
+    assert borderline["win_lower_95"] > borderline["breakeven_win_rate"] + 0.02
+    assert adjustment_for_cell(borderline) == (1.0, "undecided")
+    assert adjustment_for_cell(cell(70, 70))[1] == "supported_edge"

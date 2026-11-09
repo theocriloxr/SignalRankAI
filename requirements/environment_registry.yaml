@@ -1470,7 +1470,7 @@
         "db/migration_environment.py:9",
         "engine/admin_pulse.py:1097",
         "engine/core.py:1280",
-        "engine/core.py:6001",
+        "engine/core.py:6009",
         "payments/paystack_policy.py:45",
         "railway_main.py:1191",
         "signalrank_telegram/bot.py:1824",
@@ -1902,7 +1902,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6857",
+        "engine/core.py:6865",
         "services/automated_analyst.py:24"
       ],
       "required_by_code": true,
@@ -3205,7 +3205,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:6277"
+        "engine/core.py:6285"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4286,7 +4286,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5999",
+        "engine/core.py:6007",
         "payments/paystack_policy.py:71",
         "railway_main.py:2816",
         "railway_main.py:2931",
@@ -10484,7 +10484,7 @@
       "read_locations": [
         "data/get_live_price.py:111",
         "data/get_live_price.py:647",
-        "engine/core.py:6018",
+        "engine/core.py:6026",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
         "railway_main.py:587"
@@ -14410,7 +14410,7 @@
       "name": "SIGNAL_TARGET_LADDER_STEP_R",
       "production_example_default": null,
       "read_locations": [
-        "services/trade_profiles.py:361"
+        "services/trade_profiles.py:352"
       ],
       "required_by_code": true,
       "sensitive": false

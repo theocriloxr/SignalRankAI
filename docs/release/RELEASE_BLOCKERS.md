@@ -1,5 +1,33 @@
 # Release blockers and exact continuation
 
+## Continuation, 9 November 2026 (evening) — no signals all day: cause, fix and an alert so it cannot pass unnoticed (cloud session)
+
+Read from the `signalrank-ops` snapshot of 9 Nov 17:51 UTC (production `f4cdc9d`; `4b780320` pushed for deploy at the owner's request).
+
+- **Cause (this session's own regression, `1a4364a8`, live since 8 Nov 19:46 UTC).**
+  - The TP2/TP3 ladder was added during profile shaping, before the gates.
+  - `engine/core._production_quality_guard` caps the R:R of the farthest target (`_signal_max_rr_score`; FX 4.5). A ladder TP3 two R beyond TP1 pushed FX setups over the cap, which the engine logged as `[engine_post_ml_funnel] asset=CADJPY ... final_signals=0 reasons={'production_quality:quality_rr 4.88 > 4.50 (fx)': 2, ...}`.
+  - The quality gate and profile matching had been protected; this third consumer of the final target had not.
+- **Fix.**
+  - `services.trade_profiles.apply_target_ladder` runs only after every gate has passed, immediately before `post_ml_stage = "accepted"` (`engine/core.py`). Every gate again sees exactly the strategy's own geometry; no current or future gate can measure ladder levels.
+  - Users and the tracker still get TP2/TP3.
+  - A test reproduces the 4.88 rejection and checks the call order.
+- **So it is noticed next time.** `observability/owner_alerts.signal_drought_finding` runs in the existing owner-alert worker loop. When no signal has been issued for `OWNER_ALERT_SIGNAL_DROUGHT_HOURS` (default 8), owners get a Telegram alert naming the top three rejection reasons from the last ~40k decision-log rows.
+  - Numbers are normalised, so one gate rejecting everything shows as one line.
+  - At most one alert every 6 h per dominant reason. The query is read-only and bounded by primary key.
+- **Overfitting.**
+  - The strategy scorecard tests ~1,180 cells. At 95% intervals about 5% of them look "decisive" by chance, and those cells were boosted or penalised.
+  - `adjustment_for_cell` now decides on a 99% Wilson interval (`STRATEGY_SCORECARD_DECISION_Z`, default 2.576). A 60-trade cell at 50% against a 33% break-even is no longer boosted on what may be luck; a 140-trade cell at the same rate still is.
+  - The setup-evidence issuance filter is unchanged.
+- **Findings left open:**
+  - The ML champion is the 29 Sep artifact. On live candidates its median probability is 1% for crypto and 3% for others (`results/*mlprob.out`), far below the realised TP1 rates. It is advisory, so it does not block signals. Whether challengers train and fail promotion, or training does not run, needs the analytics log over a full day; `sr grep` only covers the current container.
+  - The scorecard rebuild takes 385 s and scans the decision log (4.7 M rows, 30-day retention). Analytics has 2 DB slots; the weekly-review fix (`4b780320`) keeps that review in the analytics class.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 at 0060):**
+  - `tests/test_production_log_fixes_20261109.py`: 4 passed, including the drought finding on PostgreSQL.
+  - `tests/test_target_ladder_and_entry_touch_20261108.py`: 9 passed, including the 4.88 reproduction.
+  - Engine, profile, gate, scorecard and alert suites: 665 passed, 21 skipped.
+  - Full suite: 4,491 passed, 215 skipped, 1 failed (governance freshness, regenerated in this commit).
+
 ## Continuation, 9 November 2026 (morning) — production log review after the d724ee29 and f4cdc9d6 deploys (cloud session)
 
 Read from the `signalrank-ops` snapshot of 9 Nov 07:45 UTC: all SignalRank containers are up 2 h on `f4cdc9d` (website `d724ee2`), analytics no longer restarts, and `/readyz` is ready at schema `0060_notification_channels`. The deploys of `d724ee2` and `f4cdc9d` were clean. The `deploy.log` ERROR ("bot not ready after 10 minutes", database not rolled back) belongs to `3815936` on 8 Nov at 13:25 UTC, which later deploys superseded.

@@ -289,8 +289,6 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
             sig["stop_loss"] = stop
             sig["take_profit"] = list(original_levels)
         sig["target_model"] = str(sig.get("target_model") or "strategy_preserved")
-        if geometry_valid:
-            _extend_target_ladder(sig, entry, stop, original_levels, is_long)
 
     # Canonical R:R is always recalculated from the geometry that will actually
     # be displayed/persisted.
@@ -307,13 +305,6 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
         sig["rr_estimate"] = sig["rr_ratio"]
         sig["rr_tp1"] = sig["rr_ratio"]
         sig["rr_final"] = round(float(target_rrs[-1]), 4)
-        if sig.get("take_profit_authored"):
-            # Profile matching (e.g. flip) keeps judging the strategy's own final target.
-            authored = _parse_tp_levels(sig.get("take_profit_authored"))
-            authored_rrs = [abs(float(level) - entry) / risk for level in authored if risk > 0]
-            if authored_rrs:
-                sig["rr_ladder_final"] = sig["rr_final"]
-                sig["rr_final"] = round(float(authored_rrs[-1]), 4)
 
     sig["trade_profile"] = profile.name
     sig["trade_profile_label"] = profile.label
@@ -374,6 +365,32 @@ def _extend_target_ladder(sig: dict[str, Any], entry: float, stop: float, levels
     sig["take_profit"] = ladder
     sig["target_ladder"] = {"source": "r_steps", "step_r": step_r, "authored_targets": len(ordered)}
     sig["target_model"] = f"{sig.get('target_model') or 'strategy_preserved'}+ladder"
+
+
+def apply_target_ladder(signal: dict[str, Any]) -> dict[str, Any]:
+    """Add TP2/TP3 to a signal that has passed every gate (9 Nov 2026).
+
+    Production, 9 Nov: the ladder was added during profile shaping, before the
+    gates. The production quality guard caps the R:R of the farthest target
+    (FX 4.5), so a ladder TP3 rejected FX setups it used to accept
+    ("quality_rr 4.88 > 4.50 (fx)") and no signal passed all day. The ladder
+    is now applied only after selection, so every gate sees exactly the
+    strategy's own geometry. Returns the same dict.
+    """
+    entry = _as_float(signal.get("entry"), 0.0)
+    stop = _as_float(signal.get("stop_loss") or signal.get("stop"), 0.0)
+    direction = str(signal.get("direction") or "").strip().lower()
+    is_long = direction in {"long", "buy"}
+    levels = _parse_tp_levels(signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels"))
+    if entry <= 0 or stop <= 0 or not levels or direction not in {"long", "buy", "short", "sell"}:
+        return signal
+    if not all((level > entry if is_long else level < entry) for level in levels):
+        return signal
+    _extend_target_ladder(signal, entry, stop, levels, is_long)
+    if signal.get("take_profit_authored"):
+        risk = abs(entry - stop)
+        signal["rr_ladder_final"] = round(abs(float(signal["take_profit"][-1]) - entry) / risk, 4)
+    return signal
 
 
 def _max_target_rr(signal: dict[str, Any]) -> float:
