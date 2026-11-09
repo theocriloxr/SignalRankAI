@@ -1,5 +1,21 @@
 # Release blockers and exact continuation
 
+## Continuation, 9 November 2026 (morning) — production log review after the d724ee29 and f4cdc9d6 deploys (cloud session)
+
+Read from the `signalrank-ops` snapshot of 9 Nov 07:45 UTC: all SignalRank containers are up 2 h on `f4cdc9d` (website `d724ee2`), analytics no longer restarts, and `/readyz` is ready at schema `0060_notification_channels`. The deploys of `d724ee2` and `f4cdc9d` were clean. The `deploy.log` ERROR ("bot not ready after 10 minutes", database not rolled back) belongs to `3815936` on 8 Nov at 13:25 UTC, which later deploys superseded.
+
+- **Weekly continuous-improvement review failed** (analytics 07:02:46, `asyncpg` TimeoutError after the 45 s command timeout; the Postgres "terminating background worker parallel worker" lines are that cancel).
+  - `services/codex_governance.collect_codex_governance_context` now runs each of its 12 sections in a savepoint (`_guarded_execute`): a slow or failing section is dropped, logged by table, and listed in `unavailable_sections`, and the review completes.
+  - If the base summary fails, the collection reports `ok: false`.
+  - The session now uses the `analytics` priority class, so the review can no longer hold a slot that the adaptive monitor needs. The monitor's admission timeouts at 07:02:43 coincided with the review.
+- **Website "Failed to find Server Action"** (30 lines in one second, next to `/.env` and `laravel.log` probes). The app has no Server Actions; `frontend/src/proxy.ts` now answers any request carrying `Next-Action` with 404 before Next looks for an action.
+- **Owner configuration, not code:**
+  - `[openai_startup_probe] status=FAIL provider=openai reason=provider_http_401`: the OpenAI key is rejected.
+  - `/readyz` shows `provider_order: ["openai", "local"]`, so `AI_PROVIDER_ORDER` is set explicitly and skips Claude and Gemini. Remove it or set it to `openai,claude,gemini,local`, and add `ANTHROPIC_API_KEY`.
+- **Expected warnings, left as they are:** stale FX-cross candles, and WTI/HKN quarantined for bad provider data (the engine skips them). Outcome reconciliation skips corrected rows.
+- **Other app on the server:** `nata-nata-worker` reports `email_dead_letter_alert dead_count=59` (48 times in 24 h). Out of SignalRank scope; reported to the owner.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 at 0060):** `tests/test_production_log_fixes_20261109.py` (2; the PostgreSQL test makes the decision-log sections time out and checks that the review completes); governance and continuous-improvement tests 71 passed. Frontend `tsc` and ESLint are clean.
+
 ## Continuation, 8 November 2026 (night, second round) — latency, setup records, email and app notifications, Telegram linking, Claude reviewer, more training data, target ladders, entry tracking (cloud session)
 
 Production still runs `2076dbde` (schema `0059_close_pending_terminal`), verified from the public `/readyz`. Everything below is on `claude/pensive-fermat-hju9hw` until the deploy recorded at the end. Live execution stays off (`live_execution_requested=false`, kill switch on, ML gate advisory, so signals are PAPER ONLY); nothing here changes trading or payout permissions.

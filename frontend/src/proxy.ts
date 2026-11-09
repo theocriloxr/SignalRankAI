@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { backendOwnsPath, workspaceMode } from "./lib/server-origin";
 
 export function proxy(request: NextRequest) {
+  // The app defines no Server Actions. Requests carrying the action header are
+  // scanners (production, 8 Nov 2026: 30 "Failed to find Server Action" errors in
+  // one second next to /.env and laravel.log probes); answer them here quietly.
+  if (request.headers.has("next-action")) {
+    return new NextResponse(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
   // The retained workspace owns its CSP and installed service worker. Applying a
   // Next nonce to its independent HTML would disable its scripts and lock users out.
   if (backendOwnsPath(request.nextUrl.pathname, workspaceMode() === "legacy")) {

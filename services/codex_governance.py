@@ -3,6 +3,8 @@ from utils.timeutils import now_utc_naive
 
 import json
 import logging
+import time
+import re
 import os
 from datetime import timedelta
 from typing import Any
@@ -297,15 +299,65 @@ async def run_external_gemini_aggregate_review(
         return {"ok": False, "error": type(exc).__name__, "data_scope": "aggregate_only"}
 
 
+class _BufferedResult:
+    """Rows already fetched, with the ``mappings()``/``first()``/``all()`` calls callers use."""
+
+    def __init__(self, rows: list[Any]):
+        self._rows = rows
+
+    def mappings(self) -> "_BufferedResult":
+        return self
+
+    def all(self) -> list[Any]:
+        return list(self._rows)
+
+    def first(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def scalar(self) -> Any:
+        row = self.first()
+        if row is None:
+            return None
+        return next(iter(row.values())) if hasattr(row, "values") else row[0]
+
+
+async def _guarded_execute(session, unavailable: list[str], statement, params=None) -> _BufferedResult:
+    """Run one section in a savepoint; a timeout or error drops only that section.
+
+    Production, 9 Nov 2026: one query exceeded the 45 s command timeout and the
+    whole weekly continuous-improvement review failed (and the Postgres parallel
+    workers were cancelled). Each section now degrades on its own and is named
+    in ``unavailable_sections`` so the slow query can be found.
+    """
+    sql = " ".join(str(getattr(statement, "text", statement)).split())
+    match = re.search(r"\bFROM\s+([a-z_]+)", sql, re.IGNORECASE)
+    name = f"{match.group(1) if match else 'query'}#{len(unavailable) + 1}"
+    started = time.perf_counter()
+    try:
+        async with session.begin_nested():
+            result = await session.execute(statement, params or {})
+            rows = list(result.mappings().all())
+    except Exception as exc:
+        unavailable.append(f"{name}:{type(exc).__name__}")
+        logger.warning("[codex_governance] section=%s failed after %.1fs error=%s", name,
+                       time.perf_counter() - started, type(exc).__name__)
+        return _BufferedResult([])
+    elapsed = time.perf_counter() - started
+    if elapsed > 10:
+        logger.info("[codex_governance] slow section=%s seconds=%.1f", name, elapsed)
+    return _BufferedResult(rows)
+
+
 async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> dict[str, Any]:
     """Collect production evidence without sending data to any external service."""
     if not is_db_configured():
         return {"ok": False, "error": "database not configured"}
     since = now_utc_naive() - timedelta(days=max(1, int(days)))
-    async with get_session() as session:
+    _unavailable: list[str] = []
+    async with get_session(label="governance.context", priority="analytics") as session:
         summary = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COUNT(DISTINCT s.signal_id) AS signals,
@@ -327,7 +379,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         by_segment = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COALESCE(s.asset_class, 'unknown') AS asset_class,
@@ -354,7 +406,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         rejections = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COALESCE(rejection_reason, 'unknown') AS reason, COUNT(*) AS n
@@ -373,7 +425,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         duplicates = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     WITH sent AS (
@@ -397,7 +449,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         deliveries = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COUNT(*) AS reserved,
@@ -415,7 +467,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         score_saturation = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COUNT(*) AS signals,
@@ -434,7 +486,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         outcome_integrity = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COUNT(*) AS outcome_rows,
@@ -453,7 +505,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         decision_surface = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     SELECT COALESCE(decision, 'unknown') AS decision,
@@ -482,7 +534,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         shadow_coverage = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     WITH dedup AS (
@@ -514,7 +566,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         full_market_segments = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     WITH rejected_dedup AS (
@@ -564,7 +616,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         calibration_rows = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     WITH rejected_dedup AS (
@@ -613,7 +665,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         )
         ai_provider_performance = (
             (
-                await session.execute(
+                await _guarded_execute(session, _unavailable, 
                     text(
                         """
                     WITH latest_ai AS (
@@ -687,8 +739,15 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         minimum_observations=max(20, int(os.getenv("SCORE_CALIBRATION_MIN_OBSERVATIONS", "200") or 200)),
         minimum_holdout=max(10, int(os.getenv("SCORE_CALIBRATION_MIN_HOLDOUT", "40") or 40)),
     )
+    if _unavailable:
+        logger.warning("[codex_governance] sections unavailable=%s", _unavailable)
+        if summary is None:
+            # The base summary failed (database unreachable or overloaded):
+            # report a failed collection rather than an empty "ok" review.
+            return {"ok": False, "error": "governance_summary_unavailable", "unavailable_sections": list(_unavailable)}
     return {
         "ok": True,
+        "unavailable_sections": list(_unavailable),
         "days": int(days),
         "summary": dict(summary or {}),
         "segments": [dict(row) for row in by_segment],

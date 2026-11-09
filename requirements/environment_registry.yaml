@@ -2769,7 +2769,7 @@
         "engine/admin_pulse.py:993",
         "railway_main.py:582",
         "services/automated_analyst.py:19",
-        "services/codex_governance.py:122",
+        "services/codex_governance.py:124",
         "services/continuous_improvement/refactor_agent.py:181",
         "services/openai_ai.py:68",
         "signalrank_telegram/commands.py:6362"
@@ -2959,7 +2959,7 @@
       "name": "CONTINUOUS_IMPROVEMENT_GEMINI_MAX_TOKENS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:280"
+        "services/codex_governance.py:282"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -9523,7 +9523,7 @@
         "engine/admin_pulse.py:993",
         "railway_main.py:582",
         "services/automated_analyst.py:19",
-        "services/codex_governance.py:122",
+        "services/codex_governance.py:124",
         "services/continuous_improvement/refactor_agent.py:181",
         "services/openai_ai.py:68",
         "signalrank_telegram/commands.py:6362"
@@ -9557,7 +9557,7 @@
       "name": "OPENAI_CODEX_REVIEW_MAX_TOKENS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:234"
+        "services/codex_governance.py:236"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -9570,7 +9570,7 @@
       "name": "OPENAI_CODEX_REVIEW_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:198"
+        "services/codex_governance.py:200"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9580,7 +9580,7 @@
       "name": "OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:238"
+        "services/codex_governance.py:240"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9612,7 +9612,7 @@
       "name": "OPENAI_DEEP_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:198",
+        "services/codex_governance.py:200",
         "services/openai_ai.py:93"
       ],
       "required_by_code": true,
@@ -9625,7 +9625,7 @@
       "name": "OPENAI_DEEP_REASONING_EFFORT",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:232"
+        "services/codex_governance.py:234"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13757,7 +13757,7 @@
       "name": "SCORE_CALIBRATION_BUCKETS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:686"
+        "services/codex_governance.py:738"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13769,7 +13769,7 @@
       "name": "SCORE_CALIBRATION_MIN_HOLDOUT",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:688"
+        "services/codex_governance.py:740"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -13781,7 +13781,7 @@
       "name": "SCORE_CALIBRATION_MIN_OBSERVATIONS",
       "production_example_default": null,
       "read_locations": [
-        "services/codex_governance.py:687"
+        "services/codex_governance.py:739"
       ],
       "required_by_code": true,
       "sensitive": false

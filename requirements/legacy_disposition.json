@@ -7371,11 +7371,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 922,
+      "line_count": 938,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "cd6b8f090d24da166e87558f5d461b1bc2689a494b2b302e3453751045d8080d",
-      "size_bytes": 142829
+      "sha256": "4ee86fd4a8531cbafd22abf9574fae621edf3a62b935a17ccfee203aa35bf165",
+      "size_bytes": 145399
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7419,11 +7419,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 738,
+      "line_count": 754,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "437f496a969dc49c2983d27dc4ae900c047b1961d101f7ac8099db28f0e55eae",
-      "size_bytes": 114977
+      "sha256": "dfc9b00478430317691bce2fe603d35d4dd853b775f2098ae52a62ea4bccacd5",
+      "size_bytes": 117547
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -12683,11 +12683,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 39,
+      "line_count": 45,
       "path": "frontend/src/proxy.ts",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "b5f8b8490122325217e7d1005994f4f3d1b9ed23b2d46b72698a0dffea2666af",
-      "size_bytes": 1991
+      "sha256": "66673f9f8662d0f2f0d82934c42c736ab74de3a30665524707cf46a4907cd559",
+      "size_bytes": 2377
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14126,7 +14126,7 @@
       "line_count": 16781,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "61551ed8436969cd14b4d60aa52e5fe0574ea48ae0cc93354bb16b900373b87d",
+      "sha256": "92a2856070440a56a421056c78af782167b3d1245509cb958defb7630b35d912",
       "size_bytes": 490347
     },
     {
@@ -15675,11 +15675,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 868,
+      "line_count": 927,
       "path": "services/codex_governance.py",
       "reason": "production/build source",
-      "sha256": "1f20610bfaa6d2bd89c6f4dfb668e95eeb21962036018f7b50ca4f92099feb27",
-      "size_bytes": 40910
+      "sha256": "f2da110a244090836d0469a0fc521f99c759e51ad88db09b65b9f98ddaf7b31c",
+      "size_bytes": 43730
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
