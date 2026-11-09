@@ -45,6 +45,12 @@ RUNBOOK = {
         "change or a data/provider issue blocks everything; check the engine log's "
         "[engine_post_ml_funnel] lines and the last deploy. Never loosen risk gates just to restore volume."
     ),
+    "ml_model_stale": (
+        "Runbook: /readyz → checks.ml_lifecycle shows the champion's age and the last training outcome. "
+        "A challenger waiting for approval is promoted with /ml_candidate_promote CONFIRM after reviewing "
+        "/ml_candidate; a failed quality check needs more or better data, not looser gates. "
+        "The model is advisory; signals keep flowing meanwhile."
+    ),
     "queue_age": (
         "Runbook: confirm the worker service is running and its logs show the relay or consumer "
         "loop; check Postgres and Redis health. Old items are delivered when the consumer "
@@ -295,6 +301,30 @@ def signal_drought_alert(finding: dict[str, Any], *, post: Callable[[str, int, s
     return send_owner_alert("signal_drought", {"reason": key}, text, ttl_seconds=6 * 3600, post=post)
 
 
+_ML_LAST_CHECK = {"at": 0.0}
+
+
+def ml_stale_finding(*, force: bool = False) -> dict[str, Any] | None:
+    """The champion is older than ML_CHAMPION_STALE_DAYS (default 14); checked at most hourly."""
+    import time
+
+    now = time.monotonic()
+    if not force and _ML_LAST_CHECK["at"] and now - _ML_LAST_CHECK["at"] < 3600:
+        return None
+    _ML_LAST_CHECK["at"] = now
+    from ml.lifecycle_status import lifecycle_status
+
+    status = lifecycle_status()
+    return status if status.get("stale") else None
+
+
+def ml_stale_alert(finding: dict[str, Any], *, post: Callable[[str, int, str], bool] | None = None) -> int:
+    text = (f"🧠 ML model is stale: the champion was trained {finding.get('champion_age_days')} days ago "
+            f"({finding.get('champion_trained_at')}). Why it was not replaced: {finding.get('why_not_replaced')}.")
+    return send_owner_alert("ml_model_stale", {"why": str(finding.get("why_not_replaced"))[:80]}, text,
+                            ttl_seconds=24 * 3600, post=post)
+
+
 async def run_checks_once(*, read_heartbeat: Callable[[], Any] | None = None) -> dict[str, Any]:
     """One worker pass: engine heartbeat and queue ages. Returns what was found."""
     import asyncio
@@ -319,7 +349,14 @@ async def run_checks_once(*, read_heartbeat: Callable[[], Any] | None = None) ->
             await asyncio.to_thread(signal_drought_alert, drought)
     except Exception as exc:
         logger.debug("[owner_alert] signal drought check unavailable: %s", type(exc).__name__)
-    return {"engine": engine, "queues": queues, "signal_drought": drought}
+    ml_stale = None
+    try:
+        ml_stale = await asyncio.to_thread(ml_stale_finding)
+        if ml_stale is not None:
+            await asyncio.to_thread(ml_stale_alert, ml_stale)
+    except Exception as exc:
+        logger.debug("[owner_alert] ml staleness check unavailable: %s", type(exc).__name__)
+    return {"engine": engine, "queues": queues, "signal_drought": drought, "ml_stale": ml_stale}
 
 
 __all__ = [
@@ -331,6 +368,8 @@ __all__ = [
     "queue_age_findings",
     "run_checks_once",
     "send_owner_alert",
+    "ml_stale_alert",
+    "ml_stale_finding",
     "signal_drought_alert",
     "signal_drought_finding",
 ]

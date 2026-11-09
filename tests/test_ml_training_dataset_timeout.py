@@ -16,7 +16,8 @@ def test_dataset_timeout_is_bounded_and_configurable():
 
 
 def test_main_wraps_dataset_load_with_total_timeout_and_stage_logs():
-    source = inspect.getsource(train_model.main)
+    # main() records the run outcome (9 Nov 2026); the governed run itself is _main_impl.
+    source = inspect.getsource(train_model._main_impl)
     assert "dataset_load_start" in source
     assert "dataset_load_complete" in source
     assert "asyncio.wait_for" in source

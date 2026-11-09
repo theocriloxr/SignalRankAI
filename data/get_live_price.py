@@ -1360,6 +1360,21 @@ async def _fetch_structured_quote(
 # ============================================================================
 
 
+_FORBIDDEN_PROVIDERS: dict[str, float] = {}
+_LAST_GOOD: dict[str, tuple[float, "LivePriceQuote"]] = {}
+
+
+def _forbidden_until(provider: str) -> float:
+    return _FORBIDDEN_PROVIDERS.get(provider, 0.0)
+
+
+def _env_seconds(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default)) or default))
+    except ValueError:
+        return default
+
+
 async def get_live_price_result(
     symbol: str,
     timeout: float = 5.0,
@@ -1388,10 +1403,18 @@ async def get_live_price_result(
         if remaining <= 0:
             failures.append(_typed_failure(symbol, provider, "overall_timeout_budget_exhausted"))
             break
+        if _forbidden_until(provider) > time.monotonic():
+            failures.append(_typed_failure(symbol, provider, "skipped_not_entitled", retryable=False))
+            continue
         try:
             per_attempt_timeout = max(0.1, min(2.0, remaining))
             result = await _fetch_structured_quote(provider, symbol, timeout=per_attempt_timeout)
             if isinstance(result, LivePriceFailure):
+                if str(result.reason).endswith((":401", ":403")):
+                    # Not entitled on this plan (production 9 Nov: polygon 403 on every
+                    # stock quote): stop spending the quote budget on it for a while.
+                    _FORBIDDEN_PROVIDERS[provider] = time.monotonic() + _env_seconds(
+                        "PRICE_PROVIDER_FORBIDDEN_COOLDOWN_SECONDS", 1800.0)
                 failures.append(result)
                 logger.debug(
                     "[price] %s provider=%s failed reason=%s",
@@ -1444,6 +1467,7 @@ async def get_live_price_result(
                 int(max(0.0, result.source_age_seconds() or 0.0) * 1000),
                 result.request_id,
             )
+            _LAST_GOOD[symbol] = (time.monotonic(), result)
             return result
         except Exception as e:
             logger.debug("[price] %s: %s error: %s", symbol, provider, e)
@@ -1451,6 +1475,16 @@ async def get_live_price_result(
 
     if analysis_fallback is not None:
         return analysis_fallback
+    if not require_delivery_freshness:
+        # One slow primary plus rate-limited fallbacks failed every provider for
+        # JPM 14 times on 9 Nov while the primary answered seconds earlier. For
+        # analysis paths (paper entry checks, tracking) a very recent quote is
+        # better than none; delivery-fresh callers never get it.
+        cached = _LAST_GOOD.get(symbol)
+        if cached is not None and time.monotonic() - cached[0] <= _env_seconds("PRICE_LAST_GOOD_MAX_AGE_SECONDS", 45.0):
+            logger.info("[price] %s using last good quote from %s (%.0fs old) after provider failures",
+                        symbol, cached[1].provider, time.monotonic() - cached[0])
+            return cached[1]
     reasons = ",".join(f"{item.provider}:{item.reason}" for item in failures[-5:]) or "no_provider_attempted"
     logger.warning("[price] All providers failed for %s reasons=%s", symbol, reasons)
     return LivePriceFailure(symbol, "all", f"all_providers_failed:{reasons}")

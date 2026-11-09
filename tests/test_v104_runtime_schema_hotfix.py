@@ -29,7 +29,7 @@ def _render_upgrade_sql() -> str:
 
 def test_unified_platform_is_the_sole_migration_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0060_notification_channels"]
+    assert script.get_heads() == ["0061_tracked_shadow_index"]
     assert script.get_revision("0048_runtime_schema_bridge").down_revision == "0047_event_outbox"
 
 
@@ -62,4 +62,5 @@ def test_readiness_requires_signal_metrics_and_active_guard() -> None:
     for name in ("signals.mfe_pct", "signals.mae_pct", "signals.performance_version"):
         assert name in source
     assert "active_signal_guard_missing" in source
-    assert "[readyz] degraded checks=%s" in source
+    # The failing checks are named first since 9 Nov 2026 (the full payload was cut by log shippers).
+    assert "[readyz] degraded failing=%s checks=%s" in source

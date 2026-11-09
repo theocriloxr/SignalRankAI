@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0060_notification_channels")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0061_tracked_shadow_index")
 
 
 def main() -> int:
@@ -64,6 +64,9 @@ def main() -> int:
         "migration_0059_close_pending_terminal",
         "0060_notification_channels",
         "CREATE TABLE IF NOT EXISTS notification_channel_deliveries",
+        "0061_tracked_shadow_index",
+        "ix_decision_log_tracked_id",
+        "tracked_shadow_index_invalid_or_definition_mismatch",
         "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
         "shadow_pending_index_invalid_or_definition_mismatch",

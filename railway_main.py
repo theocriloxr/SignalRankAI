@@ -2948,6 +2948,16 @@ def _production_readiness_required() -> bool:
     return _runtime_environment_name() in {"production", "prod"}
 
 
+def _ml_lifecycle_check() -> dict[str, object]:
+    """Champion age and the last training outcome (informational, never blocks readiness)."""
+    try:
+        from ml.lifecycle_status import lifecycle_status
+
+        return lifecycle_status()
+    except Exception as exc:
+        return {"ok": True, "required": False, "detail": f"ml_lifecycle_unavailable:{type(exc).__name__}"}
+
+
 def _readiness_cutover_check(*, production: bool) -> dict[str, object]:
     cutover = _production_cutover_check()
     if production:
@@ -3116,6 +3126,12 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
     try:
         from engine.ml import get_model_integrity_status
         ml_calibration = get_model_integrity_status(ensure_loaded=True)
+        try:
+            from ml.lifecycle_status import record_champion
+
+            record_champion(ml_calibration)
+        except Exception:
+            pass
         if not production:
             ml_calibration = {**ml_calibration, "ok": True, "required": False}
         else:
@@ -3153,6 +3169,7 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         "outcome_projection": outcome_projection,
         "performance_ledger": performance_ledger,
         "ml_calibration": ml_calibration,
+        "ml_lifecycle": _ml_lifecycle_check(),
     }
 
     # Secret-safe AI provider observability. OpenAI is optional by default
@@ -3336,7 +3353,15 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
             signature != _LAST_READINESS_FAILURE_SIGNATURE
             or now - _LAST_READINESS_FAILURE_LOG_MONO >= 30.0
         ):
-            logger.warning("[readyz] degraded checks=%s", signature)
+            # Name the failing checks first: the full payload is ~10 kB and log
+            # shippers cut it at ~1.5 kB, which hid the cause (9 Nov 2026).
+            failing = {
+                name: {k: value.get(k) for k in ("detail", "status", "error", "reason") if value.get(k) is not None}
+                for name, value in checks.items()
+                if isinstance(value, dict) and value.get("ok") is False
+            }
+            logger.warning("[readyz] degraded failing=%s checks=%s",
+                           json.dumps(failing, sort_keys=True, default=str)[:900], signature)
             _LAST_READINESS_FAILURE_SIGNATURE = signature
             _LAST_READINESS_FAILURE_LOG_MONO = now
     deployed_revision = database.get("revision") or database.get("deployed_revision")

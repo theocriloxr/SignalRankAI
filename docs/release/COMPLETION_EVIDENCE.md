@@ -1,5 +1,34 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 9 November 2026 (night) — ML model lifecycle, bottlenecks, and a sweep of the latest snapshot (cloud session)
+
+Owner requests: "fix the ML model", "fix the bottlenecks all across the ecosystem", and, after the JPM 1h signal `666f7cfb`, "scan and fix all". Evidence comes from the `signalrank-ops` snapshots of 18:19–18:27 UTC on `2946c233`.
+
+- **ML model.**
+  - The champion is the 29 Sep artifact, and on live candidates its median probability is 1–3%. Why it is not replaced (challenger holding the forward-proof lease, eligible and waiting for the owner, rejected by offline or champion gates, or not running) left no durable trace.
+  - `ml/lifecycle_status.py` records every training run's decisive log lines through `ml.train_model.main`, now a wrapper around `_main_impl` that covers all four callers.
+  - `/readyz` gains an informational `ml_lifecycle` check with the champion's age, `stale` (`ML_CHAMPION_STALE_DAYS`=14), the last run, and `why_not_replaced`.
+  - The owner-alert loop sends `ml_model_stale` (hourly check, daily alert) with the reason. When a challenger is eligible, the alert names `/ml_candidate_promote CONFIRM`. Promotion stays an owner decision.
+- **Bottlenecks.**
+  - **Strategy scorecard rebuild (385 s, every 3 h).**
+    - New migration `0061_tracked_shadow_index`: a partial index `ix_decision_log_tracked_id ON decision_log(id) WHERE meta->>'outcome_tracked_at' IS NOT NULL`, built CONCURRENTLY and validated like 0057. The scorecard page query now matches the predicate exactly.
+    - Measured on the owned PostgreSQL 16 with 300k rows (18% tracked, large `meta`): 60 pages took 290 ms before and 205 ms after. In production, rows that were read and detoasted only to be filtered out are no longer touched.
+    - A `jsonb` vs `json` cast benchmark showed no gain here; the column is already `jsonb`.
+  - **Paper desk entry waits.** While waiting for an entry touch, it retried every 15 s and rewrote the same row; JPM showed 14 retries for each of 4 users. It now retries every 60 s (`PAPER_WATCHING_RETRY_SECONDS`), close to the tracker's cadence.
+  - **Live stock prices.**
+    - The worker logged `All providers failed for JPM reasons=fmp:provider_timeout,twelvedata:...:429,polygon:invalid_response:403,yahoo:invalid_response:429` 14 times, although FMP answered on most attempts.
+    - A provider answering 401/403 is now skipped for 30 min (`PRICE_PROVIDER_FORBIDDEN_COOLDOWN_SECONDS`).
+    - When every provider fails, analysis paths reuse a quote no older than 45 s (`PRICE_LAST_GOOD_MAX_AGE_SECONDS`); delivery-fresh callers never do.
+  - **Weekly review.** At 18:17 it was refused by the DB admission policy (`AnalyticsWorkDeferred`: analytics yields to foreground work), and that was logged as an ERROR with a one-hour wait. It now logs at info and retries in 10 min.
+- **Diagnosability.** `[readyz] degraded` logged the whole ~10 kB check payload, and log shipping cut it at ~1.5 kB, so the failing check never appeared (10 times between 18:19 and 18:21, after the deploy). The failing checks are now logged first.
+- **JPM card (`666f7cfb`).** Every figure checks out: R:R 2.76 / 3.76 / 4.76, plan results +1.38 / +2.32 / +3.51 R, size 8.35, R/R from the current price 3.46. "Freshness: Aging" next to "Age: 0m" came from fixed data-age thresholds (over 15 min = Aging) applied to a 1h chart; the thresholds now scale with the bar length and the line says how old the market data is. The entry is waiting correctly: the 1h bar closed at 18:00 and the signal went out at 18:17 with price above the short entry.
+- **Open, owner decision:** price action evidence of 0/100 against the direction (sellers rejected, buyers closed) does not stop a low-score paper recovery signal. A hard block risks another drought; the setting is left unchanged.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 now at 0061):**
+  - `tests/test_ml_lifecycle_status_20261109.py`: 4 passed.
+  - `tests/test_production_log_fixes_20261109.py`: 8 passed (live-price skip and reuse, quiet review deferral, freshness scaling, drought, scorecard, proxy).
+  - Related suites: 528 passed.
+  - Full suite: 4,498 passed, 215 skipped, 1 failed (a test pinning the old readyz log format, updated).
+
 ## Continuation, 9 November 2026 (evening) — no signals all day: cause, fix and an alert so it cannot pass unnoticed (cloud session)
 
 Read from the `signalrank-ops` snapshot of 9 Nov 17:51 UTC (production `f4cdc9d`; `4b780320` pushed for deploy at the owner's request).

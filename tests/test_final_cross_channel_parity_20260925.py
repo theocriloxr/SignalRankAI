@@ -16,7 +16,7 @@ def test_final_schema_head_includes_account_execution_policy_revision() -> None:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "db" / "migrations"))
     assert ScriptDirectory.from_config(cfg).get_heads() == [
-        "0060_notification_channels"
+        "0061_tracked_shadow_index"
     ]
     migration = source(
         "db/migrations/versions/0040_cross_channel_paper_receipts.py"

@@ -3,7 +3,7 @@
   "release_decision": "NO-GO",
   "ingestion_is_acceptance": false,
   "source_index_sha256": "c25d86e0fa3d364cc301f49175764942cbe537334f3af9cfe167549283efa7aa",
-  "repository_inventory_sha256": "366733848aac823e237df2be62c5d045d59bd45556a098630a0302fdf7f8e7d0",
+  "repository_inventory_sha256": "18f84b8ee860762129f3a90e4b1483962d9c3379b32c5a43ddb2f4977b15f592",
   "sources": [
     {
       "filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.docx",
@@ -58,7 +58,7 @@
   "applicable_reviewed": 13,
   "irrelevant_boilerplate_reviewed": 0,
   "implemented_and_verified": 0,
-  "repository_retained_child_clauses": 68031,
+  "repository_retained_child_clauses": 68032,
   "limitations": [
     "Repository rows retain their complete child clauses through the existing register; these are not yet individually dispositioned.",
     "Private original wording remains retrievable by source anchor/hash in the supplied bundle and ignored local intake.",

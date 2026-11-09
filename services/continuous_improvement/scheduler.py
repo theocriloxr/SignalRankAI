@@ -138,12 +138,20 @@ async def continuous_improvement_loop(stop_event: asyncio.Event) -> None:
         except asyncio.TimeoutError:
             pass
     while not stop_event.is_set():
+        wait_seconds = poll_seconds
         try:
             result = await run_scheduled_review_once()
             logger.info("[continuous_improvement] scheduled review result=%s", result)
-        except Exception:
-            logger.exception("[continuous_improvement] scheduled review failed")
+        except Exception as exc:
+            if type(exc).__name__ == "AnalyticsWorkDeferred":
+                # Expected: analytics DB work yields to foreground work. Retry soon
+                # instead of logging an ERROR and waiting a full hour (9 Nov 2026).
+                wait_seconds = max(60, int(os.getenv("CONTINUOUS_IMPROVEMENT_DEFER_RETRY_SECONDS", "600") or 600))
+                logger.info("[continuous_improvement] review deferred (foreground DB work active); retry in %ss",
+                            wait_seconds)
+            else:
+                logger.exception("[continuous_improvement] scheduled review failed")
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_seconds)
+            await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
         except asyncio.TimeoutError:
             continue

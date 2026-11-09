@@ -118,3 +118,52 @@ def test_scorecard_needs_99_percent_evidence_before_moving_a_score():
     assert borderline["win_lower_95"] > borderline["breakeven_win_rate"] + 0.02
     assert adjustment_for_cell(borderline) == (1.0, "undecided")
     assert adjustment_for_cell(cell(70, 70))[1] == "supported_edge"
+
+
+def test_live_price_skips_unentitled_providers_and_reuses_a_recent_quote(monkeypatch):
+    """worker 9 Nov: 'All providers failed for JPM reasons=fmp:provider_timeout,...,polygon:...:403,yahoo:...:429'."""
+    import time as _time
+
+    from data import get_live_price as glp
+
+    calls = []
+    good = {"on": True}
+
+    async def fake(provider, symbol, timeout):
+        calls.append(provider)
+        if provider == "fmp" and good["on"]:
+            now = _time.time()
+            return glp._typed_quote(symbol=symbol, provider="fmp", price=342.5, source_timestamp=now,
+                                    started=_time.perf_counter(), received_at=now)
+        if provider == "polygon":
+            return glp._typed_failure(symbol, provider, "invalid_response:403")
+        return glp._typed_failure(symbol, provider, "provider_timeout")
+
+    monkeypatch.setattr(glp, "_fetch_structured_quote", fake)
+    monkeypatch.setattr(glp, "_get_providers_for_asset", lambda s: ["polygon", "fmp", "yahoo"])
+    monkeypatch.setattr(glp, "_FORBIDDEN_PROVIDERS", {})
+    monkeypatch.setattr(glp, "_LAST_GOOD", {})
+    first = asyncio.run(glp.get_live_price_result("JPM"))
+    assert first.price == 342.5 and calls == ["polygon", "fmp"]
+    good["on"] = False
+    calls.clear()
+    second = asyncio.run(glp.get_live_price_result("JPM"))
+    assert "polygon" not in calls  # 403 -> skipped for the cooldown
+    assert getattr(second, "price", None) == 342.5  # recent quote reused for analysis paths
+    fresh_required = asyncio.run(glp.get_live_price_result("JPM", require_delivery_freshness=True))
+    assert not hasattr(fresh_required, "price") or fresh_required.__class__.__name__ == "LivePriceFailure"
+
+
+def test_deferred_review_is_retried_quietly():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "services" / "continuous_improvement" / "scheduler.py").read_text()
+    assert '"AnalyticsWorkDeferred"' in source and "CONTINUOUS_IMPROVEMENT_DEFER_RETRY_SECONDS" in source
+
+
+def test_freshness_label_scales_with_the_chart():
+    """9 Nov JPM 1h card: 'Freshness: Aging' with 'Age: 0m'."""
+    from signalrank_telegram.tier_signal_formatter import _freshness_text
+
+    assert _freshness_text({"timeframe": "1h", "data_age_seconds": 960}).startswith("Fresh")
+    assert _freshness_text({"timeframe": "5m", "data_age_seconds": 960}).startswith("Aging")

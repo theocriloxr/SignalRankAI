@@ -2445,6 +2445,13 @@ def save_model(
 
 
 async def main(lookback_days: int | None = None):
+    """Governed training run; its outcome is recorded for /readyz and owner alerts (9 Nov 2026)."""
+    from ml.lifecycle_status import run_and_record
+
+    return await run_and_record(_main_impl, lookback_days)
+
+
+async def _main_impl(lookback_days: int | None = None):
     run_id = f"ml-{now_utc_naive().strftime('%Y%m%d%H%M%S')}"
     logger.info("[ml_training_run] id=%s status=starting", run_id)
 

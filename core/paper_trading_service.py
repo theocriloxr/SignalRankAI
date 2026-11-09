@@ -1952,6 +1952,9 @@ class PaperTradingService:
                             reason="watching_for_entry",
                             retryable=True,
                             market_price=market_price,
+                            # The outcome tracker re-checks entry every ~20 s; retrying every
+                            # 15 s only re-wrote the same row (9 Nov 2026, JPM: 14 retries x 4 users).
+                            next_retry_seconds=int(_env_float("PAPER_WATCHING_RETRY_SECONDS", 60.0, 15.0, 600.0)),
                         )
                         await session.commit()
                         result_status = "deferred"

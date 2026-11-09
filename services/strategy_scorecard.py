@@ -507,13 +507,14 @@ async def _load_rows(lookback_days: int) -> list[dict[str, Any]]:
                     text(
                         """
                         SELECT id, asset, timeframe, created_at,
-                               meta::jsonb->>'direction', meta::jsonb->>'entry', meta::jsonb->>'stop_loss',
-                               meta::jsonb->'take_profit', meta::jsonb->>'actual_outcome',
-                               COALESCE(meta::jsonb->'features'->>'strategy_name',
-                                        meta::jsonb->'features'->>'strategy')
+                               meta->>'direction', meta->>'entry', meta->>'stop_loss',
+                               meta->'take_profit', meta->>'actual_outcome',
+                               COALESCE(meta->'features'->>'strategy_name',
+                                        meta->'features'->>'strategy')
                         FROM decision_log
                         WHERE id > :after AND id <= :after + :page
-                          AND meta::jsonb->>'outcome_tracked_at' IS NOT NULL
+                          -- matches ix_decision_log_tracked_id (0061): only tracked rows are read
+                          AND meta->>'outcome_tracked_at' IS NOT NULL
                         """
                     ),
                     {"after": after, "page": page},

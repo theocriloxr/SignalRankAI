@@ -552,13 +552,34 @@ def _freshness_text(signal: DictType[str, Any]) -> str:
     if age_seconds is None:
         age_text = _signal_age_text(signal)
         return age_text or "Live"
-    if age_seconds <= 60:
-        return "Live"
-    if age_seconds <= 300:
-        return "Fresh"
-    if age_seconds <= 900:
-        return "Warm"
-    return "Aging"
+    # Market-data age is judged against the chart's bar length (owner report,
+    # 9 Nov 2026: a 1h JPM card said "Aging" at age 0m because 16-minute-old
+    # data crossed a fixed 15-minute line; on a 1h chart that is normal).
+    bar = _bar_seconds(signal.get("timeframe"))
+    if age_seconds <= max(60.0, bar * 0.1):
+        label = "Live"
+    elif age_seconds <= max(300.0, bar * 0.5):
+        label = "Fresh"
+    elif age_seconds <= max(900.0, bar * 1.0):
+        label = "Warm"
+    else:
+        label = "Aging"
+    minutes = int(age_seconds // 60)
+    return f"{label} (market data {minutes} min old)" if minutes >= 1 else label
+
+
+def _bar_seconds(timeframe: Any) -> float:
+    text = str(timeframe or "").strip().lower()
+    try:
+        if text.endswith("m"):
+            return float(text[:-1]) * 60.0
+        if text.endswith("h"):
+            return float(text[:-1]) * 3600.0
+        if text.endswith("d"):
+            return float(text[:-1]) * 86400.0
+    except ValueError:
+        pass
+    return 3600.0
 
 
 def _score_blurb(signal: DictType[str, Any]) -> str:
