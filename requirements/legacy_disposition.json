@@ -7371,11 +7371,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 912,
+      "line_count": 922,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "ad8d0a688e8e6ffd2c88e91cddc1e118e26d8984ad17dd97d1c819971787ac8e",
-      "size_bytes": 140933
+      "sha256": "cd6b8f090d24da166e87558f5d461b1bc2689a494b2b302e3453751045d8080d",
+      "size_bytes": 142829
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14126,7 +14126,7 @@
       "line_count": 16781,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "fb1a4ca85cb0547844aea6c495fab128ab3504034532b4a0b2d7ff185069251f",
+      "sha256": "61551ed8436969cd14b4d60aa52e5fe0574ea48ae0cc93354bb16b900373b87d",
       "size_bytes": 490347
     },
     {
@@ -16099,11 +16099,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 141,
+      "line_count": 154,
       "path": "services/post_deploy_maintenance.py",
       "reason": "production/build source",
-      "sha256": "bf71180de26aa6e9010518f7a8a3fcc30e5c754b3bf8c98cc5730d2403dbbb42",
-      "size_bytes": 6337
+      "sha256": "8dd7813fefa334706ec665458c92f4357dcb5828e9ff1c2896c887f97c193dea",
+      "size_bytes": 6925
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19731,11 +19731,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 80,
+      "line_count": 125,
       "path": "tests/test_post_deploy_maintenance_20261108.py",
       "reason": "automated test evidence",
-      "sha256": "77cf17f4963216b496da03fa74d9636e4833498b2915f21bf2af08e63be744a5",
-      "size_bytes": 3038
+      "sha256": "d4755347380417d1ddb7803f348c6a433e7b598a7b60ac1cf2e830bed1aee372",
+      "size_bytes": 4660
     },
     {
       "disposition": "TEST_ONLY",

@@ -1,5 +1,15 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 9 November 2026 (daily review) — analytics no longer restarts every two minutes (scheduled review session)
+
+Production ran `d724ee29` (backend and website), read through the ops relay on 9 Nov 05:37–05:50 UTC.
+
+- **Defect.** `services/post_deploy_maintenance.post_deploy_maintenance` is one-shot work that *returned* after its 120 s delay. `runtime/analytics.py` supervises its tasks and raises `analytics_task_stopped_unexpectedly:<name>` for any task that ends before `stop`, so the service restarted.
+- **Production evidence.** `errors.md`: 260 × `RuntimeError: analytics_task_stopped_unexpectedly:post-deploy-maintenance` in 24 h; `sr status`: analytics `Up 45 seconds` while bot, engine, worker and web were up 10 h; `[post_deploy] ledger_refresh users=5 refreshed=5` every ~2 min 15 s since 8 Nov 19:48 UTC; `sr grep analytics 'strategy_scorecard' 48h` and `'ml_training_run|ml_train' 96h` returned nothing. The scorecard (3 h cadence), ML training (900 s start delay), strategy discovery and the continuous-improvement review could not run while analytics lived ~2 minutes.
+- **Fix (`76adcd6`).** After its work the coroutine waits for `stop`. The work itself (`_run_maintenance`) is unchanged. No threshold, gate, execution or billing setting changed.
+- **Tests (Linux, Python 3.11.18, no PostgreSQL DSN; not CI, staging or production):** `tests/test_post_deploy_maintenance_20261108.py` 5 passed, 1 skipped; the two new tests fail on the previous code. Related runtime suites (`test_ml_candidate_forward_proof`, `test_phase4_pass7_runtime_roles`, `test_live_drift_monitoring`, `test_runtime_hardening_contract`, `test_production_endgame_20260725`): 171 passed, 1 skipped.
+- **To verify after deploy:** analytics uptime grows past 3 h, `[post_deploy] ledger_refresh` appears once per start, and a `strategy_scorecard` rebuild and an `[ml_training_run]` are logged.
+
 ## Continuation, 8 November 2026 (night, second round) — latency, setup records, email and app notifications, Telegram linking, Claude reviewer, more training data, target ladders, entry tracking (cloud session)
 
 Production still runs `2076dbde` (schema `0059_close_pending_terminal`), verified from the public `/readyz`. Everything below is on `claude/pensive-fermat-hju9hw` until the deploy recorded at the end. Live execution stays off (`live_execution_requested=false`, kill switch on, ML gate advisory, so signals are PAPER ONLY); nothing here changes trading or payout permissions.
