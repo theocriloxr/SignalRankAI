@@ -2853,6 +2853,9 @@ def main_loop(DRY_RUN: bool = False):
     from engine.cycle_queue import AssetCycleQueue
 
     _cycle_queue = AssetCycleQueue()
+    # Instruments of the owner's prop firm/broker (core.broker_universe) get their
+    # own rotation and a reserved share of every batch (9 Nov 2026, FundedNext).
+    _broker_queue = AssetCycleQueue()
 
     # Per-class rotating cursor used to guarantee at least one analyzed asset
     # from each open class on every cycle.
@@ -3165,6 +3168,13 @@ def main_loop(DRY_RUN: bool = False):
                 )
             )
             _profile_universe_filter_applied = True
+        try:
+            from core.broker_universe import prioritize as _broker_prioritize
+
+            # Always include every broker instrument, even if discovery missed it.
+            assets = _broker_prioritize(assets)
+        except Exception as _broker_exc:
+            logger.debug("[engine] broker universe unavailable: %s", _broker_exc)
         _profile_filtered_universe = list(assets)
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
@@ -3331,10 +3341,39 @@ def main_loop(DRY_RUN: bool = False):
 
         from engine.cycle_selection import schedule_cycle
 
-        assets, _selected_counts = schedule_cycle(
-            _cycle_queue, _all_open, pools=_open_by_class, cursors=_class_cursor,
-            classify=_asset_class, capacity=CYCLE_BATCH_SIZE, force_refresh=(cycle_no == 1),
-        )
+        _focus_open: list[str] = []
+        try:
+            from core.broker_universe import is_broker_asset as _is_broker_asset
+
+            _focus_open = [a for a in _all_open if _is_broker_asset(a)]
+        except Exception:
+            _focus_open = []
+        _broker_share = min(0.9, max(0.0, _env_float("BROKER_UNIVERSE_SHARE", 0.6)))
+        if _focus_open and _broker_share > 0 and CYCLE_BATCH_SIZE >= 2:
+            _focus_cap = max(1, min(len(_focus_open), int(round(CYCLE_BATCH_SIZE * _broker_share))))
+            _broker_queue.refresh_universe(_focus_open, force=(cycle_no == 1))
+            _focus_batch = _broker_queue.pop_batch(_focus_cap)
+            _focus_set = set(_focus_open)
+            _rest_universe = [a for a in _all_open if a not in _focus_set]
+            if _rest_universe:
+                _rest_pools = {k: [a for a in v if a not in _focus_set] for k, v in _open_by_class.items()}
+                _rest_assets, _selected_counts = schedule_cycle(
+                    _cycle_queue, _rest_universe, pools=_rest_pools, cursors=_class_cursor,
+                    classify=_asset_class, capacity=max(1, CYCLE_BATCH_SIZE - len(_focus_batch)),
+                    force_refresh=(cycle_no == 1),
+                )
+            else:
+                _rest_assets, _selected_counts = [], {}
+            assets = list(_focus_batch) + list(_rest_assets)
+            for _a in _focus_batch:
+                _key = _asset_class(_a)
+                _selected_counts[_key] = _selected_counts.get(_key, 0) + 1
+            _broker_queue.mark_done(list(_focus_batch))
+        else:
+            assets, _selected_counts = schedule_cycle(
+                _cycle_queue, _all_open, pools=_open_by_class, cursors=_class_cursor,
+                classify=_asset_class, capacity=CYCLE_BATCH_SIZE, force_refresh=(cycle_no == 1),
+            )
 
         cycle_assets = len(assets)
 

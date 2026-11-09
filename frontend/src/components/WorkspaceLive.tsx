@@ -159,6 +159,39 @@ function TradeResult({ signal }: { signal: Row }) {
   return null;
 }
 
+// Live "Now" price on open signal cards (owner report, 9 Nov 2026: "it doesn't
+// show current prices on the site"). Cards on the same asset share one quote.
+const quoteCache = new Map<string, { at: number; value: Promise<number | null> }>();
+function liveQuote(asset: string): Promise<number | null> {
+  const hit = quoteCache.get(asset);
+  if (hit && Date.now() - hit.at < 15000) return hit.value;
+  const value = client.GET("/api/v1/platform/live-price", { params: { query: { asset } } })
+    .then(r => (r.response.ok ? finite(record(r.data).price) : null))
+    .catch(() => null);
+  quoteCache.set(asset, { at: Date.now(), value });
+  return value;
+}
+
+function LiveNow({ signal }: { signal: Row }) {
+  const asset = display(signal.asset, "");
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!asset) return;
+    let off = false;
+    const tick = async () => { const price = await liveQuote(asset); if (!off) setNow(price); };
+    void tick();
+    const timer = window.setInterval(() => { void tick(); }, 20000);
+    return () => { off = true; window.clearInterval(timer); };
+  }, [asset]);
+  const entry = finite(signal.entry), stop = finite(signal.stop_loss);
+  if (now === null) return null;
+  const short = display(signal.direction, "").toLowerCase().startsWith("s");
+  const risk = entry !== null && stop !== null ? Math.abs(entry - stop) : 0;
+  const moved = risk > 0 && entry !== null ? ((short ? entry - now : now - entry) / risk) : null;
+  return <div className="ws-level ws-level--now"><dt>Now</dt>
+    <dd>{priceLabel(now)}{moved !== null && <small className={moved >= 0 ? "ws-up" : "ws-down"}> {moved >= 0 ? "+" : ""}{numberLabel(moved)}R</small>}</dd></div>;
+}
+
 function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolean }) {
   const id = display(signal.signal_id, "");
   const direction = display(signal.direction, "");
@@ -178,6 +211,7 @@ function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolea
       <div className="ws-signal-tags">{isPaperOnly(signal) && <PaperOnlyTag/>}<Badge tone={tone} plain>{outcome}</Badge></div>
     </header>
     <dl className="ws-levels">
+      {record(signal.trade_status).closed !== true && !locked && <LiveNow signal={signal}/>}
       <div className="ws-level"><dt>Entry</dt><dd>{level(signal.entry)}</dd></div>
       <div className="ws-level ws-level--stop"><dt>Stop</dt><dd>{level(signal.stop_loss)}</dd></div>
       {targets.length ? targets.map((price, i) => <div className="ws-level ws-level--target" key={i}>
@@ -446,6 +480,21 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
     void load();
     return ()=>{cancelled=true};
   },[section,signalId,filters,signalOffset,epoch]);
+
+  // Quiet background refresh so new signals and status changes appear without
+  // pressing Refresh (owner report, 9 Nov 2026: lag between channels).
+  useEffect(()=>{
+    if(!["signals","overview","paper","performance","notifications"].includes(section))return;
+    let off=false;
+    const timer=window.setInterval(async()=>{
+      if(document.visibilityState!=="visible")return;
+      try{
+        const result=await readSection(section,signalId,filters,signalOffset);
+        if(!off&&result.success)setState({kind:"ready",data:result.data});
+      }catch{/* keep showing the last good data */}
+    },30000);
+    return ()=>{off=true;window.clearInterval(timer)};
+  },[section,signalId,filters,signalOffset]);
 
   const refresh=()=>setEpoch(value=>value+1);
   return <>

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "notes": "Instruments each prop firm/broker offers, in SignalRank's internal names. FundedNext's exact list changes and third-party sources disagree (stocks are disputed); verify against the live symbol list in your FundedNext platform and override with BROKER_UNIVERSE_ASSETS (comma-separated) if needed.",
+  "profiles": {
+    "fundednext": {
+      "label": "FundedNext",
+      "assets": [
+        "XAUUSD", "XAGUSD", "WTI", "BRENT",
+        "US30", "NAS100", "US500", "GER40", "UK100", "JP225", "AUS200", "FRA40", "EU50", "HK50",
+        "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD", "USDCAD",
+        "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+        "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+        "AUDJPY", "AUDCAD", "AUDCHF", "AUDNZD", "CADJPY", "CADCHF", "CHFJPY",
+        "NZDJPY", "NZDCAD", "NZDCHF",
+        "BTCUSDT", "ETHUSDT", "LTCUSDT", "XRPUSDT", "BCHUSDT", "ADAUSDT", "DOGEUSDT", "LINKUSDT"
+      ]
+    }
+  }
+}

@@ -420,6 +420,19 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
     return lines
 
 
+def _broker_line(signal: DictType[str, Any]) -> Optional[str]:
+    """Owner uses FundedNext (9 Nov 2026): say when the instrument is on the configured prop firm."""
+    try:
+        from core.broker_universe import is_broker_asset, profile_label
+
+        asset = str(signal.get("asset") or signal.get("symbol") or "")
+        if asset and is_broker_asset(asset):
+            return f"🏦 Tradable on {_h(profile_label())} (check the symbol name in your platform)"
+    except Exception:
+        return None
+    return None
+
+
 def _safe_float(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -904,6 +917,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     regime = signal.get("regime") or signal.get("market_regime")
     if strategy:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
+    broker_line = _broker_line(signal)
+    if broker_line:
+        lines.append(broker_line)
     if regime:
         lines.append(f"🌍 Regime: {_h(str(regime))}")
     if suggested_size:
@@ -1148,6 +1164,9 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     strategy = signal.get("strategy_name") or signal.get("strategy")
     if strategy:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
+    broker_line = _broker_line(signal)
+    if broker_line:
+        lines.append(broker_line)
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
     if _setup_record_line(signal):

@@ -17,14 +17,15 @@ body {
   font-size: var(--text-md);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01"; /* Inter: straight-sided 1 and open digits read better in prices */
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 h1, h2, h3, h4 {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  letter-spacing: -0.022em;
   line-height: 1.18;
   color: var(--text);
   text-wrap: balance;

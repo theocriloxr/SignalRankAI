@@ -640,10 +640,33 @@ class Worker:
             except asyncio.TimeoutError:
                 continue
 
+    def _kick(self, name: str) -> None:
+        """Wake a delivery loop now instead of at its next poll (9 Nov 2026 cross-channel lag)."""
+        kicks = self.__dict__.setdefault("_kicks", {})
+        event = kicks.get(name)
+        if event is None:
+            event = kicks[name] = asyncio.Event()
+        event.set()
+
+    async def _wait_or_kick(self, name: str, timeout: float) -> None:
+        kicks = self.__dict__.setdefault("_kicks", {})
+        event = kicks.get(name)
+        if event is None:
+            event = kicks[name] = asyncio.Event()
+        stop_task = asyncio.ensure_future(self._stop.wait())
+        kick_task = asyncio.ensure_future(event.wait())
+        try:
+            await asyncio.wait({stop_task, kick_task}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (stop_task, kick_task):
+                if not task.done():
+                    task.cancel()
+            event.clear()
+
     async def _email_delivery_loop(self) -> None:
         from services.platform.email_delivery import deliver_email_outbox_batch
 
-        interval = max(5.0, _env_float("EMAIL_DELIVERY_INTERVAL_SECONDS", 15.0, minimum=2.0))
+        interval = max(2.0, _env_float("EMAIL_DELIVERY_INTERVAL_SECONDS", 5.0, minimum=2.0))
         while not self._stop.is_set():
             try:
                 result = await deliver_email_outbox_batch()
@@ -651,32 +674,28 @@ class Worker:
                     logger.info("[email_delivery] %s", result)
             except Exception as exc:
                 logger.warning("[email_delivery] cycle failed: %s", type(exc).__name__)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                continue
+            await self._wait_or_kick("email", interval)
 
     async def _notification_channels_loop(self) -> None:
         from services.notification_channels import dispatch_once
 
-        interval = max(5.0, _env_float("NOTIFICATION_CHANNELS_INTERVAL_SECONDS", 20.0, minimum=5.0))
+        interval = max(2.0, _env_float("NOTIFICATION_CHANNELS_INTERVAL_SECONDS", 5.0, minimum=2.0))
         while not self._stop.is_set():
             try:
                 result = await dispatch_once()
                 if int(result.get("events") or 0):
                     logger.info("[notification_channels] %s", result)
+                if int(result.get("email_queued") or 0):
+                    self._kick("email")  # send the queued emails now, not at the next poll
             except Exception as exc:
                 logger.warning("[notification_channels] cycle failed: %s", type(exc).__name__)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                continue
+            await self._wait_or_kick("channels", interval)
 
     async def _web_signal_fanout_loop(self) -> None:
         """Deliver freshly generated, fully gated signals to the web channel."""
         interval = max(
             5.0,
-            _env_float("WEB_SIGNAL_FANOUT_INTERVAL_SECONDS", 10.0, minimum=5.0),
+            _env_float("WEB_SIGNAL_FANOUT_INTERVAL_SECONDS", 5.0, minimum=2.0),
         )
         initial_delay = _env_float(
             "WEB_SIGNAL_FANOUT_STARTUP_DELAY_SECONDS",
@@ -703,6 +722,8 @@ class Worker:
                 result = await deliver_recent_web_signals()
                 if int(result.get("delivered") or 0) or int(result.get("quote_failures") or 0):
                     logger.info("[web_signal_fanout] %s", result)
+                if int(result.get("delivered") or 0):
+                    self._kick("channels")  # push/email for the new signal now
             except (NoncriticalWriteDropped, AnalyticsWorkDeferred, DatabaseWorkDeferred) as exc:
                 sleep_for = min(
                     interval,

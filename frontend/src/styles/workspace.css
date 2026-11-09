@@ -132,6 +132,13 @@
 .ws-level dd { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
 .ws-level--stop dd { color: var(--negative); }
 .ws-level--target dd { color: var(--positive); }
+.ws-level--now { background: color-mix(in srgb, var(--brand) 8%, transparent); margin: 0 calc(-1 * var(--space-2)); padding-inline: var(--space-2); border-radius: var(--radius-sm); }
+.ws-level--now dt { color: var(--text); font-weight: 600; }
+.ws-level--now dt::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--positive); vertical-align: middle; animation: ws-live 2s ease-in-out infinite; }
+.ws-level--now small { font-size: var(--text-xs); margin-left: 4px; }
+.ws-up { color: var(--positive); } .ws-down { color: var(--negative); }
+@keyframes ws-live { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ws-level--now dt::before { animation: none; } }
 .ws-setup-line { padding: var(--space-3) var(--space-5); background: var(--surface-2); color: var(--text-2); font-size: var(--text-sm); line-height: 1.5; }
 .ws-setup-line b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ws-signal-meta { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); padding: var(--space-3) var(--space-5) 0; font-size: var(--text-sm); color: var(--text-2); }

@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import "../styles/tokens.css";
 import "../styles/base.css";
 import "../styles/ui.css";
