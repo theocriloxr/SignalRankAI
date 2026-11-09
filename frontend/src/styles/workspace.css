@@ -272,3 +272,10 @@
 .ws-broker-item small { color: var(--text-2); }
 .ws-broker-details summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-2); }
 .ws-broker-hints { margin: var(--space-2) 0 0; padding-left: var(--space-4); display: grid; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-2); }
+
+/* Email verification banner (9 Nov 2026) */
+.ws-verify { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3);
+  margin-bottom: var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid color-mix(in srgb, var(--warning, #b7791f) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning, #b7791f) 10%, var(--surface)); border-radius: var(--radius-lg); }
+.ws-verify p { font-size: var(--text-sm); max-width: 70ch; }
+.ws-verify-status { font-size: var(--text-sm); color: var(--text-2); }

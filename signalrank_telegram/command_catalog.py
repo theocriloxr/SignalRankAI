@@ -130,6 +130,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("performance_rebuild", "Run bounded performance projection rebuild", "OWNER", "Owner"),
     CommandSpec("stale_tick_relabel", "Review and apply the stale-tick shadow label correction", "OWNER", "Owner"),
     CommandSpec("delivery_latency", "Where signal delivery time goes, by class and timeframe", "OWNER", "Owner"),
+    CommandSpec("verify_email_campaign", "Ask unverified users to verify their email (send to confirm)", "OWNER", "Owner"),
     CommandSpec("performance_audit", "Audit performance projection integrity", "OWNER", "Owner"),
     CommandSpec("outcome_rebuild", "Run bounded outcome and outbox rebuild", "OWNER", "Owner"),
     CommandSpec("outcome_audit", "Audit outcome projection and notification state", "OWNER", "Owner"),
@@ -169,6 +170,7 @@ OPERATOR_MENU_OMIT = frozenset({
     "start", "about", "app", "login_code", "link", "security", "privacy", "pricing", "upgrade", "tiers",
     "invite", "referral_leaderboard", "referral_rewards", "referral", "faq", "disclaimer", "language",
     "cancel", "paper_reset", "paper_close_all", "profile", "connect_broker", "mt5_link", "setlot", "early",
+    "report",  # 9 Nov 2026: room for /verify_email_campaign; /help still lists it
 })
 
 

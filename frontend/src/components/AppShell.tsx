@@ -5,6 +5,7 @@ import { ResponsiveDisclosure } from "./ResponsiveDisclosure";
 import { SessionExit } from "./SessionExit";
 import { OperationsNavLink } from "./OperationsNavLink";
 import { SiteCredit } from "./SiteCredit";
+import { EmailVerifyBanner } from "./EmailVerifyBanner";
 import { Icon, type IconName } from "./ui/Icon";
 
 const groups = [
@@ -68,7 +69,7 @@ export function AppShell({ active, children }: { active: string; children: React
           </ResponsiveDisclosure>
         </div>
       </header>
-      <main className="ws-content" id="ws-main" tabIndex={-1}>{children}</main>
+      <main className="ws-content" id="ws-main" tabIndex={-1}><EmailVerifyBanner/>{children}</main>
       <div className="ws-footer"><SiteCredit compact /></div>
     </div>
     <nav className="ws-tabbar" aria-label="Primary mobile workspace navigation">

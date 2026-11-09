@@ -2411,6 +2411,22 @@ async def refresh(payload: RefreshRequest, request: Request, response: Response)
     return {**_token_response(tokens, payload.client_type), "user": user}
 
 
+async def _request_verification_quietly(session: Any, user_id: int, base_url: str) -> None:
+    """Send the verification email without ever failing the sign-in it belongs to."""
+    nested = getattr(session, "begin_nested", None)
+    try:
+        if nested is not None:
+            async with nested():
+                await request_email_verification(session, user_id=user_id, base_url=base_url)
+        else:
+            await request_email_verification(session, user_id=user_id, base_url=base_url)
+    except AuthenticationError:
+        pass  # no email on the account, or already verified
+    except Exception as exc:  # the account still completes; Settings can resend
+        logger.warning("[telegram_complete] verification email not queued user_id=%s error=%s",
+                       user_id, type(exc).__name__)
+
+
 @router.post("/auth/telegram/complete")
 async def telegram_activation_complete(
     payload: TelegramActivationCompleteRequest,
@@ -2450,6 +2466,9 @@ async def telegram_activation_complete(
                 event_type="account.age_eligibility_confirmed",
                 metadata={"version": CURRENT_PLATFORM_TERMS_VERSION, "client_type": payload.client_type},
             )
+            # Every sign-up path asks for email verification (owner request, 9 Nov 2026);
+            # until 9 Nov only the web form did.
+            await _request_verification_quietly(session, int(user_id), _app_base_url(request))
             await session.commit()
     except IdentityConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

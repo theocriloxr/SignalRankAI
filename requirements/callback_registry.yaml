@@ -37,7 +37,7 @@
       "pattern": "^broker_pick_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7520",
+      "source": "signalrank_telegram/bot.py:7522",
       "status": "IMPLEMENTED"
     },
     {
@@ -67,7 +67,7 @@
       "pattern": "^check_outcome_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7745",
+      "source": "signalrank_telegram/bot.py:7747",
       "status": "IMPLEMENTED"
     },
     {
@@ -117,7 +117,7 @@
       "pattern": "^monitor_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7216",
+      "source": "signalrank_telegram/bot.py:7218",
       "status": "IMPLEMENTED"
     },
     {
@@ -167,7 +167,7 @@
       "pattern": "^mt5_trade_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7408",
+      "source": "signalrank_telegram/bot.py:7410",
       "status": "IMPLEMENTED"
     },
     {
@@ -197,7 +197,7 @@
       "pattern": "^open_signal_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7576",
+      "source": "signalrank_telegram/bot.py:7578",
       "status": "IMPLEMENTED"
     },
     {
@@ -217,7 +217,7 @@
       "pattern": "^sigmon_(?:continue|stop)_[12]_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:7215",
+      "source": "signalrank_telegram/bot.py:7217",
       "status": "IMPLEMENTED"
     },
     {
@@ -237,7 +237,7 @@
       "pattern": "^signal_reaction_",
       "payload_trust": "untrusted",
       "route_class": "specific_before_catchall",
-      "source": "signalrank_telegram/bot.py:6954",
+      "source": "signalrank_telegram/bot.py:6956",
       "status": "IMPLEMENTED"
     },
     {

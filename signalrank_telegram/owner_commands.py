@@ -1412,6 +1412,40 @@ async def delivery_latency_command(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text("\n".join(format_latency_lines(report, limit=20))[:3900])
 
 
+async def verify_email_campaign_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only: ask existing unverified users to verify their email (9 Nov 2026).
+
+    /verify_email_campaign       how many accounts would be asked (nothing is sent)
+    /verify_email_campaign send  email each a fresh link and message linked Telegram users
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    from core.app_url import public_app_base_url
+    from services.platform.email_verification_campaign import TELEGRAM_TEXT, run_campaign
+
+    send = bool(context.args) and str(context.args[0]).strip().lower() == "send"
+    async with get_session() as session:
+        report = await run_campaign(session, base_url=public_app_base_url(), send=send)
+    if not send:
+        await update.message.reply_text(
+            f"📧 Unverified accounts to ask now: {report['eligible']} ({report['with_telegram']} linked to Telegram). "
+            "Anyone emailed in the last 24 h is skipped. Send with /verify_email_campaign send")
+        return
+    sent_tg = 0
+    for telegram_id in report["telegram_ids"]:
+        try:
+            await context.bot.send_message(chat_id=int(telegram_id), text=TELEGRAM_TEXT)
+            sent_tg += 1
+        except Exception:
+            continue
+    await update.message.reply_text(
+        f"✅ Verification emails queued: {report['queued']} (skipped {report['skipped']}). "
+        f"Telegram reminders sent: {sent_tg} of {len(report['telegram_ids'])}.")
+
+
 async def stale_tick_relabel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only review and apply of the stale-tick shadow label correction (8 Nov 2026).
 
