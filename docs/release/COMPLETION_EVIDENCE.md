@@ -15,6 +15,7 @@ Read from the `signalrank-ops` snapshot of 9 Nov 17:51 UTC (production `f4cdc9d`
 - **So it is noticed next time.** `observability/owner_alerts.signal_drought_finding` runs in the existing owner-alert worker loop. When no signal has been issued for `OWNER_ALERT_SIGNAL_DROUGHT_HOURS` (default 8), owners get a Telegram alert naming the top three rejection reasons from the last ~40k decision-log rows.
   - Numbers are normalised, so one gate rejecting everything shows as one line.
   - At most one alert every 6 h per dominant reason. The query is read-only and bounded by primary key.
+- **After deploy (18:13 UTC).** The JPM signal `666f7cfb` was issued and delivered to 5 users. The drought check held a DB session for about 15 s (snapshot 18:19): its id bound was a subquery, so the planner could scan the whole table. It now reads `MAX(id)` first and passes a literal bound, and runs at most every 15 min per process (`OWNER_ALERT_SIGNAL_DROUGHT_CHECK_SECONDS`).
 - **Overfitting.**
   - The strategy scorecard tests ~1,180 cells. At 95% intervals about 5% of them look "decisive" by chance, and those cells were boosted or penalised.
   - `adjustment_for_cell` now decides on a 99% Wilson interval (`STRATEGY_SCORECARD_DECISION_Z`, default 2.576). A 60-trade cell at 50% against a 33% break-even is no longer boosted on what may be luck; a 140-trade cell at the same rate still is.

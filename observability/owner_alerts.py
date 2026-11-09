@@ -248,15 +248,18 @@ async def signal_drought_finding() -> dict[str, Any] | None:
         if age is not None and float(age) <= hours * 3600:
             await session.rollback()
             return None
+        # A literal id bound keeps this an index range scan; a subquery bound let
+        # the planner scan the whole 4.7 M-row table (15 s per check, 9 Nov 2026).
+        newest_id = (await session.execute(text("SELECT MAX(id) FROM decision_log"))).scalar() or 0
         rows = (
             await session.execute(
                 text(
                     "SELECT LEFT(REGEXP_REPLACE(COALESCE(reason, decision), '[0-9]+([.][0-9]+)?', 'N', 'g'), 90) AS r, "
                     "COUNT(*) AS n FROM decision_log "
-                    "WHERE id > (SELECT COALESCE(MAX(id), 0) FROM decision_log) - :rows AND decision <> 'issued' "
+                    "WHERE id > :floor AND decision <> 'issued' "
                     "GROUP BY 1 ORDER BY 2 DESC LIMIT 3"
                 ),
-                {"rows": window_rows},
+                {"floor": max(0, int(newest_id) - window_rows)},
             )
         ).all()
         await session.rollback()
@@ -265,6 +268,21 @@ async def signal_drought_finding() -> dict[str, Any] | None:
         "limit_hours": hours,
         "top_reasons": [{"reason": str(r[0]), "count": int(r[1])} for r in rows],
     }
+
+
+_DROUGHT_LAST_CHECK = {"at": 0.0}
+
+
+async def _signal_drought_throttled() -> dict[str, Any] | None:
+    """The drought check needs minutes, not seconds: run it at most every 15 min per process."""
+    import time
+
+    every = _float_env("OWNER_ALERT_SIGNAL_DROUGHT_CHECK_SECONDS", 900.0, 120.0)
+    now = time.monotonic()
+    if _DROUGHT_LAST_CHECK["at"] and now - _DROUGHT_LAST_CHECK["at"] < every:
+        return None
+    _DROUGHT_LAST_CHECK["at"] = now
+    return await signal_drought_finding()
 
 
 def signal_drought_alert(finding: dict[str, Any], *, post: Callable[[str, int, str], bool] | None = None) -> int:
@@ -296,7 +314,7 @@ async def run_checks_once(*, read_heartbeat: Callable[[], Any] | None = None) ->
         await asyncio.to_thread(queue_age_alert, finding)
     drought = None
     try:
-        drought = await signal_drought_finding()
+        drought = await _signal_drought_throttled()
         if drought is not None:
             await asyncio.to_thread(signal_drought_alert, drought)
     except Exception as exc:
