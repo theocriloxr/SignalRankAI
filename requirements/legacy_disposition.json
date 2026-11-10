@@ -1,5 +1,5 @@
 {
-  "file_count": 2757,
+  "file_count": 2760,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4539,6 +4539,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 49,
+      "path": "db/migrations/versions/0062_candidate_shadow_index.py",
+      "reason": "database migration history",
+      "sha256": "42d2e0f507e623973ca7c85dc48d1a2103d8a8cd4534c16dc04dc35ab2d55ff7",
+      "size_bytes": 2136
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 1459,
       "path": "db/models.py",
       "reason": "production/build source",
@@ -7395,11 +7403,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1056,
+      "line_count": 1057,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "4cef6c59dbab21054392086259300a6cb4b0dcd3b7514ca2c45a48847c5ac56e",
-      "size_bytes": 160453
+      "sha256": "f6652841513d9301718d0ac30110446f8b40e095c36cb871443f10ccba584fbf",
+      "size_bytes": 160799
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11272,6 +11280,14 @@
       "reason": "production/build source",
       "sha256": "d97de2b774d3e637fcdde5f84f8c31ba42d181db2034d9408d0da4aad61dc1f5",
       "size_bytes": 5196
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 169,
+      "path": "engine/order_plan.py",
+      "reason": "production/build source",
+      "sha256": "c40d0be6336fb3e34b1c5b7b2e1942484aa9a7cbe64317760f0f59082f0257a9",
+      "size_bytes": 8568
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19563,6 +19579,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 116,
+      "path": "tests/test_order_plan_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "20d38c678e50fad3405e463d28c58155d9b8e08f901dc988bebdaae095c93e38",
+      "size_bytes": 6119
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 52,
       "path": "tests/test_orderbook_fills.py",
       "reason": "automated test evidence",
@@ -22071,7 +22095,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1399,
-    "TEST_ONLY": 479
+    "PRESERVE_BEHAVIOUR": 1401,
+    "TEST_ONLY": 480
   }
 }

@@ -10,6 +10,7 @@
   - **Pip value**: USD-quoted instruments are in USD and USD-base pairs are converted at entry; for crosses it is given in the quote currency, without a lot count.
 - **From the 10 Nov 05:39 UTC log snapshot (production `89d6db3c`):**
   - **Weekly review failed 10×** with `PendingRollbackError`: a timed-out section invalidates the connection, and the savepoint cannot recover it. `_guarded_execute` now rolls back fully after a failed section, so the next section reconnects.
+    - Regression test added by the scheduled review session: `tests/test_governance_client_timeout_20261110.py` (2 passed on `dc276cd`; both fail on `89d6db3`). The PostgreSQL case uses a 1 s client-side `DB_COMMAND_TIMEOUT` with `pg_sleep(3)` and checks that only the two slow sections are dropped (owned PostgreSQL 16 at 0062, Python 3.11.18).
   - **`[outcome_notify] pending snapshot failed`** was logged as an ERROR on `NoncriticalWriteDropped`. "Trade closed" messages are user-facing, so the pending read now runs in the critical lane (15 s) and a deferral logs at info.
   - **`/ml_candidate` timed out.**
     - The forward-evidence read filtered two JSON keys on `ml_rejected_signals`, which is a view over `decision_log` (0046), with no index.
