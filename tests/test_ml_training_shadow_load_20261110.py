@@ -120,3 +120,16 @@ def test_training_is_regularised_and_reports_the_overfit_gap():
                    pr_auc=0.9, positive_rate=0.5, expected_r=1.0)
     assert _promotion_quality_gate(overfit, deployed_runtime=False)[0] is False
     assert _promotion_quality_gate(dict(overfit, overfit_gap=0.05), deployed_runtime=False)[0] is True
+
+
+def test_drought_alert_names_a_stale_ml_filter(monkeypatch):
+    from observability import owner_alerts
+
+    sent = []
+    monkeypatch.setattr(owner_alerts, "send_owner_alert", lambda kind, key, text, **k: sent.append(text) or 1)
+    monkeypatch.setattr("ml.lifecycle_status.lifecycle_status", lambda **k: {
+        "champion_age_days": 41.8, "stale": True, "last_training_run": {"status": "skipped"},
+        "why_not_replaced": "not enough training data (insufficient_total_rows)"})
+    owner_alerts.signal_drought_alert({"hours_since_last_signal": 14.2,
+                                       "top_reasons": [{"reason": "ml_filter", "count": 16599}]})
+    assert "ML filter is the main blocker" in sent[0] and "41.8 days" in sent[0] and "/ml_status" in sent[0]

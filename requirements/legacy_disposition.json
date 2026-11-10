@@ -1,5 +1,5 @@
 {
-  "file_count": 2767,
+  "file_count": 2771,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4544,6 +4544,14 @@
       "reason": "database migration history",
       "sha256": "42d2e0f507e623973ca7c85dc48d1a2103d8a8cd4534c16dc04dc35ab2d55ff7",
       "size_bytes": 2136
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 68,
+      "path": "db/migrations/versions/0063_user_trade_ideas.py",
+      "reason": "database migration history",
+      "sha256": "29483e8cfe021a93defcddcf01fd436c2946ef325af37076972e45503ac32ee5",
+      "size_bytes": 3059
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12619,6 +12627,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 119,
+      "path": "frontend/src/components/TradeCheck.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "63e6b3dfc1008fc252d2781deb0a95af713e45c43d6ecc4bdc70cb3bef1394e8",
+      "size_bytes": 9478
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 124,
       "path": "frontend/src/components/TradingPreferences.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -13387,11 +13403,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 375,
+      "line_count": 388,
       "path": "observability/owner_alerts.py",
       "reason": "production/build source",
-      "sha256": "2d9c880b0858b594a5912df070cfbf5975bf72cb82229e4e322da164996e0f9d",
-      "size_bytes": 16695
+      "sha256": "f198d6dee789ddba19257ff9e4d7b5b947b908b6e2d2605ad86d26a83386ecc1",
+      "size_bytes": 17551
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16304,6 +16320,14 @@
       "reason": "production/build source",
       "sha256": "4a68c59818743a893373bb660cc825adad1e4293f4ba584e95c2124aa6f142ba",
       "size_bytes": 2620
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 641,
+      "path": "services/trade_ideas.py",
+      "reason": "production/build source",
+      "sha256": "9132586cad24f401ecbcd62c000149f36d87ee5c41b60ac520205a55bd01662f",
+      "size_bytes": 31799
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19467,11 +19491,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 122,
+      "line_count": 135,
       "path": "tests/test_ml_training_shadow_load_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "1cf0e0aec3e79a144980f32f71a41dede4cad1dad61d3761014bce738477bc70",
-      "size_bytes": 5476
+      "sha256": "e32e04bba3371ef702e845b2e800b6d0c1012e52f94478fb7a49b0eda12a359d",
+      "size_bytes": 6242
     },
     {
       "disposition": "TEST_ONLY",
@@ -21171,6 +21195,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 166,
+      "path": "tests/test_trade_ideas_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "38d9ffb965777e8221e45f5b8a2f1f4589224d964bf38893ed255b96dc66d241",
+      "size_bytes": 9256
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 52,
       "path": "tests/test_trade_manager_breakeven_persistence.py",
       "reason": "automated test evidence",
@@ -22151,7 +22183,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1404,
-    "TEST_ONLY": 484
+    "PRESERVE_BEHAVIOUR": 1407,
+    "TEST_ONLY": 485
   }
 }

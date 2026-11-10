@@ -296,6 +296,19 @@ def signal_drought_alert(finding: dict[str, Any], *, post: Callable[[str, int, s
     since_text = "no signal has ever been issued" if since is None else f"no signal issued for {since:.1f} h"
     reasons = "; ".join(f"{row['reason']} ×{row['count']}" for row in finding.get("top_reasons") or [])
     text = f"📭 Signal drought: {since_text}. Top rejection reasons: {reasons or 'none recorded'}."
+    top = str((finding.get("top_reasons") or [{"reason": ""}])[0]["reason"]).lower()
+    if top.startswith("ml_filter") or top.startswith("ml "):
+        # 10 Nov 2026: a 42-day-old champion never cleared the 0.70 bar and the alert did not say so.
+        try:
+            from ml.lifecycle_status import lifecycle_status
+
+            ml = lifecycle_status()
+            run = ml.get("last_training_run") or {}
+            text += (f" The ML filter is the main blocker: champion trained {ml.get('champion_age_days')} days ago"
+                     f"{' (stale)' if ml.get('stale') else ''}; last retraining {run.get('status', 'unknown')}"
+                     f"{(': ' + str(ml.get('why_not_replaced'))) if ml.get('stale') else ''}. Details: /ml_status.")
+        except Exception:
+            text += " The ML filter is the main blocker; see /ml_status."
     # The dominant reason is the evidence key: a new cause alerts again at once.
     key = (finding.get("top_reasons") or [{"reason": "none"}])[0]["reason"]
     return send_owner_alert("signal_drought", {"reason": key}, text, ttl_seconds=6 * 3600, post=post)
