@@ -1,5 +1,5 @@
 {
-  "file_count": 2761,
+  "file_count": 2765,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7403,11 +7403,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1057,
+      "line_count": 1066,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "f6652841513d9301718d0ac30110446f8b40e095c36cb871443f10ccba584fbf",
-      "size_bytes": 160799
+      "sha256": "e302f57471bec65e3d5641161cd9527e6d9b73053023d0428fc6d7ef18dc6e3e",
+      "size_bytes": 163185
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7451,11 +7451,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 872,
+      "line_count": 881,
       "path": "docs/release/RELEASE_BLOCKERS.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "bf1d6961a2716e4e64c2e1b0c16395e8e78a9f96480963db620330612ead4dc7",
-      "size_bytes": 132601
+      "sha256": "66929c62b0abbf1dcec0eda7ec794ddafb556762b30a4a3ea721ddbacf895b09",
+      "size_bytes": 134987
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7467,11 +7467,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 318,
+      "line_count": 319,
       "path": "docs/release/TELEGRAM_WEB_PARITY_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "237073964668855ac74b7ecb7751d76a2b958cedc6f1da0643c7e760421cbab4",
-      "size_bytes": 16611
+      "sha256": "9cc361c719c6d5db4a3838415762c5cd16f0b2f73b2a97f245e169a3a78ad981",
+      "size_bytes": 16647
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11347,6 +11347,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 108,
+      "path": "engine/rank_factors.py",
+      "reason": "production/build source",
+      "sha256": "fdfa4cb0ffa10ebda3a993f509c10e82d4144819b8cd73d6eed98566e5a758e5",
+      "size_bytes": 4310
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 444,
       "path": "engine/ranking.py",
       "reason": "production/build source",
@@ -13067,11 +13075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 41,
+      "line_count": 8,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "d494ddaaff7499e1d8b90769394d165bee4ba7113f1d35f080a4ffe457e367ea",
-      "size_bytes": 1615
+      "sha256": "c8b1beb6389cabd71713ce6f8abf1e6e723c64e0568d918a702e49e8dfd60551",
+      "size_bytes": 139
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15859,6 +15867,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 152,
+      "path": "services/daily_teaser.py",
+      "reason": "production/build source",
+      "sha256": "c9fd344ae3f18f9eb664dd131b3ca95a36eb94d61fd4e6668a2696bf0348574f",
+      "size_bytes": 7144
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 325,
       "path": "services/dead_letter_queue.py",
       "reason": "production/build source",
@@ -16224,6 +16240,14 @@
       "reason": "production/build source",
       "sha256": "8ca853cf3130f98246dfa7b2c3e05f608b1f170cf9c4be929512cf487f2178ef",
       "size_bytes": 5846
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 169,
+      "path": "services/rank_alerts.py",
+      "reason": "production/build source",
+      "sha256": "6016ae116938d56553973dddb6333e8de3ae7cfb23c8a9e335ccc4648e79332f",
+      "size_bytes": 7824
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -20259,6 +20283,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 156,
+      "path": "tests/test_rank_factors_alerts_teaser_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "651aa2b7491134e66c59b6f5a8bb348934d7b3c776d08011c08737d0a55fcbb0",
+      "size_bytes": 8665
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 33,
       "path": "tests/test_ranking_weights.py",
       "reason": "automated test evidence",
@@ -22103,7 +22135,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1401,
-    "TEST_ONLY": 481
+    "PRESERVE_BEHAVIOUR": 1404,
+    "TEST_ONLY": 482
   }
 }
