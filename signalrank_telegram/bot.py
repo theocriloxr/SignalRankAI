@@ -7860,7 +7860,10 @@ def run_bot() -> None:
             _outcome_deadline = float("inf")
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
-                async with get_session(priority="background", label="signalrank_telegram_bot") as session:
+                # "Trade closed" messages are user-facing: read them in the critical lane
+                # (background work is deferred whenever foreground work is busy; 10 Nov 2026).
+                async with get_session(priority="critical", label="outcome_notify.pending",
+                                       timeout_seconds=15.0) as session:
                     rows = await list_unnotified_outcomes(session, limit=_outcome_limit)
                     out = []
                     for oc, sig in rows:
@@ -7878,8 +7881,12 @@ def run_bot() -> None:
 
             try:
                 pending = run_sync(_fetch(), timeout=60)
-            except Exception:
-                logger.exception("[outcome_notify] pending snapshot failed")
+            except Exception as _pending_exc:
+                if type(_pending_exc).__name__ in {"NoncriticalWriteDropped", "DatabaseWorkDeferred",
+                                                   "AnalyticsWorkDeferred"}:
+                    logger.info("[outcome_notify] pending snapshot deferred (DB busy); retrying next run")
+                else:
+                    logger.exception("[outcome_notify] pending snapshot failed")
                 pending = []
             if not pending:
                 logger.debug(

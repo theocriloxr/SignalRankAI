@@ -1,5 +1,27 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 10 November 2026 — order types and pip/risk breakdown, log fixes, migration 0062, final pass (cloud session)
+
+- **Order type and pips (owner request).** `engine/order_plan.py` is shown on Premium/VIP cards, in emails (same formatter) and on the website signal page ("How to place it", from `order_plan` in the signal detail API).
+  - **Order type** comes from where price stands: market within 0.1R of entry (`ORDER_PLAN_MARKET_BAND_R`); otherwise Buy/Sell Limit or Buy/Sell Stop, and stop orders also get a Stop Limit with a 0.1R slippage cap (`ORDER_PLAN_STOP_LIMIT_R`).
+  - **Distances** of stop and targets are given in pips or points.
+  - **Total risk = stop (pips) × pip value × lots**, with the lots for the card's risk amount and a check line.
+  - **Conventions are stated on the card**: FX 0.0001 (JPY 0.01) with 100,000 lots, gold 0.1 × 100 oz, silver 0.01 × 5,000, oil 0.01 × 1,000, indices and crypto 1 point × 1 unit.
+  - **Pip value**: USD-quoted instruments are in USD and USD-base pairs are converted at entry; for crosses it is given in the quote currency, without a lot count.
+- **From the 10 Nov 05:39 UTC log snapshot (production `89d6db3c`):**
+  - **Weekly review failed 10×** with `PendingRollbackError`: a timed-out section invalidates the connection, and the savepoint cannot recover it. `_guarded_execute` now rolls back fully after a failed section, so the next section reconnects.
+  - **`[outcome_notify] pending snapshot failed`** was logged as an ERROR on `NoncriticalWriteDropped`. "Trade closed" messages are user-facing, so the pending read now runs in the critical lane (15 s) and a deferral logs at info.
+  - **`/ml_candidate` timed out.**
+    - The forward-evidence read filtered two JSON keys on `ml_rejected_signals`, which is a view over `decision_log` (0046), with no index.
+    - New migration `0062_candidate_shadow_index` adds a concurrent partial index on `decision_log ((meta->'features'->>'candidate_artifact_hash_sha256'), created_at)` for rejected, ML-layer, candidate-shadow rows, validated after build. The query reads `decision_log` with the same expressions.
+    - The first version indexed the view itself, and the local migration failed with `cannot create index on relation "ml_rejected_signals"`. It was caught before deploy and fixed.
+    - The planner uses the index on the owned database.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 at 0062; Node 22, npm 11.10):**
+  - `tests/test_order_plan_20261110.py`: 12 passed, including the challenger-evidence read on PostgreSQL.
+  - Every-command smoke test: passed.
+  - Full suite: 4,523 passed, 215 skipped, 1 failed (governance freshness, regenerated in this commit).
+  - Frontend: `tsc` and ESLint clean, `next build` OK, node tests 81 + 3 + 41 passed.
+
 ## Continuation, 9–10 November 2026 — FundedNext focus, cross-channel speed, live prices, fonts, email verification, live track record, Cornix, weekly scorecard, command audit (cloud session)
 
 Deployed in steps: `03b92846` (FundedNext focus, delivery chaining, live prices, fonts) and `89d6db3c` (email verification), each verified ready on `/readyz`. This entry also records the batch committed with it.

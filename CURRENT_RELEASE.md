@@ -10,7 +10,7 @@ values below are historical observations, not a fresh deployment certification.
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0061_tracked_shadow_index
+Repository Alembic head: 0062_candidate_shadow_index
 Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -48,6 +48,7 @@ chain with:
 - `0059_close_pending_terminal`: data-only. Closed outcomes stored with `canonical_outcome` `pending` or empty (the 4 Nov ZECUSDT stop) get the canonical result `upsert_outcome` now derives, as an audited correction (previous value named in `correction_reason`). Status, R, percent and inclusion are unchanged; nothing is deleted; no schema change.
 - `0060_notification_channels`: new table `notification_channel_deliveries` (one row per notification and external channel, email or push) so each is sent at most once. No existing data changes.
 - `0061_tracked_shadow_index`: partial index `ix_decision_log_tracked_id` on `decision_log(id)` for rows with a tracked outcome, built concurrently (no write blocking). The strategy scorecard reads only those rows. No data changes.
+- `0062_candidate_shadow_index`: partial index `ix_ml_rejected_candidate_shadow` on `ml_rejected_signals` (artifact hash, created_at) for challenger forward-proof rows, built concurrently. `/ml_candidate` and the training lease read only those rows. No data changes.
 
 The current release candidate also includes:
 

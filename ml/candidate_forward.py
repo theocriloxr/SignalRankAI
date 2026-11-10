@@ -250,28 +250,32 @@ async def evaluate_candidate_forward_evidence(
         timeout_seconds=_env_float("ML_TRAINING_DB_TIMEOUT_SECONDS", 30.0),
         drop_if_busy=False,
     ) as session:
-        rows = [SimpleNamespace(**dict(row)) for row in
-            (
-                await session.execute(
-                    select(
-                        MLRejectedSignal.id, MLRejectedSignal.entry, MLRejectedSignal.stop_loss, MLRejectedSignal.direction,
-                        MLRejectedSignal.take_profit, MLRejectedSignal.features,
-                        MLRejectedSignal.actual_outcome, MLRejectedSignal.outcome_tracked_at,
-                        MLRejectedSignal.created_at,
-                    )
-                    .where(
-                        MLRejectedSignal.created_at >= cutoff,
-                        MLRejectedSignal.created_at <= observation_cutoff,
-                        MLRejectedSignal.features["rejection_type"].as_string() == "candidate_shadow",
-                        MLRejectedSignal.features["candidate_artifact_hash_sha256"].as_string() == artifact_hash,
-                    )
-                    .order_by(MLRejectedSignal.created_at.asc())
-                    .limit(max_rows + 1)
-                )
+        # Literal JSON keys so ix_ml_rejected_candidate_shadow (migration 0062) serves this;
+        # the ORM form bound the keys as parameters and scanned the table (/ml_candidate
+        # timed out in production, 9 Nov 2026).
+        from sqlalchemy import text as _sql_text
+
+        rows = [SimpleNamespace(**dict(row)) for row in (
+            await session.execute(
+                _sql_text(
+                    # Same columns as the ml_rejected_signals view, read from decision_log
+                    # with the exact expressions of ix_ml_rejected_candidate_shadow.
+                    "SELECT id, CAST(meta->>'entry' AS DOUBLE PRECISION) AS entry, "
+                    "CAST(meta->>'stop_loss' AS DOUBLE PRECISION) AS stop_loss, meta->>'direction' AS direction, "
+                    "meta->>'take_profit' AS take_profit, COALESCE(meta->'features', '{}'::jsonb) AS features, "
+                    "meta->>'actual_outcome' AS actual_outcome, "
+                    "CAST(meta->>'outcome_tracked_at' AS TIMESTAMP) AS outcome_tracked_at, created_at "
+                    "FROM decision_log "
+                    "WHERE decision = 'rejected' AND meta->>'layer' = 'ml' "
+                    "AND meta->'features'->>'rejection_type' = 'candidate_shadow' "
+                    "AND meta->'features'->>'candidate_artifact_hash_sha256' = :artifact_hash "
+                    "AND created_at >= :cutoff AND created_at <= :observation_cutoff "
+                    "ORDER BY created_at ASC LIMIT :limit"
+                ),
+                {"artifact_hash": artifact_hash, "cutoff": cutoff, "observation_cutoff": observation_cutoff,
+                 "limit": max_rows + 1},
             )
-            .mappings()
-            .all()
-        ]
+        ).mappings().all()]
         await session.rollback()
 
     if len(rows) > max_rows:

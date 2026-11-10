@@ -230,6 +230,32 @@ function SignalRecord({ signal, detail = false }: { signal: Row; detail?: boolea
   </article>;
 }
 
+// Order type and pip/risk breakdown, the same plan the Telegram card shows (10 Nov 2026).
+function OrderPlan({ plan }: { plan: Row }) {
+  const order = record(plan.order);
+  if (!order.type) return null;
+  const alt = record(order.alternative);
+  const unit = display(plan.unit, "pips");
+  const one = unit.endsWith("s") ? unit.slice(0, -1) : unit;
+  const oneTitle = one.charAt(0).toUpperCase() + one.slice(1);
+  const stop = finite(plan.stop_pips), lots = finite(plan.lots), value = finite(plan.pip_value_usd);
+  const tps = Array.isArray(plan.target_pips) ? (plan.target_pips as unknown[]).map(finite).filter((v): v is number => v !== null) : [];
+  return <Card title="How to place it">
+    <KVList>
+      <KV label="Order type" value={`${display(order.type)} (${display(order.why, "")})`}/>
+      {alt.type ? <KV label="Or" value={`${display(alt.type)}: trigger ${priceLabel(alt.trigger)}, limit ${priceLabel(alt.limit)}`}/> : null}
+      <KV label="Stop distance" value={stop === null ? "Not set" : `${numberLabel(stop, 1)} ${unit}`}/>
+      {tps.map((tp, i) => <KV key={i} label={`Target ${i + 1} distance`} value={`${numberLabel(tp, 1)} ${unit}`}/>)}
+      {value !== null && lots !== null && stop !== null ? <>
+        <KV label={`${oneTitle} value`} value={`$${numberLabel(value)} per 1.00 lot`}/>
+        <KV label="Lots for this risk" value={`${numberLabel(finite(plan.risk_amount))} / (${numberLabel(stop, 1)} x ${numberLabel(value)}) = ${numberLabel(lots)}`}/>
+        <KV label="Total risk" value={`${numberLabel(stop, 1)} ${unit} x $${numberLabel(value)} x ${numberLabel(lots)} lots = $${numberLabel(finite(plan.check))}`}/>
+      </> : <KV label="Pip value" value={`${numberLabel(finite(plan.pip_value_per_lot))} ${display(plan.pip_value_currency, "")} per 1.00 lot; convert to your account currency`}/>}
+    </KVList>
+    <p className="ws-aside">Total risk = stop loss ({unit}) x {one} value x lots. Assumes {display(plan.convention, "standard contract sizes")}; check the contract size in your platform.</p>
+  </Card>;
+}
+
 function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; detail?: boolean; offset?: number; onPage?: (offset: number)=>void }) {
   if (detail) {
     const candidate = record(data.signal);
@@ -238,6 +264,7 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
       {Object.keys(candidate).length ? <>
         <div className="ws-detail-top"><SignalRecord signal={candidate} detail /><SetupEvidence source={data.setup_record ?? candidate.segment_evidence}/></div>
         {isPaperOnly(candidate) && <p className="ws-aside"><PaperOnlyTag/> The model scored this one below its usual bar, so it&rsquo;s for paper trading only. Try it on the paper desk first.</p>}
+        {Object.keys(record(data.order_plan)).length > 0 && <OrderPlan plan={record(data.order_plan)}/>}
         <SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
         <p className="ws-aside">A signal is an idea with levels, not an order. Nothing is placed with a broker unless you place it.</p>
       </> : <Empty title="We couldn't find this signal on your account.">It may belong to another account or plan.</Empty>}

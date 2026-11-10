@@ -393,6 +393,14 @@ def _plan_math_lines(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_
     lines.append("🔔 Halfway to TP1 you get an alert that you can move the stop to entry (optional; "
                  "the recorded result follows the plan above).")
     lines.extend(_money_plan_lines(signal, tp_levels))
+    try:
+        # Order type (market / limit / stop / stop-limit) and the pip/risk breakdown (10 Nov 2026).
+        from engine.order_plan import order_plan_lines
+
+        lines.extend(_h(line) for line in order_plan_lines(
+            dict(signal, take_profit=tp_levels), fmt=lambda value: _fmt_price_clean(value, asset)))
+    except Exception:
+        pass
     current = _safe_float(signal.get("current_price") or signal.get("live_price"))
     if current is not None and current > 0 and abs(current - entry_f) / entry_f > 0.0005:
         first = tp_levels[0]

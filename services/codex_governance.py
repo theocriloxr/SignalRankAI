@@ -341,6 +341,13 @@ async def _guarded_execute(session, unavailable: list[str], statement, params=No
         unavailable.append(f"{name}:{type(exc).__name__}")
         logger.warning("[codex_governance] section=%s failed after %.1fs error=%s", name,
                        time.perf_counter() - started, type(exc).__name__)
+        # A timed-out statement invalidates the connection, and the savepoint cannot
+        # recover it (production 10 Nov 2026: PendingRollbackError on every later
+        # section and on commit). Roll back fully so the next section reconnects.
+        try:
+            await session.rollback()
+        except Exception:
+            pass
         return _BufferedResult([])
     elapsed = time.perf_counter() - started
     if elapsed > 10:

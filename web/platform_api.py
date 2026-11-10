@@ -2829,11 +2829,19 @@ async def signal_detail(
         channel == "telegram" and row.get("delivery_confirmed_at") and row.get("telegram_message_id")
     )
     web_proven = bool(channel == "web" and row.get("delivery_confirmed_at"))
+    presented = _present_signal_for_tier(row, str(user.get("tier") or "free"))
+    order_plan = None
+    if not presented.get("exact_levels_locked"):
+        try:
+            # Order type and pip/risk breakdown, as on the Telegram card (10 Nov 2026).
+            from engine.order_plan import build_order_plan
+
+            order_plan = build_order_plan(presented)
+        except Exception:
+            order_plan = None
     return {
-        "signal": _present_signal_for_tier(
-            row,
-            str(user.get("tier") or "free"),
-        ),
+        "signal": presented,
+        "order_plan": order_plan,
         "events": _present_signal_events_for_tier(
             [dict(event) for event in events],
             str(user.get("tier") or "free"),

@@ -29,7 +29,7 @@ def test_environment() -> dict[str, str]:
                PYTHONIOENCODING="utf-8", PYTHONUTF8="1", PYTHONPATH=str(ROOT),
                PLAYWRIGHT_BROWSERS_PATH=str(ROOT / ".pytest-tmp/stage1-browsers"),
                PYTEST_ADDOPTS="-o cache_dir=.pytest-tmp/stage1-cache --basetemp=.pytest-tmp/stage1-pytest",
-               EXPECTED_ALEMBIC_HEAD="0061_tracked_shadow_index")
+               EXPECTED_ALEMBIC_HEAD="0062_candidate_shadow_index")
     for flag in ("REAL_EXECUTION_ENABLED", "AUTO_EXECUTION_ENABLED", "AUTO_TRADE_ENABLED", "COPY_TRADE_ENABLED",
                  "PROP_EXECUTION_ENABLED", "REAL_PAYOUTS_ENABLED", "LIVE_FINANCIAL_FEATURES_ENABLED",
                  "MT5_ALLOW_LIVE_ACCOUNTS", "MT5_LIVE_EXECUTION_ENABLED", "MT5_AUTO_EXECUTION_ENABLED",

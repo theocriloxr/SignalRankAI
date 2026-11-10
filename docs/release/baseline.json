@@ -128,7 +128,7 @@
     },
     "expectancy_shadow": {
       "commits": "136290b8..698a0191",
-      "schema_head": "0061_tracked_shadow_index",
+      "schema_head": "0062_candidate_shadow_index",
       "flags": {
         "EXPECTANCY_SHADOW_RECORDING_ENABLED": "default on",
         "EXPECTANCY_SHADOW_BOOTSTRAP_ENABLED": "default off",

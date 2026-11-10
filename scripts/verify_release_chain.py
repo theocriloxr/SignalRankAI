@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0061_tracked_shadow_index")
+EXPECTED_HEAD = os.getenv("EXPECTED_ALEMBIC_HEAD", "0062_candidate_shadow_index")
 
 
 def main() -> int:
@@ -67,6 +67,9 @@ def main() -> int:
         "0061_tracked_shadow_index",
         "ix_decision_log_tracked_id",
         "tracked_shadow_index_invalid_or_definition_mismatch",
+        "0062_candidate_shadow_index",
+        "ix_ml_rejected_candidate_shadow",
+        "candidate_shadow_index_invalid_or_definition_mismatch",
         "ALTER TABLE users ALTER COLUMN auto_renew SET DEFAULT FALSE",
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_decision_log_ml_pending_created",
         "shadow_pending_index_invalid_or_definition_mismatch",
