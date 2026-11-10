@@ -7411,11 +7411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1108,
+      "line_count": 1109,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "50399c80eaf3d07422806a02fb590a109970aa5e6e67ea2f0ee91a5f2beac2d5",
-      "size_bytes": 175820
+      "sha256": "65d911cb1d54d4f0045d2d866593154bcfb124795aa20fac410691bea47b10a9",
+      "size_bytes": 176342
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13091,11 +13091,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 8,
+      "line_count": 14,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1d0809c5af816e8d78c5cc00fc85b7d9b181090dfa5c7f798fd5138f0893b101",
-      "size_bytes": 140
+      "sha256": "1364ac7120076a7791aec72308badfc2a9525d20d8ad5e042468a4eaa8cf011b",
+      "size_bytes": 350
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14227,11 +14227,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16923,
+      "line_count": 16943,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "2d067511cff1ec625decddc8dd843e21b3dd6dcdf75ccbd89d7bd7ced992c27b",
-      "size_bytes": 494112
+      "sha256": "0717a2dd588c3549d3e3d0158dc3fd26132f59c7090f6f1146e921457f5a404c",
+      "size_bytes": 494658
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14251,11 +14251,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1334,
+      "line_count": 1342,
       "path": "requirements/feature_flags.yaml",
       "reason": "machine-readable governance",
-      "sha256": "1a90fc28c31103dd109b8f65e79f7e8c351076ae74483a33bab89ae4057763c0",
-      "size_bytes": 44764
+      "sha256": "9d258408ff3ff522e090f17f5921ce2bd7c877b6ab25f2ced57b5e9f369edbde",
+      "size_bytes": 45034
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16219,11 +16219,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 154,
+      "line_count": 163,
       "path": "services/post_deploy_maintenance.py",
       "reason": "production/build source",
-      "sha256": "8dd7813fefa334706ec665458c92f4357dcb5828e9ff1c2896c887f97c193dea",
-      "size_bytes": 6925
+      "sha256": "6a16decdd6122d4897584ed91ac1387d8902a1d62c7df80fe76b11a1f4e7a866",
+      "size_bytes": 7401
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

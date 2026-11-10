@@ -152,3 +152,12 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
             await stale_tick_relabel_preview_once()
         except Exception as exc:
             logger.warning("[post_deploy] stale_tick_relabel dry run failed: %s: %s", type(exc).__name__, exc)
+    if not stop.is_set():
+        # Owner, 10 Nov 2026: correct the stored asset class on past training rows, then retrain.
+        try:
+            from services.asset_class_backfill import run as asset_class_backfill
+
+            result = await asset_class_backfill(stop)
+            logger.info("[post_deploy] asset_class_backfill %s", result)
+        except Exception as exc:
+            logger.warning("[post_deploy] asset_class_backfill failed: %s", type(exc).__name__)

@@ -1,5 +1,5 @@
 {
-  "count": 165,
+  "count": 166,
   "flags": [
     {
       "dangerous": false,
@@ -132,6 +132,14 @@
     {
       "dangerous": false,
       "name": "ASSET_CLASSES_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
+    {
+      "dangerous": false,
+      "name": "ASSET_CLASS_BACKFILL_ENABLED",
       "production_example_default": null,
       "required_safe_default": null,
       "rollback": "restore previous environment value and redeploy",
