@@ -152,18 +152,6 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
             await stale_tick_relabel_preview_once()
         except Exception as exc:
             logger.warning("[post_deploy] stale_tick_relabel dry run failed: %s: %s", type(exc).__name__, exc)
-    if _enabled("POST_DEPLOY_STALE_TICK_RELABEL_APPLY", True) and not stop.is_set():
-        # Owner, 10 Nov 2026: "correct all wrong database details". The stale-tick label
-        # correction was dry-run only, waiting for /stale_tick_relabel apply; the owner has
-        # now asked for every wrong record to be corrected, so it is applied once here
-        # (same audited script; the marker makes it run once).
-        try:
-            from core.redis_state import state
-
-            if not state.get_sync(RELABEL_MARKER):
-                await run_stale_tick_relabel(apply=True)
-        except Exception as exc:
-            logger.warning("[post_deploy] stale_tick_relabel apply failed: %s: %s", type(exc).__name__, exc)
     if not stop.is_set():
         # Owner, 10 Nov 2026: audited corrections from the read-only data audit.
         try:
@@ -184,3 +172,21 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
             logger.info("[post_deploy] asset_class_backfill %s", result)
         except Exception as exc:
             logger.warning("[post_deploy] asset_class_backfill failed: %s", type(exc).__name__)
+    # Runs last (10 Nov 2026): it is a long, paced scan and every redeploy restarted it, which kept
+    # the quick corrections above from ever running. Re-running is safe (corrected rows are skipped).
+    if _enabled("POST_DEPLOY_STALE_TICK_RELABEL_APPLY", True) and not stop.is_set():
+        # Owner, 10 Nov 2026: "correct all wrong database details". The stale-tick label
+        # correction was dry-run only, waiting for /stale_tick_relabel apply; the owner has
+        # now asked for every wrong record to be corrected, so it is applied once here
+        # (same audited script; the marker makes it run once).
+        try:
+            from core.redis_state import state
+
+            if not state.get_sync(RELABEL_MARKER):
+                await run_stale_tick_relabel(apply=True)
+                # Labels changed: retrain on them (same queue as /ml_retrain).
+                from runtime.analytics import ML_FORCE_TRAIN_KEY
+
+                state.set_sync(ML_FORCE_TRAIN_KEY, "stale_tick_relabel", ex=6 * 3600)
+        except Exception as exc:
+            logger.warning("[post_deploy] stale_tick_relabel apply failed: %s: %s", type(exc).__name__, exc)

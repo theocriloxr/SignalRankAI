@@ -1,5 +1,5 @@
 {
-  "file_count": 2777,
+  "file_count": 2780,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2896,6 +2896,14 @@
       "reason": "production/build source",
       "sha256": "834d30515b018c25e0be249d0236c13699e45bfadd123736a732078cad3fd5aa",
       "size_bytes": 8823
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 46,
+      "path": "core/asset_class_key.py",
+      "reason": "production/build source",
+      "sha256": "61b4d1046ef32383dc68c02dc4615eb06b4a8c54e955041ff72fa85f2c592c12",
+      "size_bytes": 1567
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15907,6 +15915,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 114,
+      "path": "services/data_corrections.py",
+      "reason": "production/build source",
+      "sha256": "d84b0a896bb4a8e437443e5bc0683926d94e91f6c43a286c2e020bd727483aca",
+      "size_bytes": 5488
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 325,
       "path": "services/dead_letter_queue.py",
       "reason": "production/build source",
@@ -16227,11 +16243,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 186,
+      "line_count": 192,
       "path": "services/post_deploy_maintenance.py",
       "reason": "production/build source",
-      "sha256": "4c99710af3b1e26aaf522795be86886f30a32015d399e0f6091e2f02df3d99b7",
-      "size_bytes": 8717
+      "sha256": "1af805bf5f1c30f223bb645ff728bd508903054872ce56f7d0a06053a86f4739",
+      "size_bytes": 9150
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18544,6 +18560,14 @@
       "reason": "automated test evidence",
       "sha256": "7b23564e72ae02f25329d58251989f579c3295c2d4c836743cf031a070e3bd0b",
       "size_bytes": 1437
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 94,
+      "path": "tests/test_data_corrections_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "5b25ff7441daf9c42c3231948c7ead77041ba83f3ca78a0b071fe2072a251aef",
+      "size_bytes": 6148
     },
     {
       "disposition": "TEST_ONLY",
@@ -22231,7 +22255,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1409,
-    "TEST_ONLY": 489
+    "PRESERVE_BEHAVIOUR": 1411,
+    "TEST_ONLY": 490
   }
 }
