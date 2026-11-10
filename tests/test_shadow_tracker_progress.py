@@ -213,3 +213,26 @@ async def test_constant_inflow_still_revisits_unresolved_older_rows(shadow_store
     revisited = {row_id for batch in seen for row_id in batch[1:] if row_id < batch[0]}
     assert {1, 2} <= revisited, seen
     assert seen[0] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_revisit_stays_inside_the_recent_window(shadow_store, monkeypatch):
+    """Production 10 Nov 2026: the revisit read started at id 0, scanned millions of
+    tracked rows and timed out (readyz degraded). It now starts at most
+    SHADOW_REVISIT_WINDOW_ROWS behind the head."""
+    monkeypatch.setenv("SHADOW_REVISIT_WINDOW_ROWS", "1000")
+    async with shadow_store() as session:
+        session.add_all([decision(5), decision(5000), decision(5600)])
+        await session.commit()
+    worker = ShadowOutcomeWorker()
+    worker._batch_size = 5
+    worker._scan_after_id = 5600  # the head has passed every row
+    seen = []
+
+    async def unresolved(rows):
+        seen.append([row["id"] for row in rows])
+        return []
+
+    monkeypatch.setattr(worker, "_evaluate_rows", unresolved)
+    await worker.run_once()
+    assert seen and set(seen[0]) == {5000, 5600}, seen  # id 5 is outside the window

@@ -306,12 +306,20 @@ class ShadowOutcomeWorker:
                     # it was logged (146k rows pending, ~1 % resolved). At most
                     # two more bounded keyset queries; no OFFSET scan and no
                     # provider calls while the transaction is open.
+                    # Bounded to the last SHADOW_REVISIT_WINDOW_ROWS ids (default 300k): starting at
+                    # id 0 scanned millions of already-tracked rows and timed out every pass that
+                    # left spare room (production 10 Nov 2026, readyz degraded). Inside the window
+                    # about half the rows are unresolved, so the keyset read stops almost at once.
+                    window = max(1000, int(os.getenv("SHADOW_REVISIT_WINDOW_ROWS", "300000") or 300000))
+                    floor = max(0, self._scan_after_id - window)
                     behind = query.limit(spare).where(DecisionLog.id <= self._scan_after_id)
                     revisit = list(
-                        (await session.execute(behind.where(DecisionLog.id > self._revisit_after_id))).scalars().all()
+                        (await session.execute(
+                            behind.where(DecisionLog.id > max(floor, self._revisit_after_id))
+                        )).scalars().all()
                     )
-                    if not revisit and self._revisit_after_id:
-                        revisit = list((await session.execute(behind)).scalars().all())
+                    if not revisit and self._revisit_after_id > floor:
+                        revisit = list((await session.execute(behind.where(DecisionLog.id > floor))).scalars().all())
                     self._pending_revisit_after_id = int(revisit[-1].id) if revisit else 0
                     rows.extend(revisit)
                 # Copy only primitive values before closing the session.
