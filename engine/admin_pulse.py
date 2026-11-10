@@ -847,7 +847,7 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                 f"- assets attempted: {cycle.get('assets_attempted', pipeline.get('assets_attempted', 0))}\n"
                 f"- market data assets: {cycle.get('market_data_assets', pipeline.get('market_data_assets', 0))}\n"
                 f"- generated: {cycle.get('generated_signals', 0)}\n"
-                f"- max score: {cycle.get('max_score', None)}\n"
+                f"- max score: {_score_text(cycle.get('max_score'), cycle.get('max_score_pre_threshold', pipeline.get('max_score_pre_threshold')))}\n"
                 f"- duration ms: {cycle.get('duration_ms', 'n/a')}\n"
             )
             if cycle.get("max_score_absent_reason"):
@@ -858,6 +858,19 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             if drought_lines:
                 txt += "\n" + "\n".join(drought_lines) + "\n"
         quality = stats.get("signal_quality") or {}
+        if quality and not float(quality.get("max_score") or 0.0):
+            # No signal issued in the window: show the real candidate scores instead of zeros (10 Nov 2026).
+            pipeline = (cycle or {}).get("pipeline_stats") if isinstance(cycle, dict) else {}
+            pipeline = pipeline if isinstance(pipeline, dict) else {}
+            best = (cycle or {}).get("max_score_pre_threshold", pipeline.get("max_score_pre_threshold"))
+            raw_max = (cycle or {}).get("ml_raw_max", pipeline.get("ml_raw_probability_max"))
+            bar = (cycle or {}).get("ml_threshold_raw", pipeline.get("ml_threshold_raw"))
+            txt += (
+                "\nQuality snapshot (no signal issued in this window):\n"
+                f"- best candidate score this cycle: {_score_text(None, best)}\n"
+                f"- best ML raw score this cycle: {_pct_text(raw_max)} (bar {_pct_text(bar)})\n"
+            )
+            quality = {}
         if quality:
             txt += (
                 "\nQuality snapshot:\n"
@@ -1192,3 +1205,20 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
             logger.exception("[admin_pulse] loop send failed")
         await _run_weekly_report_if_due()
         await asyncio.sleep(max(60, int(interval)))
+
+
+def _score_text(issued: Any, candidate: Any) -> str:
+    for value, suffix in ((issued, ""), (candidate, " (best candidate, before gates)")):
+        try:
+            if value is not None:
+                return f"{float(value):.1f}{suffix}"
+        except (TypeError, ValueError):
+            continue
+    return "n/a"
+
+
+def _pct_text(value: Any) -> str:
+    try:
+        return f"{float(value) * 100.0:.1f}%"
+    except (TypeError, ValueError):
+        return "n/a"

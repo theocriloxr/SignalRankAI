@@ -149,7 +149,7 @@ def _closed_higher_trend(index: pd.DatetimeIndex, higher: pd.DataFrame | None, t
 def replay_frame(asset: str, klass: str, tf: str, df: pd.DataFrame, frames: Mapping[str, pd.DataFrame], *,
                  before: pd.Timestamp | None, max_rows: int) -> list[dict[str, Any]]:
     """Labelled training rows for one asset/timeframe, newest first, all strictly before ``before``."""
-    from ml.features import _asset_class_to_int
+    from ml.features import live_asset_class_enc  # same encoding as live scoring (10 Nov 2026)
     from strategies.discovered import FAMILY_GRID, VOLUME_FAMILIES, entry_mask, has_volume, indicator_frame
 
     if df is None or len(df) < 400:
@@ -176,7 +176,7 @@ def replay_frame(asset: str, klass: str, tf: str, df: pd.DataFrame, frames: Mapp
     mtf4 = _closed_higher_trend(ind.index, frames.get(h1), h1)
     mtf1d = _closed_higher_trend(ind.index, frames.get(h2), h2)
     volume_ok = has_volume(ind)
-    class_enc = float(_asset_class_to_int(asset))
+    class_enc = float(live_asset_class_enc(asset))
 
     taken: dict[tuple[int, str], str] = {}
     for family, grid in FAMILY_GRID.items():

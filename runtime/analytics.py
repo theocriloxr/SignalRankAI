@@ -38,6 +38,9 @@ def _automatic_retrain_enabled(reason: str) -> bool:
 _ML_TRAIN_LOCK=asyncio.Lock()
 
 
+ML_FORCE_TRAIN_KEY = "signalrankai:ml:train:force_request"  # set by the owner's /ml_retrain
+
+
 async def _run_ml_training_serialized(*, reason: str, lookback_days: int | None=None) -> bool:
     """Serialize analytics-owned training and suppress redundant drift retrains."""
     retrain_reason=str(reason or "").strip().lower()
@@ -472,27 +475,44 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
         if _enabled("ML_DRIFT_MONITOR_ENABLED", False):
             tasks.append(asyncio.create_task(_ml_drift_loop(stop),name="analytics-ml-drift"))
         if _enabled("ANALYTICS_ML_TRAIN_ENABLED", True):
+            async def _wait_or_owner_request(seconds: float) -> str:
+                """Sleep up to ``seconds``; return early on an owner /ml_retrain request (10 Nov 2026)."""
+                from core.redis_state import state
+                deadline=__import__("time").monotonic()+float(seconds)
+                while not stop.is_set():
+                    try:
+                        if state.get_sync(ML_FORCE_TRAIN_KEY):
+                            state.set_sync(ML_FORCE_TRAIN_KEY, "", ex=1)
+                            return "owner_request"
+                    except Exception:
+                        pass
+                    left=deadline-__import__("time").monotonic()
+                    if left <= 0:
+                        return "scheduled"
+                    try:
+                        await asyncio.wait_for(stop.wait(), timeout=min(60.0, left))
+                    except asyncio.TimeoutError:
+                        continue
+                return "stopped"
+
             async def _ml_loop() -> None:
                 delay=max(60, int(os.getenv("ANALYTICS_ML_TRAIN_STARTUP_DELAY_SECONDS", "900") or 900))
                 interval=max(3600, int(os.getenv("ML_TRAIN_INTERVAL_SECONDS", "86400") or 86400))
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=delay)
+                why=await _wait_or_owner_request(delay)
+                if why == "stopped":
                     return
-                except asyncio.TimeoutError:
-                    pass
                 while not stop.is_set():
                     ok=await _run_ml_training_serialized(
-                        reason="scheduled",
+                        reason=why,
                         lookback_days=max(
                             1,
                             int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90),
                         ),
                     )
-                    logger.info("[analytics] ml_train status=%s", "success" if ok else "skipped_or_failed")
-                    try:
-                        await asyncio.wait_for(stop.wait(), timeout=interval)
-                    except asyncio.TimeoutError:
-                        pass
+                    logger.info("[analytics] ml_train reason=%s status=%s", why, "success" if ok else "skipped_or_failed")
+                    why=await _wait_or_owner_request(interval)
+                    if why == "stopped":
+                        return
             tasks.append(asyncio.create_task(_ml_loop(),name="analytics-ml-train"))
         if _enabled("LEARNING_HISTORY_RETENTION_ENABLED", False):
             from db.storage_maintenance import learning_history_maintenance_loop

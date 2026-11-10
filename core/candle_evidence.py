@@ -7,7 +7,7 @@ follow-through candle into an auditable evidence record.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from statistics import median
 from typing import Any, Mapping, MutableMapping, Sequence
@@ -110,6 +110,7 @@ class CandleEvidence:
     evidence_score_pct: float
     state: str
     summary: str
+    evidence_components: dict = field(default_factory=dict)  # each graded component, 0-100 (10 Nov 2026)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -163,6 +164,109 @@ def _past_levels(history: Sequence[Mapping[str, Any]], close: float) -> tuple[fl
     support_candidates = [level for level in pivot_lows if level <= close] or [min(all_lows)]
     resistance_candidates = [level for level in pivot_highs if level >= close] or [max(all_highs)]
     return max(support_candidates), min(resistance_candidates)
+
+
+def graded_evidence_score(
+    *,
+    desired: str,
+    candle_direction: str,
+    body_ratio: float,
+    rejection: str,
+    rejection_strength: float,
+    close_location: float,
+    breakout: str,
+    at_key_level: bool,
+    nearest_level: str | None,
+    range_position: float | None,
+    relative_volume: float | None,
+    confirmation: str,
+    follow_through: str,
+    history: Sequence[Mapping[str, Any]],
+    close: float,
+    atr: float,
+) -> tuple[float, dict[str, float]]:
+    """(0-100 score, each component 0-100): price-action evidence for the trade's direction, graded (10 Nov 2026).
+
+    The old score counted five yes/no checks on one candle and took 15 points
+    per conflict, floored at 0. A pullback or mean-reversion entry normally
+    sits on a candle moving *against* the trade, so textbook setups scored
+    exactly 0/100 (owner: "proper scoring, not that they all turn to 0/100").
+    Each component is now graded 0..1 (0.5 = neutral) and weighted:
+
+    * body 0.20: strength in the trade's direction; a counter-direction body on
+      a pullback into the trade's key level is neutral (that is the setup);
+    * wick rejection 0.15: graded by rejection strength, for or against;
+    * close location 0.20: where in its range the candle closed, from the
+      trade's side;
+    * location 0.20: breakout or the trade's key level high, the wrong end of
+      the range low;
+    * recent structure 0.15: the last 5 closed candles' move in the trade's
+      direction, in ATR (one candle no longer decides everything);
+    * volume 0.10 (when known): expansion in the trade's direction;
+    * next-candle confirmation 0.15 (once that candle exists).
+    """
+    long_side = desired != "bearish"
+    components: list[tuple[float, float]] = []
+    named: dict[str, float] = {}
+
+    with_trade = (candle_direction == "bullish") == long_side and candle_direction != "indecision"
+    strength = _clamp(body_ratio / 0.65)
+    pullback_at_level = at_key_level and nearest_level == ("support" if long_side else "resistance")
+    if candle_direction == "indecision":
+        body_c = 0.5
+    elif with_trade:
+        body_c = 0.5 + 0.5 * strength
+    else:
+        body_c = 0.5 if pullback_at_level else 0.5 - 0.5 * strength
+    components.append((0.20, body_c))
+    named["body"] = body_c
+
+    aligned_reject = (long_side and rejection == "lower_price_rejection") or (
+        not long_side and rejection == "higher_price_rejection")
+    opposing_reject = (long_side and rejection == "higher_price_rejection") or (
+        not long_side and rejection == "lower_price_rejection")
+    wick_strength = _clamp(rejection_strength / 0.6)
+    components.append((0.15, 0.5 + 0.5 * wick_strength if aligned_reject else
+                       0.5 - 0.5 * wick_strength if opposing_reject else 0.5))
+    named["wick"] = components[-1][1]
+
+    components.append((0.20, _clamp(close_location if long_side else 1.0 - close_location)))
+    named["close"] = components[-1][1]
+
+    if breakout == ("bullish_breakout" if long_side else "bearish_breakdown"):
+        location = 1.0
+    elif breakout != "none":
+        location = 0.1
+    elif pullback_at_level:
+        location = 0.85
+    elif at_key_level:
+        location = 0.3  # at the level the trade runs into
+    elif range_position is not None:
+        location = 0.75 - 0.5 * range_position if long_side else 0.25 + 0.5 * range_position
+    else:
+        location = 0.5
+    components.append((0.20, _clamp(location)))
+    named["location"] = components[-1][1]
+
+    closes = [_number(row.get("close")) for row in list(history)[-5:] if _number(row.get("close")) > 0]
+    if closes and atr > 0:
+        move = (close - closes[0]) / (2.0 * atr)
+        components.append((0.15, _clamp(0.5 + 0.5 * (move if long_side else -move))))
+        named["structure"] = components[-1][1]
+
+    if relative_volume is not None:
+        expansion = _clamp(relative_volume - 1.0, -1.0, 1.0)
+        components.append((0.10, _clamp(0.5 + 0.5 * expansion) if with_trade else _clamp(0.5 - 0.25 * expansion)))
+        named["volume"] = components[-1][1]
+
+    if confirmation != "pending":
+        confirm = {"strong": 1.0, "present": 0.8, "absent": 0.4, "opposed": 0.0}.get(follow_through, 0.4)
+        components.append((0.15, confirm))
+        named["follow_through"] = confirm
+
+    total = sum(weight for weight, _ in components)
+    score = round(100.0 * sum(weight * value for weight, value in components) / total, 2) if total else 50.0
+    return score, {k: round(v * 100.0, 1) for k, v in named.items()}
 
 
 def assess_candle_evidence(
@@ -347,8 +451,13 @@ def assess_candle_evidence(
         conflicts.append("next_candle_invalidated")
 
     positive_count = sum(checks)
-    raw_pct = 100.0 * positive_count / max(1, len(checks))
-    evidence_score_pct = _clamp(raw_pct - (15.0 * len(conflicts)), 0.0, 100.0)
+    evidence_score_pct, components_pct = graded_evidence_score(
+        desired=desired, candle_direction=candle_direction, body_ratio=body_ratio,
+        rejection=rejection, rejection_strength=rejection_strength, close_location=close_location,
+        breakout=breakout, at_key_level=at_key_level, nearest_level=nearest_level,
+        range_position=range_position, relative_volume=relative_volume, confirmation=confirmation,
+        follow_through=follow_through, history=history, close=close, atr=atr,
+    )
     state = (
         "invalidated"
         if confirmation == "invalidated"
@@ -358,7 +467,8 @@ def assess_candle_evidence(
     summary = (
         f"{body_classification.replace('_', ' ')} with {rejection.replace('_', ' ')}; "
         f"close controlled by {close_control}; context {market_context}; {volume_text}; "
-        f"next candle {confirmation}. Evidence {evidence_score_pct:.0f}/100, not proof."
+        f"next candle {confirmation}. Evidence {evidence_score_pct:.0f}/100 "
+        f"({', '.join(f'{k} {v:.0f}' for k, v in components_pct.items())}), not proof."
     )
     return CandleEvidence(
         direction=candle_direction,
@@ -390,6 +500,7 @@ def assess_candle_evidence(
         evidence_score_pct=round(evidence_score_pct, 2),
         state=state,
         summary=summary,
+        evidence_components=components_pct,
     )
 
 

@@ -26,7 +26,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/app/billing` | `/billing` | `/cancel`, `/early`, `/elite`, `/pricing`, `/tiers`, `/upgrade` |
 | `/app/support` | `/support/tickets` | `/disclaimer`, `/faq`, `/support` |
 | `/app/settings` | `/trading-profile` | `/account`, `/apikey`, `/app`, `/devices`, `/invite`, `/language`, `/link`, `/login_code`, `/privacy`, `/profile`, `/referral`, `/referral_leaderboard`, `/referral_rewards`, `/security`, `/setrisk`, `/settings`, `/status`, `/timezone` |
-| `/app/operations` | `/operator/overview` | `/account_merges`, `/engine_debug`, `/kill_switch`, `/ops_health`, `/provider_status`, `/queue_status`, `/release_guard`, `/system_health` |
+| `/app/operations` | `/operator/overview` | `/account_merges`, `/engine_debug`, `/kill_switch`, `/ml_retrain`, `/ops_health`, `/provider_status`, `/queue_status`, `/release_guard`, `/system_health` |
 
 ## Telegram commands
 
@@ -140,6 +140,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/delivery_latency` | OWNER | Owner | — (Telegram-only) |
 | `/verify_email_campaign` | OWNER | Owner | — (Telegram-only) |
 | `/ml_status` | OWNER | Owner | — (Telegram-only) |
+| `/ml_retrain` | OWNER | Owner | `/app/operations` |
 | `/performance_audit` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_rebuild` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_audit` | OWNER | Owner | — (Telegram-only) |
@@ -321,4 +322,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 130 commands (51 without a web section), 17 web sections, 153 routes (96 without a name-matched command).
+Summary: 131 commands (51 without a web section), 17 web sections, 153 routes (96 without a name-matched command).

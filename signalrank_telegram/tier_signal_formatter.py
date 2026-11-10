@@ -145,6 +145,10 @@ def _candle_price_action_lines(
     except Exception:
         pass
 
+    parts = evidence.get("evidence_components") if isinstance(evidence.get("evidence_components"), dict) else {}
+    labels = {"body": "Body", "wick": "Wick", "close": "Close", "location": "Location", "structure": "Structure",
+              "volume": "Volume", "follow_through": "Follow-through"}
+    breakdown = " • ".join(f"{labels.get(k, k)} {float(v):.0f}" for k, v in parts.items()) if parts else ""
     lines = [
         f"🕯️ <b>Price Action Evidence: {score:.0f}/100</b> (evidence, not proof)",
         _h(
@@ -152,6 +156,9 @@ def _candle_price_action_lines(
             f"Wicks: upper {upper_pct:.0f}% / lower {lower_pct:.0f}% • Rejection: {rejection}"
         ),
     ]
+    if breakdown:
+        # How the score was calculated: each graded component 0-100 (10 Nov 2026).
+        lines.append(_h(f"Score parts: {breakdown}"))
     if detailed:
         lines.append(
             _h(

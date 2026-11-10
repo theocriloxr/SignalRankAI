@@ -656,6 +656,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "delivery_latency": Tier.OWNER,
         "verify_email_campaign": Tier.OWNER,
         "ml_status": Tier.OWNER,
+        "ml_retrain": Tier.OWNER,
         "performance_audit": Tier.OWNER,
         "outcome_rebuild": Tier.OWNER,
         "outcome_audit": Tier.OWNER,

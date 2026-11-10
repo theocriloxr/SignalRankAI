@@ -214,6 +214,28 @@ def _asset_class_to_int(asset: str) -> int:
     return 3
 
 
+def live_asset_class_enc(asset: str) -> float:
+    """The engine's live ``asset_class_enc`` (engine/core: crypto 0, fx 1, commodity 2, stock 3, index 4).
+
+    Training rows whose stored features lack the field defaulted to 0 (crypto), so FX,
+    metals and stock setups trained as crypto (production 10 Nov 2026: the per-class
+    specialists saw 5,014 "crypto" rows and no FX at all). Training now recomputes it
+    from the symbol with the same predicates the engine uses.
+    """
+    from data.fetcher import is_commodity, is_crypto, is_fx, is_index
+
+    a = str(asset or "")
+    if is_crypto(a):
+        return 0.0
+    if is_fx(a):
+        return 1.0
+    if is_index(a):
+        return 4.0
+    if is_commodity(a):
+        return 2.0
+    return 3.0
+
+
 def extract_features(signal, market_data):
     tf = signal.get("timeframe")
     tf_data = (market_data or {}).get(tf) or {}

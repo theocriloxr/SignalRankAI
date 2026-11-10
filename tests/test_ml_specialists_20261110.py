@@ -82,3 +82,14 @@ def test_replay_rows_carry_the_same_macro_trends_as_live_scoring():
     assert er.fill_macro(rows, {"dxy_trend": closes}) == 1 and rows[0]["dxy_trend"] == pytest.approx(trend)
     core = (Path(__file__).resolve().parents[1] / "engine" / "core.py").read_text("utf-8")
     assert 'closes = closes[-_bars:]' in core  # live uses the same trailing window
+
+
+def test_training_rows_use_the_live_asset_class_encoding():
+    from ml.features import live_asset_class_enc
+
+    assert live_asset_class_enc("BTCUSDT") == 0.0 and live_asset_class_enc("EURUSD") == 1.0
+    assert live_asset_class_enc("XAUUSD") in {1.0, 2.0}  # the engine's own predicates decide
+    assert live_asset_class_enc("AAPL") == 3.0
+    root = Path(__file__).resolve().parents[1]
+    assert "live_asset_class_enc(a)" in (root / "ml" / "train_model.py").read_text("utf-8")
+    assert "live_asset_class_enc(asset)" in (root / "ml" / "external_replay.py").read_text("utf-8")

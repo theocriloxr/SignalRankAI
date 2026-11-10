@@ -92,7 +92,11 @@ def test_a_failed_batch_keeps_rows_already_read(monkeypatch):
             calls["n"] += 1
             if calls["n"] > 3:  # probe window, then window 1 (ids + rows); window 2 fails
                 raise TimeoutError()
-            return _Result([{"id": 1_000_000 - i, "asset": "X", "features": "{}", "entry": str(1 + i)} for i in range(500)])
+            from datetime import datetime, timedelta
+
+            t0 = datetime(2026, 11, 1)
+            return _Result([{"id": 1_000_000 - i, "asset": "X", "timeframe": "1h", "features": "{}", "entry": str(1 + i),
+                             "created_at": t0 + timedelta(hours=i)} for i in range(500)])
 
         async def rollback(self):
             return None

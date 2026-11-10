@@ -4,7 +4,7 @@
 assets in different asset classes; train based on all of this."
 
 One global model ranks every candidate. A specialist is an extra model trained
-only on one asset class (crypto, FX, metals/energy, stocks/indices), on the same
+only on one asset class (crypto, FX, commodities, stocks, indices), on the same
 feature contract. Strategy, regime, direction and timeframe-sensitive features
 are inputs, so each specialist learns which strategies work in *its* class.
 
@@ -29,7 +29,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-CLASS_NAMES = {0: "crypto", 1: "fx", 2: "metals_energy", 3: "stocks_indices"}
+CLASS_NAMES = {0: "crypto", 1: "fx", 2: "commodities", 3: "stocks", 4: "indices"}  # engine/core encoding
 
 
 def _env_int(name: str, default: int) -> int:

@@ -135,6 +135,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("delivery_latency", "Where signal delivery time goes, by class and timeframe", "OWNER", "Owner"),
     CommandSpec("verify_email_campaign", "Ask unverified users to verify their email (send to confirm)", "OWNER", "Owner"),
     CommandSpec("ml_status", "ML model age, last training run and why it was not replaced", "OWNER", "Owner"),
+    CommandSpec("ml_retrain", "Start an ML training run now (same gates)", "OWNER", "Owner"),
     CommandSpec("performance_audit", "Audit performance projection integrity", "OWNER", "Owner"),
     CommandSpec("outcome_rebuild", "Run bounded outcome and outbox rebuild", "OWNER", "Owner"),
     CommandSpec("outcome_audit", "Audit outcome projection and notification state", "OWNER", "Owner"),
@@ -174,7 +175,7 @@ OPERATOR_MENU_OMIT = frozenset({
     "start", "about", "app", "login_code", "link", "security", "privacy", "pricing", "upgrade", "tiers",
     "invite", "referral_leaderboard", "referral_rewards", "referral", "faq", "disclaimer", "language",
     "cancel", "paper_reset", "paper_close_all", "profile", "connect_broker", "mt5_link", "setlot", "early",
-    "report", "track_record", "elite", "my_ideas", "setrisk",  # 9-10 Nov 2026: room for new owner commands; /help still lists them
+    "report", "track_record", "elite", "my_ideas", "setrisk", "simulate",  # 9-10 Nov 2026: room for new owner commands; /help still lists them
 })
 
 

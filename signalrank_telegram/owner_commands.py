@@ -1459,6 +1459,30 @@ async def ml_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.reply_text("\n".join(lines)[:3900])
 
 
+async def ml_retrain_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only: start an ML training run now instead of waiting for the daily one (10 Nov 2026).
+
+    The run uses the same data, gates and promotion rules as the scheduled run; it only
+    changes *when* it starts. Analytics checks for the request every minute.
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    from core.redis_state import state
+    from runtime.analytics import ML_FORCE_TRAIN_KEY
+
+    try:
+        state.set_sync(ML_FORCE_TRAIN_KEY, "1", ex=6 * 3600)
+    except Exception as exc:
+        await update.message.reply_text(f"⚠️ Could not queue the training run ({type(exc).__name__}).")
+        return
+    await update.message.reply_text(
+        "🧠 Training run requested. It starts within a minute (after any run already in progress) and takes "
+        "a few minutes. Gates are unchanged. Check the result with /ml_status.")
+
+
 async def verify_email_campaign_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only: ask existing unverified users to verify their email (9 Nov 2026).
 

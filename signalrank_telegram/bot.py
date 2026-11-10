@@ -6762,6 +6762,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("delivery_latency", _audit_handler("delivery_latency", delivery_latency_command)))
     application.add_handler(CommandHandler("verify_email_campaign", _audit_handler("verify_email_campaign", verify_email_campaign_command)))
     application.add_handler(CommandHandler("ml_status", _audit_handler("ml_status", ml_status_command)))
+    from signalrank_telegram.owner_commands import ml_retrain_command
+    application.add_handler(CommandHandler("ml_retrain", _audit_handler("ml_retrain", ml_retrain_command)))
     application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
     application.add_handler(CommandHandler("outcome_rebuild", _audit_handler("outcome_rebuild", outcome_rebuild_command)))
     application.add_handler(CommandHandler("outcome_audit", _audit_handler("outcome_audit", outcome_audit_command)))

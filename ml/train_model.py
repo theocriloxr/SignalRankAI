@@ -1457,6 +1457,15 @@ async def load_training_data(lookback_days: int = 90):
             logger.warning("[ml_dataset] user ideas unavailable error=%s", type(idea_err).__name__)
 
         df = pd.DataFrame(data)
+        if not df.empty and "asset" in df.columns:
+            # Same asset-class encoding as live scoring, from the symbol (10 Nov 2026).
+            try:
+                from ml.features import live_asset_class_enc
+
+                classes = {a: live_asset_class_enc(a) for a in df["asset"].dropna().unique()}
+                df["asset_class_enc"] = df["asset"].map(classes).fillna(df.get("asset_class_enc", 0.0))
+            except Exception as class_err:
+                logger.warning("[ml_dataset] asset class encoding skipped error=%s", type(class_err).__name__)
         df, pegged = _exclude_pegged_assets(df)
         df.attrs["pegged_assets_excluded"] = pegged
         df, focus = _restrict_to_focused_universe(df)
@@ -1569,14 +1578,18 @@ async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
     started = time.monotonic()
     diagnostics.update(batches=0, error=None, capped=False, budget_hit=False, scanned_ids=0, duplicates=0)
 
+    _bar_seconds = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
+
     def _setup_key(r: dict) -> tuple:
         # The engine logs the same setup on every scan: one setup appeared hundreds of times,
         # the model memorised the repeats (production 10 Nov 2026: train AUC 0.92, validation
-        # 0.44). Keep one row per setup.
-        def _r(v):
-            f = _safe_float(v)
-            return round(f, 6 if f < 10 else 3) if f else 0.0
-        return (r.get("asset"), r.get("timeframe"), r.get("direction"), _r(r.get("entry")), _r(r.get("stop_loss")))
+        # 0.44; with exact-entry de-duplication still 0.86 vs 0.56, because the entry drifts a
+        # little between scans). One row per instrument, timeframe, side, strategy and bar.
+        created = r.get("created_at")
+        bar = _bar_seconds.get(str(r.get("timeframe") or "1h").lower(), 3600)
+        bucket = int(created.timestamp() // bar) if hasattr(created, "timestamp") else 0
+        strategy = str(((r.get("features") or {}) if isinstance(r.get("features"), dict) else {}).get("strategy_name") or "")
+        return (r.get("asset"), r.get("timeframe"), r.get("direction"), strategy, bucket)
 
     async def _window(session, before: int) -> list[int]:
         return [int(r[0]) for r in (await asyncio.wait_for(
@@ -2293,6 +2306,20 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         minimum_calibration_rows=minimum_calibration_fit_rows,
         minimum_validation_rows=calibration_min_rows,
     )
+    # Purge (embargo) rows just before each split boundary (10 Nov 2026): the engine re-logs the
+    # same market setup across consecutive scans, so neighbours of the boundary leak across it.
+    embargo_hours = max(0.0, float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24))
+    if embargo_hours > 0 and timestamps is not None and len(idx_cal) and len(idx_te):
+        ts_all = pd.to_datetime(pd.Series(np.asarray(timestamps)), errors="coerce")
+        gap = pd.Timedelta(hours=embargo_hours)
+        cal_start, te_start = ts_all.iloc[idx_cal].min(), ts_all.iloc[idx_te].min()
+        keep_tr = idx_tr[~(ts_all.iloc[idx_tr].to_numpy() > np.datetime64(cal_start - gap))]
+        keep_cal = idx_cal[~(ts_all.iloc[idx_cal].to_numpy() > np.datetime64(te_start - gap))]
+        # Never purge a window below the trainer's minimums; then keep the unpurged split.
+        if len(keep_tr) >= minimum_model_fit_rows and len(keep_cal) >= minimum_calibration_fit_rows:
+            logger.info("[ml_temporal_split] embargo_hours=%s purged_train=%s purged_calibration=%s", embargo_hours,
+                        len(idx_tr) - len(keep_tr), len(idx_cal) - len(keep_cal))
+            idx_tr, idx_cal = keep_tr, keep_cal
     if len(fit_only_idx):
         idx_tr = np.concatenate([fit_only_idx, idx_tr])
     logger.info(
