@@ -141,7 +141,10 @@ async def test_artifact_filter_precedes_limit_and_pending_outcomes_do_not_count_
 
 
 @pytest.mark.asyncio
-async def test_oversized_artifact_cohort_cannot_qualify_from_truncated_history(evidence_database, monkeypatch):
+async def test_oversized_artifact_cohort_is_judged_on_its_newest_window(evidence_database, monkeypatch):
+    """10 Nov 2026: a challenger with more observations than the cap failed forever
+    (candidate_observation_limit_exceeded). It is now judged on its newest contiguous
+    window, with every gate still applied, and the truncation is reported."""
     _, factory = evidence_database
     from ml.candidate_forward import evaluate_candidate_forward_evidence
     artifact = uuid4().hex
@@ -150,9 +153,11 @@ async def test_oversized_artifact_cohort_cannot_qualify_from_truncated_history(e
         session.add_all([decision(artifact, i, outcome="win" if i % 2 else "loss") for i in range(101)])
         await session.commit()
     result = await evaluate_candidate_forward_evidence({"artifact_hash_sha256": artifact, "trained_at": now_utc_naive()-timedelta(hours=1)})
-    assert result["eligible"] is False
-    assert result["reasons"] == ["candidate_observation_limit_exceeded"]
-    assert result["observations_scanned"] == 101
+    assert "candidate_observation_limit_exceeded" not in result["reasons"]
+    assert result["observations"] == 100 and result["observations_window_truncated"] is True
+    assert result["eligible"] is False  # all observations within 30 minutes: forward span gate still applies
+    assert "insufficient_forward_span" in result["reasons"]
+    assert result["candidate"]["artifact_hash_sha256"] == artifact
 
 
 @pytest.mark.asyncio

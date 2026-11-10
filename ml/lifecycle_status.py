@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 LAST_RUN_KEY = "signalrankai:ml:last_training_run"
 CHAMPION_KEY = "signalrankai:ml:champion_status"
-_KEEP_PREFIXES = ("[ml_training_run]", "[ml_external_replay]", "[ml_temporal_split]", "[ml_dataset]",
+_KEEP_PREFIXES = ("[ml_training_run]", "[ml_external_replay]", "[ml_temporal_split]", "[ml_dataset]", "[ml_specialists]",
                   "[ml_quality", "[ml_champion", "[ml_promotion", "[ml_schema")
 
 
@@ -196,8 +196,10 @@ def _dataset_summary(last_run: dict[str, Any]) -> dict[str, Any] | None:
     import re
 
     lines = list(last_run.get("lines") or []) if last_run else []
-    wanted = [line for line in lines if line.startswith(("[ml_dataset]", "[ml_training_run]", "[ml_quality_overfit]")) and
-              ("rows=" in line or "shadow batch" in line or "quality_gate" in line or "train_auc" in line)]
+    wanted = [line for line in lines if line.startswith(("[ml_dataset]", "[ml_training_run]", "[ml_quality_overfit]",
+                                                         "[ml_specialists]")) and
+              ("rows=" in line or "shadow batch" in line or "quality_gate" in line or "train_auc" in line
+               or line.startswith("[ml_specialists]"))]
     if not wanted:
         return None
     out: dict[str, Any] = {}
@@ -226,6 +228,9 @@ def _dataset_summary(last_run: dict[str, Any]) -> dict[str, Any] | None:
                 if m:
                     gate[key] = m.group(1)
             out["quality_gate"] = gate
+        if line.startswith("[ml_specialists]"):
+            # Per asset class: rows, passed, AUC, overfit gap, expected R (10 Nov 2026).
+            out["specialists"] = line.split(" ", 2)[-1][:900]
         if line.startswith("[ml_quality_overfit]"):
             out["overfit"] = line[len("[ml_quality_overfit] "):][:160]
     return out or None

@@ -7411,11 +7411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1090,
+      "line_count": 1098,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "3d38c84adb6fb94bf897cc5c3a0c4a31dedcf638a74cd4127304d3d63bed41d2",
-      "size_bytes": 170501
+      "sha256": "0f54373095e6d0fe0e9b9a305b70e56877e0d54a3b66878d0692e69a22661568",
+      "size_bytes": 172994
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11051,11 +11051,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7101,
+      "line_count": 7107,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "298fe92c236314e4ba0f2cec29daf87445555600350251c2efb5dff91910c6a1",
-      "size_bytes": 353571
+      "sha256": "573aa48864f3a96abb3ee7b54a1fb0c0122fa312a332feb258595d65643ebade",
+      "size_bytes": 353893
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11235,11 +11235,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1187,
+      "line_count": 1208,
       "path": "engine/ml.py",
       "reason": "production/build source",
-      "sha256": "5f2e50d329eb30b6108400582442ed2eacf442a59e393922d9f8076d5a278612",
-      "size_bytes": 47856
+      "sha256": "853dbf4f7470701a9d96ed7701b1a0098ddd24c2e8143a947aeffb0687c8d36a",
+      "size_bytes": 48768
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12995,11 +12995,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 698,
+      "line_count": 697,
       "path": "ml/candidate_forward.py",
       "reason": "production/build source",
-      "sha256": "e968d6b95d6074b40dfe08631698bcb490259178b88b954a741ba9b9aff36768",
-      "size_bytes": 28409
+      "sha256": "830e1bed0e2d88f104f237adc6840a994b523216fec9f5da8d51a2c8b36a0057",
+      "size_bytes": 28703
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13027,11 +13027,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 329,
+      "line_count": 409,
       "path": "ml/external_replay.py",
       "reason": "production/build source",
-      "sha256": "267d6cbda446e64ff4ae9580b4366309306b443120ee143abcbf77c8b26defc5",
-      "size_bytes": 16056
+      "sha256": "f8d0e153f4cb48320f2d78a75ea5ce023732c4fdb1dd1b699225e2e487c37e13",
+      "size_bytes": 19905
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13059,19 +13059,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 359,
+      "line_count": 386,
       "path": "ml/inference.py",
       "reason": "production/build source",
-      "sha256": "5532fdc834e167c1177ff3303bc5ce173af6435425885ae0c2c9f191128cb3d3",
-      "size_bytes": 13098
+      "sha256": "fd64fcfc6a78f66dee01a2ab860c3c352408411755d7dceb8d85d6922eba03a7",
+      "size_bytes": 14509
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 231,
+      "line_count": 236,
       "path": "ml/lifecycle_status.py",
       "reason": "production/build source",
-      "sha256": "d21a7134194940ab948109aed73d23091514172a11623bc2f1bee1473a424ec1",
-      "size_bytes": 9613
+      "sha256": "f11403a1d49e15e0d5b04927b88e8265b9cc03c86ee47990e4196fd1814ef400",
+      "size_bytes": 9963
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13115,11 +13115,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 394,
+      "line_count": 395,
       "path": "ml/model_registry.py",
       "reason": "production/build source",
-      "sha256": "8d26e19c332744b7dfb97e4063b55c6679826595e67952b43a2145cc0484f563",
-      "size_bytes": 15400
+      "sha256": "ec2984990622a01cccefe4c26f56eebaa1dc119deb953bb3d4b8054cf57551dc",
+      "size_bytes": 15463
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13171,11 +13171,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3219,
+      "line_count": 3243,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "da2a1fbdf94346b1f20c2f0cb3ac37460b64004dee6b2f8c5da2f52ae1b359a0",
-      "size_bytes": 147545
+      "sha256": "5ad3bb0c71de47d8a4972b24d7836e3bd4e3c540a969631dcdd58b660de41eb1",
+      "size_bytes": 148709
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14219,11 +14219,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16913,
+      "line_count": 16923,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "bf5783885a3c6560c8f8d9a37a292186de6256d74b5362657c1c2dd30225897d",
-      "size_bytes": 493862
+      "sha256": "210b59895435a9fe209607015cea750ab51e00af86c747a8d1248fcb1316bc17",
+      "size_bytes": 494109
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16635,11 +16635,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2343,
+      "line_count": 2355,
       "path": "signalrank_telegram/owner_commands.py",
       "reason": "production/build source",
-      "sha256": "63f69e1c9883fc71315f276fcc59b0015a9ff901a5e88b079764ebb909e8bc9f",
-      "size_bytes": 94652
+      "sha256": "0e6abc0d6d7ee5790210752859d6ee3cd5b1033abdcebcaad178944a163975b1",
+      "size_bytes": 95358
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18259,11 +18259,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 173,
+      "line_count": 178,
       "path": "tests/test_candidate_evidence_storage.py",
       "reason": "automated test evidence",
-      "sha256": "7ee1284830db34dbcc4c08adfd8661924069bfb4c655c4b7c95b1570e8f401dc",
-      "size_bytes": 8910
+      "sha256": "62e6b376c94337ddaa94319a020878006e37820c44cac6ee6974941fb67ac8fc",
+      "size_bytes": 9395
     },
     {
       "disposition": "TEST_ONLY",
@@ -18867,11 +18867,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 72,
+      "line_count": 74,
       "path": "tests/test_external_replay_training_20261108.py",
       "reason": "automated test evidence",
-      "sha256": "d300109a8e4c29de2b1d2f7a55fc48471f895bcede04d48dc90fd430c749d486",
-      "size_bytes": 3709
+      "sha256": "d23a1387ac73e4f0fd47027002f5bdebdc82da01f6e8b939def8cf6f03c66464",
+      "size_bytes": 3905
     },
     {
       "disposition": "TEST_ONLY",

@@ -264,6 +264,7 @@ def extract_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
             or {}
         ),
         "training_meta": dict(payload.get("training_meta") or {}),
+        "specialists": dict(payload.get("specialists") or {}),
     }
 
 

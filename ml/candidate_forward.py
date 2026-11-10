@@ -270,7 +270,11 @@ async def evaluate_candidate_forward_evidence(
                     "AND meta->'features'->>'rejection_type' = 'candidate_shadow' "
                     "AND meta->'features'->>'candidate_artifact_hash_sha256' = :artifact_hash "
                     "AND created_at >= :cutoff AND created_at <= :observation_cutoff "
-                    "ORDER BY created_at ASC LIMIT :limit"
+                    # Newest observations first: a challenger that has been shadow-tested for
+                    # days has more than ML_CANDIDATE_FORWARD_MAX_ROWS, and the old ascending
+                    # read failed closed forever with candidate_observation_limit_exceeded
+                    # (production 10 Nov 2026, challenger trained 28 Oct). Judge the newest window.
+                    "ORDER BY created_at DESC LIMIT :limit"
                 ),
                 {"artifact_hash": artifact_hash, "cutoff": cutoff, "observation_cutoff": observation_cutoff,
                  "limit": max_rows + 1},
@@ -278,14 +282,8 @@ async def evaluate_candidate_forward_evidence(
         ).mappings().all()]
         await session.rollback()
 
-    if len(rows) > max_rows:
-        return {
-            "eligible": False,
-            "status": "failed",
-            "reasons": ["candidate_observation_limit_exceeded"],
-            "observations_scanned": len(rows),
-            "maximum_observations": max_rows,
-        }
+    truncated = len(rows) > max_rows
+    rows = list(reversed(rows[:max_rows]))  # oldest first for the forward-span and dedup logic below
 
     unique: dict[str, Any] = {}
     for row in rows:
@@ -411,6 +409,7 @@ async def evaluate_candidate_forward_evidence(
         "status": status,
         "reasons": reasons,
         "observations": len(all_rows),
+        "observations_window_truncated": truncated,
         "resolved": len(resolved_rows),
         "candidate_pass_rate": candidate_pass_rate,
         "champion_pass_rate": champion_pass_rate,

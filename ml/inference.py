@@ -247,6 +247,13 @@ class MLFilter:
             booster.load_model(bytearray(model_bytes))  # Load directly from memory
             self.model = booster
             self.active = True
+            # Asset-class specialists that passed the gates on their own class (10 Nov 2026).
+            try:
+                from ml.specialists import Router
+
+                self.specialists = Router(model_data.get("specialists"))
+            except Exception:
+                self.specialists = None
 
             if str(os.getenv("RAILWAY_SERVICE_NAME") or "").strip() and MODEL_PATH == DEFAULT_MODEL_PATH:
                 logger.warning(
@@ -298,6 +305,26 @@ class MLFilter:
         """
         if not self.active or self.model is None:
             return (not _fail_closed_on_unavailable()), None
+
+        self.last_specialist = None
+        router = getattr(self, "specialists", None)
+        spec = router.route(features if isinstance(features, dict) else {}) if router is not None else None
+        if spec is not None:
+            try:
+                from ml.specialists import Router
+
+                payload = migrate_feature_payload(dict(features), list(spec["feature_cols"]), strict=False)
+                raw_prob, prob = Router.predict(spec, payload)
+                self.last_raw_probability = raw_prob
+                self.last_specialist = spec["name"]
+                if threshold is None:
+                    return True, float(prob)
+                # A specialist is certified with its own threshold on its own class.
+                cut = spec["threshold"] if spec["threshold"] is not None else float(threshold)
+                return self.raw_probability_passes(raw_prob, cut), float(prob)
+            except Exception as exc:
+                logger.warning("[ml] specialist %s failed; global model used error=%s", spec.get("name"),
+                               type(exc).__name__)
 
         try:
             # Map input features to model's expected feature order

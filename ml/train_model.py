@@ -2590,8 +2590,9 @@ def save_model(
     calibration_y=None,
     training_meta=None,
     model_path: str | Path | None = None,
+    specialists: dict | None = None,
 ):
-    """Atomically save a primary or candidate model payload."""
+    """Atomically save a primary or candidate model payload (with any passing asset-class specialists)."""
     model_path = Path(model_path) if model_path is not None else _primary_model_path()
 
     # Save model as ubj (XGBoost binary JSON) - avoids format warnings
@@ -2633,6 +2634,8 @@ def save_model(
         "calibration_metrics": dict(((training_meta or {}).get("metrics") or {}).get("calibration") or {}),
         "training_meta": dict(training_meta or {}),
     }
+    if specialists:
+        model_dict["specialists"] = dict(specialists)
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
@@ -2911,6 +2914,20 @@ async def _main_impl(lookback_days: int | None = None):
     if isinstance(metrics, dict):
         metrics["external_replay"] = {k: external_replay_evidence.get(k) for k in
                                       ("applied", "rows", "internal_rows", "before", "win_rate")}
+    # Asset-class specialists (10 Nov 2026): same gates, each on its own class's validation window.
+    specialist_results: dict = {}
+    try:
+        from ml import specialists as _specialists
+
+        specialist_results = await asyncio.to_thread(
+            _specialists.train_specialists, X_train, y_train, feature_cols, sample_weights, timestamps,
+            fit_only_mask, deployed_runtime=deployed_runtime,
+        )
+        if isinstance(metrics, dict):
+            metrics["specialists"] = _specialists.summary(specialist_results)
+        logger.info("[ml_specialists] id=%s %s", run_id, _specialists.summary(specialist_results))
+    except Exception as specialist_error:
+        logger.warning("[ml_specialists] id=%s skipped error=%s", run_id, type(specialist_error).__name__)
 
     candidate_first_requested = bool(
         deployed_runtime and parent_model_hash_sha256 and _env_bool("ML_PRODUCTION_CANDIDATE_FIRST", True)
@@ -3094,6 +3111,12 @@ async def _main_impl(lookback_days: int | None = None):
     candidate_path = Path(str(os.getenv("ML_CANDIDATE_MODEL_PATH") or (Path(__file__).parent / "model_candidate.json")))
     target_path = primary_path if promotion_eligible else candidate_path
     previous_model_bytes = target_path.read_bytes() if target_path.exists() else None
+    try:
+        from ml import specialists as _specialists
+
+        specialist_payload = _specialists.payload(specialist_results)
+    except Exception:
+        specialist_payload = {}
     model_path = await asyncio.to_thread(
         save_model,
         model,
@@ -3102,6 +3125,7 @@ async def _main_impl(lookback_days: int | None = None):
         calibration_y,
         training_meta,
         target_path,
+        specialist_payload or None,
     )
 
     # Candidate-only training learns from every trustworthy source without

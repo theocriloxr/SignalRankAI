@@ -50,7 +50,9 @@ def test_augment_caps_rows_and_marks_them_fit_only(monkeypatch):
     monkeypatch.setenv("ML_EXTERNAL_REPLAY_MAX_RATIO", "9")  # clamped to 2.0
     out, evidence = er.augment(internal)
     assert captured["budget"] == 60 and evidence["rows"] <= 60 and evidence["applied"]
-    assert captured["before"] == pd.Timestamp("2026-08-01", tz="UTC")
+    # 10 Nov 2026: replay stops one day before the calibration/validation windows (70 % of the bot's rows),
+    # no longer before the oldest row; fit-only rows never reach validation either way.
+    assert captured["before"] == pd.Timestamp("2026-08-20", tz="UTC")
     monkeypatch.setenv("ML_EXTERNAL_REPLAY_ENABLED", "false")
     assert er.augment(internal)[0] is internal
 

@@ -457,6 +457,7 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         {
             "loaded": True,
             "booster": None,
+            "router": None,
             "feature_cols": [],
             "metrics": {},
             "training_meta": {},
@@ -514,6 +515,12 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["training_run_id"] = str(metadata.get("training_run_id") or "")
         _SHADOW_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
         try:
+            from ml.specialists import Router
+
+            _SHADOW_CACHE["router"] = Router(metadata.get("specialists"))
+        except Exception:
+            _SHADOW_CACHE["router"] = None
+        try:
             _SHADOW_CACHE["file_mtime_ns"] = int(p.stat().st_mtime_ns)
         except Exception:
             _SHADOW_CACHE["file_mtime_ns"] = None
@@ -567,9 +574,23 @@ def score_shadow_signal(
         }
     try:
         assert xgb is not None
-        dm = xgb.DMatrix(x, feature_names=feature_cols)
-        preds = booster.predict(dm)
-        del dm
+        router = _SHADOW_CACHE.get("router")
+        spec = None
+        if router is not None and getattr(router, "models", None):
+            # Asset-class specialist of the challenger (10 Nov 2026): same routing as serving.
+            from ml.features import build_model_feature_values
+
+            values = build_model_feature_values(signal, signal.get("_market_data") or {})
+            spec = router.route(values)
+        if spec is not None:
+            probability, _calibrated = router.predict(spec, values)
+            if spec.get("threshold") is not None:
+                threshold = float(spec["threshold"])
+            preds = [probability]
+        else:
+            dm = xgb.DMatrix(x, feature_names=feature_cols)
+            preds = booster.predict(dm)
+            del dm
         if preds is None or len(preds) == 0:
             raise ValueError("empty_candidate_prediction")
         probability = float(preds[0])

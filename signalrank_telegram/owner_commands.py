@@ -1440,9 +1440,21 @@ async def ml_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         + (f" ({last.get('reason')})" if last.get("reason") else "")
         + (f" at {last.get('finished_at')}" if last.get("finished_at") else ""),
         f"Why not replaced: {status.get('why_not_replaced')}",
+    ]
+    ds = status.get("last_run_dataset") or {}
+    if ds:
+        lines.append(f"Training rows: {ds.get('rows')} • sources: {ds.get('sources')}")
+        gate = ds.get("quality_gate") or {}
+        if gate:
+            lines.append("Gate: AUC {auc} (need {min_auc}) • balanced acc {balanced_accuracy} • expected R {expected_r} "
+                         "• overfit gap {overfit_gap}".format(**{k: gate.get(k, "?") for k in (
+                             "auc", "min_auc", "balanced_accuracy", "expected_r", "overfit_gap")}))
+        if ds.get("specialists"):
+            lines.append(f"Asset-class specialists: {ds['specialists']}")
+    lines += [
         "",
         "Challenger details: /ml_candidate • promote after review: /ml_candidate_promote CONFIRM",
-        "The model is advisory: it scores signals but does not block them.",
+        "The ML filter is a gate: a candidate below its certified bar is not issued (it may go to paper-only recovery).",
     ]
     await update.message.reply_text("\n".join(lines)[:3900])
 

@@ -20,12 +20,14 @@ labelled setups replayed on years of public candles:
 
 Guards that keep the quality gate honest:
 
-* Every replayed bar is older than the oldest row of the bot's own evidence,
-  and replay rows never exceed ``ML_EXTERNAL_REPLAY_MAX_RATIO`` (default and
-  maximum 2.0) times the bot's rows. With the chronological 70/15/15 split this
-  puts every replay row in the model-fit window: calibration, validation, the
-  promotion quality gate and the champion comparison are measured on the bot's
-  own outcomes only.
+* Every replayed bar is at least a day older than the start of the bot's
+  calibration/validation windows (the ``ML_MODEL_FIT_RATIO`` point of its own
+  rows; until 10 Nov 2026 the oldest row), replay rows are fit-only and never
+  exceed ``ML_EXTERNAL_REPLAY_MAX_RATIO`` (default and maximum 2.0) times the
+  bot's rows. Calibration, validation, the promotion quality gate and the
+  champion comparison are measured on the bot's own outcomes only.
+* Macro trends (DXY, VIX, US10Y) are filled from the same keyless history with
+  the live definition (``macro_trend_bars``), not left at zero.
 * Low weight (``ML_EXTERNAL_REPLAY_WEIGHT``, default 0.25) on top of the
   trainer's recency decay. Fetched history is cached on disk for a day.
 """
@@ -237,6 +239,73 @@ def _balanced_newest(rows: list[dict[str, Any]], max_rows: int) -> list[dict[str
     return picked
 
 
+# --------------------------------------------------------------------------- macro context
+
+# Live scoring fills these from the engine's daily DXY / VIX / US10Y candles
+# (engine/core._fetch_macro_snapshot); replay rows had them hard-coded to zero, so
+# the model learned "macro is always flat" from replay (10 Nov 2026). Same keyless
+# public source as the rest of replay (Yahoo chart history), closed daily bars only.
+MACRO_SERIES = {"dxy_trend": "DX-Y.NYB", "vix_trend": "^VIX", "us10y_trend": "^TNX"}
+
+
+def macro_trend_bars() -> int:
+    try:
+        return max(5, int(os.getenv("ML_MACRO_TREND_BARS", "200") or 200))
+    except ValueError:
+        return 200
+
+
+def macro_history(client: Any) -> dict[str, pd.Series]:
+    from ml.strategy_discovery import fetch_yahoo
+
+    out: dict[str, pd.Series] = {}
+    for feature, symbol in MACRO_SERIES.items():
+        path = _cache_dir() / f"macro_{symbol.replace('^', '').replace('.', '_')}.json"
+        try:
+            ttl = _env_float("ML_EXTERNAL_REPLAY_CACHE_HOURS", 24.0, 1.0, 24.0 * 30) * 3600
+            if path.exists() and time.time() - path.stat().st_mtime < ttl:
+                frame = pd.read_json(StringIO(path.read_text("utf-8")), orient="split")
+            else:
+                frame = fetch_yahoo(symbol, "1d", client)
+                if not frame.empty:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(frame.to_json(orient="split", date_format="iso"), "utf-8")
+            frame.index = pd.to_datetime(frame.index, utc=True)
+            closes = pd.to_numeric(frame["close"], errors="coerce").dropna()
+            if len(closes) > 10:
+                out[feature] = closes.sort_index()
+        except Exception as exc:
+            logger.info("[ml_external_replay] macro %s unavailable error=%s", symbol, type(exc).__name__)
+    return out
+
+
+def macro_trend_at(closes: pd.Series, when: Any, bars: int) -> float:
+    """(last / first - 1) over the ``bars`` daily closes of days before ``when``."""
+    if closes is None or closes.empty:
+        return 0.0
+    when = pd.Timestamp(when)
+    when = when.tz_localize("UTC") if when.tzinfo is None else when.tz_convert("UTC")
+    end = int(closes.index.searchsorted(when.normalize(), side="left"))
+    if end < 2:
+        return 0.0
+    window = closes.iloc[max(0, end - bars):end]
+    first, last = float(window.iloc[0]), float(window.iloc[-1])
+    return (last / first - 1.0) if first else 0.0
+
+
+def fill_macro(rows: list[dict[str, Any]], history: Mapping[str, pd.Series]) -> int:
+    bars = macro_trend_bars()
+    filled = 0
+    for row in rows:
+        when = row.get("created_at")
+        if when is None or not history:
+            continue
+        for feature, closes in history.items():
+            row[feature] = float(macro_trend_at(closes, when, bars))
+        filled += 1
+    return filled
+
+
 # --------------------------------------------------------------------------- training integration
 
 def _asset_class(asset: str) -> str:
@@ -275,6 +344,10 @@ def build_rows(pairs: Iterable[tuple[str, str]], *, before: pd.Timestamp | None,
                 continue
             rows.extend(found)
             report["assets"][f"{asset}:{tf}"] = len(found)
+        try:
+            report["macro_rows"] = fill_macro(rows, macro_history(client))
+        except Exception as exc:
+            report["macro_error"] = type(exc).__name__
     finally:
         if owns:
             client.close()
@@ -295,11 +368,18 @@ def augment(df: pd.DataFrame, *, client: Any = None) -> tuple[pd.DataFrame, dict
     if budget <= 0:
         evidence["reason"] = "ratio_zero"
         return df, evidence
-    oldest = pd.to_datetime(internal["created_at"], errors="coerce").min()
-    if pd.isna(oldest):
+    stamps = pd.to_datetime(internal["created_at"], errors="coerce").dropna()
+    if stamps.empty:
         evidence["reason"] = "internal_timestamps_unavailable"
         return df, evidence
-    before = pd.Timestamp(oldest).tz_localize("UTC") if pd.Timestamp(oldest).tzinfo is None else pd.Timestamp(oldest)
+    # Replay must stay out of the calibration and validation windows, which start at the
+    # model-fit ratio of the bot's own rows (chronological split in ml.train_model). Until
+    # 10 Nov 2026 it had to predate the *oldest* row; with months-old archive rows and
+    # ~60 days of Yahoo intraday history that left ~100 rows. One day of gap is kept.
+    fit_ratio = min(0.85, max(0.55, float(os.getenv("ML_MODEL_FIT_RATIO", "0.70") or 0.70)))
+    boundary = stamps.sort_values().iloc[int((len(stamps) - 1) * fit_ratio)] - pd.Timedelta(days=1)
+    boundary = min(boundary, stamps.max() - pd.Timedelta(days=1))
+    before = pd.Timestamp(boundary).tz_localize("UTC") if pd.Timestamp(boundary).tzinfo is None else pd.Timestamp(boundary)
     deadline = time.monotonic() + _env_float("ML_EXTERNAL_REPLAY_TIMEOUT_SECONDS", 240.0, 10.0, 3600.0)
     pairs = list(internal[["asset", "timeframe"]].dropna().itertuples(index=False, name=None))
     rows, report = build_rows(pairs, before=before, budget_rows=budget, client=client, deadline=deadline)

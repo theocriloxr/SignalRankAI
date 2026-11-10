@@ -2796,6 +2796,12 @@ def main_loop(DRY_RUN: bool = False):
                 tf_data = (data or {}).get(timeframe) or {}
                 candles = tf_data.get("candles") or []
                 closes = [float(c.get("close") or 0.0) for c in candles if isinstance(c, dict)]
+                # Same window as the training replay (ml/external_replay.macro_trend_bars, 10 Nov 2026).
+                try:
+                    _bars = max(5, int(os.getenv("ML_MACRO_TREND_BARS", "200") or 200))
+                except ValueError:
+                    _bars = 200
+                closes = closes[-_bars:]
                 if len(closes) < 2:
                     return {}
                 first = closes[0]
