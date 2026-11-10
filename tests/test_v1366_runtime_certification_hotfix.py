@@ -251,7 +251,12 @@ def test_training_uses_fit_window_balance_and_calibration_threshold_only() -> No
     source = (ROOT / "ml" / "train_model.py").read_text(encoding="utf-8")
     assert "class_balance_scale = _class_balance_scale(y_tr, w_tr)" in source
     assert "scale_pos_weight=class_balance_scale" in source
-    assert "classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)" in source
+    # Threshold and its TP1 payoffs both come from calibration rows only (10 Nov 2026).
+    assert "calibration_win_r = _tp1_win_r(X_cal)" in source
+    assert (
+        "classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba, win_r=calibration_win_r)"
+        in source
+    )
     assert "y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)" in source
     assert "decision_threshold=classification_threshold" in source
     assert '"classification_threshold": float(classification_threshold)' in source

@@ -152,6 +152,18 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
             await stale_tick_relabel_preview_once()
         except Exception as exc:
             logger.warning("[post_deploy] stale_tick_relabel dry run failed: %s: %s", type(exc).__name__, exc)
+    if _enabled("POST_DEPLOY_STALE_TICK_RELABEL_APPLY", True) and not stop.is_set():
+        # Owner, 10 Nov 2026: "correct all wrong database details". The stale-tick label
+        # correction was dry-run only, waiting for /stale_tick_relabel apply; the owner has
+        # now asked for every wrong record to be corrected, so it is applied once here
+        # (same audited script; the marker makes it run once).
+        try:
+            from core.redis_state import state
+
+            if not state.get_sync(RELABEL_MARKER):
+                await run_stale_tick_relabel(apply=True)
+        except Exception as exc:
+            logger.warning("[post_deploy] stale_tick_relabel apply failed: %s: %s", type(exc).__name__, exc)
     if not stop.is_set():
         # Owner, 10 Nov 2026: correct the stored asset class on past training rows, then retrain.
         try:

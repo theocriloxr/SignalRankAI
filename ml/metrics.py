@@ -189,16 +189,24 @@ def expected_r_utility(
     y_proba: Sequence[float],
     *,
     decision_threshold: float = 0.5,
+    win_r: Sequence[float] | None = None,
 ) -> dict[str, float]:
-    """Expected R multiple at the selected decision threshold (reward = 2R, loss = 1R)."""
+    """Expected R multiple at the selected decision threshold (loss = 1R).
+
+    A win pays ``win_r[i]`` (each signal's own TP1 reward/risk) when given,
+    otherwise the legacy fixed 2R. Labels count a TP1 hit as a win, so a fixed
+    2R overstated expectancy whenever TP1 sat closer than 2R (10 Nov 2026).
+    """
     threshold = min(0.99, max(0.01, float(decision_threshold)))
     predicted_positive = sum(1 for p in y_proba if float(p) >= threshold)
     if predicted_positive == 0:
         return {"expected_r": 0.0, "predicted_positive": 0}
+    payoffs = list(win_r) if win_r is not None else None
     gains = 0.0
-    for a, p in zip(y_true, y_proba):
+    for index, (a, p) in enumerate(zip(y_true, y_proba)):
         if float(p) >= threshold:
-            gains += 2.0 if int(a) == 1 else -1.0
+            reward = float(payoffs[index]) if payoffs is not None and index < len(payoffs) else 2.0
+            gains += reward if int(a) == 1 else -1.0
     return {"expected_r": round(gains / predicted_positive, 4), "predicted_positive": predicted_positive}
 
 
@@ -262,6 +270,7 @@ def evaluate_classification(
     calibrated_probability: float | None = None,
     top_fraction: float = 0.5,
     decision_threshold: float = 0.5,
+    win_r: Sequence[float] | None = None,
 ) -> EvaluationReport:
     """Full binary-classification evaluation with imbalance-safe metrics."""
     y_true = [1 if int(v) == 1 else 0 for v in y_true]
@@ -287,6 +296,7 @@ def evaluate_classification(
         y_true,
         y_proba,
         decision_threshold=decision_threshold,
+        win_r=win_r,
     )
     return EvaluationReport(
         accuracy=_safe_div(conf["tp"] + conf["tn"], len(y_true)),

@@ -24,13 +24,39 @@ def strategy_model_to_int(value):
     return stable_category_to_int(str(value or "unknown").lower())
 
 
+def closed_candles(candles, timeframe):
+    """Drop a still-forming tail bar before computing live ML features (10 Nov 2026).
+
+    Training now builds features from closed bars only (point-in-time fix in
+    ml/train_model._candle_availability_times); live scoring must match. The last
+    bar is dropped only when it carries timing or finality information that says
+    it has not closed (core.candle_evidence._candle_is_final). Set
+    ML_LIVE_CLOSED_CANDLES_ONLY=false to restore the old behaviour.
+    """
+    import os
+
+    candles = list(candles or [])
+    if not candles or str(os.getenv("ML_LIVE_CLOSED_CANDLES_ONLY", "1")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return candles
+    last = candles[-1]
+    if not isinstance(last, dict):
+        return candles
+    timing = ("is_final", "is_closed", "closed", "complete", "close_time_ms", "close_timestamp_ms",
+              "open_time_ms", "timestamp_ms", "timestamp", "time")
+    if not any(key in last for key in timing):
+        return candles
+    from core.candle_evidence import _candle_is_final
+
+    return candles if _candle_is_final(last, timeframe) else candles[:-1]
+
+
 def build_model_feature_values(signal, market_data=None):
     """Build the versioned model feature contract for one inference candidate."""
     signal = dict(signal or {})
     market_data = market_data or {}
     tf = str(signal.get("timeframe") or "1h").lower()
     tf_data = market_data.get(tf) or {}
-    candles = tf_data.get("candles") or []
+    candles = closed_candles(tf_data.get("candles") or [], tf)
     closes = [_safe_float(x.get("close"), 0.0) for x in candles if isinstance(x, dict) and x.get("close") is not None]
     highs = [_safe_float(x.get("high"), 0.0) for x in candles if isinstance(x, dict) and x.get("high") is not None]
     lows = [_safe_float(x.get("low"), 0.0) for x in candles if isinstance(x, dict) and x.get("low") is not None]
@@ -243,7 +269,7 @@ def extract_features(signal, market_data):
     bb = (ind or {}).get("bollinger") or {}
     macro = (market_data or {}).get("_macro") or {}
 
-    candles = (tf_data or {}).get("candles") or []
+    candles = closed_candles((tf_data or {}).get("candles") or [], tf)
     closes = [_safe_float(c.get("close"), 0.0) for c in candles if isinstance(c, dict) and c.get("close") is not None]
     highs = [_safe_float(c.get("high"), 0.0) for c in candles if isinstance(c, dict) and c.get("high") is not None]
     lows = [_safe_float(c.get("low"), 0.0) for c in candles if isinstance(c, dict) and c.get("low") is not None]

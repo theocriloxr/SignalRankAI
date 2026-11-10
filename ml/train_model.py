@@ -251,9 +251,18 @@ def _champion_comparison_gate(
         return False, {"enabled": True, "reason": "invalid_champion_comparison_configuration", "source": source}
     regressions: dict[str, dict[str, float]] = {}
     compared: dict[str, dict[str, float]] = {}
+    skipped_basis: dict[str, str] | None = None
     for key, tolerance in tolerances.items():
         if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
             continue
+        if key == "expected_r":
+            # A champion scored on the legacy fixed +2R payoff is not comparable
+            # with a candidate scored on each signal's TP1 geometry (10 Nov 2026).
+            candidate_basis = str(candidate_metrics.get("expected_r_basis") or EXPECTED_R_BASIS_FIXED)
+            champion_basis = str(champion_metrics.get("expected_r_basis") or EXPECTED_R_BASIS_FIXED)
+            if candidate_basis != champion_basis:
+                skipped_basis = {"candidate": candidate_basis, "champion": champion_basis}
+                continue
         try:
             candidate = _qualification_number(candidate_metrics[key], minimum=0 if key != "expected_r" else None,
                                               maximum=1 if key != "expected_r" else None)
@@ -301,13 +310,16 @@ def _champion_comparison_gate(
             "compared": compared,
             "required": minimum_comparable,
         }
-    return not regressions, {
+    result = {
         "enabled": True,
         "reason": "noninferior" if not regressions else "material_regression",
         "source": source,
         "compared": compared,
         "regressions": regressions,
     }
+    if skipped_basis is not None:
+        result["expected_r_not_compared"] = {"reason": "expected_r_basis_mismatch", **skipped_basis}
+    return not regressions, result
 
 
 def _schema_promotion_gate(
@@ -462,6 +474,38 @@ def _offline_bootstrap_allowed() -> bool:
         app_env = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
         requested = app_env in {"local", "development", "dev", "test", "testing"}
     return bool(requested and not _is_production_runtime())
+
+
+def _candle_availability_times(open_times_ms, close_times_ms, bar_seconds: int) -> list[int]:
+    """Millisecond time at which each stored bar became fully known (its close).
+
+    Uses the stored close_time_ms when it is sane, otherwise open + one bar. The
+    result is made non-decreasing so it can be bisected. Setting
+    ML_TRAINING_CLOSED_CANDLES_ONLY=false restores the legacy open-time cutoff.
+    """
+    opens = [int(value or 0) for value in open_times_ms]
+    if not _env_bool("ML_TRAINING_CLOSED_CANDLES_ONLY", True):
+        return opens
+    bar_ms = max(1, int(bar_seconds or 3600)) * 1000
+    available: list[int] = []
+    running = 0
+    for index, opened in enumerate(opens):
+        raw_close = close_times_ms[index] if index < len(close_times_ms) else None
+        try:
+            closed = int(raw_close) if raw_close is not None else 0
+        except (TypeError, ValueError):
+            closed = 0
+        if closed <= opened or closed > opened + 2 * bar_ms:
+            closed = opened + bar_ms - 1
+        running = max(running, closed)
+        available.append(running)
+    return available
+
+
+def _point_in_time_slice(available_ms, cutoff_ms: int, limit: int) -> tuple[int, int]:
+    """[start, stop) of the newest ``limit`` bars fully closed at ``cutoff_ms``."""
+    stop = bisect_right(available_ms, int(cutoff_ms))
+    return max(0, stop - max(1, int(limit))), stop
 
 
 def _safe_float(val):
@@ -762,8 +806,18 @@ async def load_training_data(lookback_days: int = 90):
                     )
                     all_rows = list(res.all())
                 all_rows.reverse()
-                open_times = [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows]
-                cached = (open_times, all_rows)
+                # Point-in-time cutoff (10 Nov 2026): index each bar by the time it
+                # CLOSED, not when it opened. market_candles stores forming bars and
+                # later overwrites them with final OHLCV (is_final/updated_at), so an
+                # open-time cutoff handed training the bar that was still forming at
+                # signal time, complete with its post-signal close, high, low and
+                # volume. Live scoring only sees closed bars (wait_for_candle_close).
+                availability_ms = _candle_availability_times(
+                    [int(getattr(row, "open_time_ms", 0) or 0) for row in all_rows],
+                    [getattr(row, "close_time_ms", None) for row in all_rows],
+                    _timeframe_seconds(key[1]),
+                )
+                cached = (availability_ms, all_rows)
                 candle_cache[key] = cached
                 logger.info(
                     "[ml_candle_cache] symbol=%s timeframe=%s rows=%s max_rows=%s lookback_days=%s",
@@ -773,10 +827,10 @@ async def load_training_data(lookback_days: int = 90):
                     max_rows,
                     training_lookback_days,
                 )
-            open_times, all_rows = cached
+            availability_ms, all_rows = cached
             cutoff_ms = int(created_at.timestamp() * 1000)
-            stop = bisect_right(open_times, cutoff_ms)
-            return all_rows[max(0, stop - max(1, int(limit))) : stop]
+            start, stop = _point_in_time_slice(availability_ms, cutoff_ms, limit)
+            return all_rows[start:stop]
 
         def _atr(highs, lows, closes, period=14):
             if len(closes) < period + 1:
@@ -2143,7 +2197,37 @@ def _class_balance_scale(y_values, sample_weights=None) -> float:
     return float(max(minimum, min(maximum, raw_scale)))
 
 
-def _select_classification_threshold(y_true, probabilities) -> float:
+EXPECTED_R_BASIS_TP1 = "tp1_geometry"
+EXPECTED_R_BASIS_FIXED = "fixed_2r"
+
+
+def _tp1_win_r(features):
+    """Each row's TP1 reward/risk, from the price_range and risk_amount features.
+
+    Wins are TP1 hits, so a win is worth TP1's own R, not a fixed 2R (10 Nov
+    2026). Rows without usable geometry (missing target parses to
+    price_range ~= 1.0, zero risk, absurd R) fall back to ML_DEFAULT_WIN_R.
+    Returns None when disabled (ML_PAYOFF_AWARE_EXPECTANCY=false) or when the
+    columns are absent, which keeps the legacy fixed-2R behaviour.
+    """
+    if not _env_bool("ML_PAYOFF_AWARE_EXPECTANCY", True):
+        return None
+    try:
+        reward = pd.to_numeric(features["price_range"], errors="coerce").to_numpy(dtype=float)
+        risk = pd.to_numeric(features["risk_amount"], errors="coerce").to_numpy(dtype=float)
+    except (KeyError, TypeError, AttributeError):
+        return None
+    try:
+        fallback = float(os.getenv("ML_DEFAULT_WIN_R", "2.0") or 2.0)
+    except (TypeError, ValueError):
+        fallback = 2.0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(risk > 1e-9, reward / risk, np.nan)
+    usable = np.isfinite(ratio) & (reward > 0.0) & (reward < 0.9) & (ratio >= 0.2) & (ratio <= 10.0)
+    return np.where(usable, ratio, fallback).astype(float)
+
+
+def _select_classification_threshold(y_true, probabilities, win_r=None) -> float:
     """Choose an out-of-sample trading-utility cutoff on calibration rows only.
 
     The old selector maximized balanced accuracy and could choose a very low
@@ -2188,6 +2272,11 @@ def _select_classification_threshold(y_true, probabilities) -> float:
     fallback_threshold = 0.5
     fallback_key = (-1.0, -1.0, -1.0, -1.0)
     total_positives = max(1, int((y == 1).sum()))
+    payoff = None
+    if win_r is not None:
+        payoff = np.asarray(win_r, dtype=float)
+        if payoff.size != y.size:
+            payoff = None
 
     for threshold in np.linspace(lower, upper, 71):
         pred = (proba >= float(threshold)).astype(int)
@@ -2204,9 +2293,13 @@ def _select_classification_threshold(y_true, probabilities) -> float:
         precision = tp / max(1, selected)
         balanced = 0.5 * (recall + specificity)
         coverage = selected / max(1, len(y))
-        # Same conservative utility contract used by ml.metrics:
-        # winning selection = +2R, losing selection = -1R.
-        expected_r = ((2.0 * tp) - fp) / max(1, selected)
+        # Same utility contract as ml.metrics: a losing selection is -1R and a
+        # winning one pays its own TP1 R (legacy +2R when geometry is absent).
+        if payoff is not None:
+            won = (pred == 1) & (y == 1)
+            expected_r = (float(payoff[won].sum()) - fp) / max(1, selected)
+        else:
+            expected_r = ((2.0 * tp) - fp) / max(1, selected)
         recall_capture = tp / total_positives
 
         fallback = (balanced, recall, precision, -abs(float(threshold) - 0.5))
@@ -2388,7 +2481,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     # window. Probability calibration remains separately measured below.
     y_proba = model.predict_proba(X_te)[:, 1]
     calibration_fit_proba = model.predict_proba(X_cal)[:, 1]
-    classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba)
+    calibration_win_r = _tp1_win_r(X_cal)
+    validation_win_r = _tp1_win_r(X_te)
+    expected_r_basis = EXPECTED_R_BASIS_TP1 if validation_win_r is not None else EXPECTED_R_BASIS_FIXED
+    classification_threshold = _select_classification_threshold(y_cal, calibration_fit_proba, win_r=calibration_win_r)
     y_pred = (np.asarray(y_proba, dtype=float) >= classification_threshold).astype(int)
     logger.info(
         "[ml_classification_threshold] selected=%.4f calibration_rows=%s",
@@ -2464,6 +2560,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
             y_pred,
             y_proba,
             decision_threshold=classification_threshold,
+            win_r=validation_win_r,
         )
         _full_metrics = _full_report.to_dict()
         logger.info("[%s]", render_metrics_log(_full_report))
@@ -2604,6 +2701,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         "selective_accuracy": _full_metrics.get("selective_accuracy"),
         "majority_baseline_accuracy": _full_metrics.get("majority_baseline_accuracy"),
         "expected_r": _full_metrics.get("expected_r"),
+        "expected_r_basis": expected_r_basis,
         "confusion": _full_metrics.get("confusion"),
     }
     return model, feature_cols, calibration_x, calibration_y, metrics
