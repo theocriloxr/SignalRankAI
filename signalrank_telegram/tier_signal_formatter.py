@@ -886,6 +886,12 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     if ai_review:
         lines.append(f"🧠 AI Review: {_h(ai_review)}")
     lines.extend(_candle_price_action_lines(signal))
+    try:
+        from engine.rank_factors import rank_factor_lines
+
+        lines.extend(_h(line) for line in rank_factor_lines(signal)[:1])  # Premium: sub-scores; VIP adds drivers
+    except Exception:
+        pass
 
     lines += [
         "",
@@ -1112,6 +1118,13 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             f"risk and confluence checks passed for the {regime_text} regime."
         )
     lines.append(f"Why: {_h(_why_with_canonical_rr(str(why)[:180], rr_tp1, rr_tp_last, len(tp_levels)))}")
+    try:
+        # Why this rank: sub-scores and the factors that moved it (10 Nov 2026).
+        from engine.rank_factors import rank_factor_lines
+
+        lines.extend(_h(line) for line in rank_factor_lines(signal))
+    except Exception:
+        pass
 
     lines += [
         "",

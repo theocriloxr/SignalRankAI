@@ -7570,6 +7570,31 @@
           }
         }
       }
+    },
+    "/api/v1/platform/public/daily-top": {
+      "get": {
+        "summary": "Public daily top setups",
+        "operationId": "public_daily_top_api_v1_platform_public_daily_top_get",
+        "tags": [
+          "platform"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Daily top list temporarily unavailable"
+          }
+        }
+      }
     }
   },
   "components": {

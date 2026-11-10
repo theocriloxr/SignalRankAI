@@ -435,6 +435,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             # Honest weekly scorecard to every channel (services/weekly_scorecard.py).
             from services.weekly_scorecard import weekly_scorecard_loop
             tasks.append(asyncio.create_task(weekly_scorecard_loop(stop), name="weekly-scorecard"))
+        if _enabled("RANK_ALERTS_ENABLED", True):
+            # Rank flips/upgrades/downgrades on open signals (services/rank_alerts.py).
+            from services.rank_alerts import rank_alerts_loop
+            tasks.append(asyncio.create_task(rank_alerts_loop(stop), name="rank-alerts"))
+        if _enabled("DAILY_TEASER_ENABLED", True):
+            # Daily top-3 per asset class, no levels (services/daily_teaser.py).
+            from services.daily_teaser import daily_teaser_loop
+            tasks.append(asyncio.create_task(daily_teaser_loop(stop), name="daily-teaser"))
         if _enabled("POST_DEPLOY_MAINTENANCE_ENABLED", True):
             # Ledger refresh after audited outcome corrections and the one-off
             # stale-tick label correction (services/post_deploy_maintenance.py).

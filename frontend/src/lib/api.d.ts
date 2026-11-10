@@ -3010,6 +3010,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/public/daily-top": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public daily top setups */
+        get: operations["public_daily_top_api_v1_platform_public_daily_top_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -9482,6 +9499,35 @@ export interface operations {
                 };
             };
             /** @description Track record temporarily unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    public_daily_top_api_v1_platform_public_daily_top_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Daily top list temporarily unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

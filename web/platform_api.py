@@ -998,6 +998,32 @@ async def public_track_record() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Track record is temporarily unavailable") from exc
 
 
+_DAILY_TOP_CACHE: dict[str, Any] = {}
+
+
+@router.get("/public/daily-top")
+async def public_daily_top() -> dict[str, Any]:
+    """Top three delivered signals per asset class in the last 24h, no levels (10 Nov 2026)."""
+    import time as _time
+
+    from services.daily_teaser import daily_top
+
+    cached = _DAILY_TOP_CACHE.get("value")
+    if cached and _time.monotonic() - float(_DAILY_TOP_CACHE.get("at") or 0) < 300:
+        return cached
+    try:
+        async with get_session(label="platform.public_daily_top", timeout_seconds=10.0) as session:
+            top = await daily_top(session)
+            await session.rollback()
+    except Exception as exc:
+        logger.warning("[public_daily_top] unavailable error=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Daily top list is temporarily unavailable") from exc
+    value = {"window_hours": 24, "classes": top,
+             "note": "Scores rank setups; they are not a chance of winning. Levels go to paid tiers in real time."}
+    _DAILY_TOP_CACHE.update(value=value, at=_time.monotonic())
+    return value
+
+
 @router.get("/capabilities")
 async def capabilities() -> dict[str, Any]:
     return {
@@ -2823,6 +2849,24 @@ async def signal_detail(
         )
         chart = await _signal_chart_candles(session, row)
         setup_record = await _setup_record(session, row)
+        rank = None
+        try:
+            # Why this rank (10 Nov 2026): the score components stored with the issued decision.
+            from engine.rank_factors import rank_factors
+
+            async with session.begin_nested():
+                components = (
+                    await session.execute(
+                        text(
+                            "SELECT meta->'score_components' FROM decision_log "
+                            "WHERE signal_id=:sid AND decision='issued' ORDER BY id DESC LIMIT 1"
+                        ),
+                        {"sid": ref},
+                    )
+                ).scalar()
+            rank = rank_factors({"score_components": components}) if components else None
+        except Exception:
+            rank = None
         await session.rollback()
     channel = str(row.get("delivery_channel") or "telegram")
     telegram_proven = bool(
@@ -2842,6 +2886,7 @@ async def signal_detail(
     return {
         "signal": presented,
         "order_plan": order_plan,
+        "rank_factors": rank,
         "events": _present_signal_events_for_tier(
             [dict(event) for event in events],
             str(user.get("tier") or "free"),

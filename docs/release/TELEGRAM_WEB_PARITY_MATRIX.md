@@ -279,6 +279,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/portfolio` | `/portfolio` |
 | GET | `/professional/signals` | `/signals`, `/signal` |
 | PATCH | `/profile` | `/profile` |
+| GET | `/public/daily-top` | — |
 | GET | `/public/track-record` | `/track_record` |
 | POST | `/push-devices` | — |
 | DELETE | `/push-devices/{push_device_id}` | — |
@@ -315,4 +316,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 128 commands (51 without a web section), 16 web sections, 150 routes (93 without a name-matched command).
+Summary: 128 commands (51 without a web section), 16 web sections, 151 routes (94 without a name-matched command).

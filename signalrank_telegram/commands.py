@@ -6010,6 +6010,18 @@ async def track_record_command(update, context) -> None:
 			r = row.get("r")
 			lines.append(f"• {row.get('asset')} {str(row.get('direction') or '').upper()} {row.get('timeframe')}: "
 			             f"{row.get('outcome')} {'' if r is None else f'{r:+.2f}R'}")
+		try:
+			# Today's top-ranked setups, no levels (10 Nov 2026; same list as the site).
+			from services.daily_teaser import daily_top, teaser_text
+
+			async with get_session(label="tg.daily_top", timeout_seconds=10.0) as session:
+				top = await daily_top(session)
+				await session.rollback()
+			teaser = teaser_text(top)
+			if teaser:
+				lines += ["", teaser.split("\n\nScores rank")[0]]
+		except Exception:
+			pass
 		from core.app_url import public_app_base_url
 		base = public_app_base_url()
 		if base:

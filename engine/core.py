@@ -5696,7 +5696,9 @@ def main_loop(DRY_RUN: bool = False):
                                 "issued",
                                 sig,
                                 reason="stored_for_delivery",
-                                meta={"asset_class": _asset_class_key(sig.get("asset") or asset)},
+                                # score_components: kept for "why this rank" on the site (10 Nov 2026).
+                                meta={"asset_class": _asset_class_key(sig.get("asset") or asset),
+                                      "score_components": sig.get("score_components")},
                             )
                             try:
                                 if _env_bool("TRADING_LEDGER_ENABLED", True):

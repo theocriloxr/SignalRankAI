@@ -17,6 +17,33 @@ function percent(value: unknown): string {
   return Number.isFinite(n) ? `${Math.round(n * 100)}%` : "—";
 }
 
+/** Top three delivered setups per asset class in the last 24h, no levels (10 Nov 2026). */
+function DailyTop() {
+  const [top, setTop] = useState<Row | null>(null);
+  useEffect(() => {
+    let off = false;
+    void (async () => {
+      try {
+        const r = await client.GET("/api/v1/platform/public/daily-top");
+        if (!off && r.response.ok && r.data) setTop(record(record(r.data).classes));
+      } catch { /* the record below still renders */ }
+    })();
+    return () => { off = true; };
+  }, []);
+  const entries = top ? Object.entries(top) : [];
+  if (!entries.length) return null;
+  return <section className="tr-top" aria-label="Today's top-ranked setups">
+    <h2 className="tr-sub">Today&rsquo;s top-ranked setups</h2>
+    <div className="tr-grid">{entries.map(([cls, items]) => <div key={cls} className="tr-card">
+      <h3>{classNames[cls] ?? cls}</h3>
+      <ol>{rows(items).map((x, i) => <li key={i}>
+        <strong>{String(x.asset ?? "")}</strong> {String(x.side ?? "")} {String(x.timeframe ?? "")} <span className="tr-score">{Math.round(Number(x.score) || 0)}</span>
+      </li>)}</ol>
+    </div>)}</div>
+    <p className="tr-empty">Last 24 hours, at least an hour old. Scores rank setups; they are not a chance of winning. Levels go to Premium and VIP in real time.</p>
+  </section>;
+}
+
 /** Public live track record (9 Nov 2026), the same data as /track_record in Telegram. */
 export function TrackRecord() {
   const [data, setData] = useState<Row | null>(null);
@@ -41,6 +68,7 @@ export function TrackRecord() {
   const classes = rows(windows[range]);
   const recent = rows(data.recent);
   return <div className="tr-body">
+    <DailyTop/>
     <div className="tr-tabs" role="tablist" aria-label="Period">
       {(["7d", "30d"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={range === key}
         className={`ui-btn ui-btn--sm${range === key ? " ui-btn--primary" : ""}`} onClick={() => setRange(key)}>

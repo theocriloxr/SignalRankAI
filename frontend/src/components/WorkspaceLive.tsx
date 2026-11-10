@@ -256,6 +256,32 @@ function OrderPlan({ plan }: { plan: Row }) {
   </Card>;
 }
 
+// Why this rank: sub-scores and the factors behind the score (10 Nov 2026).
+function RankFactors({ rank }: { rank: Row }) {
+  const subs = record(rank.sub_scores);
+  const factors = Array.isArray(rank.factors) ? (rank.factors as unknown[]).map(record) : [];
+  if (!factors.length) return null;
+  return <Card title="Why this rank">
+    <div className="ws-subscores">
+      {Object.entries(subs).map(([name, value]) => <div key={name} className="ws-subscore">
+        <span className="ws-subscore-label">{name}</span>
+        <span className="ws-subscore-value">{numberLabel(finite(value), 0)}</span>
+      </div>)}
+    </div>
+    <ul className="ws-factors">
+      {factors.map((f) => {
+        const value = finite(f.value) ?? 0;
+        return <li key={display(f.key)} className={f.key === rank.weakest ? "ws-factor ws-factor-weak" : "ws-factor"}>
+          <span className="ws-factor-label">{display(f.label)}</span>
+          <span className="ws-factor-bar" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, value))}%` }}/></span>
+          <span className="ws-factor-value">{numberLabel(value, 0)} <small>+{numberLabel(finite(f.points), 1)}</small></span>
+        </li>;
+      })}
+    </ul>
+    <p className="ws-aside">Each factor is scored 0 to 100; the small number is the points it adds to the raw score of {numberLabel(finite(rank.raw_score), 1)}, before the soft cap and calibration that give the published score.</p>
+  </Card>;
+}
+
 function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; detail?: boolean; offset?: number; onPage?: (offset: number)=>void }) {
   if (detail) {
     const candidate = record(data.signal);
@@ -264,6 +290,7 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
       {Object.keys(candidate).length ? <>
         <div className="ws-detail-top"><SignalRecord signal={candidate} detail /><SetupEvidence source={data.setup_record ?? candidate.segment_evidence}/></div>
         {isPaperOnly(candidate) && <p className="ws-aside"><PaperOnlyTag/> The model scored this one below its usual bar, so it&rsquo;s for paper trading only. Try it on the paper desk first.</p>}
+        {Object.keys(record(data.rank_factors)).length > 0 && <RankFactors rank={record(data.rank_factors)}/>}
         {Object.keys(record(data.order_plan)).length > 0 && <OrderPlan plan={record(data.order_plan)}/>}
         <SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
         <p className="ws-aside">A signal is an idea with levels, not an order. Nothing is placed with a broker unless you place it.</p>

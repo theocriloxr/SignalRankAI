@@ -279,3 +279,16 @@
   background: color-mix(in srgb, var(--warning, #b7791f) 10%, var(--surface)); border-radius: var(--radius-lg); }
 .ws-verify p { font-size: var(--text-sm); max-width: 70ch; }
 .ws-verify-status { font-size: var(--text-sm); color: var(--text-2); }
+
+/* Why this rank (10 Nov 2026) */
+.ws-subscores { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.ws-subscore { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.ws-subscore-label { color: var(--text-2); font-size: var(--text-sm); }
+.ws-subscore-value { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ws-factors { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.ws-factor { display: grid; grid-template-columns: minmax(110px, 1.2fr) 2fr auto; align-items: center; gap: 10px; font-size: var(--text-sm); }
+.ws-factor-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ws-factor-bar > span { display: block; height: 100%; background: var(--brand); }
+.ws-factor-weak .ws-factor-bar > span { background: var(--warning); }
+.ws-factor-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ws-factor-value small { color: var(--text-2); }

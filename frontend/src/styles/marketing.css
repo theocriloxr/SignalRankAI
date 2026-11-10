@@ -223,3 +223,9 @@
 .tr-table td:nth-child(5) { font-family: var(--font-mono); font-weight: 600; }
 .tr-up { color: var(--positive); } .tr-down { color: var(--negative); }
 .tr-empty, .tr-note { color: var(--text-2); font-size: var(--text-sm); }
+
+/* Daily top-ranked setups (10 Nov 2026) */
+.tr-top { display: grid; gap: var(--space-3); margin-bottom: var(--space-6); }
+.tr-card h3 { font-size: var(--text-lg); }
+.tr-card ol { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.tr-score { font-variant-numeric: tabular-nums; color: var(--brand); font-weight: 600; margin-left: 4px; }
