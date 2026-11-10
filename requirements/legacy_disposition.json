@@ -1,5 +1,5 @@
 {
-  "file_count": 2774,
+  "file_count": 2776,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7411,11 +7411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1109,
+      "line_count": 1110,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "65d911cb1d54d4f0045d2d866593154bcfb124795aa20fac410691bea47b10a9",
-      "size_bytes": 176342
+      "sha256": "d37047393b0c39d90c086c0d31d8cc1e4290681a8fc696cf7664607197f10c6c",
+      "size_bytes": 176766
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13094,7 +13094,7 @@
       "line_count": 14,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1364ac7120076a7791aec72308badfc2a9525d20d8ad5e042468a4eaa8cf011b",
+      "sha256": "c30fb1f66c299d0eb6829711a04bffed569c07c919139f9614023c21800a1424",
       "size_bytes": 350
     },
     {
@@ -13179,11 +13179,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3270,
+      "line_count": 3274,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "05c3c9597669930180ffbe41440d8d46e2d8ab09858e1375b891861d5a6d7d64",
-      "size_bytes": 150930
+      "sha256": "173595871bd58bac2b9fc446ba093043dba5f05bf5a8c8e286c4f73e2087ec25",
+      "size_bytes": 151362
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15632,6 +15632,14 @@
       "reason": "production/build source",
       "sha256": "4c4d2cef04a530f4a1b25783d7f9560a1fafb872a300df857ecbc17b1afed724",
       "size_bytes": 23788
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 146,
+      "path": "services/asset_class_backfill.py",
+      "reason": "production/build source",
+      "sha256": "bdf6797b964c6368eaf41558a1fb530f1bec3c4864440cc60793db05384a8e97",
+      "size_bytes": 7010
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18088,6 +18096,14 @@
       "reason": "automated test evidence",
       "sha256": "47640bb3b9d55fbcaf0d2627906a4cdb6aa639ce32d3bfccd5e50b334f6fc60c",
       "size_bytes": 2018
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 66,
+      "path": "tests/test_asset_class_backfill_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "835ee1b9591d4c8735b72c65c2bac9581463dadbc740e944a91e490723b9b5e0",
+      "size_bytes": 3392
     },
     {
       "disposition": "TEST_ONLY",
@@ -22207,7 +22223,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1408,
-    "TEST_ONLY": 487
+    "PRESERVE_BEHAVIOUR": 1409,
+    "TEST_ONLY": 488
   }
 }

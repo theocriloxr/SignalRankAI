@@ -2350,13 +2350,17 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     # early stopping on the calibration window (the validation window stays
     # untouched); and the train/validation AUC gap gates promotion below.
     can_stop_early = len(np.unique(y_cal)) >= 2 and len(y_cal) >= 20
+    # Small fit windows overfit most (production 10 Nov 2026: 1,648 rows, 119 depth-4 trees,
+    # train AUC 0.95 vs validation 0.72). Below ML_XGB_SMALL_DATA_ROWS (4,000) the trees are
+    # shallower with larger leaves and stronger penalties; explicit settings still win.
+    small = len(X_tr) < int(os.getenv("ML_XGB_SMALL_DATA_ROWS", "4000") or 4000)
     model = xgb.XGBClassifier(
         n_estimators=int(os.getenv("ML_XGB_MAX_TREES", "400") or 400),
-        max_depth=int(os.getenv("ML_XGB_MAX_DEPTH", "4") or 4),
+        max_depth=int(os.getenv("ML_XGB_MAX_DEPTH", "3" if small else "4") or 4),
         learning_rate=float(os.getenv("ML_XGB_LEARNING_RATE", "0.05") or 0.05),
-        min_child_weight=float(os.getenv("ML_XGB_MIN_CHILD_WEIGHT", "5") or 5),
-        gamma=float(os.getenv("ML_XGB_GAMMA", "0.5") or 0.5),
-        reg_lambda=float(os.getenv("ML_XGB_REG_LAMBDA", "2.0") or 2.0),
+        min_child_weight=float(os.getenv("ML_XGB_MIN_CHILD_WEIGHT", "15" if small else "5") or 5),
+        gamma=float(os.getenv("ML_XGB_GAMMA", "1.0" if small else "0.5") or 0.5),
+        reg_lambda=float(os.getenv("ML_XGB_REG_LAMBDA", "6.0" if small else "2.0") or 2.0),
         reg_alpha=float(os.getenv("ML_XGB_REG_ALPHA", "0.1") or 0.1),
         subsample=0.8,
         colsample_bytree=0.7,
