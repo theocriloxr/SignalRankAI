@@ -7411,11 +7411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1088,
+      "line_count": 1089,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e06c3daed80c16a6ecd69bf73eb9e4b33eedfb374f9a1b7df412e980768fbb6c",
-      "size_bytes": 169225
+      "sha256": "9638ee6fd9d40012352f48ff09a905c964af628d4731e224e7b0207da2925db4",
+      "size_bytes": 169847
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13171,11 +13171,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3141,
+      "line_count": 3169,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "41072f5baa4510ae4192995e633f66433e3132801bc015fcfc5c99a4e02e9982",
-      "size_bytes": 143354
+      "sha256": "ab7add36786d020f4435fdb1df9ff26544d574d66951b120dc2564f51b41930f",
+      "size_bytes": 145233
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19491,11 +19491,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 150,
+      "line_count": 156,
       "path": "tests/test_ml_training_shadow_load_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "a0062a1070b014321650ad47c62482057eec540eab6ef9e09d92633a73910103",
-      "size_bytes": 7253
+      "sha256": "1db32d41d2b4b913b52105ae5e89fd010d7ea299dd2f0c78c593d022ea162ad9",
+      "size_bytes": 7417
     },
     {
       "disposition": "TEST_ONLY",

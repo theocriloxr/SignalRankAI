@@ -1520,76 +1520,104 @@ def _exclude_pegged_assets(df):
 
 
 async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
-    """Outcome-tracked rejected setups, newest first, in bounded keyset batches.
+    """Outcome-tracked rejected setups, newest first, in planner-proof batches.
 
-    One unbounded ORM read of every tracked row in the lookback (well over 100k
-    rows, each with its JSON features) could exceed the training query timeout,
-    and the failure dropped *all* shadow evidence, leaving training with
-    "insufficient_total_rows" and a six-week-old champion (production 10 Nov
-    2026: 14 h signal drought, every candidate below the 0.70 ML bar). Each batch
-    now has its own timeout, a failed batch keeps the rows already read, and the
-    query uses the literal predicate of ix_decision_log_tracked_id.
+    Production 10 Nov 2026: every retraining since 29 Sep ended
+    "insufficient_total_rows" (320 of 667 rows): the shadow-evidence read timed
+    out on its first batch, because the planner answered "rejected AND layer=ml
+    AND tracked" with a bitmap scan of every rejected row (millions) instead of
+    the tracked-rows index, and each row carried its whole JSON meta.
+
+    Each batch is now two index-bound queries: a window of ids from
+    ix_decision_log_tracked_id (index-only, newest first), then those rows by
+    primary key with only the feature keys training reads. Batches stop at the
+    lookback cutoff, the row cap or the time budget, and a failed batch keeps
+    the rows already read.
     """
+    import time
     from types import SimpleNamespace
 
     from db.session import get_session
+    from sqlalchemy import bindparam
     from sqlalchemy import text as _sql
 
-    max_rows = max(1000, int(os.getenv("ML_TRAIN_SHADOW_MAX_ROWS", "60000") or 60000))
-    chunk = max(500, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "5000") or 5000)))
+    max_rows = max(1000, int(os.getenv("ML_TRAIN_SHADOW_MAX_ROWS", "40000") or 40000))
+    window = max(200, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "4000") or 4000)))
+    # The whole dataset load has ML_TRAIN_DATASET_TIMEOUT_SECONDS (120); the other reads took ~70 s.
+    budget = max(10.0, float(os.getenv("ML_TRAIN_SHADOW_BUDGET_SECONDS", "35") or 35))
+    keys = ("score", "strategy_name", "regime", "strength", "rr_ratio", "rr_estimate", "rejection_type",
+            "price_velocity_3", "price_velocity_5", "price_velocity_10", "price_acceleration_3_10", "atr_rel",
+            "atr_regime", "relative_volume", "mtf_4h_trend", "mtf_1d_trend", "funding_rate", "open_interest_change",
+            "asset_class_enc", "adx", "adx_value", "trend_adx", "macro", "tp_progress", "max_tp_hit", "tp_hit_count",
+            "highest_tp_reached", "false_breakout", "volatility_stopout", "sl_then_tp1", "post_sl_reversal_to_tp1",
+            "dxy_trend", "vix_trend", "us10y_trend", "yield_spread", "minutes_since_high_impact_news",
+            "minutes_until_high_impact_news", "news_event_impact_score", "spx_trend", "btc_corr")
+    feature_sql = "jsonb_build_object(" + ", ".join(f"'{k}', meta->'features'->'{k}'" for k in keys) + ")"
+    ids_query = _sql(
+        "SELECT id FROM decision_log WHERE meta->>'outcome_tracked_at' IS NOT NULL AND id < :before "
+        "ORDER BY id DESC LIMIT :window"
+    )
+    rows_query = _sql(
+        "SELECT id, signal_id, asset, timeframe, meta->>'direction' AS direction, meta->>'entry' AS entry, "
+        "meta->>'stop_loss' AS stop_loss, meta->>'take_profit' AS take_profit, "
+        "meta->>'ml_probability' AS ml_probability, meta->>'actual_outcome' AS actual_outcome, created_at, "
+        f"{feature_sql} AS features FROM decision_log WHERE id = ANY(:ids) "
+        "AND decision = 'rejected' AND meta->>'layer' = 'ml' ORDER BY id DESC"
+    ).bindparams(bindparam("ids", expanding=False))
     rows: list = []
-    before_id = None
-    diagnostics.update(batches=0, error=None, capped=False)
+    before = 2**31 - 1  # decision_log.id is int4
+    started = time.monotonic()
+    diagnostics.update(batches=0, error=None, capped=False, budget_hit=False, scanned_ids=0)
     while len(rows) < max_rows:
-        limit = min(chunk, max_rows - len(rows))
+        if time.monotonic() - started > budget:
+            diagnostics["budget_hit"] = True
+            break
         try:
             async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
-                result = await asyncio.wait_for(
-                    session.execute(
-                        _sql(
-                            "SELECT id, signal_id, asset, timeframe, meta->>'direction' AS direction, "
-                            "meta->>'entry' AS entry, meta->>'stop_loss' AS stop_loss, "
-                            "meta->>'take_profit' AS take_profit, meta->>'ml_probability' AS ml_probability, "
-                            "COALESCE(meta->'features', '{}'::jsonb) AS features, "
-                            "meta->>'actual_outcome' AS actual_outcome, created_at "
-                            "FROM decision_log WHERE decision = 'rejected' AND meta->>'layer' = 'ml' "
-                            "AND meta->>'outcome_tracked_at' IS NOT NULL AND created_at >= :cutoff "
-                            + ("AND id < :before " if before_id is not None else "")
-                            + "ORDER BY id DESC LIMIT :limit"
-                        ),
-                        {"cutoff": cutoff, "limit": limit, **({"before": before_id} if before_id is not None else {})},
-                    ),
-                    timeout=_training_query_timeout(),
-                )
-                batch = [dict(r) for r in result.mappings().all()]
+                ids = [int(r[0]) for r in (await asyncio.wait_for(
+                    session.execute(ids_query, {"before": before, "window": window}),
+                    timeout=_training_query_timeout())).all()]
+                if not ids:
+                    break
+                batch = [dict(r) for r in (await asyncio.wait_for(
+                    session.execute(rows_query, {"ids": ids}),
+                    timeout=_training_query_timeout())).mappings().all()]
+                await session.rollback()
         except Exception as exc:  # keep what was read; training reports the partial load
             diagnostics["error"] = type(exc).__name__
-            logger.warning("[ml_dataset] shadow batch failed after rows=%s error=%s", len(rows), type(exc).__name__)
+            logger.warning("[ml_dataset] shadow batch failed after rows=%s error=%s", len(rows), type(exc).__name__,
+                           exc_info=logger.isEnabledFor(logging.DEBUG))
             break
         diagnostics["batches"] += 1
-        if not batch:
-            break
+        diagnostics["scanned_ids"] += len(ids)
+        before = min(ids)
+        reached_cutoff = False
         for r in batch:
+            created = r.get("created_at")
+            if cutoff is not None and created is not None and created < cutoff:
+                reached_cutoff = True
+                continue
             features = r.get("features")
             if isinstance(features, str):
                 try:
                     features = json.loads(features)
                 except ValueError:
                     features = {}
+            features = {k: v for k, v in (features or {}).items() if v is not None} if isinstance(features, dict) else {}
             rows.append(SimpleNamespace(
                 id=r["id"], signal_id=r.get("signal_id"), asset=r.get("asset"), timeframe=r.get("timeframe"),
                 direction=r.get("direction"), entry=_safe_float(r.get("entry")), stop_loss=_safe_float(r.get("stop_loss")),
                 take_profit=r.get("take_profit"), ml_probability=_safe_float(r.get("ml_probability")),
-                features=features if isinstance(features, dict) else {}, actual_outcome=r.get("actual_outcome"),
-                created_at=r.get("created_at"),
+                features=features, actual_outcome=r.get("actual_outcome"), created_at=created,
             ))
-        before_id = int(batch[-1]["id"])
-        if len(batch) < limit:
+            if len(rows) >= max_rows:
+                break
+        if reached_cutoff or len(ids) < window:
             break
     diagnostics["rows"] = len(rows)
     diagnostics["capped"] = len(rows) >= max_rows
+    diagnostics["seconds"] = round(time.monotonic() - started, 1)
     return rows
-
 
 def _restrict_to_focused_universe(df, environment=None):
     """Train only on focused-shortlist instruments while that universe is enabled.

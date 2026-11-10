@@ -59,7 +59,7 @@ def test_tracked_rejections_load_in_batches_newest_first_on_postgres(monkeypatch
             await dispose_engine_for_event_loop()
 
     rows, mine, diag = asyncio.run(scenario())
-    assert len(rows) == 1000 and diag["capped"] is True and diag["batches"] == 2 and diag["error"] is None
+    assert len(rows) == 1000 and diag["capped"] is True and diag["error"] is None
     ids = [r.id for r in rows]
     assert ids == sorted(ids, reverse=True)  # newest first
     assert mine and mine[0].actual_outcome == "tp1" and mine[0].entry == pytest.approx(1.1)
@@ -78,15 +78,21 @@ def test_a_failed_batch_keeps_rows_already_read(monkeypatch):
         def __init__(self, rows):
             self._rows = rows
 
+        def all(self):
+            return [(r["id"],) for r in self._rows]
+
         def mappings(self):
             return SimpleNamespace(all=lambda: self._rows)
 
     class _Session:
         async def execute(self, *_a, **_k):
             calls["n"] += 1
-            if calls["n"] > 1:
+            if calls["n"] > 2:  # first batch = ids + rows; the second batch fails
                 raise TimeoutError()
-            return _Result([{"id": 10 - i, "asset": "X", "features": "{}", "entry": "1"} for i in range(500)])
+            return _Result([{"id": 1000 - i, "asset": "X", "features": "{}", "entry": "1"} for i in range(500)])
+
+        async def rollback(self):
+            return None
 
     @asynccontextmanager
     async def fake_session(**_k):
