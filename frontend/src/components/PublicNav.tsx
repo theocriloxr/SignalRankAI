@@ -7,6 +7,7 @@ import { WorkspaceLink } from "./WorkspaceLink";
 const links = [
   ["Product","/product"],
   ["Markets","/markets"],
+  ["Track record","/track-record"],
   ["Methodology","/methodology"],
   ["Risk","/risk"],
   ["Security","/security"],

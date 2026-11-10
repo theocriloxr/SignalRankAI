@@ -431,6 +431,10 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             from engine.shadow_outcome_worker import expectancy_shadow_worker
             await expectancy_shadow_worker.start()
             expectancy_shadow = expectancy_shadow_worker
+        if _enabled("WEEKLY_SCORECARD_ENABLED", True):
+            # Honest weekly scorecard to every channel (services/weekly_scorecard.py).
+            from services.weekly_scorecard import weekly_scorecard_loop
+            tasks.append(asyncio.create_task(weekly_scorecard_loop(stop), name="weekly-scorecard"))
         if _enabled("POST_DEPLOY_MAINTENANCE_ENABLED", True):
             # Ledger refresh after audited outcome corrections and the one-off
             # stale-tick label correction (services/post_deploy_maintenance.py).

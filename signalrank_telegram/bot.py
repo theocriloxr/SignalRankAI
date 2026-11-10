@@ -936,6 +936,7 @@ from .commands import (
     help_command,
     about_command,
     faq_command,
+    track_record_command,
     disclaimer_command,
     status_command,
     support_command,
@@ -1044,6 +1045,7 @@ from .owner_commands import (
     stale_tick_relabel_command,
     delivery_latency_command,
     verify_email_campaign_command,
+    ml_status_command,
     performance_audit_command,
     outcome_rebuild_command,
     outcome_audit_command,
@@ -6555,6 +6557,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("help", _audit_handler("help", help_command)))
     application.add_handler(CommandHandler("about", _audit_handler("about", about_command)))
     application.add_handler(CommandHandler("faq", _audit_handler("faq", faq_command)))
+    application.add_handler(CommandHandler("track_record", _audit_handler("track_record", track_record_command)))
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("public_test_status", _audit_handler("public_test_status", public_test_status_command)))
@@ -6755,6 +6758,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("stale_tick_relabel", _audit_handler("stale_tick_relabel", stale_tick_relabel_command)))
     application.add_handler(CommandHandler("delivery_latency", _audit_handler("delivery_latency", delivery_latency_command)))
     application.add_handler(CommandHandler("verify_email_campaign", _audit_handler("verify_email_campaign", verify_email_campaign_command)))
+    application.add_handler(CommandHandler("ml_status", _audit_handler("ml_status", ml_status_command)))
     application.add_handler(CommandHandler("performance_audit", _audit_handler("performance_audit", performance_audit_command)))
     application.add_handler(CommandHandler("outcome_rebuild", _audit_handler("outcome_rebuild", outcome_rebuild_command)))
     application.add_handler(CommandHandler("outcome_audit", _audit_handler("outcome_audit", outcome_audit_command)))

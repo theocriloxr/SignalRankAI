@@ -1412,6 +1412,41 @@ async def delivery_latency_command(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text("\n".join(format_latency_lines(report, limit=20))[:3900])
 
 
+async def ml_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only: the ML model's lifecycle (9 Nov 2026; the stale-model alert points here)."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_strict_owner(int(update.effective_user.id)):
+        await update.message.reply_text("⛔ Strict owner access required.")
+        return
+    from ml.lifecycle_status import lifecycle_status
+
+    status = lifecycle_status()
+    try:
+        from engine.ml import get_model_integrity_status
+
+        model = get_model_integrity_status(ensure_loaded=False)
+    except Exception:
+        model = {}
+    last = status.get("last_training_run") or {}
+    lines = [
+        "🧠 ML model status",
+        f"Champion trained: {status.get('champion_trained_at') or model.get('trained_at') or 'unknown'}"
+        f" ({status.get('champion_age_days')} days ago)" if status.get("champion_age_days") is not None else
+        f"Champion trained: {model.get('trained_at') or 'unknown'}",
+        f"Stale (over {status.get('stale_after_days'):.0f} days): {'yes' if status.get('stale') else 'no'}",
+        f"Calibration validated: {'yes' if model.get('validated') else 'no'}",
+        f"Last training run: {last.get('status') or 'none recorded yet'}"
+        + (f" ({last.get('reason')})" if last.get("reason") else "")
+        + (f" at {last.get('finished_at')}" if last.get("finished_at") else ""),
+        f"Why not replaced: {status.get('why_not_replaced')}",
+        "",
+        "Challenger details: /ml_candidate • promote after review: /ml_candidate_promote CONFIRM",
+        "The model is advisory: it scores signals but does not block them.",
+    ]
+    await update.message.reply_text("\n".join(lines)[:3900])
+
+
 async def verify_email_campaign_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner-only: ask existing unverified users to verify their email (9 Nov 2026).
 

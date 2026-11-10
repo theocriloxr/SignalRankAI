@@ -66,6 +66,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/referral_rewards` | FREE | Referrals | `/app/settings` |
 | `/support` | FREE | Support | `/app/support` |
 | `/faq` | FREE | Support | `/app/support` |
+| `/track_record` | FREE | Analytics | — (Telegram-only) |
 | `/disclaimer` | FREE | Support | `/app/support` |
 | `/myid` | FREE | Support | — (Telegram-only) |
 | `/language` | FREE | Preferences | `/app/settings` |
@@ -135,6 +136,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/stale_tick_relabel` | OWNER | Owner | — (Telegram-only) |
 | `/delivery_latency` | OWNER | Owner | — (Telegram-only) |
 | `/verify_email_campaign` | OWNER | Owner | — (Telegram-only) |
+| `/ml_status` | OWNER | Owner | — (Telegram-only) |
 | `/performance_audit` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_rebuild` | OWNER | Owner | — (Telegram-only) |
 | `/outcome_audit` | OWNER | Owner | — (Telegram-only) |
@@ -277,6 +279,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/portfolio` | `/portfolio` |
 | GET | `/professional/signals` | `/signals`, `/signal` |
 | PATCH | `/profile` | `/profile` |
+| GET | `/public/track-record` | `/track_record` |
 | POST | `/push-devices` | — |
 | DELETE | `/push-devices/{push_device_id}` | — |
 | GET | `/push/vapid-public-key` | — |
@@ -312,4 +315,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 126 commands (49 without a web section), 16 web sections, 149 routes (93 without a name-matched command).
+Summary: 128 commands (51 without a web section), 16 web sections, 150 routes (93 without a name-matched command).

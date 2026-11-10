@@ -984,6 +984,20 @@ async def _create_login_response(
     return payload
 
 
+@router.get("/public/track-record")
+async def public_track_record() -> dict[str, Any]:
+    """Live record of delivered signals, misses included; no login needed (9 Nov 2026)."""
+    from services.public_track_record import cached_track_record
+
+    try:
+        return await cached_track_record(
+            lambda: get_session(label="platform.public_track_record", timeout_seconds=10.0)
+        )
+    except Exception as exc:
+        logger.warning("[public_track_record] unavailable error=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Track record is temporarily unavailable") from exc
+
+
 @router.get("/capabilities")
 async def capabilities() -> dict[str, Any]:
     return {

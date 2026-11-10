@@ -7545,6 +7545,31 @@
           }
         ]
       }
+    },
+    "/api/v1/platform/public/track-record": {
+      "get": {
+        "summary": "Public live track record",
+        "operationId": "public_track_record_api_v1_platform_public_track_record_get",
+        "tags": [
+          "platform"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Track record temporarily unavailable"
+          }
+        }
+      }
     }
   },
   "components": {

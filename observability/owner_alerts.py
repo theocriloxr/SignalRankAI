@@ -30,7 +30,7 @@ RUNBOOK = {
         "restart the engine service and check Postgres and Redis."
     ),
     "engine_silent": (
-        "Runbook: open /readyz and the engine service logs. 'missing' means no engine is "
+        "Runbook: send /system_health (or open the website's /readyz page) and check the engine logs. 'missing' means no engine is "
         "publishing (crashed, not deployed or wrong Redis); 'stalled' or an old heartbeat "
         "means the loop is stuck: restart the engine service. 'skipped' names why cycles end early."
     ),
@@ -46,7 +46,7 @@ RUNBOOK = {
         "[engine_post_ml_funnel] lines and the last deploy. Never loosen risk gates just to restore volume."
     ),
     "ml_model_stale": (
-        "Runbook: /readyz → checks.ml_lifecycle shows the champion's age and the last training outcome. "
+        "Runbook: send /ml_status for the champion's age and the last training outcome. "
         "A challenger waiting for approval is promoted with /ml_candidate_promote CONFIRM after reviewing "
         "/ml_candidate; a failed quality check needs more or better data, not looser gates. "
         "The model is advisory; signals keep flowing meanwhile."

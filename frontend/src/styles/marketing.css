@@ -201,3 +201,25 @@
 }
 .global-state .ui-skeleton-stack { width: 100%; }
 .auth-aside-copy { display: grid; gap: var(--space-5); }
+
+/* Public track record (9 Nov 2026) */
+.tr-page { padding-block: var(--space-12); display: grid; gap: var(--space-8); }
+.tr-head { max-width: 760px; display: grid; gap: var(--space-3); }
+.tr-head h1 { font-size: var(--text-4xl); }
+.tr-head p:last-child { color: var(--text-2); font-size: var(--text-lg); }
+.tr-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); }
+.tr-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.tr-card { border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); padding: var(--space-5); display: grid; gap: var(--space-3); }
+.tr-card h2 { font-size: var(--text-lg); }
+.tr-big { font-family: var(--font-mono); font-size: var(--text-3xl); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tr-card dl { display: grid; gap: 6px; margin: 0; }
+.tr-card dl div { display: flex; justify-content: space-between; font-size: var(--text-sm); }
+.tr-card dt { color: var(--text-2); }
+.tr-card dd { margin: 0; font-family: var(--font-mono); }
+.tr-sub { margin-top: var(--space-8); font-size: var(--text-2xl); }
+.tr-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.tr-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.tr-table th, .tr-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tr-table td:nth-child(5) { font-family: var(--font-mono); font-weight: 600; }
+.tr-up { color: var(--positive); } .tr-down { color: var(--negative); }
+.tr-empty, .tr-note { color: var(--text-2); font-size: var(--text-sm); }

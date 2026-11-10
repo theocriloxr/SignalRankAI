@@ -19,7 +19,8 @@ async def _reply(update: Any, text: str) -> None:
 
 async def public_test_status_command(update, context) -> None:
     value = public_test_status()
-    await _reply(update, "Public testing: {mode}\nVerdict: {verdict}\nAuto trading disabled: {auto}\nCopy trading disabled: {copy}\nPayments enabled: {payments}".format(mode=value["public_testing_mode"], verdict=value["verdict"], auto=value["auto_trading_disabled"], copy=value["copy_trading_disabled"], payments=value["payments_enabled"]))
+    # release_guard reports *_enabled flags; the old *_disabled keys crashed this command (9 Nov 2026).
+    await _reply(update, "Public testing: {mode}\nVerdict: {verdict}\nAuto trading enabled: {auto}\nCopy trading enabled: {copy}\nPayments enabled: {payments}".format(mode=value["public_testing_mode"], verdict=value["verdict"], auto=value["auto_trading_enabled"], copy=value["copy_trading_enabled"], payments=value["payments_enabled"]))
 
 
 async def release_guard_command(update, context) -> None:

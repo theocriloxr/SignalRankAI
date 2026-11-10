@@ -1,5 +1,5 @@
 {
-  "count": 164,
+  "count": 165,
   "flags": [
     {
       "dangerous": false,
@@ -288,6 +288,14 @@
       "required_safe_default": "0",
       "rollback": "set COPY_TRADE_ENABLED=0 and redeploy",
       "safe_default_satisfied": true
+    },
+    {
+      "dangerous": false,
+      "name": "CORNIX_BLOCK_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
     },
     {
       "dangerous": false,

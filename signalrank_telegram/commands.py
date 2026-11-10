@@ -1641,7 +1641,7 @@ async def asset_capability_command(update: Update, context: ContextTypes.DEFAULT
 
     spec = resolve_asset_spec(symbol)
     try:
-        session_status = get_market_session_status(spec.symbol)
+        session_status = get_market_session_status(spec.canonical_symbol)
         status = getattr(session_status, "reason", None) or ("open" if session_status.is_open else "closed")
     except Exception as exc:
         status = f"error:{type(exc).__name__}"
@@ -1649,7 +1649,7 @@ async def asset_capability_command(update: Update, context: ContextTypes.DEFAULT
         "Asset Capability",
         "",
         f"Requested: {symbol}",
-        f"Canonical: {spec.symbol}",
+        f"Canonical: {spec.canonical_symbol}",
         f"Class: {spec.asset_class}",
         f"Subtype: {spec.subtype}",
         f"Timezone: {spec.timezone}",
@@ -1687,8 +1687,8 @@ async def asset_class_test_command(update: Update, context: ContextTypes.DEFAULT
     if not specs:
         await update.message.reply_text(f"No canonical assets are registered for class {requested}.")
         return
-    actionable = [spec.symbol for spec in specs if spec.actionable]
-    analysis_only = [spec.symbol for spec in specs if spec.analysis_only]
+    actionable = [spec.canonical_symbol for spec in specs if spec.actionable]
+    analysis_only = [spec.canonical_symbol for spec in specs if spec.analysis_only]
     await update.message.reply_text(
         "Asset Class Test\n\n"
         f"Class: {requested}\n"
@@ -1813,10 +1813,10 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
     if spec.asset_class == "unknown":
         await update.message.reply_text("Unknown asset. The test was blocked before Telegram delivery.")
         return
-    logger.info("[test_delivery_reserved] user=%s asset=%s", user_id, spec.symbol)
+    logger.info("[test_delivery_reserved] user=%s asset=%s", user_id, spec.canonical_symbol)
     message = (
         "TEST — NOT A TRADING SIGNAL\n\n"
-        f"Asset: {spec.symbol}\n"
+        f"Asset: {spec.canonical_symbol}\n"
         "Purpose: Telegram infrastructure and acknowledgement test only.\n"
         "No trade, signal, subscription, performance or broker record is created."
     )
@@ -1826,7 +1826,7 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
         logger.info(
             "[telegram_send_ok] kind=infrastructure_test user=%s asset=%s message_id=%s",
             user_id,
-            spec.symbol,
+            spec.canonical_symbol,
             message_id,
         )
         try:
@@ -1835,7 +1835,7 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
                 f"delivery_test:{user_id}:{message_id}",
                 _json.dumps({
                     "kind": "infrastructure_test",
-                    "asset": spec.symbol,
+                    "asset": spec.canonical_symbol,
                     "telegram_user_id": user_id,
                     "telegram_message_id": message_id,
                     "sent_ok": True,
@@ -1846,9 +1846,9 @@ async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFA
             logger.info("[delivery_proof_write] kind=infrastructure_test message_id=%s", message_id)
         except Exception as store_exc:
             logger.warning("[test_delivery_receipt_store_failed] error=%s", type(store_exc).__name__)
-        logger.info("[test_delivery_completed] user=%s asset=%s", user_id, spec.symbol)
+        logger.info("[test_delivery_completed] user=%s asset=%s", user_id, spec.canonical_symbol)
     except Exception as exc:
-        logger.exception("[test_delivery_failed] user=%s asset=%s", user_id, spec.symbol)
+        logger.exception("[test_delivery_failed] user=%s asset=%s", user_id, spec.canonical_symbol)
         await update.message.reply_text(safe_command_error("Infrastructure test failed.", exc))
 
 
@@ -5996,6 +5996,29 @@ async def faq_command(update, context) -> None:
 		await update.message.reply_text(msg)
 
 # /disclaimer message
+async def track_record_command(update, context) -> None:
+	"""Live record of delivered signals, misses included (9 Nov 2026; same data as /track-record on the site)."""
+	if update.message is None:
+		return
+	try:
+		from db.session import get_session
+		from services.public_track_record import cached_track_record, weekly_scorecard_text
+
+		record = await cached_track_record(lambda: get_session(label="tg.track_record", timeout_seconds=10.0))
+		lines = [weekly_scorecard_text(record), "", "Latest closed calls:"]
+		for row in (record.get("recent") or [])[:10]:
+			r = row.get("r")
+			lines.append(f"• {row.get('asset')} {str(row.get('direction') or '').upper()} {row.get('timeframe')}: "
+			             f"{row.get('outcome')} {'' if r is None else f'{r:+.2f}R'}")
+		from core.app_url import public_app_base_url
+		base = public_app_base_url()
+		if base:
+			lines.append(f"\nFull record: {base}/track-record")
+		await update.message.reply_text("\n".join(lines)[:3900])
+	except Exception as exc:
+		await update.message.reply_text(safe_command_error("The track record is unavailable right now.", exc))
+
+
 async def disclaimer_command(update, context) -> None:
 	if await _public_guard(update):
 		return

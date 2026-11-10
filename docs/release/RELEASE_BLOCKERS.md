@@ -1,5 +1,43 @@
 # Release blockers and exact continuation
 
+## Continuation, 9–10 November 2026 — FundedNext focus, cross-channel speed, live prices, fonts, email verification, live track record, Cornix, weekly scorecard, command audit (cloud session)
+
+Deployed in steps: `03b92846` (FundedNext focus, delivery chaining, live prices, fonts) and `89d6db3c` (email verification), each verified ready on `/readyz`. This entry also records the batch committed with it.
+
+- **No signals after JPM.** This was not a fault. In the 18:53 UTC snapshot the candidates that passed the quality checks were stopped by the setup-evidence filter (for example `ema trend|1h|long: 318/1660 reached TP1, lower bound 17.6% vs break-even 41.0%; skipping XAUUSD`). The drought alert covers long quiet spells.
+- **FundedNext focus.**
+  - `core/broker_universe.py` and `configs/broker_universes.json`; `BROKER_UNIVERSE_PROFILE` defaults to `fundednext`.
+  - Its instruments (FX majors and crosses, XAU/XAG, WTI/Brent, US30/NAS100/US500/GER40/UK100/JP225/AUS200/FRA40/EU50/HK50, 8 crypto) get their own round-robin queue and `BROKER_UNIVERSE_SHARE`=60% of every scan batch. They are scanned even if discovery missed them; other assets keep the rest.
+  - Cards say "Tradable on FundedNext".
+  - Sources disagree on the exact list (stocks are disputed), so `BROKER_UNIVERSE_ASSETS` overrides it.
+- **Cross-channel lag.** Web fan-out, push/email dispatch and email sending polled every 10/20/15 s. They now poll every 5 s and wake each other in-process: fan-out wakes dispatch, and queued email wakes the sender.
+- **Site.**
+  - Open signal cards show a live "Now" price and the R moved (from the existing `/live-price`).
+  - Signals, overview, paper, performance and notifications refresh every 30 s.
+  - Inter and JetBrains Mono are self-hosted from npm, so `font-src 'self'` holds; the lockfile keeps its `libc` fields.
+  - The freshness label scales with the chart timeframe.
+- **Email verification.**
+  - Telegram sign-up now sends the verification email too, in a savepoint so it never fails the sign-in.
+  - Every app page shows a banner with a resend button until the email is verified.
+  - New owner command `/verify_email_campaign [send]`: counts unverified accounts, then emails each a fresh link (skipping anyone asked in the last 24 h) and messages linked Telegram users.
+- **Learned from competitors.** These add to what was already in place:
+  - **Public live track record:** `GET /api/v1/platform/public/track-record`, the website page `/track-record` (in the public nav) and Telegram `/track_record`. It counts delivered, eligible, closed signals only, misses included, per asset class over 7/30 days plus the latest 25 calls, in R and gross of fees.
+  - **Weekly scorecard:** `services/weekly_scorecard.py` in analytics, once per ISO week (Monday, at or after 07 UTC). It goes to every active user as a notification (web/app/email/push), by Telegram DM, and to `PUBLIC_TELEGRAM_CHANNEL_ID` if set.
+  - **Cornix-ready block:** crypto VIP cards end with the levels in the layout Cornix-style bots parse, written in plain decimals.
+- **Commands.**
+  - The stale-model alert told the owner to send `/readyz`, which is a web path; the alert now names the new `/ml_status`.
+  - Audit: all 127 catalogued commands have handlers and tiers, and all 202 registered handlers have tiers.
+  - New test `tests/test_every_command_runs_20261110.py` calls every handler as Free and as Owner. It found and fixed `/public_test_status` (KeyError on renamed flags) and `AssetSpec.symbol` in 10 places (`/owner_test_delivery` and the asset commands).
+  - `report`, `track_record` and `elite` leave the operator menu, which is full at 100; `/help` lists them.
+- **Tests (Linux, Python 3.11.18, owned PostgreSQL 16 at 0061; Node 22, npm 11.10):**
+  - New tests: broker focus (4), email verification (4, one on PostgreSQL), competitor features (4, one on PostgreSQL), every command (1).
+  - Full suite: 4,510 passed, 215 skipped, 2 failed (menu limit and governance freshness, both fixed in this commit).
+  - Frontend: `next build`, `tsc`, ESLint clean; node tests 81 + 3 + 41 passed.
+- **Owner steps:**
+  - Send `/verify_email_campaign` to see the count, then `/verify_email_campaign send`.
+  - Set `PUBLIC_TELEGRAM_CHANNEL_ID` for the public scorecard.
+  - Check the FundedNext list against your platform's symbol list.
+
 ## Continuation, 9 November 2026 (night) — ML model lifecycle, bottlenecks, and a sweep of the latest snapshot (cloud session)
 
 Owner requests: "fix the ML model", "fix the bottlenecks all across the ecosystem", and, after the JPM 1h signal `666f7cfb`, "scan and fix all". Evidence comes from the `signalrank-ops` snapshots of 18:19–18:27 UTC on `2946c233`.

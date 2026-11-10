@@ -3,7 +3,7 @@
   "release_decision": "NO-GO",
   "ingestion_is_acceptance": false,
   "source_index_sha256": "c25d86e0fa3d364cc301f49175764942cbe537334f3af9cfe167549283efa7aa",
-  "repository_inventory_sha256": "3b751ccb681515098bdc2672fe20593666d7146e6a3f3ef0d125fb25f41bd35c",
+  "repository_inventory_sha256": "f4f2c4243be9c2436b5de2e969c294799d1b851b820b170662d91b5ab4ce65b7",
   "sources": [
     {
       "filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.docx",
@@ -47,13 +47,13 @@
       "reason": "Bundled documents are accessible; they do not establish access to every original discussion."
     }
   ],
-  "register_rows": 26985,
+  "register_rows": 26990,
   "status_counts": {
     "IMPLEMENTED_NEEDS_IMPROVEMENT": 13,
-    "INCOMPLETE": 26972
+    "INCOMPLETE": 26977
   },
   "reviewed_rows": 13,
-  "unclassified_applicable": 26972,
+  "unclassified_applicable": 26977,
   "unclassified_count_scope": "Conservative upper bound: includes all unresolved applicability reviews, including headings/context.",
   "applicable_reviewed": 13,
   "irrelevant_boilerplate_reviewed": 0,

@@ -1184,8 +1184,42 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     sig_id = signal.get("signal_id") or signal.get("id")
     if sig_id:
         lines.append(f"📌 Signal ID: {str(sig_id)[:12]}")
+    cornix = cornix_block(signal)
+    if cornix:
+        lines.append(cornix)
 
     return "\n".join(lines)
+
+
+def _plain(value: float) -> str:
+    """Plain decimal (no exponent) with every significant digit kept, as bots expect."""
+    text = f"{float(value):.12f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def cornix_block(signal: DictType[str, Any]) -> Optional[str]:
+    """Crypto levels in the text layout Telegram auto-trading bots such as Cornix parse (9 Nov 2026).
+
+    Copy it into a Cornix-connected channel to auto-execute on your exchange.
+    Crypto only, VIP only, and only when exact levels are visible.
+    """
+    if str(os.getenv("CORNIX_BLOCK_ENABLED", "1")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return None
+    asset = str(signal.get("asset") or "").upper().replace("/", "")
+    if not asset.endswith(("USDT", "USDC")):
+        return None
+    entry, stop = _safe_float(signal.get("entry")), _safe_float(signal.get("stop_loss"))
+    targets = _real_tp_levels(signal, signal.get("take_profit") or signal.get("targets"))
+    if entry is None or stop is None or not targets:
+        return None
+    long_side = str(signal.get("direction") or "long").strip().lower() in ("long", "buy", "bullish")
+    quote = "USDT" if asset.endswith("USDT") else "USDC"
+    pair = f"{asset[: -len(quote)]}/{quote}"
+    body = [f"#{pair}", f"Signal Type: Regular ({'Long' if long_side else 'Short'})", "Entry Targets:",
+            f"1) {_plain(entry)}", "Take-Profit Targets:"]
+    body += [f"{i}) {_plain(level)}" for i, level in enumerate(targets[:3], 1)]
+    body += ["Stop Targets:", f"1) {_plain(stop)}"]
+    return "📋 Cornix-ready (copy into your Cornix-connected channel):\n<pre>" + _h("\n".join(body)) + "</pre>"
 
 
 # ---------------------------------------------------------------------------

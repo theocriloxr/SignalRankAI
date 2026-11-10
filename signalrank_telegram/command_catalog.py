@@ -58,6 +58,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("referral_rewards", "View your referral rewards", "FREE", "Referrals"),
     CommandSpec("support", "Contact support and report a problem", "FREE", "Support"),
     CommandSpec("faq", "Read common product questions", "FREE", "Support"),
+    CommandSpec("track_record", "Every delivered signal's result, misses included", "FREE", "Analytics"),
     CommandSpec("disclaimer", "Read the financial-risk disclaimer", "FREE", "Support"),
     CommandSpec("myid", "Show your Telegram ID and tier", "FREE", "Support"),
     CommandSpec("language", "Change notification language", "FREE", "Preferences"),
@@ -131,6 +132,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("stale_tick_relabel", "Review and apply the stale-tick shadow label correction", "OWNER", "Owner"),
     CommandSpec("delivery_latency", "Where signal delivery time goes, by class and timeframe", "OWNER", "Owner"),
     CommandSpec("verify_email_campaign", "Ask unverified users to verify their email (send to confirm)", "OWNER", "Owner"),
+    CommandSpec("ml_status", "ML model age, last training run and why it was not replaced", "OWNER", "Owner"),
     CommandSpec("performance_audit", "Audit performance projection integrity", "OWNER", "Owner"),
     CommandSpec("outcome_rebuild", "Run bounded outcome and outbox rebuild", "OWNER", "Owner"),
     CommandSpec("outcome_audit", "Audit outcome projection and notification state", "OWNER", "Owner"),
@@ -170,7 +172,7 @@ OPERATOR_MENU_OMIT = frozenset({
     "start", "about", "app", "login_code", "link", "security", "privacy", "pricing", "upgrade", "tiers",
     "invite", "referral_leaderboard", "referral_rewards", "referral", "faq", "disclaimer", "language",
     "cancel", "paper_reset", "paper_close_all", "profile", "connect_broker", "mt5_link", "setlot", "early",
-    "report",  # 9 Nov 2026: room for /verify_email_campaign; /help still lists it
+    "report", "track_record", "elite",  # 9-10 Nov 2026: room for new owner commands; /help still lists them
 })
 
 
