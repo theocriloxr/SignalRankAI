@@ -185,8 +185,17 @@ def _promotion_quality_gate(
     # class and can reject a genuinely useful minority-class model. The
     # imbalance-aware gates below plus expected-R are the actual protection
     # against majority collapse.
+    # Overfitting gate (10 Nov 2026): a candidate that fits its training window far
+    # better than the untouched validation window has memorised noise.
+    try:
+        max_gap = float(os.getenv("ML_MAX_OVERFIT_GAP", "0.15") or 0.15)
+    except ValueError:
+        max_gap = 0.15
+    gap = metrics.get("overfit_gap")
+    overfit_ok = gap is None or float(gap) <= max_gap
     ok = (
-        accuracy >= min_accuracy
+        overfit_ok
+        and accuracy >= min_accuracy
         and auc >= min_auc
         and balanced_acc >= min_balanced_acc
         and positive_recall >= min_positive_recall
@@ -1195,27 +1204,11 @@ async def load_training_data(lookback_days: int = 90):
 
         # Include threshold-rejected/non-issued signals that were later outcome-tracked.
         # This lets the model learn from decisions that did not pass issuance gates.
+        shadow_load: dict[str, Any] = {}
         try:
             from sqlalchemy import and_
 
-            async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
-                rejected_rows = (
-                    (
-                        await asyncio.wait_for(
-                            session.execute(
-                                select(MLRejectedSignal).where(
-                                    and_(
-                                        MLRejectedSignal.created_at >= cutoff,
-                                        MLRejectedSignal.outcome_tracked_at.is_not(None),
-                                    )
-                                )
-                            ),
-                            timeout=_training_query_timeout(),
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
+            rejected_rows = await _load_tracked_rejections(cutoff, shadow_load)
 
             for rj in rejected_rows:
                 outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
@@ -1435,12 +1428,15 @@ async def load_training_data(lookback_days: int = 90):
         df.attrs["live_proof_rows"] = int(live_proof_rows)
         df.attrs["source_counts"] = {str(k): int(v) for k, v in source_counts.items()}
         df.attrs["candle_series_loaded"] = int(len(candle_cache))
+        df.attrs["shadow_load"] = dict(shadow_load)
         logger.info(
-            "[ml_dataset] status=success rows=%s live_proof=%s sources=%s candle_series=%s",
+            "[ml_dataset] status=success rows=%s live_proof=%s sources=%s candle_series=%s shadow_load=%s focus=%s",
             len(df),
             live_proof_rows,
             source_counts,
             len(candle_cache),
+            shadow_load,
+            {k: v for k, v in (focus or {}).items() if k != "instruments_kept"},
         )
         logger.info(f"Class distribution: {df['target'].value_counts().to_dict()}")
         return df
@@ -1481,6 +1477,78 @@ def _exclude_pegged_assets(df):
         "rows_removed": removed,
         "assets_removed": sorted(set(df.loc[pegged, "asset"].astype(str)))[:50],
     }
+
+
+async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
+    """Outcome-tracked rejected setups, newest first, in bounded keyset batches.
+
+    One unbounded ORM read of every tracked row in the lookback (well over 100k
+    rows, each with its JSON features) could exceed the training query timeout,
+    and the failure dropped *all* shadow evidence, leaving training with
+    "insufficient_total_rows" and a six-week-old champion (production 10 Nov
+    2026: 14 h signal drought, every candidate below the 0.70 ML bar). Each batch
+    now has its own timeout, a failed batch keeps the rows already read, and the
+    query uses the literal predicate of ix_decision_log_tracked_id.
+    """
+    from types import SimpleNamespace
+
+    from db.session import get_session
+    from sqlalchemy import text as _sql
+
+    max_rows = max(1000, int(os.getenv("ML_TRAIN_SHADOW_MAX_ROWS", "60000") or 60000))
+    chunk = max(500, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "5000") or 5000)))
+    rows: list = []
+    before_id = None
+    diagnostics.update(batches=0, error=None, capped=False)
+    while len(rows) < max_rows:
+        limit = min(chunk, max_rows - len(rows))
+        try:
+            async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
+                result = await asyncio.wait_for(
+                    session.execute(
+                        _sql(
+                            "SELECT id, signal_id, asset, timeframe, meta->>'direction' AS direction, "
+                            "meta->>'entry' AS entry, meta->>'stop_loss' AS stop_loss, "
+                            "meta->>'take_profit' AS take_profit, meta->>'ml_probability' AS ml_probability, "
+                            "COALESCE(meta->'features', '{}'::jsonb) AS features, "
+                            "meta->>'actual_outcome' AS actual_outcome, created_at "
+                            "FROM decision_log WHERE decision = 'rejected' AND meta->>'layer' = 'ml' "
+                            "AND meta->>'outcome_tracked_at' IS NOT NULL AND created_at >= :cutoff "
+                            + ("AND id < :before " if before_id is not None else "")
+                            + "ORDER BY id DESC LIMIT :limit"
+                        ),
+                        {"cutoff": cutoff, "limit": limit, **({"before": before_id} if before_id is not None else {})},
+                    ),
+                    timeout=_training_query_timeout(),
+                )
+                batch = [dict(r) for r in result.mappings().all()]
+        except Exception as exc:  # keep what was read; training reports the partial load
+            diagnostics["error"] = type(exc).__name__
+            logger.warning("[ml_dataset] shadow batch failed after rows=%s error=%s", len(rows), type(exc).__name__)
+            break
+        diagnostics["batches"] += 1
+        if not batch:
+            break
+        for r in batch:
+            features = r.get("features")
+            if isinstance(features, str):
+                try:
+                    features = json.loads(features)
+                except ValueError:
+                    features = {}
+            rows.append(SimpleNamespace(
+                id=r["id"], signal_id=r.get("signal_id"), asset=r.get("asset"), timeframe=r.get("timeframe"),
+                direction=r.get("direction"), entry=_safe_float(r.get("entry")), stop_loss=_safe_float(r.get("stop_loss")),
+                take_profit=r.get("take_profit"), ml_probability=_safe_float(r.get("ml_probability")),
+                features=features if isinstance(features, dict) else {}, actual_outcome=r.get("actual_outcome"),
+                created_at=r.get("created_at"),
+            ))
+        before_id = int(batch[-1]["id"])
+        if len(batch) < limit:
+            break
+    diagnostics["rows"] = len(rows)
+    diagnostics["capped"] = len(rows) >= max_rows
+    return rows
 
 
 def _restrict_to_focused_universe(df, environment=None):
@@ -2132,13 +2200,25 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     # the model-fit window. This complements, rather than replaces, provenance
     # and outcome sample weights.
     class_balance_scale = _class_balance_scale(y_tr, w_tr)
+    # Overfitting controls (owner request, 10 Nov 2026): the old fixed 100-tree,
+    # depth-5, lr-0.1 model had no regularisation, no minimum leaf weight and no
+    # early stopping. Shallower, regularised trees; up to ML_XGB_MAX_TREES with
+    # early stopping on the calibration window (the validation window stays
+    # untouched); and the train/validation AUC gap gates promotion below.
+    can_stop_early = len(np.unique(y_cal)) >= 2 and len(y_cal) >= 20
     model = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=5,
-        learning_rate=0.1,
+        n_estimators=int(os.getenv("ML_XGB_MAX_TREES", "400") or 400),
+        max_depth=int(os.getenv("ML_XGB_MAX_DEPTH", "4") or 4),
+        learning_rate=float(os.getenv("ML_XGB_LEARNING_RATE", "0.05") or 0.05),
+        min_child_weight=float(os.getenv("ML_XGB_MIN_CHILD_WEIGHT", "5") or 5),
+        gamma=float(os.getenv("ML_XGB_GAMMA", "0.5") or 0.5),
+        reg_lambda=float(os.getenv("ML_XGB_REG_LAMBDA", "2.0") or 2.0),
+        reg_alpha=float(os.getenv("ML_XGB_REG_ALPHA", "0.1") or 0.1),
         subsample=0.8,
-        colsample_bytree=0.8,
+        colsample_bytree=0.7,
         objective="binary:logistic",
+        eval_metric="logloss",
+        early_stopping_rounds=(int(os.getenv("ML_XGB_EARLY_STOPPING_ROUNDS", "30") or 30) if can_stop_early else None),
         scale_pos_weight=class_balance_scale,
         random_state=42,
         verbosity=1,
@@ -2149,7 +2229,11 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         int((np.asarray(y_tr) == 1).sum()),
         int((np.asarray(y_tr) == 0).sum()),
     )
-    model.fit(X_tr, y_tr, sample_weight=w_tr)
+    if can_stop_early:
+        model.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_cal, y_cal)], verbose=False)
+    else:
+        model.fit(X_tr, y_tr, sample_weight=w_tr)
+    best_iteration = getattr(model, "best_iteration", None)
 
     # Choose the classification diagnostic threshold from calibration-fit rows
     # only, then evaluate that frozen threshold on the untouched validation
@@ -2208,6 +2292,17 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         auc = roc_auc_score(y_te, y_proba)
     except Exception:
         auc = 0.5
+    try:
+        train_auc = float(roc_auc_score(y_tr, model.predict_proba(X_tr)[:, 1]))
+    except Exception:
+        train_auc = None
+    overfit_gap = (train_auc - float(auc)) if train_auc is not None else None
+    logger.info(
+        "[ml_quality_overfit] train_auc=%s validation_auc=%.4f gap=%s trees=%s",
+        "n/a" if train_auc is None else f"{train_auc:.4f}", float(auc),
+        "n/a" if overfit_gap is None else f"{overfit_gap:.4f}",
+        "all" if best_iteration is None else int(best_iteration) + 1,
+    )
 
     logger.info(f"Test Accuracy (classification only, NOT trading accuracy): {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
@@ -2329,6 +2424,9 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     metrics = {
         "accuracy": float(acc),
         "auc": float(auc),
+        "train_auc": train_auc,
+        "overfit_gap": overfit_gap,
+        "trees_used": None if best_iteration is None else int(best_iteration) + 1,
         "classification_threshold": float(classification_threshold),
         "scale_pos_weight": float(class_balance_scale),
         "train_rows": int(len(X_tr)),

@@ -1,5 +1,5 @@
 {
-  "file_count": 2765,
+  "file_count": 2766,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13075,11 +13075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 8,
+      "line_count": 14,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c8b1beb6389cabd71713ce6f8abf1e6e723c64e0568d918a702e49e8dfd60551",
-      "size_bytes": 139
+      "sha256": "6b4455b2e316a26e7af16ad9f691ddc8dc62bdafde63cefdb6c4b475ec58beca",
+      "size_bytes": 350
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13155,11 +13155,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3003,
+      "line_count": 3101,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "59612f568df69bce6e91275db6a892d2d6273e70a10e08610ef045fda3bc34c9",
-      "size_bytes": 134366
+      "sha256": "2ccf53d335c6f6d0d586216d54a444c9acfc050b1e85e1c1125fb4a032913593",
+      "size_bytes": 140053
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18667,6 +18667,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 124,
+      "path": "tests/test_email_spam_fix_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "c9dcb859e370ade175c67d5783850ee32c31ffef069cc797d60472d8a9f2ae81",
+      "size_bytes": 5394
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 86,
       "path": "tests/test_email_verification_campaign_20261109.py",
       "reason": "automated test evidence",
@@ -22136,6 +22144,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
     "PRESERVE_BEHAVIOUR": 1404,
-    "TEST_ONLY": 482
+    "TEST_ONLY": 483
   }
 }
