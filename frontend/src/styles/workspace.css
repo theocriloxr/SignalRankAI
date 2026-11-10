@@ -58,7 +58,7 @@
 .ws-drawer > summary::-webkit-details-marker { display: none; }
 .ws-drawer > summary svg { width: 18px; height: 18px; }
 .ws-drawer .disclosure-panel {
-  position: fixed; inset: var(--topbar-height) 0 0 0; z-index: 40; overflow-y: auto;
+  position: fixed; inset: var(--topbar-height) 0 0 0; height: calc(100dvh - var(--topbar-height)); z-index: 40; overflow-y: auto; overscroll-behavior: contain;
   padding: var(--space-5) var(--space-4) calc(var(--space-16) + env(safe-area-inset-bottom));
   background: var(--bg-raised); border-top: 1px solid var(--border); display: grid; gap: var(--space-5); align-content: start;
 }
@@ -292,3 +292,4 @@
 .ws-factor-weak .ws-factor-bar > span { background: var(--warning); }
 .ws-factor-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ws-factor-value small { color: var(--text-2); }
+html:has(.ws-drawer[open]) { overflow: hidden; } /* no scrolling behind the open menu (10 Nov 2026) */

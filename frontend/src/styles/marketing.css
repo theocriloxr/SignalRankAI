@@ -4,7 +4,12 @@
 .mk-page { min-height: 100vh; background: var(--bg); overflow-x: clip; }
 
 /* ---------- Navigation ---------- */
-.mk-nav-wrap { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: saturate(150%) blur(14px); -webkit-backdrop-filter: saturate(150%) blur(14px); border-bottom: 1px solid var(--border); }
+/* The frosted background sits on a pseudo-element: backdrop-filter on the header itself made
+   it the containing block of the fixed mobile menu panel, which was then clipped to the 64px
+   header strip (owner report, 10 Nov 2026: menu unusable on phones and tablets). */
+.mk-nav-wrap { position: sticky; top: 0; z-index: 40; border-bottom: 1px solid var(--border); isolation: isolate; }
+.mk-nav-wrap::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: color-mix(in srgb, var(--bg) 84%, transparent); backdrop-filter: saturate(150%) blur(14px); -webkit-backdrop-filter: saturate(150%) blur(14px); }
+html:has(.mk-menu[open]) { overflow: hidden; }
 .mk-nav { height: 64px; display: flex; align-items: center; gap: var(--space-6); }
 .mk-nav-links { display: flex; align-items: center; gap: 2px; margin-left: var(--space-4); }
 .mk-nav-links a { padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-2); font-size: var(--text-sm); font-weight: 520; }
@@ -15,7 +20,7 @@
 .mk-menu > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--surface); cursor: pointer; font-size: var(--text-sm); font-weight: 600; }
 .mk-menu > summary::-webkit-details-marker { display: none; }
 .mk-menu > summary svg { width: 18px; height: 18px; }
-.mk-menu .disclosure-panel { position: fixed; inset: 64px 0 0 0; z-index: 50; padding: var(--space-6) var(--space-4); background: var(--bg-raised); border-top: 1px solid var(--border); overflow-y: auto; }
+.mk-menu .disclosure-panel { position: fixed; inset: 64px 0 0 0; height: calc(100dvh - 64px); z-index: 50; overscroll-behavior: contain; padding: var(--space-6) var(--space-4); background: var(--bg-raised); border-top: 1px solid var(--border); overflow-y: auto; }
 .mk-menu nav { display: grid; gap: 4px; }
 .mk-menu nav a { padding: 14px 12px; border-radius: var(--radius-md); font-size: var(--text-lg); font-weight: 600; border-bottom: 1px solid var(--border); }
 .mk-menu .mk-menu-actions { display: grid; gap: var(--space-2); margin-top: var(--space-6); }
