@@ -1,5 +1,5 @@
 {
-  "file_count": 2765,
+  "file_count": 2767,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7403,11 +7403,27 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1066,
+      "line_count": 1078,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e302f57471bec65e3d5641161cd9527e6d9b73053023d0428fc6d7ef18dc6e3e",
-      "size_bytes": 163185
+      "sha256": "24216f1a66c45821a62820f311d26054cd5dbea7acbaeaa6392f832bc972e4cc",
+      "size_bytes": 165147
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 1078,
+      "path": "docs/release/COMPLETION_EVIDENCE.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "24216f1a66c45821a62820f311d26054cd5dbea7acbaeaa6392f832bc972e4cc",
+      "size_bytes": 165147
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 1078,
+      "path": "docs/release/COMPLETION_EVIDENCE.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "24216f1a66c45821a62820f311d26054cd5dbea7acbaeaa6392f832bc972e4cc",
+      "size_bytes": 165147
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -11467,11 +11483,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 535,
+      "line_count": 566,
       "path": "engine/shadow_outcome_worker.py",
       "reason": "production/build source",
-      "sha256": "296aa362ad05fda41b078ff7b643ceb3b9425347f542d540072deedc012f8581",
-      "size_bytes": 25569
+      "sha256": "b2c1fc84879d148f3298adb7fe3201420c15d3f2caed18f868c0e4e5340063ba",
+      "size_bytes": 27527
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14206,7 +14222,7 @@
       "line_count": 16883,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e4c278f08393403b0804050ed49d1df7b5c7123c9d2cab75099c35e0ff6b114c",
+      "sha256": "0fb7d422662150f282bcfc2bc89dd4ffa497f785c727649d9dae8cd4c4aac81f",
       "size_bytes": 493070
     },
     {
@@ -20667,11 +20683,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 187,
+      "line_count": 215,
       "path": "tests/test_shadow_tracker_progress.py",
       "reason": "automated test evidence",
-      "sha256": "25b156f97d0cc2109b671dee9bead96582024003c20a851bc89f9d01c01c9e0b",
-      "size_bytes": 7189
+      "sha256": "abb80c2b899cca12f5ed40f50f36a1f2e3f394bf9fbf84c079432a8c0bebf2eb",
+      "size_bytes": 8330
     },
     {
       "disposition": "TEST_ONLY",
@@ -22134,7 +22150,7 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 878,
+    "DOCUMENTATION_ONLY": 880,
     "PRESERVE_BEHAVIOUR": 1404,
     "TEST_ONLY": 482
   }

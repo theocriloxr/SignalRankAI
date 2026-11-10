@@ -84,7 +84,9 @@ async def test_unresolved_oldest_batch_does_not_starve_newer_candidates(shadow_s
     monkeypatch.setattr(worker, "_evaluate_rows", unresolved)
     for _ in range(4):
         assert await worker.run_once() == 0
-    assert seen == [[1, 2], [3, 4], [5], [1, 2]]
+    # Once the head scan has passed every row, spare batch room revisits the
+    # unresolved rows behind it, oldest first.
+    assert seen == [[1, 2], [3, 4], [5, 1], [2, 3]]
     async with shadow_store() as session:
         assert (await session.scalar(select(func.count(MLShadowPrediction.id)))) == 0
         assert (await session.get(DecisionLog, 1)).meta.get("outcome_tracked_at") is None
@@ -117,7 +119,7 @@ async def test_scan_checkpoint_survives_restart_and_revisits_pending_rows(shadow
     first._checkpoint_scan_cursor()
     resumed = ShadowOutcomeWorker()
     resumed._restore_scan_cursor()
-    assert [row["id"] for row in await resumed._load_rows()] == [3]
+    assert [row["id"] for row in await resumed._load_rows()] == [3, 1, 2]
 
 
 @pytest.mark.parametrize("value", [None, "invalid", "-5", "nan"])
@@ -185,3 +187,29 @@ async def test_projection_failure_does_not_undo_authoritative_outcome(shadow_sto
     async with shadow_store() as session:
         assert (await session.get(DecisionLog, 1)).meta["actual_outcome"] == "ambiguous"
         assert (await session.scalar(select(func.count(MLShadowPrediction.id)))) == 1
+
+
+@pytest.mark.asyncio
+async def test_constant_inflow_still_revisits_unresolved_older_rows(shadow_store, monkeypatch):
+    """Production 10 Nov 2026: a few new rows every pass kept the head scan busy,
+    so the wrap-around never ran and rows were judged only once (146k pending)."""
+    async with shadow_store() as session:
+        session.add_all([decision(i) for i in range(1, 4)])
+        await session.commit()
+    worker = ShadowOutcomeWorker()
+    worker._batch_size = 2
+    seen = []
+
+    async def unresolved(rows):
+        seen.append([row["id"] for row in rows])
+        return []
+
+    monkeypatch.setattr(worker, "_evaluate_rows", unresolved)
+    for new_id in range(4, 9):
+        assert await worker.run_once() == 0
+        async with shadow_store() as session:
+            session.add(decision(new_id))
+            await session.commit()
+    revisited = {row_id for batch in seen for row_id in batch[1:] if row_id < batch[0]}
+    assert {1, 2} <= revisited, seen
+    assert seen[0] == [1, 2]

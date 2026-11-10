@@ -171,6 +171,7 @@ class ShadowOutcomeWorker:
         self._layer = str(layer)
         prefix = "shadow:tracker" if self._layer == "ml" else f"shadow:{self._layer}:tracker"
         self._cursor_key = f"{prefix}:scan_after_id"
+        self._revisit_cursor_key = f"{prefix}:revisit_after_id"
         self._health_key = f"{prefix}:health"
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -180,6 +181,10 @@ class ShadowOutcomeWorker:
         self._price_concurrency = max(1, min(8, int(os.getenv("SHADOW_PRICE_CONCURRENCY", "3") or 3)))
         self._scan_after_id = 0
         self._pending_scan_after_id = 0
+        # Second cursor over rows the head scan has already passed but that are
+        # still unresolved (most setups need hours to reach a stop or target).
+        self._revisit_after_id = 0
+        self._pending_revisit_after_id = 0
 
     def _restore_scan_cursor(self) -> None:
         try:
@@ -190,16 +195,26 @@ class ShadowOutcomeWorker:
             self._scan_after_id = 0
         except Exception:
             logger.debug("[shadow_tracker] cursor restore unavailable", exc_info=True)
+        try:
+            from core.redis_state import state
+
+            self._revisit_after_id = max(0, int(state.get_sync(self._revisit_cursor_key) or 0))
+        except (TypeError, ValueError, OverflowError):
+            self._revisit_after_id = 0
+        except Exception:
+            logger.debug("[shadow_tracker] revisit cursor restore unavailable", exc_info=True)
 
     def _checkpoint_scan_cursor(self) -> None:
         # The cursor is scheduling state, never an outcome or performance claim.
         # Revisit unresolved rows after wrapping instead of pinning every pass
         # to the same oldest batch. A lost checkpoint only repeats safe work.
         self._scan_after_id = self._pending_scan_after_id
+        self._revisit_after_id = self._pending_revisit_after_id
         try:
             from core.redis_state import state
 
             state.set_sync(self._cursor_key, str(self._scan_after_id), ex=86400)
+            state.set_sync(self._revisit_cursor_key, str(self._revisit_after_id), ex=86400)
         except Exception:
             logger.debug("[shadow_tracker] cursor checkpoint unavailable", exc_info=True)
 
@@ -227,6 +242,7 @@ class ShadowOutcomeWorker:
                 "evaluated": max(0, int(evaluated or 0)),
                 "tracked": max(0, int(tracked or 0)),
                 "scan_after_id": self._scan_after_id,
+                "revisit_after_id": self._revisit_after_id,
                 "error": str(error)[:240] if error else None,
             }
             state.set_sync(
@@ -277,12 +293,27 @@ class ShadowOutcomeWorker:
                     .order_by(DecisionLog.id.asc())
                     .limit(self._batch_size)
                 )
+                # Head: rows the scan has not reached yet.
                 rows = list((await session.execute(query.where(DecisionLog.id > self._scan_after_id))).scalars().all())
-                if not rows and self._scan_after_id:
-                    # At most two bounded keyset queries; no OFFSET scan and no
+                self._pending_scan_after_id = int(rows[-1].id) if rows else self._scan_after_id
+                self._pending_revisit_after_id = self._revisit_after_id
+                spare = self._batch_size - len(rows)
+                if spare > 0 and self._scan_after_id:
+                    # Revisit: unresolved rows behind the head, oldest first.
+                    # Production 10 Nov 2026: new rejections arrive every pass,
+                    # so the head scan never ran dry, the old wrap-around never
+                    # happened, and each row was judged once ~5 minutes after
+                    # it was logged (146k rows pending, ~1 % resolved). At most
+                    # two more bounded keyset queries; no OFFSET scan and no
                     # provider calls while the transaction is open.
-                    rows = list((await session.execute(query)).scalars().all())
-                self._pending_scan_after_id = int(rows[-1].id) if rows else 0
+                    behind = query.limit(spare).where(DecisionLog.id <= self._scan_after_id)
+                    revisit = list(
+                        (await session.execute(behind.where(DecisionLog.id > self._revisit_after_id))).scalars().all()
+                    )
+                    if not revisit and self._revisit_after_id:
+                        revisit = list((await session.execute(behind)).scalars().all())
+                    self._pending_revisit_after_id = int(revisit[-1].id) if revisit else 0
+                    rows.extend(revisit)
                 # Copy only primitive values before closing the session.
                 snapshots: list[dict[str, Any]] = []
                 for record in rows:
