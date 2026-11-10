@@ -442,6 +442,14 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             # Rank flips/upgrades/downgrades on open signals (services/rank_alerts.py).
             from services.rank_alerts import rank_alerts_loop
             tasks.append(asyncio.create_task(rank_alerts_loop(stop), name="rank-alerts"))
+        if _enabled("ASSET_CLASS_BACKFILL_ENABLED", True):
+            # Resumes the stored-class correction until done (services/asset_class_backfill.py).
+            from services.asset_class_backfill import asset_class_backfill_loop
+
+            async def _class_backfill_idle(stop_event: asyncio.Event) -> None:
+                await asset_class_backfill_loop(stop_event)
+                await stop_event.wait()  # a returned task reads as a crash to the supervisor
+            tasks.append(asyncio.create_task(_class_backfill_idle(stop), name="asset-class-backfill"))
         if _enabled("TRADE_IDEAS_ENABLED", True):
             # Track users' submitted trade ideas and tell them how each ended (services/trade_ideas.py).
             from services.trade_ideas import trade_ideas_loop

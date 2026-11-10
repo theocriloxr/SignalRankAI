@@ -85,44 +85,57 @@ async def run(stop: asyncio.Event | None = None, *, pause_seconds: float | None 
     classes: dict[str, float] = {}
     finished = False
 
+    failures = 0
     while stop is None or not stop.is_set():
-        async with get_session(priority="analytics", label="asset_class_backfill.window", timeout_seconds=30) as session:
-            ids = [int(r[0]) for r in (await session.execute(text(
-                "SELECT id FROM decision_log WHERE meta->>'outcome_tracked_at' IS NOT NULL AND id < :before "
-                "ORDER BY id DESC LIMIT :window"), {"before": before, "window": window})).all()]
-            if not ids:
-                finished = True
-                await session.rollback()
+        try:
+            async with get_session(priority="analytics", label="asset_class_backfill.window", timeout_seconds=120) as session:
+                ids = [int(r[0]) for r in (await session.execute(text(
+                    "SELECT id FROM decision_log WHERE meta->>'outcome_tracked_at' IS NOT NULL AND id < :before "
+                    "ORDER BY id DESC LIMIT :window"), {"before": before, "window": window})).all()]
+                if not ids:
+                    finished = True
+                    await session.rollback()
+                    break
+                rows = (await session.execute(text(
+                    "SELECT id, asset, created_at, meta->'features'->>'asset_class_enc' AS enc FROM decision_log "
+                    "WHERE id = ANY(:ids) AND decision = 'rejected' AND meta->>'layer' = 'ml'"), {"ids": ids})).all()
+                fixes: dict[float, list[int]] = {}
+                reached_cutoff = False
+                for row_id, asset, created_at, stored in rows:
+                    if created_at is not None and created_at < cutoff:
+                        reached_cutoff = True
+                        continue
+                    key = str(asset or "")
+                    if key not in classes:
+                        classes[key] = float(live_asset_class_enc(key))
+                    want = classes[key]
+                    try:
+                        have = float(stored) if stored is not None else None
+                    except (TypeError, ValueError):
+                        have = None
+                    if have != want:
+                        fixes.setdefault(want, []).append(int(row_id))
+                for enc, fix_ids in fixes.items():
+                    await session.execute(text(
+                        "UPDATE decision_log SET meta = jsonb_set(meta, '{features}', "
+                        "COALESCE(meta->'features', '{}'::jsonb) || jsonb_build_object('asset_class_enc', CAST(:enc AS DOUBLE PRECISION))) "
+                        "WHERE id = ANY(:ids)"), {"enc": enc, "ids": fix_ids})
+                    counts["corrected"] += len(fix_ids)
+                counts["scanned"] += len(rows)
+                before = min(ids)
+                await _state_set(session, CURSOR_KEY, {"before": before, **counts})
+                await session.commit()
+            failures = 0
+        except Exception as exc:
+            # A busy database must not end the job (production 10 Nov 2026: it stopped after one
+            # failed window and only resumed on the next restart). Wait, retry, pause after 5.
+            failures += 1
+            logger.warning("[asset_class_backfill] window failed before=%s attempt=%s error=%s", before, failures,
+                           type(exc).__name__)
+            if failures >= 5:
                 break
-            rows = (await session.execute(text(
-                "SELECT id, asset, created_at, meta->'features'->>'asset_class_enc' AS enc FROM decision_log "
-                "WHERE id = ANY(:ids) AND decision = 'rejected' AND meta->>'layer' = 'ml'"), {"ids": ids})).all()
-            fixes: dict[float, list[int]] = {}
-            reached_cutoff = False
-            for row_id, asset, created_at, stored in rows:
-                if created_at is not None and created_at < cutoff:
-                    reached_cutoff = True
-                    continue
-                key = str(asset or "")
-                if key not in classes:
-                    classes[key] = float(live_asset_class_enc(key))
-                want = classes[key]
-                try:
-                    have = float(stored) if stored is not None else None
-                except (TypeError, ValueError):
-                    have = None
-                if have != want:
-                    fixes.setdefault(want, []).append(int(row_id))
-            for enc, fix_ids in fixes.items():
-                await session.execute(text(
-                    "UPDATE decision_log SET meta = jsonb_set(meta, '{features}', "
-                    "COALESCE(meta->'features', '{}'::jsonb) || jsonb_build_object('asset_class_enc', CAST(:enc AS DOUBLE PRECISION))) "
-                    "WHERE id = ANY(:ids)"), {"enc": enc, "ids": fix_ids})
-                counts["corrected"] += len(fix_ids)
-            counts["scanned"] += len(rows)
-            before = min(ids)
-            await _state_set(session, CURSOR_KEY, {"before": before, **counts})
-            await session.commit()
+            await asyncio.sleep(10.0 * failures)
+            continue
         if reached_cutoff or len(ids) < window:
             finished = True
             break
@@ -174,3 +187,19 @@ async def backfill_signal_classes() -> dict[str, Any]:
         await session.commit()
     logger.info("[asset_class_backfill] signals assets=%s updated=%s", len(assets), updated)
     return {"status": "done", "assets": len(assets), "updated": updated}
+
+
+async def asset_class_backfill_loop(stop: asyncio.Event) -> None:
+    """Resume the backfill every 10 minutes until it is done (no deploy needed)."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=float(os.getenv("ASSET_CLASS_BACKFILL_RETRY_SECONDS", "600")))
+            return
+        except asyncio.TimeoutError:
+            pass
+        try:
+            result = await run(stop)
+            if result.get("status") in {"done", "already_done", "disabled"}:
+                return
+        except Exception as exc:
+            logger.warning("[asset_class_backfill] retry failed error=%s", type(exc).__name__)

@@ -14235,11 +14235,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16953,
+      "line_count": 16963,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "60c6eaf65d8db4eaa284a328a09a366ca4b0f783c82fbd012d9c72a7c9a6526e",
-      "size_bytes": 494920
+      "sha256": "dac730cb5b1582cd8ddd2401ff14be190da84c11f1a53a378ed81264e0307ad2",
+      "size_bytes": 495197
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -14347,11 +14347,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 557,
+      "line_count": 565,
       "path": "runtime/analytics.py",
       "reason": "production/build source",
-      "sha256": "368dc07901429b8f524e308533638c6c82aff795ddf2467e12e1c118cbca0110",
-      "size_bytes": 25466
+      "sha256": "bb1c7ee41863a501b25f5fbca703e10a38a2b7d5d2f82e885ca633c761f3570b",
+      "size_bytes": 26039
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15643,11 +15643,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 176,
+      "line_count": 205,
       "path": "services/asset_class_backfill.py",
       "reason": "production/build source",
-      "sha256": "7a5490b42d4885f2672d1e5f4088845f6621c31f20fc1f50e3a12d7143608ffc",
-      "size_bytes": 8538
+      "sha256": "c3f4036a361d5ce07c1017248c466583edc2fe23bd41d931c5cafc6fedc53a8b",
+      "size_bytes": 9941
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18115,11 +18115,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 111,
+      "line_count": 170,
       "path": "tests/test_asset_class_backfill_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "01209423ec02fbd4046fead7a8ce47e9b4700fa65ffdd9d143235236e18ca3b7",
-      "size_bytes": 5797
+      "sha256": "d417baf6aac64b608abde51e62bf2d9a1d712051825af0f8be3ed7071333871c",
+      "size_bytes": 7589
     },
     {
       "disposition": "TEST_ONLY",

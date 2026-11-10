@@ -109,3 +109,62 @@ def test_signals_get_their_asset_class_once(monkeypatch):
     first, second, rows = asyncio.run(scenario())
     assert first["status"] == "done" and second["status"] == "already_done"
     assert rows == {"EURUSD": "fx", "XAUUSD": "commodity", "BTCUSDT": "crypto", "AAPL": "stock", "US30": "index"}
+
+
+def test_a_failed_window_is_retried_not_fatal(monkeypatch):
+    """Production 10 Nov 2026: one failed window stopped the job until the next restart."""
+    import contextlib
+
+    import db.session as db_session
+    from services import asset_class_backfill as bf
+
+    calls = {"window": 0}
+    done = {}
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def first(self):
+            return self._rows[0] if self._rows else None
+
+        def all(self):
+            return self._rows
+
+    class _Session:
+        def __init__(self, label):
+            self.label = label
+
+        async def execute(self, stmt, params=None):
+            sql = str(stmt)
+            if self.label == "asset_class_backfill.window" and sql.startswith("SELECT id FROM"):
+                calls["window"] += 1
+                if calls["window"] == 1:
+                    raise TimeoutError("busy")
+                return _Result([])
+            if sql.startswith("INSERT INTO runtime_state"):
+                done[params["k"]] = params["v"]
+            return _Result([])
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    @contextlib.asynccontextmanager
+    async def fake_get_session(*, priority=None, label="", timeout_seconds=None):
+        yield _Session(label)
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(db_session, "get_session", fake_get_session)
+    monkeypatch.setattr(bf.asyncio, "sleep", no_sleep)
+    from core.redis_state import state
+    monkeypatch.setattr(state, "set_sync", lambda *a, **k: None)
+
+    result = asyncio.run(bf.run(pause_seconds=0))
+    assert calls["window"] == 2
+    assert result["status"] == "done"
+    assert bf.DONE_KEY in done
