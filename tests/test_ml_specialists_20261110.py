@@ -93,3 +93,37 @@ def test_training_rows_use_the_live_asset_class_encoding():
     root = Path(__file__).resolve().parents[1]
     assert "live_asset_class_enc(a)" in (root / "ml" / "train_model.py").read_text("utf-8")
     assert "live_asset_class_enc(asset)" in (root / "ml" / "external_replay.py").read_text("utf-8")
+
+
+def test_crypto_history_falls_back_to_okx_when_binance_is_unreachable(monkeypatch):
+    import time as _time
+
+    from ml import strategy_discovery as sd
+
+    now = int(_time.time() * 1000)
+
+    class _Resp:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+    class _Client:
+        calls: list = []
+
+        def get(self, url, params=None):
+            self.calls.append(url)
+            if "binance" in url:
+                return _Resp(451, {})
+            after = (params or {}).get("after") or now
+            bar = 3_600_000 if params["bar"] == "1H" else 900_000 if params["bar"] == "15m" else 300_000
+            data = [[str(after - (i + 1) * bar), "1", "2", "0.5", "1.5", "10", "0", "0", "1" if i else "0"]
+                    for i in range(100)]
+            return _Resp(200, {"data": data})
+
+    monkeypatch.setenv("DISCOVERY_OKX_MAX_PAGES", "3")
+    monkeypatch.setattr(sd.time, "sleep", lambda *_: None)
+    frames, source = sd.load_history("BTCUSDT", "crypto", _Client())
+    assert source == "okx" and len(frames["1h"]) >= 290 and {"4h", "1d"} <= set(frames)
+    assert sd.okx_inst_id("ETHUSDT") == "ETH-USDT" and sd.okx_inst_id("EURUSD") is None

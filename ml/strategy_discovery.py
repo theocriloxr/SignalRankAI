@@ -169,6 +169,52 @@ def fetch_binance(symbol: str, interval: str, start_ms: int, client: Any) -> pd.
     return _frame(rows)
 
 
+_OKX_BARS = {"5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1Dutc"}
+
+
+def okx_inst_id(symbol: str) -> str | None:
+    s = str(symbol or "").upper().replace("/", "").replace("-", "")
+    for quote in ("USDT", "USDC"):
+        if s.endswith(quote) and len(s) > len(quote):
+            return f"{s[:-len(quote)]}-{quote}"
+    return None
+
+
+def fetch_okx(symbol: str, interval: str, start_ms: int, client: Any) -> pd.DataFrame:
+    """OKX public candle history, newest first in pages of 100 (keyless).
+
+    Fallback for crypto history when Binance returns nothing (10 Nov 2026: the
+    production VPS is in the EU and its live crypto data already comes from OKX
+    and Coinbase; one source reports Binance suspended EU services in July 2026).
+    """
+    inst, bar = okx_inst_id(symbol), _OKX_BARS.get(interval)
+    if not inst or not bar:
+        return _frame([])
+    base = os.getenv("DISCOVERY_OKX_URL") or "https://www.okx.com/api/v5/market/history-candles"
+    rows: list[tuple[int, float, float, float, float, float]] = []
+    after: int | None = None
+    for _ in range(_env_int("DISCOVERY_OKX_MAX_PAGES", 150)):
+        params: dict[str, Any] = {"instId": inst, "bar": bar, "limit": 100}
+        if after is not None:
+            params["after"] = after
+        resp = client.get(base, params=params)
+        if resp.status_code != 200:
+            break
+        batch = (resp.json() or {}).get("data") or []
+        if not batch:
+            break
+        for k in batch:
+            if len(k) > 8 and str(k[8]) == "0":
+                continue  # the bar still forming is not history
+            rows.append((int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5])))
+        after = int(batch[-1][0])
+        if after <= start_ms or len(batch) < 100:
+            break
+        time.sleep(0.11)  # OKX allows 20 requests per 2 s on this endpoint
+    rows = sorted({r[0]: r for r in rows if r[0] >= start_ms}.values())
+    return _frame(rows)
+
+
 def fetch_yahoo(symbol: str, interval: str, client: Any) -> pd.DataFrame:
     params: dict[str, Any] = {"interval": interval, "includePrePost": "false"}
     if interval in {"5m", "15m"}:
@@ -234,6 +280,20 @@ def load_history(symbol: str, klass: str, client: Any) -> tuple[dict[str, pd.Dat
     if klass == "crypto":
         start = int(pd.Timestamp(os.getenv("DISCOVERY_CRYPTO_START") or "2019-01-01", tz="UTC").timestamp() * 1000)
         hourly = fetch_binance(symbol, "1h", start, client)
+        if hourly.empty:
+            # Binance unreachable from this server (EU): the same history from OKX, keyless.
+            okx_start = int(time.time() * 1000) - _env_int("DISCOVERY_OKX_HOURLY_DAYS", 600) * 86400000
+            hourly = fetch_okx(symbol, "1h", okx_start, client)
+            if not hourly.empty:
+                frames["1h"] = hourly
+                frames["4h"] = _resample(hourly, "4h")
+                frames["1d"] = _resample(hourly, "1D")
+                now_ms = int(time.time() * 1000)
+                for tf, days in (("15m", 30), ("5m", 10)):
+                    intraday = fetch_okx(symbol, tf, now_ms - days * 86400000, client)
+                    if not intraday.empty:
+                        frames[tf] = intraday
+                return frames, "okx"
         if not hourly.empty:
             frames["1h"] = hourly
             frames["4h"] = _resample(hourly, "4h")

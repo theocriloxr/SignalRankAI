@@ -1,5 +1,5 @@
 {
-  "file_count": 2773,
+  "file_count": 2774,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -7411,11 +7411,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 1107,
+      "line_count": 1108,
       "path": "docs/release/COMPLETION_EVIDENCE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d8845c870a1de7a14a67da7ba63383e7c229c52c1131f615dabe70eae0c999d7",
-      "size_bytes": 175429
+      "sha256": "50399c80eaf3d07422806a02fb590a109970aa5e6e67ea2f0ee91a5f2beac2d5",
+      "size_bytes": 175820
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13091,11 +13091,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 14,
+      "line_count": 8,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "1364ac7120076a7791aec72308badfc2a9525d20d8ad5e042468a4eaa8cf011b",
-      "size_bytes": 350
+      "sha256": "1d0809c5af816e8d78c5cc00fc85b7d9b181090dfa5c7f798fd5138f0893b101",
+      "size_bytes": 140
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13171,11 +13171,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 661,
+      "line_count": 721,
       "path": "ml/strategy_discovery.py",
       "reason": "production/build source",
-      "sha256": "198750948da943152deecf0607925e62a86f21f43c6b12801a1e965002652399",
-      "size_bytes": 29455
+      "sha256": "6fea13f611c1f6647c49f0fb1fcc63fb94936e858d342cadf05a77a50c7ba483",
+      "size_bytes": 32223
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19475,11 +19475,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 95,
+      "line_count": 129,
       "path": "tests/test_ml_specialists_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "7530c60e53a827f8f989e32be25c6c3ea2cd0cb58a26263843a95f6b60cca25e",
-      "size_bytes": 4825
+      "sha256": "138544c12bb62c6b0d7f21b72035c1ec505f7758b4d2b72e27159142e0ebc524",
+      "size_bytes": 6092
     },
     {
       "disposition": "TEST_ONLY",
@@ -20000,6 +20000,14 @@
       "reason": "automated test evidence",
       "sha256": "567555186882a979b9f67b34ecbd5ed266a78454d692e2398a7d5751bc1bad03",
       "size_bytes": 8066
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 57,
+      "path": "tests/test_price_action_scoring_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "f366eed3a4d3e04aa096e73f51ce5d091794d54719adf1f088c940239ffabb30",
+      "size_bytes": 3158
     },
     {
       "disposition": "TEST_ONLY",
@@ -22200,6 +22208,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
     "PRESERVE_BEHAVIOUR": 1408,
-    "TEST_ONLY": 486
+    "TEST_ONLY": 487
   }
 }
