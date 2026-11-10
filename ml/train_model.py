@@ -2883,7 +2883,7 @@ async def _main_impl(lookback_days: int | None = None):
             "[ml_training_run] id=%s status=rejected reason=quality_gate "
             "accuracy=%.4f min_accuracy=%.4f auc=%.4f min_auc=%.4f "
             "majority_baseline=%s balanced_accuracy=%s positive_recall=%s "
-            "pr_auc=%s expected_r=%s current_model_preserved=true",
+            "pr_auc=%s expected_r=%s overfit_gap=%s current_model_preserved=true",
             run_id,
             metrics["accuracy"],
             min_accuracy,
@@ -2894,6 +2894,7 @@ async def _main_impl(lookback_days: int | None = None):
             metrics.get("positive_recall"),
             metrics.get("pr_auc"),
             metrics.get("expected_r"),
+            metrics.get("overfit_gap"),
         )
         return False
 

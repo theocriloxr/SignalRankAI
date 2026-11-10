@@ -154,3 +154,17 @@ def test_readiness_shows_the_dataset_behind_a_skipped_run(monkeypatch):
     ds = ls.lifecycle_status()["last_run_dataset"]
     assert ds["rows"] == 40 and ds["required"] == 100 and "TimeoutError" in ds["shadow_load"]
     assert "paper_execution" in ds["sources"] and "disabled" in ds["focus"]
+
+
+def test_readiness_shows_which_promotion_check_failed(monkeypatch):
+    from ml import lifecycle_status as ls
+
+    monkeypatch.setattr(ls, "_load", lambda key: {} if key == ls.CHAMPION_KEY else {
+        "status": "rejected", "reason": "quality_gate",
+        "lines": ["[ml_quality_overfit] train_auc=0.7100 validation_auc=0.5800 gap=0.1300 trees=37",
+                  "[ml_training_run] id=x status=rejected reason=quality_gate accuracy=0.6100 min_accuracy=0.5500 "
+                  "auc=0.5800 min_auc=0.6000 majority_baseline=0.62 balanced_accuracy=0.54 positive_recall=0.31 "
+                  "pr_auc=0.41 expected_r=0.02 overfit_gap=0.13 current_model_preserved=true"]})
+    ds = ls.lifecycle_status()["last_run_dataset"]
+    assert ds["quality_gate"]["auc"] == "0.5800" and ds["quality_gate"]["min_auc"] == "0.6000"
+    assert ds["quality_gate"]["overfit_gap"] == "0.13" and "gap=0.1300" in ds["overfit"]

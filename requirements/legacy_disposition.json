@@ -13067,11 +13067,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 220,
+      "line_count": 231,
       "path": "ml/lifecycle_status.py",
       "reason": "production/build source",
-      "sha256": "d698d2a730c8cb68e609ede8168680231c8ba5b2625058311f90674f6f865b8e",
-      "size_bytes": 8918
+      "sha256": "d21a7134194940ab948109aed73d23091514172a11623bc2f1bee1473a424ec1",
+      "size_bytes": 9613
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13171,11 +13171,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3169,
+      "line_count": 3170,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "ab7add36786d020f4435fdb1df9ff26544d574d66951b120dc2564f51b41930f",
-      "size_bytes": 145233
+      "sha256": "a6af67867292e5c530642e3088c6fe7ea98880c55e057a0813d004d9fa3e74e6",
+      "size_bytes": 145288
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19491,11 +19491,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 156,
+      "line_count": 170,
       "path": "tests/test_ml_training_shadow_load_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "1db32d41d2b4b913b52105ae5e89fd010d7ea299dd2f0c78c593d022ea162ad9",
-      "size_bytes": 7417
+      "sha256": "ce0a19564828037e895a8f4c1e83b27bbd3291f99bf9d7d9ae59c71cb3851ded",
+      "size_bytes": 8334
     },
     {
       "disposition": "TEST_ONLY",

@@ -86,7 +86,7 @@ async def run_and_record(train_main, *args, **kwargs):
             "returned": None if result is None else bool(result),
             "error": error,
             **summarise(capture.lines, None if result is None else bool(result)),
-            "lines": capture.lines[-12:],
+            "lines": capture.lines[-20:],
         }
         try:
             from core.redis_state import state
@@ -196,8 +196,8 @@ def _dataset_summary(last_run: dict[str, Any]) -> dict[str, Any] | None:
     import re
 
     lines = list(last_run.get("lines") or []) if last_run else []
-    wanted = [line for line in lines if line.startswith(("[ml_dataset]", "[ml_training_run]")) and
-              ("rows=" in line or "shadow batch" in line)]
+    wanted = [line for line in lines if line.startswith(("[ml_dataset]", "[ml_training_run]", "[ml_quality_overfit]")) and
+              ("rows=" in line or "shadow batch" in line or "quality_gate" in line or "train_auc" in line)]
     if not wanted:
         return None
     out: dict[str, Any] = {}
@@ -217,4 +217,15 @@ def _dataset_summary(last_run: dict[str, Any]) -> dict[str, Any] | None:
             out["focus"] = m.group(1)[:200]
         if "shadow batch failed" in line:
             out["shadow_error"] = line[-120:]
+        if "reason=quality_gate" in line:
+            # Which promotion check the candidate missed (10 Nov 2026).
+            gate = {}
+            for key in ("accuracy", "min_accuracy", "auc", "min_auc", "balanced_accuracy", "positive_recall",
+                        "pr_auc", "expected_r", "overfit_gap", "majority_baseline"):
+                m = re.search(rf"\b{key}=([-0-9.eNoa]+)", line)
+                if m:
+                    gate[key] = m.group(1)
+            out["quality_gate"] = gate
+        if line.startswith("[ml_quality_overfit]"):
+            out["overfit"] = line[len("[ml_quality_overfit] "):][:160]
     return out or None
