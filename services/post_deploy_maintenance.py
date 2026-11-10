@@ -165,10 +165,21 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
         except Exception as exc:
             logger.warning("[post_deploy] stale_tick_relabel apply failed: %s: %s", type(exc).__name__, exc)
     if not stop.is_set():
+        # Owner, 10 Nov 2026: audited corrections from the read-only data audit.
+        try:
+            from services.data_corrections import run_once as data_corrections
+
+            logger.info("[post_deploy] data_corrections %s", await data_corrections())
+        except Exception as exc:
+            logger.warning("[post_deploy] data_corrections failed: %s", type(exc).__name__)
+    if not stop.is_set():
         # Owner, 10 Nov 2026: correct the stored asset class on past training rows, then retrain.
         try:
             from services.asset_class_backfill import run as asset_class_backfill
 
+            from services.asset_class_backfill import backfill_signal_classes
+
+            logger.info("[post_deploy] signal asset classes %s", await backfill_signal_classes())
             result = await asset_class_backfill(stop)
             logger.info("[post_deploy] asset_class_backfill %s", result)
         except Exception as exc:

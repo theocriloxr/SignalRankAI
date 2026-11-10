@@ -601,6 +601,16 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 created_at=now,
                 expires_at=signal_expires_at,
             )
+            # The class was never stored (data audit, 10 Nov 2026: 42,702 recent rows empty).
+            try:
+                from core.asset_class_key import canonical_asset_class
+
+                signal.asset_class = (str(signal_data.get("asset_class") or "").strip().lower()
+                                      or canonical_asset_class(str(signal.asset or "")))[:16]
+            except Exception:
+                pass
+            if signal_data.get("trade_profile") and not getattr(signal, "trade_profile", None):
+                signal.trade_profile = str(signal_data.get("trade_profile"))[:16]
 
             session.add(signal)
             await session.flush()

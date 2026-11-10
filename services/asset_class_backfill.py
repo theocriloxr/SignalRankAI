@@ -144,3 +144,33 @@ async def run(stop: asyncio.Event | None = None, *, pause_seconds: float | None 
         logger.info("[asset_class_backfill] retrain request not queued")
     logger.info("[asset_class_backfill] done %s; retrain requested", counts)
     return {"status": "done", **counts}
+
+
+SIGNALS_DONE_KEY = "maintenance:signal_asset_class:v1:done"
+
+
+async def backfill_signal_classes() -> dict[str, Any]:
+    """Fill the empty ``signals.asset_class`` (42,702 recent rows, audit 10 Nov 2026), once.
+
+    One indexed update per distinct symbol with the engine's classification
+    (``core.asset_class_key``); only empty values are written.
+    """
+    from core.asset_class_key import canonical_asset_class
+    from db.session import get_session
+
+    async with get_session(priority="analytics", label="signal_class_backfill", timeout_seconds=60) as session:
+        if await _state_get(session, SIGNALS_DONE_KEY):
+            await session.rollback()
+            return {"status": "already_done"}
+        assets = [str(r[0]) for r in (await session.execute(text(
+            "SELECT DISTINCT asset FROM signals WHERE COALESCE(asset_class, '') = '' AND asset IS NOT NULL"))).all()]
+        updated = 0
+        for asset in assets:
+            result = await session.execute(text(
+                "UPDATE signals SET asset_class = :c WHERE asset = :a AND COALESCE(asset_class, '') = ''"),
+                {"c": canonical_asset_class(asset)[:16], "a": asset})
+            updated += int(getattr(result, "rowcount", 0) or 0)
+        await _state_set(session, SIGNALS_DONE_KEY, {"assets": len(assets), "updated": updated})
+        await session.commit()
+    logger.info("[asset_class_backfill] signals assets=%s updated=%s", len(assets), updated)
+    return {"status": "done", "assets": len(assets), "updated": updated}

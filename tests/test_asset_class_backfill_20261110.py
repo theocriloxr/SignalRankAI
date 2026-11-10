@@ -64,3 +64,48 @@ def test_backfill_corrects_missing_and_wrong_classes_and_resumes(monkeypatch):
     got = {(a, float(e)) for a, e in rows}
     assert got == {("EURUSD", 1.0), ("XAUUSD", 2.0), ("BTCUSDT", 0.0), ("AAPL", 3.0)}
     assert any(value == "asset_class_backfill" for _key, value in requested)  # retrain requested
+
+
+@pytest.mark.skipif(not _PG_DSN, reason="set SIGNALRANK_TEST_PG_DSN to an owned scratch PostgreSQL at head")
+def test_signals_get_their_asset_class_once(monkeypatch):
+    from uuid import uuid4
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from db.session import _normalize_database_url
+
+    url = _normalize_database_url(_PG_DSN, async_driver=True)
+    monkeypatch.setenv("DATABASE_URL", url)
+    ids = {f"acs-{uuid4().hex[:8]}": a for a in ("EURUSD", "XAUUSD", "BTCUSDT", "AAPL", "US30")}
+
+    async def scenario():
+        from db.session import dispose_engine_for_event_loop
+        from services import asset_class_backfill as bf
+
+        engine = create_async_engine(url)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM runtime_state WHERE key=:k"), {"k": bf.SIGNALS_DONE_KEY})
+                for sid, asset in ids.items():
+                    await conn.execute(text(
+                        "INSERT INTO signals (signal_id, asset, timeframe, direction, entry, stop_loss, take_profit, score,"
+                        " strategy_name, strategy_group, strength, created_at, display_id) VALUES (:s,:a,'1h','long',1,0.9,"
+                        "'[1.2]',70,'x','trend',1,NOW(),:d)"), {"s": sid, "a": asset, "d": sid[-10:]})
+            first = await bf.backfill_signal_classes()
+            second = await bf.backfill_signal_classes()
+            async with engine.begin() as conn:
+                rows = dict((await conn.execute(text("SELECT asset, asset_class FROM signals WHERE signal_id = ANY(:i)"),
+                                                {"i": list(ids)})).all())
+            return first, second, rows
+        finally:
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM signals WHERE signal_id = ANY(:i)"), {"i": list(ids)})
+                await conn.execute(text("DELETE FROM runtime_state WHERE key=:k"),
+                                   {"k": "maintenance:signal_asset_class:v1:done"})
+            await engine.dispose()
+            await dispose_engine_for_event_loop()
+
+    first, second, rows = asyncio.run(scenario())
+    assert first["status"] == "done" and second["status"] == "already_done"
+    assert rows == {"EURUSD": "fx", "XAUUSD": "commodity", "BTCUSDT": "crypto", "AAPL": "stock", "US30": "index"}
