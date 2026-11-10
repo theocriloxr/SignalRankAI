@@ -1542,7 +1542,7 @@ async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
     from sqlalchemy import text as _sql
 
     max_rows = max(1000, int(os.getenv("ML_TRAIN_SHADOW_MAX_ROWS", "40000") or 40000))
-    window = max(200, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "4000") or 4000)))
+    window = max(200, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "2000") or 2000)))
     # The whole dataset load has ML_TRAIN_DATASET_TIMEOUT_SECONDS (120); the other reads took ~70 s.
     budget = max(10.0, float(os.getenv("ML_TRAIN_SHADOW_BUDGET_SECONDS", "35") or 35))
     keys = ("score", "strategy_name", "regime", "strength", "rr_ratio", "rr_estimate", "rejection_type",
@@ -1565,38 +1565,89 @@ async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
         "AND decision = 'rejected' AND meta->>'layer' = 'ml' ORDER BY id DESC"
     ).bindparams(bindparam("ids", expanding=False))
     rows: list = []
-    before = 2**31 - 1  # decision_log.id is int4
+    seen: set = set()
     started = time.monotonic()
-    diagnostics.update(batches=0, error=None, capped=False, budget_hit=False, scanned_ids=0)
-    while len(rows) < max_rows:
+    diagnostics.update(batches=0, error=None, capped=False, budget_hit=False, scanned_ids=0, duplicates=0)
+
+    def _setup_key(r: dict) -> tuple:
+        # The engine logs the same setup on every scan: one setup appeared hundreds of times,
+        # the model memorised the repeats (production 10 Nov 2026: train AUC 0.92, validation
+        # 0.44). Keep one row per setup.
+        def _r(v):
+            f = _safe_float(v)
+            return round(f, 6 if f < 10 else 3) if f else 0.0
+        return (r.get("asset"), r.get("timeframe"), r.get("direction"), _r(r.get("entry")), _r(r.get("stop_loss")))
+
+    async def _window(session, before: int) -> list[int]:
+        return [int(r[0]) for r in (await asyncio.wait_for(
+            session.execute(ids_query, {"before": before, "window": window}),
+            timeout=_training_query_timeout())).all()]
+
+    async def _id_at(session, created) -> int | None:
+        # created_at grows with id; ~25 primary-key probes find the id at the lookback cutoff.
+        lo, hi = 1, 2**31 - 1
+        top = (await session.execute(_sql("SELECT MAX(id) FROM decision_log"))).scalar()
+        if not top:
+            return None
+        hi = int(top)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            at = (await session.execute(_sql(
+                "SELECT created_at FROM decision_log WHERE id >= :m ORDER BY id LIMIT 1"), {"m": mid})).scalar()
+            if at is None or at >= created:
+                hi = mid
+            else:
+                lo = mid + 1
+        return lo
+
+    try:
+        async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
+            first = await _window(session, 2**31 - 1)  # decision_log.id is int4
+            floor = (await asyncio.wait_for(_id_at(session, cutoff), timeout=_training_query_timeout())
+                     if cutoff is not None else 0) or 0
+            await session.rollback()
+    except Exception as exc:
+        diagnostics["error"] = type(exc).__name__
+        logger.warning("[ml_dataset] shadow batch failed after rows=0 error=%s", type(exc).__name__)
+        first, floor = [], 0
+    windows = max(1, int(os.getenv("ML_TRAIN_SHADOW_WINDOWS", "12") or 12))
+    starts: list[int] = []
+    if first:
+        top = max(first) + 1
+        span = max(0, top - floor)
+        # Evenly spaced windows across the lookback, newest first, so training sees every period.
+        starts = [top - (span * k) // windows for k in range(windows)] if span > window * windows else [top]
+    diagnostics["windows"] = len(starts)
+    for before in starts:
+        if len(rows) >= max_rows:
+            break
         if time.monotonic() - started > budget:
             diagnostics["budget_hit"] = True
             break
         try:
             async with get_session(**_training_session_kwargs("ml_training_rejections_read")) as session:
-                ids = [int(r[0]) for r in (await asyncio.wait_for(
-                    session.execute(ids_query, {"before": before, "window": window}),
-                    timeout=_training_query_timeout())).all()]
+                ids = await _window(session, before)
                 if not ids:
-                    break
+                    continue
                 batch = [dict(r) for r in (await asyncio.wait_for(
                     session.execute(rows_query, {"ids": ids}),
                     timeout=_training_query_timeout())).mappings().all()]
                 await session.rollback()
         except Exception as exc:  # keep what was read; training reports the partial load
             diagnostics["error"] = type(exc).__name__
-            logger.warning("[ml_dataset] shadow batch failed after rows=%s error=%s", len(rows), type(exc).__name__,
-                           exc_info=logger.isEnabledFor(logging.DEBUG))
+            logger.warning("[ml_dataset] shadow batch failed after rows=%s error=%s", len(rows), type(exc).__name__)
             break
         diagnostics["batches"] += 1
         diagnostics["scanned_ids"] += len(ids)
-        before = min(ids)
-        reached_cutoff = False
         for r in batch:
             created = r.get("created_at")
             if cutoff is not None and created is not None and created < cutoff:
-                reached_cutoff = True
                 continue
+            key = _setup_key(r)
+            if key in seen:
+                diagnostics["duplicates"] += 1
+                continue
+            seen.add(key)
             features = r.get("features")
             if isinstance(features, str):
                 try:
@@ -1612,8 +1663,6 @@ async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
             ))
             if len(rows) >= max_rows:
                 break
-        if reached_cutoff or len(ids) < window:
-            break
     diagnostics["rows"] = len(rows)
     diagnostics["capped"] = len(rows) >= max_rows
     diagnostics["seconds"] = round(time.monotonic() - started, 1)

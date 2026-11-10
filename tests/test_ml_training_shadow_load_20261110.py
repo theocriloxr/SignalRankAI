@@ -27,8 +27,9 @@ def test_tracked_rejections_load_in_batches_newest_first_on_postgres(monkeypatch
 
     url = _normalize_database_url(_PG_DSN, async_driver=True)
     monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "500")
-    monkeypatch.setenv("ML_TRAIN_SHADOW_MAX_ROWS", "1000")
+    monkeypatch.setenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "5000")
+    monkeypatch.setenv("ML_TRAIN_SHADOW_MAX_ROWS", "5000")
+    monkeypatch.setenv("ML_TRAIN_SHADOW_WINDOWS", "1")
 
     async def scenario():
         from db.session import dispose_engine_for_event_loop
@@ -39,7 +40,7 @@ def test_tracked_rejections_load_in_batches_newest_first_on_postgres(monkeypatch
             async with engine.begin() as conn:
                 await conn.execute(text("DELETE FROM decision_log WHERE asset='SHLOAD'"))
                 for i in range(1200):
-                    meta = {"layer": "ml", "direction": "long", "entry": "1.1", "stop_loss": "1.0",
+                    meta = {"layer": "ml", "direction": "long", "entry": str(1.1 + (i % 1100) * 0.001), "stop_loss": "1.0",
                             "take_profit": "[1.2]", "ml_probability": "0.5", "actual_outcome": "tp1",
                             "outcome_tracked_at": "2026-11-10T00:00:00", "features": {"score": i}}
                     if i % 7 == 0:
@@ -59,10 +60,12 @@ def test_tracked_rejections_load_in_batches_newest_first_on_postgres(monkeypatch
             await dispose_engine_for_event_loop()
 
     rows, mine, diag = asyncio.run(scenario())
-    assert len(rows) == 1000 and diag["capped"] is True and diag["error"] is None
+    assert diag["error"] is None and diag["duplicates"] >= 1  # i and i+1100 are the same setup
     ids = [r.id for r in rows]
     assert ids == sorted(ids, reverse=True)  # newest first
-    assert mine and mine[0].actual_outcome == "tp1" and mine[0].entry == pytest.approx(1.1)
+    keys = {(r.asset, r.timeframe, r.direction, round(r.entry, 6), round(r.stop_loss, 6)) for r in mine}
+    assert len(keys) == len(mine)  # one row per setup
+    assert mine and mine[0].actual_outcome == "tp1"
     assert isinstance(mine[0].features, dict) and "score" in mine[0].features
 
 
@@ -87,9 +90,9 @@ def test_a_failed_batch_keeps_rows_already_read(monkeypatch):
     class _Session:
         async def execute(self, *_a, **_k):
             calls["n"] += 1
-            if calls["n"] > 2:  # first batch = ids + rows; the second batch fails
+            if calls["n"] > 3:  # probe window, then window 1 (ids + rows); window 2 fails
                 raise TimeoutError()
-            return _Result([{"id": 1000 - i, "asset": "X", "features": "{}", "entry": "1"} for i in range(500)])
+            return _Result([{"id": 1_000_000 - i, "asset": "X", "features": "{}", "entry": str(1 + i)} for i in range(500)])
 
         async def rollback(self):
             return None
@@ -100,6 +103,7 @@ def test_a_failed_batch_keeps_rows_already_read(monkeypatch):
 
     monkeypatch.setattr("db.session.get_session", fake_session)
     monkeypatch.setenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "500")
+    monkeypatch.setenv("ML_TRAIN_SHADOW_WINDOWS", "2")
     diag: dict = {}
     rows = asyncio.run(tm._load_tracked_rejections(None, diag))
     assert len(rows) == 500 and diag["error"] == "TimeoutError"
