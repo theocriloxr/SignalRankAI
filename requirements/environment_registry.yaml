@@ -6610,7 +6610,7 @@
         "engine/core.py:1669",
         "engine/core.py:1694",
         "engine/core.py:3418",
-        "engine/shadow_outcome_worker.py:225",
+        "engine/shadow_outcome_worker.py:240",
         "railway_main.py:3154",
         "railway_main.py:3257",
         "services/account_policies.py:674",
@@ -8443,7 +8443,7 @@
       "name": "ML_MODEL_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:440"
+        "engine/shadow_outcome_worker.py:471"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12353,7 +12353,7 @@
         "engine/core.py:1670",
         "engine/core.py:1695",
         "engine/core.py:3419",
-        "engine/shadow_outcome_worker.py:224",
+        "engine/shadow_outcome_worker.py:239",
         "railway_main.py:1194",
         "web/app.py:593"
       ],
@@ -12446,7 +12446,7 @@
         "engine/core.py:1669",
         "engine/core.py:1694",
         "engine/core.py:3418",
-        "engine/shadow_outcome_worker.py:225",
+        "engine/shadow_outcome_worker.py:240",
         "railway_main.py:3154",
         "railway_main.py:3257",
         "services/account_policies.py:674",
@@ -12956,7 +12956,7 @@
       "name": "REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:178",
+        "engine/shadow_outcome_worker.py:179",
         "engine/signal_deduplicator.py:503"
       ],
       "required_by_code": true,
@@ -14114,8 +14114,8 @@
       "name": "SHADOW_OUTCOME_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:268",
-        "engine/shadow_outcome_worker.py:392"
+        "engine/shadow_outcome_worker.py:284",
+        "engine/shadow_outcome_worker.py:423"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14146,7 +14146,7 @@
       "name": "SHADOW_PRICE_CONCURRENCY",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:180"
+        "engine/shadow_outcome_worker.py:181"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14156,7 +14156,7 @@
       "name": "SHADOW_TRACKER_BATCH_SIZE",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:179"
+        "engine/shadow_outcome_worker.py:180"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14166,7 +14166,7 @@
       "name": "SHADOW_TRACKER_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/shadow_outcome_worker.py:177"
+        "engine/shadow_outcome_worker.py:178"
       ],
       "required_by_code": true,
       "sensitive": false

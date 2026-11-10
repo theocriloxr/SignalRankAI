@@ -1,5 +1,17 @@
 ## Current local continuation — 16 October 2026
 
+## Continuation, 10 November 2026 (morning) — shadow tracker judged each rejected setup only once (scheduled cloud session)
+
+Read from the `signalrank-ops` snapshots of 10 Nov 05:37–05:59 UTC (production `43341e7`).
+
+- **Defect.** Of the last 300k `decision_log` rows with an `outcome_tracked_at` key (8 Nov 12:37 → 10 Nov 05:39), 146,691 are still pending and only ~8,500 resolved. Per 6 h block, rows resolved fell from 4,566 (8 Nov 12–18 h) to 265–804 (9–10 Nov). The analytics log shows `[shadow_tracker] processed=1 scanned=34…62` with `batch=150`: every pass reads only the few rows logged since the last pass.
+  - Cause: `ShadowOutcomeWorker._load_rows` wrapped back to the oldest pending rows only when nothing newer than its cursor was left. New rejections arrive on every pass, so that never happened, and each row was judged once, about 5 minutes after it was logged, when almost no setup has reached a stop or target yet.
+  - Effect: the per-asset strategy scorecard, the ML training set and the setup-evidence filter learn from a small, early-resolving subset (fast stop-outs and fast wins).
+- **Fix.** `engine/shadow_outcome_worker.py` keeps a second cursor (`…:revisit_after_id` in Redis, beside `scan_after_id`). Batch room the head scan does not use goes to unresolved rows behind it, oldest first, wrapping at the end. Labels are unchanged (`label_from_candles`; rows older than the provider's candle window still become `unverifiable`, not wins or losses). No setting changed.
+- **Tests (Linux, Python 3.11.18 venv from `requirements.txt`, owned PostgreSQL 16 `signalrank_test` at 0062; not CI, staging or production):**
+  - `tests/test_shadow_tracker_progress.py`: 11 passed. New `test_constant_inflow_still_revisits_unresolved_older_rows` fails on the previous code; two expectations of the old wrap order were updated to the new order.
+  - Shadow, tracker, expectancy, scorecard and learning suites: 132 passed, 3 skipped.
+
 ## Continuation, 10 November 2026 — order types and pip/risk breakdown, log fixes, migration 0062, final pass (cloud session)
 
 - **Order type and pips (owner request).** `engine/order_plan.py` is shown on Premium/VIP cards, in emails (same formatter) and on the website signal page ("How to place it", from `order_plan` in the signal detail API).
