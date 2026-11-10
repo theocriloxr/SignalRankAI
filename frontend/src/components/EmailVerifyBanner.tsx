@@ -32,7 +32,10 @@ export function EmailVerifyBanner() {
     setBusy(true); setMessage("");
     try {
       const r = await client.POST("/api/v1/platform/auth/email-verification/request");
-      setMessage(r.response.ok ? `Sent to ${email}. The link works for 30 minutes.` : "That didn't send. Try again in a minute.");
+      const recent = record(r.data).recently_sent === true;
+      setMessage(!r.response.ok ? "That didn't send. Try again in a minute."
+        : recent ? `We sent a link to ${email} a few minutes ago. Check your inbox and spam folder.`
+        : `Sent to ${email}. The link works for 30 minutes.`);
     } catch { setMessage("That didn't send. Try again in a minute."); }
     finally { setBusy(false); }
   };

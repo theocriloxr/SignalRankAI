@@ -4822,6 +4822,8 @@ async def email_verification_request(
     except AuthenticationError as exc:
         if str(exc) == "email_already_verified":
             return {"accepted": True, "already_verified": True}
+        if str(exc) == "verification_recently_sent":
+            return {"accepted": True, "recently_sent": True}
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"accepted": True}
 

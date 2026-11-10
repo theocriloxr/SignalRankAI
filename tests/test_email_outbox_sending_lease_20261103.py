@@ -35,7 +35,7 @@ def _install_fake_db(monkeypatch, claimed_rows, *, fail_update_for=()):
         async def execute(self, stmt, params=None):
             sql = str(stmt)
             statements.append((sql, dict(params or {})))
-            if sql.startswith("UPDATE email_outbox SET status=:status") and params["email_id"] in fail_update_for:
+            if sql.startswith("UPDATE email_outbox SET status=CAST(:status AS VARCHAR)") and params["email_id"] in fail_update_for:
                 raise TimeoutError("db admission timeout")
             if "WITH claimed AS" in sql:
                 return _Result(claimed_rows)
@@ -84,7 +84,7 @@ def test_failed_status_update_does_not_strand_the_rest_of_the_batch(monkeypatch)
     result = asyncio.run(ed.deliver_email_outbox_batch())
     assert sent == ["a", "b"]
     assert result["claimed"] == 2 and result["sent"] == 2
-    updates = [p for sql, p in statements if sql.startswith("UPDATE email_outbox SET status=:status")]
+    updates = [p for sql, p in statements if sql.startswith("UPDATE email_outbox SET status=CAST(:status AS VARCHAR)")]
     assert [p["email_id"] for p in updates] == ["a", "b"]
     assert updates[1]["status"] == "sent"
 

@@ -1190,6 +1190,24 @@ async def request_email_verification(session: Any, *, user_id: int, base_url: st
         raise AuthenticationError("email_required")
     if row[1] is not None:
         raise AuthenticationError("email_already_verified")
+    # At most one verification email per account per VERIFY_EMAIL_MIN_INTERVAL_MINUTES
+    # (default 10): the banner button, sign-in paths and the owner campaign can all ask
+    # (owner report 10 Nov 2026: "it is spamming verification emails").
+    try:
+        interval = max(1, int(os.getenv("VERIFY_EMAIL_MIN_INTERVAL_MINUTES", "10") or 10))
+    except ValueError:
+        interval = 10
+    recent = (
+        await session.execute(
+            text(
+                "SELECT 1 FROM email_outbox WHERE user_id=:uid AND template='verify_email' "
+                "AND created_at > NOW() - make_interval(mins => :mins) LIMIT 1"
+            ),
+            {"uid": int(user_id), "mins": interval},
+        )
+    ).first()
+    if recent:
+        raise AuthenticationError("verification_recently_sent")
     challenge = await _create_account_challenge(session, purpose="verify_email", user_id=int(user_id), ttl_minutes=30)
     from services.platform.email_delivery import queue_account_email
 

@@ -233,11 +233,19 @@ async def _record_delivery(email_id: Any, status: str, last_error: str | None, d
     async with get_session() as session:
         await session.execute(
             text(
-                "UPDATE email_outbox SET status=:status,last_error=:error,sent_at=CASE WHEN :status='sent' THEN NOW() ELSE sent_at END,"
-                "next_attempt_at=CASE WHEN :delay>0 THEN NOW()+(:delay * INTERVAL '1 second') ELSE next_attempt_at END,updated_at=NOW() "
+                # One parameter used as both the varchar column and a text comparison made
+                # PostgreSQL reject every update ("inconsistent types deduced for parameter
+                # $1"), so sent rows stayed 'sending', the lease put them back to 'retry' and
+                # each verification email went out again every ~5 minutes while its link was
+                # valid (production 10 Nov 2026). Separate, typed parameters.
+                "UPDATE email_outbox SET status=CAST(:status AS VARCHAR),last_error=CAST(:error AS TEXT),"
+                "sent_at=CASE WHEN :is_sent THEN NOW() ELSE sent_at END,"
+                "next_attempt_at=CASE WHEN CAST(:delay AS INTEGER)>0 THEN NOW()+(CAST(:delay AS INTEGER) * INTERVAL '1 second') "
+                "ELSE next_attempt_at END,updated_at=NOW() "
                 "WHERE email_id=:email_id"
             ),
-            {"status": status, "error": last_error, "delay": delay, "email_id": email_id},
+            {"status": status, "error": last_error, "delay": int(delay), "email_id": email_id,
+             "is_sent": status == "sent"},
         )
         await session.commit()
 

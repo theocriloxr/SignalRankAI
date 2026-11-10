@@ -31,14 +31,14 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1433,
+  "variable_count": 1434,
   "variables": [
     {
       "declared_defaults": {},
       "name": "ACCOUNT_EMAIL_MAX_PER_HOUR",
       "production_example_default": null,
       "read_locations": [
-        "services/platform/identity.py:1236"
+        "services/platform/identity.py:1254"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1566,7 +1566,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/platform/email_delivery.py:49",
-        "services/platform/identity.py:1372"
+        "services/platform/identity.py:1390"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2121,7 +2121,7 @@
       "name": "BINANCE_REQUIRE_IP_BINDING",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:5518"
+        "web/platform_api.py:5520"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2560,7 +2560,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/broker_verification.py:78",
-        "web/platform_api.py:5503"
+        "web/platform_api.py:5505"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5846,7 +5846,7 @@
       "name": "EXECUTION_TERMS_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:6720"
+        "web/platform_api.py:6722"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7624,10 +7624,10 @@
         "railway_main.py:585",
         "railway_main.py:622",
         "services/broker_connections.py:206",
-        "web/platform_api.py:5567",
-        "web/platform_api.py:5603",
-        "web/platform_api.py:5672",
-        "web/platform_api.py:6680",
+        "web/platform_api.py:5569",
+        "web/platform_api.py:5605",
+        "web/platform_api.py:5674",
+        "web/platform_api.py:6682",
         "worker/worker.py:350"
       ],
       "required_by_code": true,
@@ -7738,10 +7738,10 @@
         "services/broker_connections.py:206",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2811",
-        "web/platform_api.py:5567",
-        "web/platform_api.py:5603",
-        "web/platform_api.py:5672",
-        "web/platform_api.py:6680",
+        "web/platform_api.py:5569",
+        "web/platform_api.py:5605",
+        "web/platform_api.py:5674",
+        "web/platform_api.py:6682",
         "worker/worker.py:350"
       ],
       "required_by_code": true,
@@ -11057,7 +11057,7 @@
       "read_locations": [
         "payments/checkout.py:98",
         "payments/paystack.py:10",
-        "web/platform_api.py:7076"
+        "web/platform_api.py:7078"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11226,7 +11226,7 @@
         "services/subscription_cancellation.py:25",
         "web/app.py:1067",
         "web/app.py:1102",
-        "web/platform_api.py:7072"
+        "web/platform_api.py:7074"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -14623,7 +14623,7 @@
       "production_example_default": "10",
       "read_locations": [
         "signalrank_telegram/commands.py:6833",
-        "web/platform_api.py:5132"
+        "web/platform_api.py:5134"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14638,7 +14638,7 @@
       "production_example_default": "2000",
       "read_locations": [
         "signalrank_telegram/commands.py:6867",
-        "web/platform_api.py:5171"
+        "web/platform_api.py:5173"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16225,6 +16225,16 @@
       "production_example_default": null,
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "VERIFY_EMAIL_MIN_INTERVAL_MINUTES",
+      "production_example_default": null,
+      "read_locations": [
+        "services/platform/identity.py:1197"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {

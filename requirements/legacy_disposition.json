@@ -7414,7 +7414,7 @@
       "line_count": 27002,
       "path": "docs/release/CROSSCHAT_REQUIREMENTS_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "6901d50e9327add09f325d60f4399f538a143e906fcee6279048bdb3bf9d56f0",
+      "sha256": "a96577f0b8d0d5bc67054fa189da5df1be9a7d484495e4236805b7463996308e",
       "size_bytes": 3010839
     },
     {
@@ -7462,7 +7462,7 @@
       "line_count": 10865,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "e9918795a97c43063bf9ec6adce91f2c27e25d1c5a2f7c909bfe99ad61de1cb0",
+      "sha256": "d01927045eec6e578f9a08f1273e424f3f190f122942aff770e4af3468c56324",
       "size_bytes": 4934602
     },
     {
@@ -10374,7 +10374,7 @@
       "line_count": 529482,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "e2300d40a81a793bfd5fd94cc820e35a9796a4285f021b8d3d2b37af4b2ca330",
+      "sha256": "05be5873635e68398fa820ec00111abe09cd33097bbc7cbfc6f0af86a5aea65f",
       "size_bytes": 24641817
     },
     {
@@ -10390,7 +10390,7 @@
       "line_count": null,
       "path": "docs/release/requirements_universe.jsonl",
       "reason": "documentation/specification/evidence",
-      "sha256": "f5f32e82d77d1678f6acec9fb22491d5d29964d37cbcecabd253d36d22f296de",
+      "sha256": "3b1b0af88f95e49a590aef007cc56d0bf4a0b172057d5c93412b071c42ce11e1",
       "size_bytes": 18512523
     },
     {
@@ -10398,7 +10398,7 @@
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "08e261729b35c75a4966997fb937a943e9cfc3a23850f13b38d429804774e30d",
+      "sha256": "6bcc999c3eadadc8cfa3b8ad918bb96c6aa28d2c5d8b1e86cc8f49344acbf50a",
       "size_bytes": 2986
     },
     {
@@ -12371,11 +12371,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 46,
+      "line_count": 49,
       "path": "frontend/src/components/EmailVerifyBanner.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "bd75ea2624144c2ce5baeaf71b7dcd1461ed0044b3ca8b2b934e2fa53aa82f27",
-      "size_bytes": 2018
+      "sha256": "ce27c363db6d0430c1425f6aff2eb2c84d9671ed8e0bf8090914404207077177",
+      "size_bytes": 2188
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14203,11 +14203,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16893,
+      "line_count": 16903,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "961d2defe0a2482361216ed9ba2bee5bba818f1fadc67a135dfc580a405fc3e8",
-      "size_bytes": 493338
+      "sha256": "76f7715eeea3b2330e6fbfbde6f1266f26c5963929d16d6ca96d3ed21ca55cee",
+      "size_bytes": 493612
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16107,11 +16107,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 245,
+      "line_count": 253,
       "path": "services/platform/email_delivery.py",
       "reason": "production/build source",
-      "sha256": "7170daaef32ff48c17c4308f57d84c904d8258c251415addd3feb11ca452f1c8",
-      "size_bytes": 10637
+      "sha256": "59383933cb003030811d92633b0dce24ad34cd765d40cc51a61127b6c9dae260",
+      "size_bytes": 11229
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16123,11 +16123,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1542,
+      "line_count": 1560,
       "path": "services/platform/identity.py",
       "reason": "production/build source",
-      "sha256": "edccb188d59630a299a286a458a8e7e83e4452373032e4fa434c754f2951468c",
-      "size_bytes": 62979
+      "sha256": "419e333c3183a30d25c0ab2d424bec83a1215cb1825b74cfd2bd982884cfe585",
+      "size_bytes": 63779
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18662,8 +18662,8 @@
       "line_count": 135,
       "path": "tests/test_email_outbox_sending_lease_20261103.py",
       "reason": "automated test evidence",
-      "sha256": "73c019a3b14e0c89195b72867b11a2f42b91f27efd1b0186a2ff6ea1c615c0db",
-      "size_bytes": 5535
+      "sha256": "f658fe1e5b902197facaf08612830ae16e458aca1613dde98b250bed3c76c1cf",
+      "size_bytes": 5569
     },
     {
       "disposition": "TEST_ONLY",
@@ -21907,11 +21907,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7634,
+      "line_count": 7636,
       "path": "web/platform_api.py",
       "reason": "production/build source",
-      "sha256": "010c38ab8a5dcf7d9c7612f8fe78424d1255302a664aa17a5955f4d615d6a608",
-      "size_bytes": 320551
+      "sha256": "6950148e40c74592f6dda400d974cc39285e8c3a728b7ad4d11f036753a77ccd",
+      "size_bytes": 320665
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
