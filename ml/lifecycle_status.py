@@ -186,4 +186,35 @@ def lifecycle_status(*, now: datetime | None = None) -> dict[str, Any]:
         "last_training_run": {k: last_run.get(k) for k in ("status", "reason", "finished_at", "returned", "error")}
         if last_run else None,
         "why_not_replaced": explain(last_run),
+        # Row counts per source behind the decision (10 Nov 2026: "insufficient_total_rows"
+        # was visible only in logs). Counts and source names only; no instrument data.
+        "last_run_dataset": _dataset_summary(last_run),
     }
+
+
+def _dataset_summary(last_run: dict[str, Any]) -> dict[str, Any] | None:
+    import re
+
+    lines = list(last_run.get("lines") or []) if last_run else []
+    wanted = [line for line in lines if line.startswith(("[ml_dataset]", "[ml_training_run]")) and
+              ("rows=" in line or "shadow batch" in line)]
+    if not wanted:
+        return None
+    out: dict[str, Any] = {}
+    for line in wanted:
+        for key in ("rows", "required", "live_proof"):
+            m = re.search(rf"\b{key}=(\d+)", line)
+            if m:
+                out[key] = int(m.group(1))
+        m = re.search(r"sources=(\{[^}]*\})", line)
+        if m:
+            out["sources"] = m.group(1)[:300]
+        m = re.search(r"shadow_load=(\{[^}]*\})", line)
+        if m:
+            out["shadow_load"] = m.group(1)[:200]
+        m = re.search(r"focus=(\{[^}]*\})", line)
+        if m:
+            out["focus"] = m.group(1)[:200]
+        if "shadow batch failed" in line:
+            out["shadow_error"] = line[-120:]
+    return out or None

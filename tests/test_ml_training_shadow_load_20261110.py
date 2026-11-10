@@ -133,3 +133,18 @@ def test_drought_alert_names_a_stale_ml_filter(monkeypatch):
     owner_alerts.signal_drought_alert({"hours_since_last_signal": 14.2,
                                        "top_reasons": [{"reason": "ml_filter", "count": 16599}]})
     assert "ML filter is the main blocker" in sent[0] and "41.8 days" in sent[0] and "/ml_status" in sent[0]
+
+
+def test_readiness_shows_the_dataset_behind_a_skipped_run(monkeypatch):
+    from ml import lifecycle_status as ls
+
+    monkeypatch.setattr(ls, "_load", lambda key: {} if key == ls.CHAMPION_KEY else {
+        "status": "skipped", "reason": "insufficient_total_rows",
+        "lines": ["[ml_dataset] status=success rows=40 live_proof=3 sources={'live_delivery': 3, 'paper_execution': 37} "
+                  "candle_series=4 shadow_load={'batches': 1, 'error': 'TimeoutError', 'capped': False, 'rows': 0} "
+                  "focus={'applied': False, 'status': 'disabled'}",
+                  "[ml_training_run] id=x status=skipped reason=insufficient_total_rows rows=40 required=100 "
+                  "sources={'live_delivery': 3, 'paper_execution': 37} current_model_preserved=true"]})
+    ds = ls.lifecycle_status()["last_run_dataset"]
+    assert ds["rows"] == 40 and ds["required"] == 100 and "TimeoutError" in ds["shadow_load"]
+    assert "paper_execution" in ds["sources"] and "disabled" in ds["focus"]
