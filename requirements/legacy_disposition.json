@@ -1,5 +1,5 @@
 {
-  "file_count": 2757,
+  "file_count": 2760,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4536,6 +4536,14 @@
       "reason": "database migration history",
       "sha256": "ef080c348076827019cc47b455462497636269f0bcf343d47a4a0eb6c010ab71",
       "size_bytes": 2133
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 49,
+      "path": "db/migrations/versions/0062_candidate_shadow_index.py",
+      "reason": "database migration history",
+      "sha256": "42d2e0f507e623973ca7c85dc48d1a2103d8a8cd4534c16dc04dc35ab2d55ff7",
+      "size_bytes": 2136
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11275,6 +11283,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 169,
+      "path": "engine/order_plan.py",
+      "reason": "production/build source",
+      "sha256": "c40d0be6336fb3e34b1c5b7b2e1942484aa9a7cbe64317760f0f59082f0257a9",
+      "size_bytes": 8568
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 130,
       "path": "engine/outcome_eligibility.py",
       "reason": "production/build source",
@@ -14182,7 +14198,7 @@
       "line_count": 16852,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "c6b0b52be9a303afea9d45bb07836a40469e58446aa2530060449545aca6c3b8",
+      "sha256": "e83ce13764db8d340768adcdf5a673acc9e4e0927809d9e46415285563109ecf",
       "size_bytes": 492257
     },
     {
@@ -15731,11 +15747,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 934,
+      "line_count": 941,
       "path": "services/codex_governance.py",
       "reason": "production/build source",
-      "sha256": "7ad2df8ff75e31597c7bd9ab665b0703e855aa0801e318135c5657db4099fe92",
-      "size_bytes": 44072
+      "sha256": "e71fe84163248d7901d2cbec7cbfaaf6990475e479d657ecbc22412ca47617c5",
+      "size_bytes": 44391
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19563,6 +19579,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 116,
+      "path": "tests/test_order_plan_20261110.py",
+      "reason": "automated test evidence",
+      "sha256": "20d38c678e50fad3405e463d28c58155d9b8e08f901dc988bebdaae095c93e38",
+      "size_bytes": 6119
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 52,
       "path": "tests/test_orderbook_fills.py",
       "reason": "automated test evidence",
@@ -22071,7 +22095,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1399,
-    "TEST_ONLY": 479
+    "PRESERVE_BEHAVIOUR": 1401,
+    "TEST_ONLY": 480
   }
 }

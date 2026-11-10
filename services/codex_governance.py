@@ -725,7 +725,14 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
             .mappings()
             .all()
         )
-        await session.commit()
+        try:
+            await session.commit()  # read-only; a lost connection here must not fail the review
+        except Exception as exc:
+            logger.warning("[codex_governance] final commit failed error=%s", type(exc).__name__)
+            try:
+                await session.rollback()
+            except Exception:
+                pass
     observations = [
         ScoreObservation(
             score=float(row.get("score") or 0.0),
