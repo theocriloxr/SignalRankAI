@@ -15,6 +15,7 @@ import { NotificationPreferences } from "./NotificationPreferences";
 import { DeviceNotifications } from "./DeviceNotifications";
 import { WatchlistsView } from "./WatchlistsView";
 import { JournalView } from "./JournalView";
+import { TradeCheck } from "./TradeCheck";
 import { TradingPreferences } from "./TradingPreferences";
 import { SupportCenter } from "./SupportCenter";
 import { AlertRules } from "./AlertRules";
@@ -40,7 +41,7 @@ import {
 
 type Section =
   | "overview" | "signals" | "markets" | "research" | "watchlists" | "alerts" | "notifications"
-  | "paper" | "portfolio" | "performance" | "journal" | "brokers"
+  | "paper" | "portfolio" | "performance" | "journal" | "analyze" | "brokers"
   | "billing" | "support" | "settings" | "operations";
 
 type Outcome = { data: Row | null; status: number; success: boolean };
@@ -48,7 +49,7 @@ type State = { kind: "loading" | "ready" | "error" | "auth"; data: Row | null; s
 const titles: Record<Section, string> = {
   overview: "Overview", signals: "Signals", markets: "Markets",
   research: "Strategies", watchlists: "Watchlists", alerts: "Alerts", notifications: "Notifications", paper: "Paper desk",
-  portfolio: "Portfolio", performance: "Performance", journal: "Journal",
+  portfolio: "Portfolio", performance: "Performance", journal: "Journal", analyze: "Check a trade",
   brokers: "Brokers", billing: "Plan and billing", support: "Support",
   settings: "Settings", operations: "Operations",
 };
@@ -64,6 +65,7 @@ const descriptions: Record<Section, string> = {
   portfolio: "What your paper account holds right now, grouped by instrument.",
   performance: "How the signals sent to you turned out, counted the same way the Telegram bot counts them.",
   journal: "Your own notes on signals and trades.",
+  analyze: "Enter a trade you plan to take. See its chance from recent price history, its risks and how to place it; we track it and tell you how it ended.",
   brokers: "Accounts you've linked, what they're allowed to do and their records.",
   billing: "Your plan, renewals and receipts.",
   support: "Your conversations with our team.",
@@ -91,6 +93,7 @@ async function readSection(section: Section, signalId?: string, filters: SignalQ
       case "portfolio": return client.GET("/api/v1/platform/portfolio");
       case "performance": return client.GET("/api/v1/platform/performance");
       case "journal": return client.GET("/api/v1/platform/journal");
+      case "analyze": return client.GET("/api/v1/platform/trade-ideas");
       case "brokers": return client.GET("/api/v1/platform/broker/connections");
       case "billing": return client.GET("/api/v1/platform/billing");
       case "support": return client.GET("/api/v1/platform/support/tickets");
@@ -573,6 +576,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="notifications"?<div className="ws-stack"><NotificationCenter data={state.data} onChanged={refresh}/><NotificationPreferences/><DeviceNotifications/></div>:
       section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
       section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:
+      section==="analyze"?<TradeCheck data={state.data} onChanged={refresh}/>:
       section==="journal"?<div className="ws-stack"><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:
       section==="settings"?<div className="ws-stack"><TradingPreferences data={state.data} onSaved={refresh}/><AccountSecurity onChanged={refresh}/><PlanAndReferrals/><DeveloperAccess/><PrivacyCenter onChanged={refresh}/></div>:
       section==="support"?<div className="ws-stack"><SupportCenter data={state.data} onChanged={refresh}/><AccountCreation kind="support" onCreated={refresh}/></div>:

@@ -10,14 +10,14 @@ import { Icon, type IconName } from "./ui/Icon";
 
 const groups = [
   { label:"Signals and markets",items:[["Overview","/app"],["Signals","/app/signals"],["Markets","/app/markets"],["Research","/app/research"],["Watchlists","/app/watchlists"],["Alerts","/app/alerts"],["Notifications","/app/notifications"]] },
-  { label:"Paper and results",items:[["Paper","/app/paper"],["Portfolio","/app/portfolio"],["Performance","/app/performance"],["Journal","/app/journal"]] },
+  { label:"Paper and results",items:[["Paper","/app/paper"],["Portfolio","/app/portfolio"],["Performance","/app/performance"],["Journal","/app/journal"],["Check a trade","/app/analyze"]] },
   { label:"Account",items:[["Brokers","/app/brokers"],["Billing","/app/billing"],["Support","/app/support"],["Settings","/app/settings"]] },
 ] as const;
 
 const icons: Record<string, IconName> = {
   overview:"overview", signals:"signals", markets:"markets", research:"research", watchlists:"watchlists",
   alerts:"alerts", notifications:"notifications", paper:"paper", portfolio:"portfolio", performance:"performance",
-  journal:"journal", brokers:"brokers", billing:"billing", support:"support", settings:"settings",
+  journal:"journal", analyze:"research", brokers:"brokers", billing:"billing", support:"support", settings:"settings",
 };
 const tabs = [["Overview","/app"],["Signals","/app/signals"],["Paper","/app/paper"],["Portfolio","/app/portfolio"],["Brokers","/app/brokers"]] as const;
 

@@ -6558,6 +6558,9 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("about", _audit_handler("about", about_command)))
     application.add_handler(CommandHandler("faq", _audit_handler("faq", faq_command)))
     application.add_handler(CommandHandler("track_record", _audit_handler("track_record", track_record_command)))
+    from signalrank_telegram.platform_parity_commands import check_trade_command, my_ideas_command
+    application.add_handler(CommandHandler("check_trade", _audit_handler("check_trade", check_trade_command)))
+    application.add_handler(CommandHandler("my_ideas", _audit_handler("my_ideas", my_ideas_command)))
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("public_test_status", _audit_handler("public_test_status", public_test_status_command)))

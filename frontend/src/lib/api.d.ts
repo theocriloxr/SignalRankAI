@@ -3010,6 +3010,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/trade-ideas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trade Idea History */
+        get: operations["trade_idea_history_api_v1_platform_trade_ideas_get"];
+        put?: never;
+        /** Trade Idea Analyse */
+        post: operations["trade_idea_analyse_api_v1_platform_trade_ideas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/public/daily-top": {
         parameters: {
             query?: never;
@@ -3194,6 +3212,29 @@ export interface components {
             uptime: number;
         };
         /** JournalEntryRequest */
+        /** TradeIdeaRequest */
+        TradeIdeaRequest: {
+            /** Asset */
+            asset: string;
+            /** Direction */
+            direction: string;
+            /** Entry */
+            entry: number;
+            /** Stop Loss */
+            stop_loss: number;
+            /** Take Profit */
+            take_profit: number[];
+            /**
+             * Timeframe
+             * @default 1h
+             */
+            timeframe?: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes?: string;
+        };
         JournalEntryRequest: {
             /** Title */
             title?: string | null;
@@ -6108,6 +6149,63 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trade_idea_history_api_v1_platform_trade_ideas_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    trade_idea_analyse_api_v1_platform_trade_ideas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TradeIdeaRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

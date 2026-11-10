@@ -439,6 +439,10 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             # Rank flips/upgrades/downgrades on open signals (services/rank_alerts.py).
             from services.rank_alerts import rank_alerts_loop
             tasks.append(asyncio.create_task(rank_alerts_loop(stop), name="rank-alerts"))
+        if _enabled("TRADE_IDEAS_ENABLED", True):
+            # Track users' submitted trade ideas and tell them how each ended (services/trade_ideas.py).
+            from services.trade_ideas import trade_ideas_loop
+            tasks.append(asyncio.create_task(trade_ideas_loop(stop), name="trade-ideas"))
         if _enabled("DAILY_TEASER_ENABLED", True):
             # Daily top-3 per asset class, no levels (services/daily_teaser.py).
             from services.daily_teaser import daily_teaser_loop

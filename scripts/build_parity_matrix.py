@@ -45,6 +45,7 @@ COMMAND_SECTION_ALIASES = {
     "disclaimer": "support", "kill_switch": "operations", "ops_health": "operations",
     "system_health": "operations", "provider_status": "operations", "queue_status": "operations",
     "engine_debug": "operations", "adaptive_status": "research",
+    "check_trade": "analyze", "my_ideas": "analyze",  # 10 Nov 2026: Check a trade
 }
 
 

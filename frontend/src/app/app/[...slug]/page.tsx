@@ -4,7 +4,7 @@ import { WorkspaceLive } from "../../../components/WorkspaceLive";
 
 const sections = new Set([
   "signals", "markets", "research", "watchlists", "alerts", "notifications",
-  "paper", "portfolio", "performance", "journal", "brokers",
+  "paper", "portfolio", "performance", "journal", "analyze", "brokers",
   "billing", "support", "settings", "operations",
 ]);
 

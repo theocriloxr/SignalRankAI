@@ -162,3 +162,73 @@ __all__ = [
     "account_merges_command", "format_merge_list", "format_merge_plan",
     "format_privacy_status", "privacy_command",
 ]
+
+
+async def check_trade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/check_trade EURUSD buy 1.0850 sl 1.0820 tp 1.0900 1.0950 tf 1h — analyse, save and track a user's own trade."""
+    if update.effective_user is None or update.message is None:
+        return
+    from services.platform.identity import ensure_telegram_user
+    from services.trade_ideas import IdeaError, parse_command_text, submit, telegram_text
+    from signalrank_telegram.access import resolve_user_tier
+
+    args = list(getattr(context, "args", None) or [])
+    if not args:
+        await update.message.reply_text(
+            "🔍 Analyse a trade you plan to take.\n\n"
+            "/check_trade EURUSD buy 1.0850 sl 1.0820 tp 1.0900 1.0950 tf 1h\n\n"
+            "Instrument, buy/sell, entry, stop loss (sl), up to three take profits (tp) and an optional timeframe "
+            "(5m, 15m, 30m, 1h, 4h, 1d; default 1h). You get the chance of TP1 before the stop from recent price "
+            "history, the break-even rate your plan needs, warnings, and the order type and pip/risk breakdown. "
+            "The idea is then tracked and you are told how it ended. Also on the website: Analyse a trade.")
+        return
+    await update.message.reply_text("🔍 Analysing…")
+    try:
+        raw = parse_command_text(args)
+        tier = str(resolve_user_tier(int(update.effective_user.id)) or "free").lower()
+        async with get_session(priority="interactive", label="telegram.analyze", timeout_seconds=40.0) as session:
+            uid = await ensure_telegram_user(session, telegram_user_id=int(update.effective_user.id),
+                                             username=getattr(update.effective_user, "username", None))
+            result = await submit(session, user_id=uid, tier=tier, raw=raw, source="telegram")
+            await session.commit()
+    except IdeaError as exc:
+        reason = exc.args[0] if exc.args else "That trade could not be analysed."
+        await update.message.reply_text("⚠️ " + str(reason))
+        return
+    except Exception as exc:
+        await update.message.reply_text(safe_command_error("The analysis is unavailable right now.", exc))
+        return
+    await update.message.reply_text(telegram_text(result)[:3900])
+
+
+async def my_ideas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Your analysed trade ideas and how they ended."""
+    if update.effective_user is None or update.message is None:
+        return
+    from services.platform.identity import ensure_telegram_user
+    from services.trade_ideas import history
+
+    try:
+        async with get_session(priority="interactive", label="telegram.my_ideas") as session:
+            uid = await ensure_telegram_user(session, telegram_user_id=int(update.effective_user.id),
+                                             username=getattr(update.effective_user, "username", None))
+            data = await history(session, uid, limit=15)
+            await session.commit()
+    except Exception as exc:
+        await update.message.reply_text(safe_command_error("Your ideas are unavailable right now.", exc))
+        return
+    if not data["ideas"]:
+        await update.message.reply_text("No analysed ideas yet. Try /check_trade EURUSD buy 1.0850 sl 1.0820 tp 1.0900")
+        return
+    lines = ["📒 Your trade ideas"]
+    if data["resolved"]:
+        lines.append(f"Resolved: {data['resolved']} • TP1 or better: {data['tp1_or_better']} "
+                     f"({(data['hit_rate'] or 0) * 100:.0f}%)")
+    for i in data["ideas"]:
+        side = "BUY" if i["direction"] == "long" else "SELL"
+        state = i["outcome"] or ("tracking" if i["status"] == "tracking" else i["status"])
+        prob = "" if i["probability"] is None else f" • est. {float(i['probability']) * 100:.0f}%"
+        r = "" if i["outcome_r"] is None else f" {float(i['outcome_r']):+.2f}R"
+        lines.append(f"• {i['asset']} {side} {i['timeframe']} @ {i['entry']:g}{prob} → {state}{r}")
+    lines.append(f"\n{_web_url('/app/analyze')}")
+    await update.message.reply_text("\n".join(lines)[:3900])

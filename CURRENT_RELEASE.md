@@ -10,7 +10,7 @@ values below are historical observations, not a fresh deployment certification.
 Version: 1.5.1
 Patch level: master-blueprint-release-candidate-20261001
 Fingerprint: signalrank-blueprint-0048-runtime-schema-bridge-20261002
-Repository Alembic head: 0062_candidate_shadow_index
+Repository Alembic head: 0063_user_trade_ideas
 Release-candidate branch: fix/stage1-canonical-reconciliation-20261014
 Release-candidate status: NOT YET LIVE-CERTIFIED
 Previously certified staging baseline: 0045_mt5_credential_retirement (historical only)
@@ -49,6 +49,7 @@ chain with:
 - `0060_notification_channels`: new table `notification_channel_deliveries` (one row per notification and external channel, email or push) so each is sent at most once. No existing data changes.
 - `0061_tracked_shadow_index`: partial index `ix_decision_log_tracked_id` on `decision_log(id)` for rows with a tracked outcome, built concurrently (no write blocking). The strategy scorecard reads only those rows. No data changes.
 - `0062_candidate_shadow_index`: partial index `ix_ml_rejected_candidate_shadow` on `ml_rejected_signals` (artifact hash, created_at) for challenger forward-proof rows, built concurrently. `/ml_candidate` and the training lease read only those rows. No data changes.
+- `0063_user_trade_ideas`: new table `user_trade_ideas` for trades users submit for analysis (Telegram `/check_trade`, website/app Analyse page, API); the idea tracker labels each one from candles after its entry is touched, the owner of the idea is notified, and resolved ideas join training as low-weight fit-only rows. Additive table and indexes only.
 
 The current release candidate also includes:
 

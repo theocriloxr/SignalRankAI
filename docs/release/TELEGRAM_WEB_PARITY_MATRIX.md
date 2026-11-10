@@ -21,6 +21,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/app/portfolio` | `/portfolio` | `/portfolio` |
 | `/app/performance` | `/performance` | `/mystats`, `/performance`, `/report`, `/stats` |
 | `/app/journal` | `/journal` | `/journal` |
+| `/app/analyze` | `/trade-ideas` | `/check_trade`, `/my_ideas` |
 | `/app/brokers` | `/broker/connections` | `/connect_broker`, `/execution`, `/mt5_link`, `/mt5_status`, `/setlot`, `/verifybroker` |
 | `/app/billing` | `/billing` | `/cancel`, `/early`, `/elite`, `/pricing`, `/tiers`, `/upgrade` |
 | `/app/support` | `/support/tickets` | `/disclaimer`, `/faq`, `/support` |
@@ -67,6 +68,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/support` | FREE | Support | `/app/support` |
 | `/faq` | FREE | Support | `/app/support` |
 | `/track_record` | FREE | Analytics | — (Telegram-only) |
+| `/check_trade` | FREE | Analytics | `/app/analyze` |
+| `/my_ideas` | FREE | Analytics | `/app/analyze` |
 | `/disclaimer` | FREE | Support | `/app/support` |
 | `/myid` | FREE | Support | — (Telegram-only) |
 | `/language` | FREE | Preferences | `/app/settings` |
@@ -305,6 +308,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/support/tickets` | `/support` |
 | GET | `/support/tickets/{ticket_id}` | `/support` |
 | POST | `/support/tickets/{ticket_id}/messages` | `/support` |
+| GET | `/trade-ideas` | — |
+| POST | `/trade-ideas` | — |
 | GET | `/trading-profile` | — |
 | PUT | `/trading-profile` | — |
 | GET | `/watchlists` | `/watchlist` |
@@ -316,4 +321,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 128 commands (51 without a web section), 16 web sections, 151 routes (94 without a name-matched command).
+Summary: 130 commands (51 without a web section), 17 web sections, 153 routes (96 without a name-matched command).

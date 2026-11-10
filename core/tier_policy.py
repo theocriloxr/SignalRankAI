@@ -470,6 +470,8 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "about": Tier.FREE,
         "faq": Tier.FREE,
         "track_record": Tier.FREE,
+        "check_trade": Tier.FREE,
+        "my_ideas": Tier.FREE,
         "disclaimer": Tier.FREE,
         "pricing": Tier.FREE,
         "upgrade": Tier.FREE,

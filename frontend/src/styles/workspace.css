@@ -293,3 +293,11 @@
 .ws-factor-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ws-factor-value small { color: var(--text-2); }
 html:has(.ws-drawer[open]) { overflow: hidden; } /* no scrolling behind the open menu (10 Nov 2026) */
+
+/* Check a trade (10 Nov 2026) */
+.tc-result h2 { font-size: var(--text-xl); }
+.tc-table { min-width: 0; }
+.tc-warnings, .tc-notes { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: var(--text-sm); }
+.tc-warnings li { color: var(--warning); }
+.tc-notes li { color: var(--text-2); }
+.tc-sub { font-size: var(--text-lg); margin-top: var(--space-4); }

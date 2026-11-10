@@ -1416,6 +1416,46 @@ async def load_training_data(lookback_days: int = 90):
         except Exception as paper_err:
             logger.warning("Failed to load paper-execution training rows: %s", paper_err)
 
+        # Users' checked trade ideas (10 Nov 2026), once resolved: low weight and
+        # fit-only (see the mask in main), so they can teach the model but never
+        # validate or promote it.
+        try:
+            if str(os.getenv("ML_TRAIN_USER_IDEAS_ENABLED", "1")).lower() in {"1", "true", "yes", "on"}:
+                from sqlalchemy import text as _sql
+
+                async with get_session(**_training_session_kwargs("ml_training_user_ideas_read")) as session:
+                    idea_rows = (await asyncio.wait_for(session.execute(_sql(
+                        "SELECT id, asset, timeframe, direction, entry, stop_loss, take_profit, probability, features, "
+                        "outcome, created_at FROM user_trade_ideas WHERE status='resolved' "
+                        "AND outcome IN ('tp1','tp2','tp3','sl') AND created_at >= :cutoff ORDER BY id DESC LIMIT :n"),
+                        {"cutoff": cutoff, "n": int(os.getenv("ML_TRAIN_USER_IDEA_MAX_ROWS", "20000") or 20000)}),
+                        timeout=_training_query_timeout())).mappings().all()
+                for idea in idea_rows:
+                    feat = idea["features"] if isinstance(idea["features"], dict) else json.loads(idea["features"] or "{}")
+                    win = str(idea["outcome"]) != "sl"
+                    data.append({
+                        "signal_id": f"idea_{int(idea['id'])}", "asset": idea["asset"], "timeframe": idea["timeframe"],
+                        "direction": idea["direction"], "score": 0.0, "entry": _safe_float(idea["entry"]),
+                        "stop_loss": _safe_float(idea["stop_loss"]), "take_profit": _parse_tp(idea["take_profit"]),
+                        "rr_ratio": _safe_float(feat.get("rr_ratio")), "strategy_name": "user_idea", "regime": "unknown",
+                        "strength": 0.0, "ml_probability": _safe_float(idea["probability"]),
+                        "price_velocity_3": 0.0, "price_velocity_5": 0.0,
+                        "price_velocity_10": _safe_float(feat.get("price_velocity_10", 0.0)),
+                        "price_acceleration_3_10": 0.0, "atr_rel": _safe_float(feat.get("atr_rel", 0.0)),
+                        "atr_regime": 0.0, "relative_volume": 0.0,
+                        "mtf_4h_trend": float(feat.get("trend") or 0.0), "mtf_1d_trend": 0.0, "funding_rate": 0.0,
+                        "open_interest_change": 0.0, "asset_class_enc": 0.0, "adx": 0.0, "dxy_trend": 0.0,
+                        "vix_trend": 0.0, "us10y_trend": 0.0, "yield_spread": 0.0,
+                        "minutes_since_high_impact_news": 0.0, "minutes_until_high_impact_news": 0.0,
+                        "news_event_impact_score": 0.0, "spx_trend": 0.0, "btc_corr": 0.0,
+                        "partial_tp_progress": float(int(str(idea["outcome"])[-1])) if win else 0.0,
+                        "false_breakout": 0, "barrier_type": "upper" if win else "lower",
+                        "sample_weight": 0.3, "source_type": "user_idea", "source_weight": 0.3,
+                        "created_at": idea["created_at"] or now_utc_naive(), "target": 1 if win else 0,
+                    })
+        except Exception as idea_err:
+            logger.warning("[ml_dataset] user ideas unavailable error=%s", type(idea_err).__name__)
+
         df = pd.DataFrame(data)
         df, pegged = _exclude_pegged_assets(df)
         df.attrs["pegged_assets_excluded"] = pegged
@@ -2706,7 +2746,7 @@ async def _main_impl(lookback_days: int | None = None):
         except Exception as replay_error:
             logger.warning("[ml_external_replay] id=%s skipped error=%s", run_id, type(replay_error).__name__)
     fit_only_mask = (
-        df["source_type"].astype(str).eq("external_replay").to_numpy()
+        df["source_type"].astype(str).isin(["external_replay", "user_idea"]).to_numpy()
         if "source_type" in df.columns else None
     )
     source_counts = dict(df.attrs.get("source_counts") or source_counts)

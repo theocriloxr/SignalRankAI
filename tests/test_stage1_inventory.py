@@ -49,7 +49,7 @@ def test_catch_all_files_expand_to_concrete_product_routes():
     assert routes >= {"/pricing", "/product", "/privacy", "/strategies", "/status",
                       "/app/watchlists", "/app/settings", "/app/operations",
                       "/app/signals/{signal_id}"}
-    assert len([r for r in rows if r.get("route_kind") == "EXPANDED_ALLOWLIST"]) == 31
+    assert len([r for r in rows if r.get("route_kind") == "EXPANDED_ALLOWLIST"]) == 32  # +/app/analyze (10 Nov 2026)
     assert {r["requirement"] for r in rows if r["kind"] == "MOBILE"} >= {"overview", "research", "account"}
 
 

@@ -998,6 +998,48 @@ async def public_track_record() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Track record is temporarily unavailable") from exc
 
 
+class TradeIdeaRequest(BaseModel):
+    asset: str = Field(min_length=2, max_length=32)
+    direction: str = Field(min_length=3, max_length=8)
+    entry: float = Field(gt=0)
+    stop_loss: float = Field(gt=0)
+    take_profit: list[float] = Field(min_length=1, max_length=3)
+    timeframe: str = Field(default="1h", max_length=4)
+    notes: str = Field(default="", max_length=500)
+
+
+@router.post("/trade-ideas")
+async def trade_idea_analyse(
+    payload: TradeIdeaRequest,
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    """Analyse a trade the user plans to take, save it and track how it ends (10 Nov 2026)."""
+    from services.trade_ideas import IdeaError, submit
+
+    try:
+        async with get_session(label="platform.trade_idea", timeout_seconds=40.0) as session:
+            result = await submit(session, user_id=int(user["id"]), tier=str(user.get("tier") or "free"),
+                                  raw=payload.model_dump(), source="web")
+            await session.commit()
+    except IdeaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result.pop("features", None)
+    return result
+
+
+@router.get("/trade-ideas")
+async def trade_idea_history(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """The user's analysed ideas, how each ended, and their hit rate."""
+    from services.trade_ideas import daily_limit, history, used_today
+
+    async with get_session(label="platform.trade_idea_history", timeout_seconds=10.0) as session:
+        out = await history(session, int(user["id"]))
+        out["used_today"] = await used_today(session, int(user["id"]))
+        await session.rollback()
+    out["daily_limit"] = daily_limit(str(user.get("tier") or "free"))
+    return out
+
+
 _DAILY_TOP_CACHE: dict[str, Any] = {}
 
 

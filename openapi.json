@@ -7595,6 +7595,82 @@
           }
         }
       }
+    },
+    "/api/v1/platform/trade-ideas": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Trade Idea History",
+        "description": "The user's analysed ideas, how each ended, and their hit rate.",
+        "operationId": "trade_idea_history_api_v1_platform_trade_ideas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Trade Idea History Api V1 Platform Trade Ideas Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Trade Idea Analyse",
+        "description": "Analyse a trade the user plans to take, save it and track how it ends (10 Nov 2026).",
+        "operationId": "trade_idea_analyse_api_v1_platform_trade_ideas_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeIdeaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Trade Idea Analyse Api V1 Platform Trade Ideas Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -11066,6 +11142,62 @@
           "sandbox"
         ],
         "title": "ExchangeBrokerLinkRequest"
+      },
+      "TradeIdeaRequest": {
+        "properties": {
+          "asset": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Asset"
+          },
+          "direction": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 3,
+            "title": "Direction"
+          },
+          "entry": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Entry"
+          },
+          "stop_loss": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Stop Loss"
+          },
+          "take_profit": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Take Profit"
+          },
+          "timeframe": {
+            "type": "string",
+            "maxLength": 4,
+            "title": "Timeframe",
+            "default": "1h"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset",
+          "direction",
+          "entry",
+          "stop_loss",
+          "take_profit"
+        ],
+        "title": "TradeIdeaRequest"
       }
     },
     "securitySchemes": {
