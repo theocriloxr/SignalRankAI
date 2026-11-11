@@ -2414,7 +2414,7 @@ def _ml_gate_mode() -> str:
     specialist's veto at its certified threshold. Every other candidate is scored
     by an uncertified model, so the model observes only (the 2 Nov owner decision):
     it neither vetoes nor feeds the 0-100 score, the setup-evidence filter and the
-    85 Ultra floor decide, and the signal stays paper-only.
+    Ultra score floor (ULTRA_MIN_SCORE, 80) decide, and the signal stays paper-only.
     """
     mode = str(os.getenv("ML_GATE_MODE", "auto") or "auto").strip().lower()
     return mode if mode in {"auto", "advisory", "enforce"} else "auto"
@@ -5067,7 +5067,7 @@ def main_loop(DRY_RUN: bool = False):
                             sig["ultra_quality_score"] = float(qscore or 0.0)
                             if not should_trade:
                                 ultra_reason = f"ultra:{rejection}"
-                                # The 85 floor applies to every candidate (owner, 11 Nov 2026),
+                                # The Ultra floor (80) applies to every candidate (owner, 11 Nov 2026),
                                 # including ML-advisory ones; only starvation recovery keeps
                                 # Ultra advisory.
                                 if bool(sig.get("ml_recovery_mode")) and str(

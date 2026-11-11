@@ -88,7 +88,7 @@ class UltraQualityFilter:
 
     def __init__(self):
         # Ultra-strict thresholds — near-zero-loss production defaults
-        self.min_score = _env_float("ULTRA_MIN_SCORE", 85.0)
+        self.min_score = _env_float("ULTRA_MIN_SCORE", 80.0)  # owner, 11 Nov 2026 (was 85)
         self.min_confluence = _env_float("ULTRA_MIN_CONFLUENCE", 80.0)
         self.min_rr_ratio = _env_float("ULTRA_MIN_RR_RATIO", 2.5)
         self.min_adx = _env_float("ULTRA_MIN_ADX", 25.0)

@@ -322,3 +322,12 @@ def test_embargoed_windows_keep_their_size_and_never_fall_back_to_a_leaky_split(
     with pytest.raises(ValueError, match="insufficient_rows_after_embargo"):
         _embargoed_windows(np.arange(200), np.arange(200, 250), np.arange(250, 300), dense, 24.0,
                            minimum_fit=50, minimum_calibration=30)
+
+
+def test_ultra_floor_is_80_by_owner_decision(monkeypatch):
+    from engine.ultra_quality_filter import UltraQualityFilter
+
+    monkeypatch.delenv("ULTRA_MIN_SCORE", raising=False)
+    assert UltraQualityFilter().min_score == 80.0
+    ok, reason, _ = UltraQualityFilter().apply_ultra_filter({"score": 79.9})
+    assert not ok and reason == "Score 79.9 < 80.0"

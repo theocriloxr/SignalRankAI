@@ -2414,7 +2414,7 @@
     },
     {
       "path": "docs/ML_BOTTLENECK_CONTROLS.md",
-      "sha256_lf": "1e1b43d4893e5669de46bf26dca33e17f5b26b21aacfc7eadabd79b8bdd7345e",
+      "sha256_lf": "530a62a82f8fd4aa74ed1fb4144545fa21c7cf9ceab5af7eb6d902720fe31bca",
       "encoding": "utf-8-sig",
       "line_count": 89,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
@@ -166395,10 +166395,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "6dae78c0933f3356386d1907240bcc29c6e77eb444779abf0e6754a93b636929",
+      "source_sha256": "47d0aaee234893e34122aa5dd588b71ce972d680d29b56e9a822cfaf932fcb3b",
       "line_start": 64,
       "line_end": 76,
-      "text": "## How the ML gate decides (since 11 Nov 2026)\n\n`ML_GATE_MODE=auto` (default):\n\n- **Certified class:** a class-specific model passed the full gate on that\n  class's untouched validation window. It vetoes at its own certified threshold.\n- **Uncertified:** the model only observes. It neither vetoes nor feeds the\n  0-100 score. The setup-evidence filter (fail-closed) and the 85 Ultra floor\n  decide, and the signal stays paper-only.\n\n`advisory` treats every candidate as uncertified; `enforce` gives the global\nmodel the veto everywhere.\n",
+      "text": "## How the ML gate decides (since 11 Nov 2026)\n\n`ML_GATE_MODE=auto` (default):\n\n- **Certified class:** a class-specific model passed the full gate on that\n  class's untouched validation window. It vetoes at its own certified threshold.\n- **Uncertified:** the model only observes. It neither vetoes nor feeds the\n  0-100 score. The setup-evidence filter (fail-closed) and the Ultra score floor (`ULTRA_MIN_SCORE`, 80)\n  decide, and the signal stays paper-only.\n\n`advisory` treats every candidate as uncertified; `enforce` gives the global\nmodel the veto everywhere.\n",
       "clauses": [
         {
           "line": 64,
@@ -166422,7 +166422,7 @@
         },
         {
           "line": 71,
-          "text": "  0-100 score. The setup-evidence filter (fail-closed) and the 85 Ultra floor"
+          "text": "  0-100 score. The setup-evidence filter (fail-closed) and the Ultra score floor (`ULTRA_MIN_SCORE`, 80)"
         },
         {
           "line": 72,

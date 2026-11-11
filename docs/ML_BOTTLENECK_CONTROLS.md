@@ -68,7 +68,7 @@ no neural network, no generative model and no reinforcement learning.
 - **Certified class:** a class-specific model passed the full gate on that
   class's untouched validation window. It vetoes at its own certified threshold.
 - **Uncertified:** the model only observes. It neither vetoes nor feeds the
-  0-100 score. The setup-evidence filter (fail-closed) and the 85 Ultra floor
+  0-100 score. The setup-evidence filter (fail-closed) and the Ultra score floor (`ULTRA_MIN_SCORE`, 80)
   decide, and the signal stays paper-only.
 
 `advisory` treats every candidate as uncertified; `enforce` gives the global
