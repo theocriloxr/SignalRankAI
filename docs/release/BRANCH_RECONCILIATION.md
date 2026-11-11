@@ -100,7 +100,7 @@ Commits `e68eab8f`, `f117be00`, `cb2be103`, `78cca12b`, then `6bfc285b` and `6c3
   - Evidence covers 60 days: shadow outcomes plus delivered outcomes. A rejected setup counts once per asset and bar, because the engine logs it again on every scan.
   - The worker stores a snapshot in `runtime_state` (`segment_evidence:v1`) every 15 minutes, and the engine reads only that snapshot. While the ML gate is advisory, a missing or stale snapshot blocks signals.
 - **Read-only production replay (60 days, one setup per bar).** Allowed setups: 34,614, with 41.9% reaching TP1 and a +0.02R floor. Blocked setups: 70,567, with 31.2% reaching TP1 and −0.38R.
-- **The ML gate is advisory (`ML_GATE_MODE`, default `advisory`).** The serving model scored pegged tokens above its 0.84 threshold and real coins below it.
+- **The ML gate is certified-or-advisory (`ML_GATE_MODE`, default `auto` since 11 Nov 2026; was `advisory`).** A candidate whose asset class has a certified specialist gets that specialist's veto; every other candidate is scored by an uncertified model, which neither vetoes nor feeds the 0-100 score, and the 85 Ultra floor applies to it. Background: The serving model scored pegged tokens above its 0.84 threshold and real coins below it.
   - The model still scores every signal, and a below-threshold score is logged as `ml_filter` with `ml_gate_mode=advisory`.
   - Such signals are marked paper-only: live broker execution is disabled for them, and the Telegram card says so. `ML_GATE_MODE=enforce` restores the veto.
 - **Protected exits and observed prices (`e68eab8f`).**

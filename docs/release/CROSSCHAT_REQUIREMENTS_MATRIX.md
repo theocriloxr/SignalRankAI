@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 27000. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26987.
+Rows: 27008. Reviewed dispositions: 13. Unresolved applicability/acceptance: 26995.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -19924,6 +19924,14 @@ Rows: 27000. Reviewed dispositions: 13. Unresolved applicability/acceptance: 269
 | SR-SOURCE-78bfffb3f012c62d | docs/MASTER_PROMPT_IMPLEMENTATION_MATRIX.md:117  | INCOMPLETE |
 | SR-SOURCE-3cf411c7bad970e2 | docs/MASTER_PROMPT_IMPLEMENTATION_MATRIX.md:127  | INCOMPLETE |
 | SR-SOURCE-6eab2d44c2b000cf | docs/MINIMAL_BACKEND_RUNTIME_20261013.md:1  | INCOMPLETE |
+| SR-SOURCE-0901063760ab96e2 | docs/ML_BOTTLENECK_CONTROLS.md:1  | INCOMPLETE |
+| SR-SOURCE-30559dc6cab51bcf | docs/ML_BOTTLENECK_CONTROLS.md:9  | INCOMPLETE |
+| SR-SOURCE-e6a19c15d6e06520 | docs/ML_BOTTLENECK_CONTROLS.md:19  | INCOMPLETE |
+| SR-SOURCE-6c96604d50440e38 | docs/ML_BOTTLENECK_CONTROLS.md:28  | INCOMPLETE |
+| SR-SOURCE-020579e2fcf1c8dd | docs/ML_BOTTLENECK_CONTROLS.md:42  | INCOMPLETE |
+| SR-SOURCE-486ead6fc9d09c2a | docs/ML_BOTTLENECK_CONTROLS.md:52  | INCOMPLETE |
+| SR-SOURCE-b78d6fe577d03b92 | docs/ML_BOTTLENECK_CONTROLS.md:64  | INCOMPLETE |
+| SR-SOURCE-a60b10ad9864c8a0 | docs/ML_BOTTLENECK_CONTROLS.md:77  | INCOMPLETE |
 | SR-SOURCE-f03d5e63670223db | docs/MOBILE_BUILD.md:1  | INCOMPLETE |
 | SR-SOURCE-2199fd690f1b6ab6 | docs/MOBILE_BUILD.md:5  | INCOMPLETE |
 | SR-SOURCE-41b158287416b39f | docs/MOBILE_BUILD.md:16  | INCOMPLETE |

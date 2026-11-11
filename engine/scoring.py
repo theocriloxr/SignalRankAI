@@ -197,7 +197,9 @@ def score_signal(signal):
 
     # Target: 0..100 score
     confidence = resolve_confidence_ratio(signal)
-    ml_val = resolve_ml_probability(signal)
+    # An uncertified model observes only (engine ``ML_GATE_MODE``): its probability
+    # must not veto or move the score (11 Nov 2026: 0.01 probabilities zeroed scores).
+    ml_val = None if signal.get("ml_uncertified") else resolve_ml_probability(signal)
     # A missing strategy confidence may fall back to ML for the hard gate, but
     # the same probability must never be inserted twice into the weighted score.
     confidence_for_gate = confidence if confidence is not None else ml_val

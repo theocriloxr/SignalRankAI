@@ -193,8 +193,15 @@ def _promotion_quality_gate(
         max_gap = 0.15
     gap = metrics.get("overfit_gap")
     overfit_ok = gap is None or float(gap) <= max_gap
+    # Leakage and label-noise audit (ml/data_audit.py, 11 Nov 2026).
+    from ml.data_audit import blocks_promotion
+
+    data_blocks = blocks_promotion(metrics.get("data_audit"))
+    if data_blocks:
+        logger.warning("[ml_quality_data] promotion blocked by data audit: %s", data_blocks)
     ok = (
-        overfit_ok
+        not data_blocks
+        and overfit_ok
         and accuracy >= min_accuracy
         and auc >= min_auc
         and balanced_acc >= min_balanced_acc
@@ -2666,7 +2673,15 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
             logger.warning(f"Failed to compute segment calibration: {e}")
     calibration_metrics["segments"] = segments
 
+    try:
+        from ml.data_audit import audit as _data_audit
+
+        data_audit = _data_audit(X_train, y_train, list(feature_cols))
+        logger.info("[ml_data_audit] %s", {k: v for k, v in data_audit.items() if k not in {"collinear_pairs"}})
+    except Exception as audit_err:
+        data_audit = {"error": type(audit_err).__name__}
     metrics = {
+        "data_audit": data_audit,
         "accuracy": float(acc),
         "auc": float(auc),
         "train_auc": train_auc,

@@ -225,8 +225,9 @@ def snapshot_is_current(snapshot: Mapping[str, Any] | None, *, now: float | None
     if not snapshot:
         return False
     interval = max(60.0, _env_float("SEGMENT_EVIDENCE_REFRESH_SECONDS", 900.0))
+    max_age = max(interval, _env_float("SEGMENT_EVIDENCE_MAX_AGE_SECONDS", 2 * interval))
     age = float(now if now is not None else time.time()) - float(snapshot.get("computed_at") or 0)
-    return 0 <= age <= 2 * interval
+    return -300 <= age <= max_age  # small clock skew between containers is not staleness
 
 
 def record_for(signal: Mapping[str, Any], segments: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -266,17 +267,48 @@ async def attach_records(signals: list[dict[str, Any]]) -> None:
             signal["segment_evidence"] = record
 
 
+HOURS_CACHE_KEY = "segment_evidence:v1:hours"
+_BAR_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600}
+_HOURS_CACHE: dict[str, Any] = {}
+
+
+def _hour_entry(rows) -> dict[str, Any]:
+    """Compact, reusable result of one settled hour.
+
+    Bars of 1h or less lie inside one hour window, so they are summed per segment.
+    Longer bars can span windows; their rows are kept so they still count once.
+    """
+    agg: dict[str, list[int]] = {}
+    wide: list[list[Any]] = []
+    for asset, timeframe, strategy, direction, bar, outcome in rows:
+        win = int(outcome in WIN_SHADOW)
+        if str(timeframe or "") in _BAR_SECONDS:
+            key = segment_key(strategy, timeframe, direction)
+            cell = agg.setdefault(key, [0, 0])
+            cell[0] += 1
+            cell[1] += win
+        else:
+            wide.append([asset, timeframe, strategy, direction, int(bar) if bar is not None else None, win])
+    return {"agg": agg, "wide": wide}
+
+
 async def refresh_once() -> int:
     """Worker task: recompute and store the snapshot. Returns the number of segments.
 
-    Production 10-11 Nov 2026: the whole 60-day scan (1,440 hourly reads) ran in one
-    session with a 30 s budget. On a busy database it timed out every time, the
-    snapshot went 19 hours stale and the fail-closed setup filter rejected every
-    candidate. Each hour window now gets its own short session and a few retries;
-    the snapshot is stored only when every window was read (no partial evidence).
+    Production 10-11 Nov 2026 the snapshot went 19 h stale and the fail-closed setup
+    filter (deciding while ML is advisory) rejected every candidate. Causes, all handled:
+
+    1. the full 60-day scan (1,440 hourly reads) outlasted the worker's 15-minute
+       timeout on a busy database and was cancelled before storing, every time:
+       hours older than ``SEGMENT_EVIDENCE_SETTLED_HOURS`` (72; outcomes settled) are
+       read once and reused, so a refresh reads only the recent hours;
+    2. a restart lost that work: settled hours are kept in ``runtime_state``;
+    3. one 30 s session covered every read: each read has its own session and retries;
+    4. a failed store: retried;
+    nothing partial is ever stored (a failed read aborts the refresh).
     """
     import asyncio
-    from datetime import timedelta
+    from datetime import datetime, timedelta, timezone
 
     from sqlalchemy import text
 
@@ -285,40 +317,87 @@ async def refresh_once() -> int:
     from utils.timeutils import now_utc_naive
 
     lookback = max(1.0, _env_float("SEGMENT_EVIDENCE_LOOKBACK_DAYS", 60.0))
+    settled_hours = max(1.0, _env_float("SEGMENT_EVIDENCE_SETTLED_HOURS", 72.0))
     end = now_utc_naive()
-    since = end - timedelta(days=lookback)
-    segments: dict[str, dict[str, int]] = {}
-    seen: set[tuple] = set()
+    since = (end - timedelta(days=lookback)).replace(minute=0, second=0, microsecond=0)
+    settled_before = end - timedelta(hours=settled_hours)
 
-    async def _read(sql: str, params: dict, label: str):
+    async def _with_retry(work, label: str):
         for attempt in range(1, 4):
             try:
                 async with get_session(priority=DBPriority.BACKGROUND, label=label, timeout_seconds=60.0) as session:
-                    rows = (await session.execute(text(sql), params)).all()
-                    await session.rollback()
-                    return rows
+                    return await work(session)
             except Exception:
                 if attempt == 3:
                     raise
                 await asyncio.sleep(2.0 * attempt)
-        return []
 
+    async def _rows(sql: str, params: dict, label: str):
+        async def work(session):
+            rows = (await session.execute(text(sql), params)).all()
+            await session.rollback()
+            return rows
+        return await _with_retry(work, label)
+
+    if not _HOURS_CACHE:
+        async def load(session):
+            value = (await session.execute(text("SELECT value FROM runtime_state WHERE key = :k"),
+                                           {"k": HOURS_CACHE_KEY})).scalar_one_or_none()
+            await session.rollback()
+            return json.loads(value) if isinstance(value, str) else value
+        try:
+            stored = await _with_retry(load, "segment_evidence_refresh.cache_load")
+            if isinstance(stored, dict):
+                _HOURS_CACHE.update(stored.get("hours") or {})
+        except Exception:
+            pass
+
+    segments: dict[str, dict[str, int]] = {}
+    seen: set[tuple] = set()
+    cache_changed = False
+    read_hours = 0
     start = since
     while start < end:  # one hour per statement: index-friendly, proven on production
         stop = min(end, start + timedelta(hours=1))
-        for asset, timeframe, strategy, direction, bar, outcome in await _read(
-                SHADOW_WINDOW_SQL, {"start": start, "end": stop}, "segment_evidence_refresh.window"):
+        hour_key = start.replace(tzinfo=timezone.utc).isoformat()
+        entry = _HOURS_CACHE.get(hour_key) if stop <= settled_before else None
+        if entry is None:
+            entry = _hour_entry(await _rows(SHADOW_WINDOW_SQL, {"start": start, "end": stop},
+                                            "segment_evidence_refresh.window"))
+            read_hours += 1
+            if stop <= settled_before:
+                _HOURS_CACHE[hour_key] = entry
+                cache_changed = True
+        for key, (n, wins) in (entry.get("agg") or {}).items():
+            row = segments.setdefault(key, {"n": 0, "wins": 0})
+            row["n"] += int(n)
+            row["wins"] += int(wins)
+        for asset, timeframe, strategy, direction, bar, win in entry.get("wide") or []:
             bar_key = (asset, timeframe, strategy, direction, bar)
             if bar_key not in seen:
                 seen.add(bar_key)
-                _add(segments, strategy, timeframe, direction, 1, int(outcome in WIN_SHADOW))
+                _add(segments, strategy, timeframe, direction, 1, int(win))
         start = stop
-    for strategy, timeframe, direction, n, wins in await _read(OUTCOME_SQL, {"since": since},
+    for strategy, timeframe, direction, n, wins in await _rows(OUTCOME_SQL, {"since": since},
                                                                "segment_evidence_refresh.outcomes"):
         _add(segments, strategy, timeframe, direction, int(n or 0), int(wins or 0))
-    snapshot = {"computed_at": time.time(), "lookback_days": lookback, "segments": segments}
-    async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_refresh.store",
-                           timeout_seconds=30.0) as session:
+
+    oldest = since.replace(tzinfo=timezone.utc).isoformat()
+    for stale_key in [k for k in _HOURS_CACHE if k < oldest]:
+        _HOURS_CACHE.pop(stale_key, None)
+        cache_changed = True
+    snapshot = {"computed_at": time.time(), "lookback_days": lookback, "segments": segments,
+                "hours_read": read_hours}
+
+    async def store(session):
         await store_snapshot(session, snapshot)
+        if cache_changed:
+            await session.execute(
+                text("INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) "
+                     "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"),
+                {"k": HOURS_CACHE_KEY, "v": json.dumps({"saved_at": datetime.now(timezone.utc).isoformat(),
+                                                         "hours": _HOURS_CACHE})},
+            )
         await session.commit()
+    await _with_retry(store, "segment_evidence_refresh.store")
     return len(snapshot["segments"])

@@ -1294,14 +1294,26 @@ class Worker:
             interval = max(60.0, float(os.getenv("SEGMENT_EVIDENCE_REFRESH_SECONDS", "900") or 900))
         except ValueError:
             interval = 900.0
+        # 11 Nov 2026: the whole refresh was cancelled at ``interval`` (15 min) on a busy
+        # database, every time, so the snapshot never updated. The first (cold) refresh
+        # may take long; later ones read only recent hours. A failure retries soon.
+        try:
+            budget = max(interval, float(os.getenv("SEGMENT_EVIDENCE_REFRESH_BUDGET_SECONDS", "3600") or 3600))
+        except ValueError:
+            budget = 3600.0
         while not self._stop.is_set():
+            wait = interval
+            started = time.monotonic()
             try:
-                segments = await asyncio.wait_for(refresh_once(), timeout=interval)
-                logger.info("[worker] segment evidence refreshed segments=%s", segments)
+                segments = await asyncio.wait_for(refresh_once(), timeout=budget)
+                logger.info("[worker] segment evidence refreshed segments=%s elapsed_s=%.1f", segments,
+                            time.monotonic() - started)
             except Exception as exc:
-                logger.warning("[worker] segment evidence refresh failed: %s: %s", type(exc).__name__, str(exc)[:200])
+                wait = min(interval, 60.0)
+                logger.warning("[worker] segment evidence refresh failed: %s: %s (retry in %.0fs)",
+                               type(exc).__name__, str(exc)[:200], wait)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+                await asyncio.wait_for(self._stop.wait(), timeout=wait)
             except asyncio.TimeoutError:
                 continue
 

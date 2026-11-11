@@ -490,6 +490,37 @@ class SignalDeduplicator:
         return [max(cluster, key=_rank) for cluster in clusters]
 
 
+
+_BAR_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+                "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200, "1d": 86400, "1w": 604800}
+_REJECTION_BAR_SEEN: dict[tuple, float] = {}
+
+
+def _first_rejection_of_bar(asset: Any, timeframe: Any, direction: Any, features: Any) -> bool:
+    """True for the first engine rejection of a setup in its bar (11 Nov 2026).
+
+    The engine re-logs the same rejected setup on every scan (about once a minute),
+    yet training, segment evidence and the shadow labeller all count only the first
+    row per asset/timeframe/strategy/direction/bar. The duplicates (~98 %) cost a
+    write each and starved the labeller: ~1.5 % of rows got an outcome. One row per
+    bar keeps every distinct setup from every gate and loses no information.
+    ``SHADOW_REJECTION_DEDUP_ENABLED=false`` restores per-scan rows.
+    """
+    if str(os.getenv("SHADOW_REJECTION_DEDUP_ENABLED", "1") or "1").strip().lower() not in {"1", "true", "yes", "on"}:
+        return True
+    tf = str(timeframe or "").strip().lower()
+    seconds = _BAR_SECONDS.get(tf, 3600)
+    now = time.time()
+    strategy = str((features or {}).get("strategy_name") or "").strip().lower()
+    key = (str(asset or "").upper(), tf, str(direction or "").lower(), strategy, int(now // seconds))
+    if key in _REJECTION_BAR_SEEN:
+        return False
+    if len(_REJECTION_BAR_SEEN) > 50000:
+        for old in [k for k, expires in _REJECTION_BAR_SEEN.items() if expires < now]:
+            _REJECTION_BAR_SEEN.pop(old, None)
+    _REJECTION_BAR_SEEN[key] = now + seconds
+    return True
+
 class MLRejectionTracker:
     """Track all non-issued signals and label would-have outcomes for learning."""
 
@@ -816,6 +847,8 @@ class MLRejectionTracker:
         }:
             return False
 
+        if rejection_type == "engine" and not _first_rejection_of_bar(asset, timeframe, direction, features):
+            return False
         tp_value = self._parse_tp_value(take_profit_levels)
         if tp_value <= 0:
             tp_value = entry_price * 1.05 if entry_price else 0.0

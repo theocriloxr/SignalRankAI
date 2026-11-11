@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 
 HOUR_MS = 3_600_000
 
@@ -119,9 +120,10 @@ def test_segment_refresh_uses_short_sessions_and_survives_one_failure(monkeypatc
 
     monkeypatch.setattr(db_session, "get_session", fake_get_session)
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    se._HOURS_CACHE.clear()
     count = asyncio.run(se.refresh_once())
     assert count == 1
-    assert calls["window"] == 25  # 24 hours + one retry
+    assert calls["window"] in (25, 26)  # 24-25 hour-aligned windows + one retry
     assert calls["sessions"] >= 26  # one per read, plus the store
     assert '"ema trend|1h|long"' in stored["value"] or "ema trend" in stored["value"]
 
@@ -138,3 +140,138 @@ def test_drought_alert_names_a_stale_setup_evidence_snapshot(monkeypatch):
                "segment_evidence_age_hours": 19.3}
     signal_drought_alert(finding, post=lambda token, chat, text: sent.append(text) or True)
     assert sent and "19.3 h old" in sent[0]
+
+
+def test_settled_hours_are_read_once_and_reused(monkeypatch):
+    """A refresh after the first reads only the recent (unsettled) hours."""
+    import db.session as db_session
+    from services import segment_evidence as se
+
+    monkeypatch.setenv("SEGMENT_EVIDENCE_LOOKBACK_DAYS", "4")
+    monkeypatch.setenv("SEGMENT_EVIDENCE_SETTLED_HOURS", "24")
+    reads = {"n": 0}
+    stored = {}
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+        def scalar_one_or_none(self):
+            return None
+
+    class _Session:
+        async def execute(self, stmt, params=None):
+            sql = str(stmt)
+            if "ml_rejected_signals" in sql:
+                reads["n"] += 1
+                return _Result([("BTCUSDT", "5m", "ema trend", "long", reads["n"], "tp1"),
+                                ("BTCUSDT", "4h", "ema trend", "long", 7, "sl")])
+            if "INSERT INTO runtime_state" in sql:
+                stored[params.get("key") or params.get("k")] = params.get("value") or params.get("v")
+            return _Result([])
+
+        async def commit(self):
+            return None
+
+        async def rollback(self):
+            return None
+
+    @contextlib.asynccontextmanager
+    async def fake_get_session(**_kwargs):
+        yield _Session()
+
+    monkeypatch.setattr(db_session, "get_session", fake_get_session)
+    se._HOURS_CACHE.clear()
+    asyncio.run(se.refresh_once())
+    first = reads["n"]
+    asyncio.run(se.refresh_once())
+    second = reads["n"] - first
+    assert first >= 96 and second <= 26  # only the last ~24 hours re-read
+    assert se.HOURS_CACHE_KEY in stored
+    snapshot = json.loads(stored[se.SNAPSHOT_KEY])
+    # one 4h bar seen in every hour still counts once; every 5m bar counts
+    assert snapshot["segments"]["ema trend|4h|long"]["n"] == 1
+    assert snapshot["segments"]["ema trend|5m|long"]["n"] == first
+
+
+def test_ml_gate_mode_defaults_to_auto_and_keeps_the_evidence_guard(monkeypatch):
+    from engine.core import _evidence_filter_required, _ml_gate_advisory, _ml_gate_mode
+
+    monkeypatch.delenv("ML_GATE_MODE", raising=False)
+    assert _ml_gate_mode() == "auto"
+    assert _ml_gate_advisory() and _evidence_filter_required()
+    monkeypatch.setenv("ML_GATE_MODE", "enforce")
+    assert _ml_gate_mode() == "enforce" and not _ml_gate_advisory()
+    monkeypatch.setenv("ML_GATE_MODE", "nonsense")
+    assert _ml_gate_mode() == "auto"
+
+
+def test_uncertified_ml_probability_neither_vetoes_nor_moves_the_score():
+    from engine.scoring import score_signal
+
+    base = {"asset": "EURUSD", "entry": 1.10, "stop_loss": 1.09, "take_profit": [1.13], "confidence": 0.8,
+            "confluence": 70.0, "ml_probability": 0.01}
+    vetoed = score_signal(dict(base))
+    observed = score_signal(dict(base, ml_uncertified=True))
+    without_ml = score_signal({k: v for k, v in base.items() if k != "ml_probability"})
+    assert observed == without_ml and observed > 0
+    assert vetoed < observed  # a 0.01 uncertified probability no longer drags the score
+
+
+def test_scorer_names_the_check_behind_a_zero_score():
+    from engine.scoring import score_signal
+    from engine.ultra_quality_filter import UltraQualityFilter
+
+    sig = {"asset": "EURUSD", "entry": 1.10, "stop_loss": 1.09, "take_profit": [1.13], "confidence": 0.1,
+           "confluence": 70.0}
+    sig["score"] = score_signal(sig)
+    assert sig["score"] == 0.0 and sig["score_rejection"].startswith("confidence 0.10")
+    ok, reason, _ = UltraQualityFilter().apply_ultra_filter(sig)
+    assert not ok and reason == f"Score 0.0 ({sig['score_rejection']})"
+
+
+def test_one_training_row_per_setup_per_bar(monkeypatch):
+    from engine import signal_deduplicator as sd
+
+    sd._REJECTION_BAR_SEEN.clear()
+    f = {"strategy_name": "EMA Trend"}
+    assert sd._first_rejection_of_bar("BTCUSDT", "5m", "long", f)
+    assert not sd._first_rejection_of_bar("btcusdt", "5m", "LONG", f)  # same setup, same bar
+    assert sd._first_rejection_of_bar("BTCUSDT", "5m", "short", f)
+    assert sd._first_rejection_of_bar("BTCUSDT", "1h", "long", f)
+    assert sd._first_rejection_of_bar("BTCUSDT", "5m", "long", {"strategy_name": "ADX Trend"})
+    monkeypatch.setenv("SHADOW_REJECTION_DEDUP_ENABLED", "false")
+    assert sd._first_rejection_of_bar("BTCUSDT", "5m", "long", f)
+    sd._REJECTION_BAR_SEEN.clear()
+
+
+def test_data_audit_flags_leakage_label_noise_and_collinearity():
+    import numpy as np
+    import pandas as pd
+
+    from ml.data_audit import audit, blocks_promotion
+
+    rng = np.random.default_rng(7)
+    n = 1000
+    y = rng.integers(0, 2, n)
+    frame = pd.DataFrame({"noise": rng.normal(size=n), "const": np.ones(n)})
+    frame["twin"] = frame["noise"] * 2.0
+    clean = audit(frame, y, list(frame.columns))
+    assert clean["leak_suspects"] == [] and blocks_promotion(clean) == []
+    assert clean["constant_features"] == ["const"]
+    assert clean["collinear_pairs"][0][:2] == ["noise", "twin"]
+    assert len(clean["dataset_hash"]) == 16
+
+    leaky = frame.assign(future=y + rng.normal(scale=0.05, size=n))
+    report = audit(leaky, y, list(leaky.columns))
+    assert report["leak_suspects"][0][0] == "future"
+    assert blocks_promotion(report)[0].startswith("leak_suspects:future")
+
+    noisy = pd.DataFrame({"a": np.zeros(400), "b": np.zeros(400)})
+    labels = np.array([0, 1] * 200)
+    noisy_report = audit(noisy, labels, ["a", "b"])
+    assert noisy_report["label_conflict_share"] == 1.0
+    assert any(r.startswith("label_conflict_share") for r in blocks_promotion(noisy_report))

@@ -1736,6 +1736,9 @@ def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_
     return "unknown:no_score_recorded"
 
 
+_SEGMENT_SNAPSHOT_CACHE: Dict[str, Any] = {}
+
+
 async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     """Evidence-based setup filter (services/segment_evidence.py).
 
@@ -1752,9 +1755,25 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
 
     if not is_db_configured():
         return True, ""
-    async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_read") as session:
-        snapshot = await segment_evidence.load_snapshot(session)
-        await session.rollback()
+    # The snapshot changes every 15 min; re-read it at most once a minute, and keep the
+    # last good copy when a busy database refuses the read (11 Nov 2026) - it is only
+    # used while still current, so a stale snapshot still fails closed below.
+    import time as _time
+
+    cached = _SEGMENT_SNAPSHOT_CACHE.get("snapshot")
+    if cached is not None and _time.monotonic() - float(_SEGMENT_SNAPSHOT_CACHE.get("at") or 0) < 60.0:
+        snapshot = cached
+    else:
+        try:
+            async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_read") as session:
+                snapshot = await segment_evidence.load_snapshot(session)
+                await session.rollback()
+            if snapshot is not None:
+                _SEGMENT_SNAPSHOT_CACHE.update(snapshot=snapshot, at=_time.monotonic())
+        except Exception as exc:
+            logger.warning("[segment_evidence] snapshot read failed (%s); using the last good copy",
+                           type(exc).__name__)
+            snapshot = cached
     if not segment_evidence.snapshot_is_current(snapshot):
         # With the ML veto or score floor advisory this filter is the evidence guard: no current
         # evidence means no signal, not an unchecked one.
@@ -2387,11 +2406,26 @@ def _current_min_score_threshold() -> float:
     return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
 
 
+def _ml_gate_mode() -> str:
+    """``auto`` (default, 11 Nov 2026), ``advisory`` or ``enforce``.
+
+    auto: a candidate whose asset class has a certified specialist (it passed the
+    full promotion gate on that class's own untouched validation window) gets that
+    specialist's veto at its certified threshold. Every other candidate is scored
+    by an uncertified model, so the model observes only (the 2 Nov owner decision):
+    it neither vetoes nor feeds the 0-100 score, the setup-evidence filter and the
+    85 Ultra floor decide, and the signal stays paper-only.
+    """
+    mode = str(os.getenv("ML_GATE_MODE", "auto") or "auto").strip().lower()
+    return mode if mode in {"auto", "advisory", "enforce"} else "auto"
+
+
 def _ml_gate_advisory() -> bool:
-    """Advisory by owner decision (2 Nov 2026): the model scores every candidate
-    but does not veto; the setup-evidence filter decides. ML_GATE_MODE=enforce
-    restores the veto."""
-    return str(os.getenv("ML_GATE_MODE", "advisory") or "advisory").strip().lower() != "enforce"
+    """True unless every candidate is under an enforced ML veto (``ML_GATE_MODE=enforce``).
+
+    In ``auto`` some candidates are uncertified, so the setup-evidence filter stays
+    the required (fail-closed) guard."""
+    return _ml_gate_mode() != "enforce"
 
 
 def _evidence_filter_required() -> bool:
@@ -4388,7 +4422,24 @@ def main_loop(DRY_RUN: bool = False):
                                 _ml_log_err,
                             )
 
-                    if not approved and _ml_gate_advisory():
+                    _ml_mode = _ml_gate_mode()
+                    _ml_certified_by = getattr(ml_filter, "last_specialist", None) if ml_filter else None
+                    _ml_advisory_here = bool(ml_filter) and (
+                        _ml_mode == "advisory" or (_ml_mode == "auto" and not _ml_certified_by)
+                    )
+                    if _ml_advisory_here:
+                        # Uncertified model: its probability is evidence, not a decision.
+                        sig["ml_uncertified"] = True
+                        sig["ml_gate_mode"] = "advisory"
+                        if approved:
+                            sig["ml_recovery_mode"] = True
+                            sig["ml_recovery_reason"] = "ml_advisory_mode"
+                            sig["ml_recovery_live_execution_allowed"] = False
+                            sig["ml_advisory"] = "above_threshold_advisory"
+                    elif _ml_certified_by:
+                        sig["ml_gate_mode"] = "certified_specialist"
+                        sig["ml_certified_by"] = str(_ml_certified_by)
+                    if not approved and _ml_advisory_here:
                         # Owner decision (2 Nov 2026): the serving model rated
                         # stablecoins 0.9 and real coins below its 0.84 cut-off, so
                         # it observes instead of blocking. The candidate is still
@@ -5010,7 +5061,12 @@ def main_loop(DRY_RUN: bool = False):
                             sig["ultra_quality_score"] = float(qscore or 0.0)
                             if not should_trade:
                                 ultra_reason = f"ultra:{rejection}"
-                                if bool(sig.get("ml_recovery_mode")):
+                                # The 85 floor applies to every candidate (owner, 11 Nov 2026),
+                                # including ML-advisory ones; only starvation recovery keeps
+                                # Ultra advisory.
+                                if bool(sig.get("ml_recovery_mode")) and str(
+                                    sig.get("ml_recovery_reason") or ""
+                                ) == "serving_model_starvation":
                                     # Starvation recovery is explicitly PAPER ONLY. It already
                                     # passed a bounded structural score, confluence, raw-model
                                     # and challenger contract. Ultra remains useful evidence, but

@@ -10,6 +10,18 @@ import pytest
 from services import segment_evidence as se
 
 
+@pytest.fixture(autouse=True)
+def _fresh_engine_snapshot_cache():
+    """The engine keeps the snapshot for a minute (11 Nov 2026); each test sets its own."""
+    from engine import core
+
+    core._SEGMENT_SNAPSHOT_CACHE.clear()
+    se._HOURS_CACHE.clear()
+    yield
+    core._SEGMENT_SNAPSHOT_CACHE.clear()
+    se._HOURS_CACHE.clear()
+
+
 def _signal(**extra):
     return {"strategy_name": "MACD Momentum", "timeframe": "1d", "direction": "SELL", "entry": 100.0,
             "stop_loss": 102.0, "take_profit": [95.0, 92.0, 88.0], **extra}

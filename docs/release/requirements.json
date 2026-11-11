@@ -482,9 +482,9 @@
   "inventory_is_verification": false,
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
-    "documents": 395,
-    "requirements_and_source_sections": 10051,
-    "source_clauses": 60391,
+    "documents": 396,
+    "requirements_and_source_sections": 10059,
+    "source_clauses": 60456,
     "interfaces": {
       "ENDPOINT": 194,
       "API": 180,
@@ -2411,6 +2411,14 @@
       "line_count": 35,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 1
+    },
+    {
+      "path": "docs/ML_BOTTLENECK_CONTROLS.md",
+      "sha256_lf": "1e1b43d4893e5669de46bf26dca33e17f5b26b21aacfc7eadabd79b8bdd7345e",
+      "encoding": "utf-8-sig",
+      "line_count": 89,
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "section_count": 8
     },
     {
       "path": "docs/MOBILE_BUILD.md",
@@ -166071,6 +166079,426 @@
         {
           "line": 35,
           "text": "financial execution, hosted CI or a completed full staging soak."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-0901063760ab96e2",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:1",
+      "requirement": "ML bottleneck controls",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "4da3cd306237992957b73d3cfd7a607761a8747f11fe6ec366161c8f834e8f25",
+      "line_start": 1,
+      "line_end": 8,
+      "text": "# ML bottleneck controls\n\nOwner request, 11 Nov 2026: check every known ML and trading-ML failure mode\nagainst SignalRank and close the gaps. Each row says what protects against it\nand where. \"n/a\" means the failure mode belongs to a model type SignalRank does\nnot use. SignalRank uses gradient-boosted trees (XGBoost) on tabular features:\nno neural network, no generative model and no reinforcement learning.\n",
+      "clauses": [
+        {
+          "line": 1,
+          "text": "# ML bottleneck controls"
+        },
+        {
+          "line": 3,
+          "text": "Owner request, 11 Nov 2026: check every known ML and trading-ML failure mode"
+        },
+        {
+          "line": 4,
+          "text": "against SignalRank and close the gaps. Each row says what protects against it"
+        },
+        {
+          "line": 5,
+          "text": "and where. \"n/a\" means the failure mode belongs to a model type SignalRank does"
+        },
+        {
+          "line": 6,
+          "text": "not use. SignalRank uses gradient-boosted trees (XGBoost) on tabular features:"
+        },
+        {
+          "line": 7,
+          "text": "no neural network, no generative model and no reinforcement learning."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-30559dc6cab51bcf",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:9",
+      "requirement": "What the system trades",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "b70f7501227b7e376465bfb6142e8547500b820540b83ab5e4df5e472073edf0",
+      "line_start": 9,
+      "line_end": 18,
+      "text": "## What the system trades\n\n| | |\n|---|---|\n| Asset classes | crypto (OKX/Coinbase/Bybit spot pairs), FX majors and crosses, commodities (gold, silver, WTI), US stocks, indices |\n| Signal timeframes | 5m, 15m and 1h; 4h and 1d are used as higher-timeframe context only |\n| Trading style | intraday / day trades with TP1-TP3 ladders and a fixed stop |\n| ML role | **meta-labelling**: rule-based strategies propose a setup; the model predicts whether that setup reaches TP1 before its stop |\n| Execution | paper / signal delivery; live-money execution is off and outside this work |\n",
+      "clauses": [
+        {
+          "line": 9,
+          "text": "## What the system trades"
+        },
+        {
+          "line": 13,
+          "text": "| Asset classes | crypto (OKX/Coinbase/Bybit spot pairs), FX majors and crosses, commodities (gold, silver, WTI), US stocks, indices |"
+        },
+        {
+          "line": 14,
+          "text": "| Signal timeframes | 5m, 15m and 1h; 4h and 1d are used as higher-timeframe context only |"
+        },
+        {
+          "line": 15,
+          "text": "| Trading style | intraday / day trades with TP1-TP3 ladders and a fixed stop |"
+        },
+        {
+          "line": 16,
+          "text": "| ML role | **meta-labelling**: rule-based strategies propose a setup; the model predicts whether that setup reaches TP1 before its stop |"
+        },
+        {
+          "line": 17,
+          "text": "| Execution | paper / signal delivery; live-money execution is off and outside this work |"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-e6a19c15d6e06520",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:19",
+      "requirement": "Model fit and generalisation",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "064da24c7b2a8c06b04384d3c45d8bac1c043aa27a5d5598d97217c237f4e515",
+      "line_start": 19,
+      "line_end": 27,
+      "text": "## Model fit and generalisation\n\n| Failure | Control | Where |\n|---|---|---|\n| Overfitting | depth 4, min_child_weight 5, gamma, L1/L2, column sampling, early stopping on the calibration window; a stronger small-data profile under 4,000 rows; train-vs-validation AUC gap gate `ML_MAX_OVERFIT_GAP` 0.15 | `ml/train_model.py` |\n| Underfitting | AUC ≥ 0.60, balanced accuracy ≥ 0.55, positive recall ≥ 0.20, PR-AUC and expected-R gates: a model that learnt nothing is not promoted | `_promotion_quality_gate` |\n| Shortcut learning / spurious correlation | duplicates collapsed to one row per setup per bar; the asset class is recomputed from the symbol, not trusted from stored rows; per-class specialists each pass the full gate on their own class | `ml/train_model.py`, `ml/specialists.py` |\n| Catastrophic forgetting | n/a for retrained trees; the champion/challenger flow keeps the serving model until a challenger beats it on the same basis | `_champion_comparison_gate` |\n",
+      "clauses": [
+        {
+          "line": 19,
+          "text": "## Model fit and generalisation"
+        },
+        {
+          "line": 21,
+          "text": "| Failure | Control | Where |"
+        },
+        {
+          "line": 23,
+          "text": "| Overfitting | depth 4, min_child_weight 5, gamma, L1/L2, column sampling, early stopping on the calibration window; a stronger small-data profile under 4,000 rows; train-vs-validation AUC gap gate `ML_MAX_OVERFIT_GAP` 0.15 | `ml/train_model.py` |"
+        },
+        {
+          "line": 24,
+          "text": "| Underfitting | AUC ≥ 0.60, balanced accuracy ≥ 0.55, positive recall ≥ 0.20, PR-AUC and expected-R gates: a model that learnt nothing is not promoted | `_promotion_quality_gate` |"
+        },
+        {
+          "line": 25,
+          "text": "| Shortcut learning / spurious correlation | duplicates collapsed to one row per setup per bar; the asset class is recomputed from the symbol, not trusted from stored rows; per-class specialists each pass the full gate on their own class | `ml/train_model.py`, `ml/specialists.py` |"
+        },
+        {
+          "line": 26,
+          "text": "| Catastrophic forgetting | n/a for retrained trees; the champion/challenger flow keeps the serving model until a challenger beats it on the same basis | `_champion_comparison_gate` |"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-6c96604d50440e38",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:28",
+      "requirement": "Data quality",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "060161e9323d468d1c7a1d017a3ee5cff8b43d6aa705e865ddb1f0a8cec9691b",
+      "line_start": 28,
+      "line_end": 41,
+      "text": "## Data quality\n\n| Failure | Control | Where |\n|---|---|---|\n| Data leakage / look-ahead | chronological fit → calibration → untouched validation split with a 24 h purge and embargo; features from **closed bars only**, both in training (`_point_in_time_slice`) and live (`closed_candles`); new: any single feature with AUC ≥ 0.90 blocks promotion as a suspected leak | `ml/train_model.py`, `ml/features.py`, `ml/data_audit.py` |\n| Data drift / covariate shift | live feature vectors compared with the training baseline (PSI ≥ 0.25 flags a feature); prediction-starvation detection; scheduled daily retrain plus `/ml_retrain` | `ml/drift_monitor.py`, `ml/live_drift.py`, `runtime/analytics.py` |\n| Class imbalance | `scale_pos_weight`, imbalance-safe metrics (balanced accuracy, MCC, PR-AUC), threshold chosen on payoff-aware expected R | `ml/train_model.py`, `ml/metrics.py` |\n| Curse of dimensionality | rows per feature reported every run; specialists need ≥ 600 own rows | `ml/data_audit.py`, `ml/specialists.py` |\n| Label noise | outcomes come from price, not people; new: identical feature rows with opposite outcomes are counted, and a coin-flip share (> 50 % of duplicated rows) blocks promotion | `ml/data_audit.py` |\n| Selection / sampling bias | every rejected setup is tracked, not only delivered ones: ML-filtered setups and setups stopped by any later gate, including the final 85 check; one row per setup per bar since 11 Nov, so the labeller covers every distinct setup | `engine/signal_deduplicator.py`, `engine/shadow_outcome_worker.py` |\n| Survivorship bias | training uses the system's own logged setups, including assets later removed; external replay uses listed history only and is fit-only (never validation) | `ml/external_replay.py` |\n| Feedback loops | shadow (rejected) setups are labelled the same way as delivered ones, so the model also learns from what it blocked | shadow tracker |\n| Collinearity / dead features | new: near-duplicate (abs(r) ≥ 0.98) and constant columns reported every run | `ml/data_audit.py` |\n",
+      "clauses": [
+        {
+          "line": 28,
+          "text": "## Data quality"
+        },
+        {
+          "line": 30,
+          "text": "| Failure | Control | Where |"
+        },
+        {
+          "line": 32,
+          "text": "| Data leakage / look-ahead | chronological fit → calibration → untouched validation split with a 24 h purge and embargo; features from **closed bars only**, both in training (`_point_in_time_slice`) and live (`closed_candles`); new: any single feature with AUC ≥ 0.90 blocks promotion as a suspected leak | `ml/train_model.py`, `ml/features.py`, `ml/data_audit.py` |"
+        },
+        {
+          "line": 33,
+          "text": "| Data drift / covariate shift | live feature vectors compared with the training baseline (PSI ≥ 0.25 flags a feature); prediction-starvation detection; scheduled daily retrain plus `/ml_retrain` | `ml/drift_monitor.py`, `ml/live_drift.py`, `runtime/analytics.py` |"
+        },
+        {
+          "line": 34,
+          "text": "| Class imbalance | `scale_pos_weight`, imbalance-safe metrics (balanced accuracy, MCC, PR-AUC), threshold chosen on payoff-aware expected R | `ml/train_model.py`, `ml/metrics.py` |"
+        },
+        {
+          "line": 35,
+          "text": "| Curse of dimensionality | rows per feature reported every run; specialists need ≥ 600 own rows | `ml/data_audit.py`, `ml/specialists.py` |"
+        },
+        {
+          "line": 36,
+          "text": "| Label noise | outcomes come from price, not people; new: identical feature rows with opposite outcomes are counted, and a coin-flip share (> 50 % of duplicated rows) blocks promotion | `ml/data_audit.py` |"
+        },
+        {
+          "line": 37,
+          "text": "| Selection / sampling bias | every rejected setup is tracked, not only delivered ones: ML-filtered setups and setups stopped by any later gate, including the final 85 check; one row per setup per bar since 11 Nov, so the labeller covers every distinct setup | `engine/signal_deduplicator.py`, `engine/shadow_outcome_worker.py` |"
+        },
+        {
+          "line": 38,
+          "text": "| Survivorship bias | training uses the system's own logged setups, including assets later removed; external replay uses listed history only and is fit-only (never validation) | `ml/external_replay.py` |"
+        },
+        {
+          "line": 39,
+          "text": "| Feedback loops | shadow (rejected) setups are labelled the same way as delivered ones, so the model also learns from what it blocked | shadow tracker |"
+        },
+        {
+          "line": 40,
+          "text": "| Collinearity / dead features | new: near-duplicate (abs(r) ≥ 0.98) and constant columns reported every run | `ml/data_audit.py` |"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-020579e2fcf1c8dd",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:42",
+      "requirement": "Calibration and deployment",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "03fe3c3c4cefc94516d49f9982e89dc7fd444c3dfeaaec56b9a8657e3b3d4543",
+      "line_start": 42,
+      "line_end": 51,
+      "text": "## Calibration and deployment\n\n| Failure | Control | Where |\n|---|---|---|\n| Calibration drift / overconfidence | isotonic calibration fitted on its own window, validated by Brier and ECE on the untouched window, per segment; an uncalibrated model is not certified | `ml/train_model.py` |\n| Training-serving skew | live scoring and the shadow scorer share one feature builder (`extract_features` / `build_model_feature_values`); training recomputes candle features from stored candles under the same closed-bar rule; feature-schema migration with strict mode; the live-vs-training drift check catches any remaining skew | `ml/features.py`, `engine/ml.py`, `ml/train_model.py` |\n| Silent pipeline failures | dataset log per run (`[ml_dataset]`, `[ml_data_audit]`), last run kept in `runtime_state` (`ml:last_training_run`), stale-model and drought owner alerts, setup-evidence staleness named in the drought alert | `ml/lifecycle_status.py`, `observability/owner_alerts.py` |\n| Inference latency / memory | small boosted trees (milliseconds per score) | n/a |\n| Reproducibility / experiment sprawl | new: dataset hash and code commit stored with every run's metrics; artifacts versioned in `ml_model_artifacts` with a SHA-256 hash | `ml/data_audit.py`, `ml/model_registry.py` |\n",
+      "clauses": [
+        {
+          "line": 42,
+          "text": "## Calibration and deployment"
+        },
+        {
+          "line": 44,
+          "text": "| Failure | Control | Where |"
+        },
+        {
+          "line": 46,
+          "text": "| Calibration drift / overconfidence | isotonic calibration fitted on its own window, validated by Brier and ECE on the untouched window, per segment; an uncalibrated model is not certified | `ml/train_model.py` |"
+        },
+        {
+          "line": 47,
+          "text": "| Training-serving skew | live scoring and the shadow scorer share one feature builder (`extract_features` / `build_model_feature_values`); training recomputes candle features from stored candles under the same closed-bar rule; feature-schema migration with strict mode; the live-vs-training drift check catches any remaining skew | `ml/features.py`, `engine/ml.py`, `ml/train_model.py` |"
+        },
+        {
+          "line": 48,
+          "text": "| Silent pipeline failures | dataset log per run (`[ml_dataset]`, `[ml_data_audit]`), last run kept in `runtime_state` (`ml:last_training_run`), stale-model and drought owner alerts, setup-evidence staleness named in the drought alert | `ml/lifecycle_status.py`, `observability/owner_alerts.py` |"
+        },
+        {
+          "line": 49,
+          "text": "| Inference latency / memory | small boosted trees (milliseconds per score) | n/a |"
+        },
+        {
+          "line": 50,
+          "text": "| Reproducibility / experiment sprawl | new: dataset hash and code commit stored with every run's metrics; artifacts versioned in `ml_model_artifacts` with a SHA-256 hash | `ml/data_audit.py`, `ml/model_registry.py` |"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-486ead6fc9d09c2a",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:52",
+      "requirement": "Trading-specific",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "7dd4bded25a8db2fb9a1941346b8e3f74b2cee79b7b5f81dc939edd0b849041c",
+      "line_start": 52,
+      "line_end": 63,
+      "text": "## Trading-specific\n\n| Failure | Control | Where |\n|---|---|---|\n| Fixed-horizon labels | triple-barrier labels: TP1 (win), stop (loss) or expiry, whichever comes first | shadow tracker, `ml/external_replay.py` |\n| Random CV leakage | no random or K-fold splits; purged, embargoed chronological windows | `ml/train_model.py` |\n| Backtest overfitting / multiple testing | the per-asset scorecard decides on a 99 % interval (about 1,180 cells tested); the setup-evidence filter uses a Wilson lower bound against each plan's own break-even; a model is never promoted on its training window | `services/strategy_scorecard.py`, `services/segment_evidence.py` |\n| Expectancy illusion | expected R uses each signal's own TP1 reward, not a fixed 2R | `ml/metrics.py` |\n| Regime shifts | regime features and a macro no-trade zone; specialists per asset class; scheduled retrain | engine, `ml/specialists.py` |\n| Alpha decay | strategy health baselines with decay limits; 60-day setup evidence; per-asset scorecard | `services/strategy_scorecard.py`, segment evidence |\n| Transaction costs / slippage | stop-width, R:R and liquidity gates per class; Asia-session liquidity block | `core/signal_quality_gate.py` |\n",
+      "clauses": [
+        {
+          "line": 52,
+          "text": "## Trading-specific"
+        },
+        {
+          "line": 54,
+          "text": "| Failure | Control | Where |"
+        },
+        {
+          "line": 56,
+          "text": "| Fixed-horizon labels | triple-barrier labels: TP1 (win), stop (loss) or expiry, whichever comes first | shadow tracker, `ml/external_replay.py` |"
+        },
+        {
+          "line": 57,
+          "text": "| Random CV leakage | no random or K-fold splits; purged, embargoed chronological windows | `ml/train_model.py` |"
+        },
+        {
+          "line": 58,
+          "text": "| Backtest overfitting / multiple testing | the per-asset scorecard decides on a 99 % interval (about 1,180 cells tested); the setup-evidence filter uses a Wilson lower bound against each plan's own break-even; a model is never promoted on its training window | `services/strategy_scorecard.py`, `services/segment_evidence.py` |"
+        },
+        {
+          "line": 59,
+          "text": "| Expectancy illusion | expected R uses each signal's own TP1 reward, not a fixed 2R | `ml/metrics.py` |"
+        },
+        {
+          "line": 60,
+          "text": "| Regime shifts | regime features and a macro no-trade zone; specialists per asset class; scheduled retrain | engine, `ml/specialists.py` |"
+        },
+        {
+          "line": 61,
+          "text": "| Alpha decay | strategy health baselines with decay limits; 60-day setup evidence; per-asset scorecard | `services/strategy_scorecard.py`, segment evidence |"
+        },
+        {
+          "line": 62,
+          "text": "| Transaction costs / slippage | stop-width, R:R and liquidity gates per class; Asia-session liquidity block | `core/signal_quality_gate.py` |"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-b78d6fe577d03b92",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:64",
+      "requirement": "How the ML gate decides (since 11 Nov 2026)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "6dae78c0933f3356386d1907240bcc29c6e77eb444779abf0e6754a93b636929",
+      "line_start": 64,
+      "line_end": 76,
+      "text": "## How the ML gate decides (since 11 Nov 2026)\n\n`ML_GATE_MODE=auto` (default):\n\n- **Certified class:** a class-specific model passed the full gate on that\n  class's untouched validation window. It vetoes at its own certified threshold.\n- **Uncertified:** the model only observes. It neither vetoes nor feeds the\n  0-100 score. The setup-evidence filter (fail-closed) and the 85 Ultra floor\n  decide, and the signal stays paper-only.\n\n`advisory` treats every candidate as uncertified; `enforce` gives the global\nmodel the veto everywhere.\n",
+      "clauses": [
+        {
+          "line": 64,
+          "text": "## How the ML gate decides (since 11 Nov 2026)"
+        },
+        {
+          "line": 66,
+          "text": "`ML_GATE_MODE=auto` (default):"
+        },
+        {
+          "line": 68,
+          "text": "- **Certified class:** a class-specific model passed the full gate on that"
+        },
+        {
+          "line": 69,
+          "text": "  class's untouched validation window. It vetoes at its own certified threshold."
+        },
+        {
+          "line": 70,
+          "text": "- **Uncertified:** the model only observes. It neither vetoes nor feeds the"
+        },
+        {
+          "line": 71,
+          "text": "  0-100 score. The setup-evidence filter (fail-closed) and the 85 Ultra floor"
+        },
+        {
+          "line": 72,
+          "text": "  decide, and the signal stays paper-only."
+        },
+        {
+          "line": 74,
+          "text": "`advisory` treats every candidate as uncertified; `enforce` gives the global"
+        },
+        {
+          "line": 75,
+          "text": "model the veto everywhere."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-a60b10ad9864c8a0",
+      "kind": "SOURCE",
+      "source": "docs/ML_BOTTLENECK_CONTROLS.md:77",
+      "requirement": "Not applicable",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "30510ce5b00b0e447d3b37e1eed57741cf6a953e07d90de05ec46972ad8ffdfb",
+      "line_start": 77,
+      "line_end": 89,
+      "text": "## Not applicable\n\nThe following failure modes don't apply here because the system doesn't use\nthese technologies:\n\n- vanishing or exploding gradients, dead neurons, mode collapse, saddle points,\n  internal covariate shift and FP16 underflow (no neural network);\n- context rot, hallucination and model collapse from synthetic data (the AI\n  review is advisory and never trained on its own output);\n- distributed-training stalls and hardware bit-flips (single-node CPU\n  training);\n- reward hacking (no reinforcement learning);\n- edge-device throttling (server-side only).",
+      "clauses": [
+        {
+          "line": 77,
+          "text": "## Not applicable"
+        },
+        {
+          "line": 79,
+          "text": "The following failure modes don't apply here because the system doesn't use"
+        },
+        {
+          "line": 80,
+          "text": "these technologies:"
+        },
+        {
+          "line": 82,
+          "text": "- vanishing or exploding gradients, dead neurons, mode collapse, saddle points,"
+        },
+        {
+          "line": 83,
+          "text": "  internal covariate shift and FP16 underflow (no neural network);"
+        },
+        {
+          "line": 84,
+          "text": "- context rot, hallucination and model collapse from synthetic data (the AI"
+        },
+        {
+          "line": 85,
+          "text": "  review is advisory and never trained on its own output);"
+        },
+        {
+          "line": 86,
+          "text": "- distributed-training stalls and hardware bit-flips (single-node CPU"
+        },
+        {
+          "line": 87,
+          "text": "  training);"
+        },
+        {
+          "line": 88,
+          "text": "- reward hacking (no reinforcement learning);"
+        },
+        {
+          "line": 89,
+          "text": "- edge-device throttling (server-side only)."
         }
       ]
     },
