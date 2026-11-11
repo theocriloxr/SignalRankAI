@@ -224,6 +224,100 @@ def historical_hit_rate(highs: list[float], lows: list[float], closes: list[floa
             "rate": (wins / decided) if decided else None, "lower_95": wilson_lower(wins, decided)}
 
 
+def _expectancy(hit: dict[str, Any], reward_r: float) -> Optional[float]:
+    """Expected R per trade from the cautious (95 % lower bound) hit rate; a loss costs 1R."""
+    lower = hit.get("lower_95")
+    if lower is None or not hit.get("samples"):
+        return None
+    return lower * reward_r - (1.0 - lower)
+
+
+def suggest_adjustments(idea: Idea, highs: list[float], lows: list[float], closes: list[float], *,
+                        atr_value: float, price: float, horizon: int, trend: int) -> dict[str, Any]:
+    """Advice that changes the trade (owner request, 11 Nov 2026), not just a verdict.
+
+    Every stop distance from 0.75 to 2 ATR (and the user's own) is tried against
+    first targets from 0.75R to 3R on this market's recent history; each pair is
+    scored by its expected R at the cautious 95 % lower bound of "target before
+    stop". Levels are suggested only when they beat the user's plan by at least
+    0.05R with enough samples; otherwise the plan is kept. Entry and direction
+    are the user's; a far entry or a counter-trend side is advice, not a change.
+    """
+    long_side = idea.direction == "long"
+    risk = abs(idea.entry - idea.stop_loss)
+    user_r = abs(idea.take_profit[0] - idea.entry) / risk if risk else 0.0
+    min_samples = max(20, _env_int("IDEA_SUGGEST_MIN_SAMPLES", 40))
+
+    def evaluate(stop_dist: float, reward_r: float) -> tuple[Optional[float], dict[str, Any]]:
+        hit = historical_hit_rate(highs, lows, closes, direction=idea.direction,
+                                  target_pct=stop_dist * reward_r / idea.entry, stop_pct=stop_dist / idea.entry,
+                                  horizon=horizon)
+        if (hit.get("samples") or 0) < min_samples:
+            return None, hit
+        return _expectancy(hit, reward_r), hit
+
+    current_exp, current_hit = evaluate(risk, user_r)
+    best = {"exp": current_exp, "stop": risk, "r": user_r, "hit": current_hit}
+    stops = sorted({risk, *((atr_value * m) for m in (0.75, 1.0, 1.25, 1.5, 2.0) if atr_value)})
+    for stop_dist in stops:
+        if stop_dist <= 0:
+            continue
+        for reward_r in (0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0):
+            exp, hit = evaluate(stop_dist, reward_r)
+            if exp is not None and (best["exp"] is None or exp > best["exp"]):
+                best = {"exp": exp, "stop": stop_dist, "r": reward_r, "hit": hit}
+
+    advice: list[str] = []
+    changed = (best["exp"] is not None and (current_exp is None or best["exp"] >= current_exp + 0.05)
+               and (abs(best["stop"] - risk) > 1e-12 or abs(best["r"] - user_r) > 1e-9))
+    entry_atr = abs(idea.entry - price) / atr_value if atr_value else None
+    if entry_atr is not None and entry_atr > 3:
+        advice.append(f"Your entry is {entry_atr:.1f} ATR from the price: use a limit order, or enter nearer "
+                      f"{price:,.6g} if the setup is still valid there.")
+    if (trend == -1 and long_side) or (trend == 1 and not long_side):
+        advice.append("You are trading against the trend: wait for a break of structure in your direction, "
+                      "or take a smaller size.")
+    if best["exp"] is not None and best["exp"] <= 0:
+        advice.append("No stop/target combination had a positive expectancy on recent history: "
+                      "consider skipping this trade or waiting for a better price.")
+    if not changed:
+        if current_exp is not None and current_exp > 0:
+            advice.append("Your stop and target are already among the best on recent history; no change suggested.")
+        return {"changed": False, "advice": advice,
+                "expected_r_now": None if current_exp is None else round(current_exp, 3)}
+
+    stop = idea.entry - best["stop"] if long_side else idea.entry + best["stop"]
+    step = best["stop"] * best["r"]
+    sign = 1 if long_side else -1
+    targets = [idea.entry + sign * step]
+    # Later targets keep the user's ladder spacing (relative to TP1), or 1.6x / 2.5x TP1.
+    ratios = [abs(t - idea.entry) / abs(idea.take_profit[0] - idea.entry) for t in idea.take_profit[1:]
+              if abs(idea.take_profit[0] - idea.entry) > 0] or [1.6, 2.5]
+    targets += [idea.entry + sign * step * max(1.05, r) for r in ratios[:2]]
+    why = []
+    if abs(best["stop"] - risk) > 1e-12:
+        why.append(f"stop {best['stop'] / atr_value:.2f} ATR away instead of {risk / atr_value:.2f}" if atr_value
+                   else "a different stop distance")
+    if abs(best["r"] - user_r) > 1e-9:
+        why.append(f"TP1 at {best['r']:.2f}R instead of {user_r:.2f}R")
+    advice.insert(0, "Suggested change: " + " and ".join(why) + f". Recent history: TP1 first "
+                  f"{(best['hit'].get('rate') or 0) * 100:.0f}% of {best['hit'].get('samples')} times, expected "
+                  f"{best['exp']:+.2f}R per trade (cautious) vs "
+                  f"{'n/a' if current_exp is None else f'{current_exp:+.2f}R'} for your levels.")
+    digits = 6 if idea.entry < 10 else 5 if idea.entry < 1000 else 2
+    return {
+        "changed": True,
+        "advice": advice,
+        "entry": idea.entry,
+        "stop_loss": round(stop, digits),
+        "take_profit": [round(t, digits) for t in targets],
+        "risk_reward_tp1": round(best["r"], 2),
+        "probability_tp1": None if best["hit"].get("rate") is None else round(best["hit"]["rate"], 4),
+        "expected_r_suggested": round(best["exp"], 3),
+        "expected_r_now": None if current_exp is None else round(current_exp, 3),
+    }
+
+
 def _verdict(prob_lower: Optional[float], breakeven: float, warnings: list[str]) -> str:
     if prob_lower is None:
         return "unrated"
@@ -319,6 +413,13 @@ async def analyse(idea: Idea, *, candles: Optional[list[Any]] = None, session: A
         except Exception as exc:
             logger.info("[trade_ideas] evidence unavailable asset=%s error=%s", idea.asset, type(exc).__name__)
 
+    try:
+        suggestion = await asyncio.to_thread(suggest_adjustments, idea, highs, lows, closes, atr_value=atr_value,
+                                             price=price, horizon=horizon, trend=trend)
+    except Exception as exc:  # advice must never break the analysis
+        logger.info("[trade_ideas] suggestion unavailable asset=%s error=%s", idea.asset, type(exc).__name__)
+        suggestion = {"changed": False, "advice": []}
+
     plan = build_order_plan({"asset": idea.asset, "direction": idea.direction, "entry": idea.entry,
                              "stop_loss": idea.stop_loss, "take_profit": idea.take_profit, "current_price": price})
     atr_rel = (atr_value / price) if price else 0.0
@@ -347,6 +448,7 @@ async def analyse(idea: Idea, *, candles: Optional[list[Any]] = None, session: A
         "warnings": [w.lstrip("! ") for w in warnings],
         "notes": notes,
         "order_plan": plan,
+        "suggestion": suggestion,
         "evidence": evidence,
         "features": features,
         "disclaimer": "An estimate from recent price history, not advice or a guarantee. Markets change; size so a loss is affordable.",
@@ -619,6 +721,17 @@ def telegram_text(result: dict[str, Any]) -> str:
         lines.append(f"⚠️ {w}")
     for n in result["notes"]:
         lines.append(f"• {n}")
+    suggestion = result.get("suggestion") or {}
+    if suggestion.get("advice"):
+        lines.append("")
+        lines.append("💡 How to improve it")
+        for item in suggestion["advice"]:
+            lines.append(f"• {item}")
+        if suggestion.get("changed"):
+            tps = " / ".join(f"{t:,.6g}" for t in suggestion.get("take_profit") or [])
+            lines.append(f"Suggested levels: entry {suggestion['entry']:,.6g} • stop {suggestion['stop_loss']:,.6g} "
+                         f"• TP {tps}")
+            lines.append("To check them: /check_trade with these levels.")
     ev = result.get("evidence") or {}
     if ev.get("engine_closed_60d"):
         lines.append(f"📊 SignalRank signals on {result['asset']}, 60 days: {ev['engine_closed_60d']} closed, "

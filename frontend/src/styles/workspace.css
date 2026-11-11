@@ -300,4 +300,7 @@ html:has(.ws-drawer[open]) { overflow: hidden; } /* no scrolling behind the open
 .tc-warnings, .tc-notes { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: var(--text-sm); }
 .tc-warnings li { color: var(--warning); }
 .tc-notes li { color: var(--text-2); }
+.tc-suggestion { display: grid; gap: 8px; border-left: 3px solid var(--accent, var(--positive)); }
+.tc-suggestion h3 { margin: 0; font-size: var(--text-md, 1rem); }
+.tc-suggestion ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: var(--text-sm); }
 .tc-sub { font-size: var(--text-lg); margin-top: var(--space-4); }

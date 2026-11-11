@@ -23,7 +23,30 @@ function pct(value: unknown, digits = 0): string {
   return n === null ? "—" : `${(n * 100).toFixed(digits)}%`;
 }
 
-function Result({ data }: { data: Row }) {
+type Levels = { entry: number; stop_loss: number; take_profit: number[] };
+
+/** Advice that changes the trade (11 Nov 2026): better stop/target levels from recent history. */
+function Suggestion({ data, onUse }: { data: Row; onUse?: (levels: Levels) => void }) {
+  const s = record(data.suggestion);
+  const advice = Array.isArray(s.advice) ? (s.advice as unknown[]).map(String) : [];
+  if (!advice.length) return null;
+  const tps = Array.isArray(s.take_profit) ? (s.take_profit as unknown[]).map(finite).filter((v): v is number => v !== null) : [];
+  const entry = finite(s.entry), stop = finite(s.stop_loss);
+  return <div className="ui-card tc-suggestion" aria-label="How to improve this trade">
+    <h3>How to improve this trade</h3>
+    <ul>{advice.map((a, i) => <li key={i}>{a}</li>)}</ul>
+    {s.changed === true && entry !== null && stop !== null && tps.length > 0 && <>
+      <dl className="ui-kv">
+        <div className="ui-kv-row"><dt>Suggested stop</dt><dd>{numberLabel(stop, 5)}</dd></div>
+        <div className="ui-kv-row"><dt>Suggested targets</dt><dd>{tps.map(t => numberLabel(t, 5)).join(" / ")}</dd></div>
+        <div className="ui-kv-row"><dt>Expected per trade (cautious)</dt><dd>{numberLabel(finite(s.expected_r_suggested), 2)}R vs {numberLabel(finite(s.expected_r_now), 2)}R now</dd></div>
+      </dl>
+      {onUse && <button type="button" className="ui-btn ui-btn--secondary" onClick={() => onUse({ entry, stop_loss: stop, take_profit: tps })}>Check these levels</button>}
+    </>}
+  </div>;
+}
+
+function Result({ data, onUse }: { data: Row; onUse?: (levels: Levels) => void }) {
   const verdict = verdicts[display(data.verdict, "unrated")] ?? verdicts.unrated;
   const hist = rows(data.historical);
   const rr = Array.isArray(data.risk_reward) ? (data.risk_reward as unknown[]).map(finite) : [];
@@ -45,6 +68,7 @@ function Result({ data }: { data: Row }) {
     {hist.length > 0 && <div className="ui-table-wrap"><table className="ui-table tc-table"><thead><tr><th>Target</th><th>R/R</th><th>Hit first</th><th>Worst case</th><th>Samples</th></tr></thead>
       <tbody>{hist.map((h, i) => <tr key={i}><th>TP{display(h.target)}</th><td>{numberLabel(rr[i], 2)}</td><td>{pct(h.rate)}</td>
         <td>{pct(h.lower_95)}</td><td>{display(h.samples)}</td></tr>)}</tbody></table></div>}
+    <Suggestion data={data} onUse={onUse}/>
     {Array.isArray(data.warnings) && data.warnings.length > 0 && <ul className="tc-warnings">
       {(data.warnings as unknown[]).map((w, i) => <li key={i}>{String(w)}</li>)}</ul>}
     {Array.isArray(data.notes) && data.notes.length > 0 && <ul className="tc-notes">{(data.notes as unknown[]).map((n, i) => <li key={i}>{String(n)}</li>)}</ul>}
@@ -62,19 +86,30 @@ export function TradeCheck({ data, onChanged }: { data: Row; onChanged: () => vo
   const [result, setResult] = useState<Row | null>(null);
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value });
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function check(values: typeof form) {
     setBusy(true); setError(""); setResult(null);
     try {
-      const take_profit = [form.tp1, form.tp2, form.tp3].map(Number).filter(v => Number.isFinite(v) && v > 0);
+      const take_profit = [values.tp1, values.tp2, values.tp3].map(Number).filter(v => Number.isFinite(v) && v > 0);
       const r = await client.POST("/api/v1/platform/trade-ideas", { body: {
-        asset: form.asset.trim().toUpperCase(), direction: form.direction, entry: Number(form.entry),
-        stop_loss: Number(form.stop_loss), take_profit, timeframe: form.timeframe, notes: form.notes,
+        asset: values.asset.trim().toUpperCase(), direction: values.direction, entry: Number(values.entry),
+        stop_loss: Number(values.stop_loss), take_profit, timeframe: values.timeframe, notes: values.notes,
       } });
       if (r.response.ok && r.data) { setResult(record(r.data)); onChanged(); }
       else setError(display(record(r.error).detail, "That trade couldn't be checked. Check the numbers and try again."));
     } catch { setError("That trade couldn't be checked right now. Try again shortly."); }
     finally { setBusy(false); }
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    void check(form);
+  }
+
+  function applyLevels(levels: Levels) {
+    const next = { ...form, entry: String(levels.entry), stop_loss: String(levels.stop_loss),
+      tp1: String(levels.take_profit[0] ?? ""), tp2: String(levels.take_profit[1] ?? ""), tp3: String(levels.take_profit[2] ?? "") };
+    setForm(next);
+    void check(next);
   }
 
   const ideas = rows(data.ideas);
@@ -104,7 +139,7 @@ export function TradeCheck({ data, onChanged }: { data: Row; onChanged: () => vo
         <span className="ws-aside">{display(data.used_today, "0")}/{display(data.daily_limit, "—")} checks used today</span></div>
       {error && <p role="alert" className="ui-feedback ui-feedback--error">{error}</p>}
     </form>
-    {result && <Result data={result}/>}
+    {result && <Result data={result} onUse={applyLevels}/>}
     <h2 className="tc-sub">Your checked ideas</h2>
     {finite(data.resolved) ? <p className="ws-aside">Resolved: {display(data.resolved)} · TP1 or better: {display(data.tp1_or_better)} ({pct(data.hit_rate)})</p> : null}
     {ideas.length ? <div className="ui-table-wrap"><table className="ui-table tc-table">

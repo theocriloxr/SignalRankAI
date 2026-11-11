@@ -6820,7 +6820,7 @@
       "name": "IDEA_TELEGRAM_DM",
       "production_example_default": null,
       "read_locations": [
-        "services/trade_ideas.py:573"
+        "services/trade_ideas.py:675"
       ],
       "required_by_code": true,
       "sensitive": false

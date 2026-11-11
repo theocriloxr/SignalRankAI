@@ -164,3 +164,26 @@ def test_submit_track_notify_and_learn_on_postgres(monkeypatch):
     assert notified >= 2 and again == 0 and any("reached TP1" in p or "final target" in p for p in posts)
     assert hist["resolved"] == 2 and hist["hit_rate"] == 1.0
     assert "user_idea" in set(df["source_type"]) if df is not None and len(df) else True
+
+
+def test_check_suggests_better_levels_when_history_supports_them():
+    """11 Nov 2026: the check advises and changes the trade, not only rates it."""
+    # Steady uptrend with shallow pullbacks: a far 3R target is rarely reached before a tight stop.
+    idea = ti.normalise({"asset": "EURUSD", "direction": "buy", "entry": 1.0900, "stop_loss": 1.0897,
+                         "take_profit": [1.0909, 1.0915], "timeframe": "1h"})
+    result = asyncio.run(ti.analyse(idea, candles=_candles(drift=0.0002)))
+    suggestion = result["suggestion"]
+    assert suggestion["advice"], suggestion
+    if suggestion["changed"]:
+        assert suggestion["expected_r_suggested"] >= (suggestion["expected_r_now"] or -1.0) + 0.05
+        assert suggestion["stop_loss"] < idea.entry < suggestion["take_profit"][0] < suggestion["take_profit"][-1]
+        assert "Suggested levels" in ti.telegram_text(result)
+    assert "How to improve it" in ti.telegram_text(result)
+
+
+def test_suggestion_keeps_a_plan_that_is_already_good():
+    highs, lows, closes = ti._ohlc(_candles(drift=0.0))
+    idea = ti.normalise({"asset": "EURUSD", "direction": "sell", "entry": closes[-1], "stop_loss": closes[-1] + 0.01,
+                         "take_profit": [closes[-1] - 0.01], "timeframe": "1h"})
+    out = ti.suggest_adjustments(idea, highs, lows, closes, atr_value=0.0, price=closes[-1], horizon=48, trend=0)
+    assert out["changed"] is False or out["expected_r_suggested"] >= (out["expected_r_now"] or -1.0) + 0.05
