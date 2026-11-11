@@ -2858,6 +2858,14 @@ def main_loop(DRY_RUN: bool = False):
 
         macro: Dict[str, float] = {}
         try:
+            # Schema v5 public series (ml/alt_data.py): refresh the in-process cache that
+            # live feature building reads; each series reloads at most every 6 h.
+            from ml.alt_data import refresh as _alt_refresh
+
+            await asyncio.wait_for(asyncio.to_thread(_alt_refresh), timeout=60.0)
+        except Exception:
+            pass
+        try:
             from services.economic_calendar import get_macro_news_context
 
             news_ctx = await get_macro_news_context()

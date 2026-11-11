@@ -420,8 +420,11 @@ def _schema_promotion_gate(
             "source": source,
         }
 
-    authorized = _env_bool("ML_ALLOW_SCHEMA_VERSION_PROMOTION", False)
-    certification_id = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or "").strip()
+    # Owner authorization (11 Nov 2026): a candidate on the newer feature schema (v4/v5) may
+    # replace the v3 champion. It still has to clear the quality gate, the champion
+    # comparison, the forward proof and the owner's /ml_candidate_promote CONFIRM.
+    authorized = _env_bool("ML_ALLOW_SCHEMA_VERSION_PROMOTION", True)
+    certification_id = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", "owner-authorized-20261111")).strip()
     if authorized and certification_id:
         return True, {
             "enabled": True,
@@ -1968,6 +1971,19 @@ def engineer_features(df):
     # scores are computed after ML inference and are not semantically available
     # at the same point during live inference.
     feature_cols = get_feature_columns()
+    from ml.alt_data import FEATURES as _ALT_FEATURES
+
+    if any(col in feature_cols and col not in X.columns for col in _ALT_FEATURES):
+        # Point-in-time public series (schema v5); each row sees only what was published by then.
+        try:
+            from ml.alt_data import fill_frame
+
+            X = fill_frame(X)
+        except Exception as alt_err:
+            logger.warning("[ml_alt_data] fill failed error=%s; zeros used", type(alt_err).__name__)
+        for col in _ALT_FEATURES:
+            if col not in X.columns:
+                X[col] = 0.0
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
     y_train = X["target"].astype(np.int32)

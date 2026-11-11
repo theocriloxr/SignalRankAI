@@ -4,7 +4,7 @@ import pytest
 
 from engine import ml as engine_ml
 from ml.model_registry import compute_feature_schema_hash
-from ml.schema_version import FEATURE_COLUMNS_V3, FEATURE_COLUMNS_V4, get_feature_columns
+from ml.schema_version import FEATURE_COLUMNS_V3, FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, get_feature_columns
 
 
 @pytest.mark.parametrize('version,columns', [(3, FEATURE_COLUMNS_V3), (4, FEATURE_COLUMNS_V4)])
@@ -29,7 +29,7 @@ def test_loader_honors_artifact_contract_without_promoting_challenger(monkeypatc
         assert cache['booster'] is booster
         assert cache['feature_cols']==columns
         assert cache['error'] is None
-        assert get_feature_columns()==FEATURE_COLUMNS_V4
+        assert get_feature_columns()==FEATURE_COLUMNS_V5
     finally:
         cache.clear()
         cache.update(previous)

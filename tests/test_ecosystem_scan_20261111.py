@@ -346,3 +346,38 @@ def test_one_diagnostic_row_per_setup_bar_and_reason(monkeypatch):
     monkeypatch.setenv("DECISION_LOG_DEDUP_ENABLED", "false")
     assert core._first_decision_of_bar("skipped", sig, "quality_adx 14.2 < 22.0 (fx)", None)
     core._DECISION_BAR_SEEN.clear()
+
+
+def test_alt_data_is_point_in_time_and_maps_assets(monkeypatch):
+    import pandas as pd
+
+    from ml import alt_data
+
+    day = 86400.0
+    alt_data._store("fear_greed", [(10 * day, 0.2), (11 * day, 0.8)])
+    alt_data._store("cot:EUR", [(10 * day, 0.30)])
+    alt_data._store("cot:JPY", [(10 * day, -0.10)])
+    alt_data._store("cot:XAU", [(10 * day, 0.50)])
+    assert alt_data.value_at("fear_greed", 10.5 * day) == 0.2  # day 11 not yet published
+    assert alt_data.value_at("fear_greed", 9 * day) == 0.0
+    assert alt_data.cot_value("EURUSD", 12 * day) == 0.30
+    assert alt_data.cot_value("USDJPY", 12 * day) == 0.10  # USD base, minus JPY speculators
+    assert alt_data.cot_value("EURJPY", 12 * day) == 0.40
+    assert alt_data.cot_value("XAUUSD", 12 * day) == 0.50
+    assert alt_data.cot_value("SOLUSDT", 12 * day) == 0.0
+    monkeypatch.setattr(alt_data, "refresh", lambda force=False: {})
+    frame = pd.DataFrame({"asset": ["EURUSD", "BTCUSDT"],
+                          "created_at": [pd.Timestamp(10.5 * day, unit="s"), pd.Timestamp(11.5 * day, unit="s")]})
+    alt_data.fill_frame(frame)
+    assert frame["fear_greed"].tolist() == [0.2, 0.8]
+    assert frame["cot_net_position"].tolist()[0] == 0.30
+    alt_data._series.clear()
+    alt_data._loaded_at.clear()
+
+
+def test_schema_v5_adds_the_three_series():
+    from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, get_feature_columns
+
+    assert get_feature_columns() == FEATURE_COLUMNS_V5
+    assert FEATURE_COLUMNS_V5[: len(FEATURE_COLUMNS_V4)] == FEATURE_COLUMNS_V4
+    assert FEATURE_COLUMNS_V5[-3:] == ["fear_greed", "hy_credit_spread", "cot_net_position"]

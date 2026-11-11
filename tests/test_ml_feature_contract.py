@@ -11,7 +11,7 @@ from ml.features import (
     stable_category_to_int,
     strategy_model_to_int,
 )
-from ml.schema_version import FEATURE_COLUMNS_V3, FEATURE_COLUMNS_V4, get_feature_columns
+from ml.schema_version import FEATURE_COLUMNS_V3, FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, get_feature_columns
 from ml.train_model import engineer_features
 
 
@@ -49,7 +49,7 @@ class TestMLFeatureContract(unittest.TestCase):
         self.assertNotIn("high_score", FEATURE_COLUMNS_V4)
         self.assertNotIn("medium_score", FEATURE_COLUMNS_V4)
         self.assertIn("adx_normalized", FEATURE_COLUMNS_V4)
-        self.assertEqual(get_feature_columns(), FEATURE_COLUMNS_V4)
+        self.assertEqual(get_feature_columns(), FEATURE_COLUMNS_V5)
 
     def test_v4_adx_falls_back_to_market_indicators(self):
         signal = {
@@ -142,7 +142,7 @@ class TestMLFeatureContract(unittest.TestCase):
         self.assertEqual(int(values["direction_enc"]), direction_to_int("long"))
         self.assertEqual(int(values["regime_enc"]), regime_model_to_int("trending"))
         self.assertEqual(int(values["strategy_enc"]), strategy_model_to_int("EMA Trend"))
-        self.assertEqual(cols, FEATURE_COLUMNS_V4)
+        self.assertEqual(cols, FEATURE_COLUMNS_V5)
         self.assertAlmostEqual(float(values["adx_normalized"]), 0.30)
         self.assertNotIn("score_normalized", cols)
         self.assertNotIn("high_score", cols)

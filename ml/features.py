@@ -62,6 +62,12 @@ def build_model_feature_values(signal, market_data=None):
     lows = [_safe_float(x.get("low"), 0.0) for x in candles if isinstance(x, dict) and x.get("low") is not None]
     vols = [_safe_float(x.get("volume"), 0.0) for x in candles if isinstance(x, dict) and x.get("volume") is not None]
     macro = dict(market_data.get("_macro") or signal.get("_macro") or {})
+    try:  # schema v5 public series, from the in-process cache only (ml/alt_data.py)
+        from ml.alt_data import live_values
+
+        alt_values = live_values(str(signal.get("asset") or ""))
+    except Exception:
+        alt_values = {}
 
     score = _safe_float(signal.get("score"), 0.0)
     indicator_map = dict(tf_data.get("indicators") or {})
@@ -156,6 +162,9 @@ def build_model_feature_values(signal, market_data=None):
         "news_event_impact_score": mv("news_event_impact_score"),
         "spx_trend": mv("spx_trend"),
         "btc_corr": mv("btc_corr"),
+        "fear_greed": _safe_float(signal.get("fear_greed"), alt_values.get("fear_greed", 0.0)),
+        "hy_credit_spread": _safe_float(signal.get("hy_credit_spread"), alt_values.get("hy_credit_spread", 0.0)),
+        "cot_net_position": _safe_float(signal.get("cot_net_position"), alt_values.get("cot_net_position", 0.0)),
     }
 
 

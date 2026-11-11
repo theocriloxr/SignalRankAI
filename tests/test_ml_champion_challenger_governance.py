@@ -196,8 +196,9 @@ def test_same_schema_can_continue_through_promotion_gate(tmp_path, monkeypatch):
 
 def test_schema_migration_is_candidate_only_without_explicit_certification(tmp_path, monkeypatch):
     monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
-    monkeypatch.delenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", raising=False)
-    monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
+    # Owner authorization is on by default since 11 Nov 2026; switch it off to test the gate.
+    monkeypatch.setenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", "0")
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", "")
     primary = tmp_path / "model.json"
     primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
 
@@ -216,7 +217,7 @@ def test_schema_migration_is_candidate_only_without_explicit_certification(tmp_p
 def test_schema_migration_needs_both_authorization_and_certification(tmp_path, monkeypatch):
     monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
     monkeypatch.setenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", "1")
-    monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", "")
     primary = tmp_path / "model.json"
     primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
 
@@ -258,3 +259,14 @@ def test_durable_champion_schema_takes_precedence_over_local_file(tmp_path, monk
     assert evidence["reason"] == "same_schema"
     assert evidence["source"] == "durable_registry"
 
+
+
+def test_owner_authorizes_schema_promotion_by_default(tmp_path, monkeypatch):
+    """11 Nov 2026: the owner authorized the newer feature schema; the other gates still apply."""
+    monkeypatch.setenv("ML_SCHEMA_PROMOTION_REQUIRES_AUTHORIZATION", "1")
+    monkeypatch.delenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", raising=False)
+    monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
+    primary = tmp_path / "model.json"
+    primary.write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+    ok, evidence = _schema_promotion_gate(5, primary, deployed_runtime=True)
+    assert ok is True and evidence["reason"] == "schema_migration_certified"

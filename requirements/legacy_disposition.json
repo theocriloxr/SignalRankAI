@@ -11067,11 +11067,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7220,
+      "line_count": 7228,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "fc987daabcfd6a4ad92309342ee51a6d0fb3bf8260ba8c810ccb092390096560",
-      "size_bytes": 359947
+      "sha256": "6e5c49c385b32b300c791013f8bdbbd9df2483b6271cf5038cbd344bcf29d53b",
+      "size_bytes": 360318
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13059,11 +13059,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 437,
+      "line_count": 446,
       "path": "ml/features.py",
       "reason": "production/build source",
-      "sha256": "287b3ab5ca480deb891f7a6047de3a529bb5af57ef756c17214c15581ce49c66",
-      "size_bytes": 19017
+      "sha256": "a0eb780fd6f53e2b45b5661a2ec4d234e3f9a1f73ecd3faeaf6ace5bc1a77655",
+      "size_bytes": 19582
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13163,11 +13163,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 250,
+      "line_count": 257,
       "path": "ml/schema_version.py",
       "reason": "production/build source",
-      "sha256": "99cc41ab55293766c38b0beee28e531a8e8f3a1dbf979d1cd2bddfde7d2fc824",
-      "size_bytes": 7322
+      "sha256": "275cb1543c69a0d6e1d802f3111587976a28c3565832436b18098afe552030b8",
+      "size_bytes": 7731
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13203,11 +13203,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3445,
+      "line_count": 3461,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "97f9ab0b3e043ccc6f978e3a4de93451b5a6194ca41c64aca7df3332b44843ba",
-      "size_bytes": 160391
+      "sha256": "8c4e1be4461f80ca4ca5b5d9afae9737f6f7454f5b99cebb442a2e217e03e0d9",
+      "size_bytes": 161238
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14254,7 +14254,7 @@
       "line_count": 16983,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "c3d0b4b17b1e72f1797a6c44183aff2a79a7360a255da76d0d4d561536ddb1bd",
+      "sha256": "7daa64c4e877d2925bf831a17025e60ab7592302ab644b260dfb2871cd531ffd",
       "size_bytes": 495734
     },
     {
@@ -18747,11 +18747,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 348,
+      "line_count": 383,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "3c86913225985bbc81c5c8427cce8928a5de2991f1a2a7ab97ca5949e9461843",
-      "size_bytes": 14506
+      "sha256": "05eeb0cc0d9220629930fcf4b11d37acdde0e046e8e5d5eaa3fd748209a8b2bc",
+      "size_bytes": 16156
     },
     {
       "disposition": "TEST_ONLY",
@@ -19443,11 +19443,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 260,
+      "line_count": 272,
       "path": "tests/test_ml_champion_challenger_governance.py",
       "reason": "automated test evidence",
-      "sha256": "fc4f77ca7c902ec1da91f6a73dd4766d121938cc6acdce8c73d2be0328dba146",
-      "size_bytes": 10469
+      "sha256": "b04f6929adb4d1101adc6e228540423758f43c0fb46267f22783c83d961b7bbd",
+      "size_bytes": 11205
     },
     {
       "disposition": "TEST_ONLY",
@@ -19470,8 +19470,8 @@
       "line_count": 153,
       "path": "tests/test_ml_feature_contract.py",
       "reason": "automated test evidence",
-      "sha256": "c36d6e19635448d1a39ad58f96982d740dbde33346bc4b3264b14c230a4dbf5e",
-      "size_bytes": 5704
+      "sha256": "c7ceecb9facd1498cc7284f718a4235772d52ec32e4b1006d4972dafb413e23f",
+      "size_bytes": 5724
     },
     {
       "disposition": "TEST_ONLY",
@@ -19590,8 +19590,8 @@
       "line_count": 53,
       "path": "tests/test_ml_versioned_serving_contract.py",
       "reason": "automated test evidence",
-      "sha256": "4993e3d3282ceace3cad2ac33819c8a409c6a955de1066d77d64916e42034db3",
-      "size_bytes": 2585
+      "sha256": "acd36a71efa6d429e9be3714b37108f8f33ae874c1574daf9889406877156167",
+      "size_bytes": 2605
     },
     {
       "disposition": "TEST_ONLY",
