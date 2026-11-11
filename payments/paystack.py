@@ -1,5 +1,7 @@
 from utils.timeutils import now_utc_naive
 import os
+
+from core.plan_prices import price_ngn as _price_ngn
 import json
 import logging
 import httpx
@@ -26,12 +28,13 @@ _DEFAULT_DURATIONS = {
 }
 
 _PLAN_AMOUNTS_NGN = {
-    "PREMIUM_WEEKLY": int(os.getenv("PREMIUM_WEEKLY_PRICE_NGN", "8000") or 8000),
-    "PREMIUM_MONTHLY": int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000") or 24000),
-    "PREMIUM_QUARTERLY": int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000") or 56000),
-    "PREMIUM_YEARLY": int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000") or 192000),
-    "VIP_WEEKLY": int(os.getenv("VIP_WEEKLY_PRICE_NGN", "16000") or 16000),
-    "VIP_MONTHLY": int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")) or 40000),
+    # Prices from one place (core/plan_prices.py, owner pricing 11 Nov 2026).
+    "PREMIUM_WEEKLY": _price_ngn("PREMIUM_WEEKLY"),
+    "PREMIUM_MONTHLY": _price_ngn("PREMIUM_MONTHLY"),
+    "PREMIUM_QUARTERLY": _price_ngn("PREMIUM_QUARTERLY"),
+    "PREMIUM_YEARLY": _price_ngn("PREMIUM_YEARLY"),
+    "VIP_WEEKLY": _price_ngn("VIP_WEEKLY"),
+    "VIP_MONTHLY": _price_ngn("VIP_MONTHLY"),
     "WEEKLY_PLAN": int(os.getenv("WEEKLY_PLAN_PRICE_NGN", "5000") or 5000),
 }
 

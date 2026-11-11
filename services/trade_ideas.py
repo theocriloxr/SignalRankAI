@@ -477,8 +477,34 @@ async def _evidence(session: Any, asset: str) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- storage
 
+_TIER_RANK = {"free": 0, "premium": 1, "vip": 2, "professional": 3, "institutional": 4, "admin": 9, "owner": 9}
+
+
+def tier_view(result: dict[str, Any], tier: str) -> dict[str, Any]:
+    """What each plan sees of a check (owner, 11 Nov 2026), so the checker cannot be used to
+    get paid signals for free. Free: verdict, probability, warnings and notes. Premium adds
+    the advice text. VIP and above add the exact suggested levels and SignalRank's own record
+    on the asset. The full analysis is still stored and tracked for learning."""
+    rank = _TIER_RANK.get(str(tier or "free").lower(), 0)
+    view = dict(result)
+    suggestion = dict(view.get("suggestion") or {})
+    if rank < 2:
+        for key in ("stop_loss", "take_profit", "entry", "risk_reward_tp1", "probability_tp1", "expected_r_suggested"):
+            suggestion.pop(key, None)
+        if suggestion.get("changed"):
+            suggestion["locked_levels"] = "vip"
+        view["evidence"] = {}
+    if rank < 1:
+        suggestion["advice"] = [a for a in suggestion.get("advice") or [] if not a.startswith("Suggested change")]
+        if result.get("suggestion", {}).get("changed"):
+            suggestion["locked_advice"] = "premium"
+    view["suggestion"] = suggestion
+    view["plan_tier"] = str(tier or "free").lower()
+    return view
+
+
 def daily_limit(tier: str) -> int:
-    defaults = {"free": 3, "premium": 20, "vip": 100, "professional": 100, "institutional": 500,
+    defaults = {"free": 1, "premium": 10, "vip": 50, "professional": 100, "institutional": 500,
                 "admin": 1000, "owner": 1000}
     tier = str(tier or "free").lower()
     return max(0, _env_int(f"IDEA_DAILY_LIMIT_{tier.upper()}", defaults.get(tier, 3)))
@@ -510,7 +536,8 @@ async def submit(session: Any, *, user_id: int, tier: str, raw: dict[str, Any], 
          "prob": result.get("probability_tp1"), "v": result["verdict"],
          "an": json.dumps({k: v for k, v in result.items() if k != "features"}, default=str),
          "f": json.dumps(result["features"], default=str), "src": str(source)[:16], "n": idea.notes or None})
-    return {**result, "idea_id": idea_id, "used_today": await used_today(session, user_id), "daily_limit": limit}
+    return {**tier_view(result, tier), "idea_id": idea_id, "used_today": await used_today(session, user_id),
+            "daily_limit": limit}
 
 
 async def history(session: Any, user_id: int, limit: int = 30) -> dict[str, Any]:
@@ -722,12 +749,16 @@ def telegram_text(result: dict[str, Any]) -> str:
     for n in result["notes"]:
         lines.append(f"• {n}")
     suggestion = result.get("suggestion") or {}
-    if suggestion.get("advice"):
+    if suggestion.get("advice") or suggestion.get("locked_advice") or suggestion.get("locked_levels"):
         lines.append("")
         lines.append("💡 How to improve it")
         for item in suggestion["advice"]:
             lines.append(f"• {item}")
-        if suggestion.get("changed"):
+        if suggestion.get("locked_levels"):
+            lines.append("🔒 The exact suggested stop and targets are on VIP. /upgrade")
+        if suggestion.get("locked_advice"):
+            lines.append("🔒 A better stop/target for this trade was found; advice is on Premium. /upgrade")
+        if suggestion.get("changed") and suggestion.get("take_profit"):
             tps = " / ".join(f"{t:,.6g}" for t in suggestion.get("take_profit") or [])
             lines.append(f"Suggested levels: entry {suggestion['entry']:,.6g} • stop {suggestion['stop_loss']:,.6g} "
                          f"• TP {tps}")

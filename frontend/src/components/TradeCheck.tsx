@@ -29,12 +29,16 @@ type Levels = { entry: number; stop_loss: number; take_profit: number[] };
 function Suggestion({ data, onUse }: { data: Row; onUse?: (levels: Levels) => void }) {
   const s = record(data.suggestion);
   const advice = Array.isArray(s.advice) ? (s.advice as unknown[]).map(String) : [];
-  if (!advice.length) return null;
+  const lockedAdvice = display(s.locked_advice, "") === "premium";
+  const lockedLevels = display(s.locked_levels, "") === "vip";
+  if (!advice.length && !lockedAdvice && !lockedLevels) return null;
   const tps = Array.isArray(s.take_profit) ? (s.take_profit as unknown[]).map(finite).filter((v): v is number => v !== null) : [];
   const entry = finite(s.entry), stop = finite(s.stop_loss);
   return <div className="ui-card tc-suggestion" aria-label="How to improve this trade">
     <h3>How to improve this trade</h3>
-    <ul>{advice.map((a, i) => <li key={i}>{a}</li>)}</ul>
+    {advice.length > 0 && <ul>{advice.map((a, i) => <li key={i}>{a}</li>)}</ul>}
+    {lockedAdvice && <p className="ws-aside">A better stop and target were found for this trade. The advice is on Premium: see the <a className="ui-link" href="/pricing">plans</a>.</p>}
+    {lockedLevels && <p className="ws-aside">The exact suggested stop and targets are on VIP: see the <a className="ui-link" href="/pricing">plans</a>.</p>}
     {s.changed === true && entry !== null && stop !== null && tps.length > 0 && <>
       <dl className="ui-kv">
         <div className="ui-kv-row"><dt>Suggested stop</dt><dd>{numberLabel(stop, 5)}</dd></div>

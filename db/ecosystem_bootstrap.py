@@ -37,13 +37,19 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _plan_price_ngn(plan: str) -> int:
+    from core.plan_prices import price_ngn
+
+    return price_ngn(plan)
+
+
 async def seed_subscription_catalogue(session: AsyncSession) -> dict[str, int]:
     """Seed the product/price/entitlement catalogue with bounded DB round-trips."""
     products = [
-        ("premium_monthly", "PREMIUM", "Premium Monthly", 30, _env_int("PREMIUM_MONTHLY_PRICE_NGN", 24000)),
-        ("premium_quarterly", "PREMIUM", "Premium Quarterly", 90, _env_int("PREMIUM_QUARTERLY_PRICE_NGN", 56000)),
-        ("premium_yearly", "PREMIUM", "Premium Yearly", 365, _env_int("PREMIUM_YEARLY_PRICE_NGN", 192000)),
-        ("vip_monthly", "VIP", "VIP Monthly", 30, _env_int("VIP_MONTHLY_PRICE_NGN", 40000)),
+        ("premium_monthly", "PREMIUM", "Premium Monthly", 30, _plan_price_ngn("PREMIUM_MONTHLY")),
+        ("premium_quarterly", "PREMIUM", "Premium Quarterly", 90, _plan_price_ngn("PREMIUM_QUARTERLY")),
+        ("premium_yearly", "PREMIUM", "Premium Yearly", 365, _plan_price_ngn("PREMIUM_YEARLY")),
+        ("vip_monthly", "VIP", "VIP Monthly", 30, _plan_price_ngn("VIP_MONTHLY")),
         ("professional_monthly", "PROFESSIONAL", "Professional", 30, _env_int("PROFESSIONAL_MONTHLY_PRICE_NGN", 0)),
         (
             "institutional_contract",

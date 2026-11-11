@@ -381,3 +381,18 @@ def test_schema_v5_adds_the_three_series():
     assert get_feature_columns() == FEATURE_COLUMNS_V5
     assert FEATURE_COLUMNS_V5[: len(FEATURE_COLUMNS_V4)] == FEATURE_COLUMNS_V4
     assert FEATURE_COLUMNS_V5[-3:] == ["fear_greed", "hy_credit_spread", "cot_net_position"]
+
+
+def test_plan_prices_owner_schedule_and_kobo_guard(monkeypatch):
+    from core.plan_prices import price_ngn
+
+    for name in ("PREMIUM_MONTHLY_PRICE_NGN", "VIP_MONTHLY_PRICE_NGN", "PRICE_SCHEDULE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PREMIUM_PRICE_NGN", "2400000")  # production's legacy value (kobo)
+    monkeypatch.setenv("VIP_PRICE_NGN", "40000")
+    assert price_ngn("PREMIUM_MONTHLY") == 29000 and price_ngn("VIP_MONTHLY") == 59000
+    assert price_ngn("PREMIUM_QUARTERLY") == 78000 and price_ngn("PREMIUM_YEARLY") == 278000
+    monkeypatch.setenv("PRICE_SCHEDULE", "legacy")
+    assert price_ngn("PREMIUM_MONTHLY") == 24000 and price_ngn("VIP_MONTHLY") == 40000  # kobo read as kobo
+    monkeypatch.setenv("PREMIUM_MONTHLY_PRICE_NGN", "31000")
+    assert price_ngn("PREMIUM_MONTHLY") == 31000

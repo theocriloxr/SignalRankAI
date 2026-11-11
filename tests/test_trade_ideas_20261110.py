@@ -187,3 +187,23 @@ def test_suggestion_keeps_a_plan_that_is_already_good():
                          "take_profit": [closes[-1] - 0.01], "timeframe": "1h"})
     out = ti.suggest_adjustments(idea, highs, lows, closes, atr_value=0.0, price=closes[-1], horizon=48, trend=0)
     assert out["changed"] is False or out["expected_r_suggested"] >= (out["expected_r_now"] or -1.0) + 0.05
+
+
+def test_each_plan_sees_only_its_share_of_the_check():
+    """11 Nov 2026: the checker must not hand out paid signals for free."""
+    result = {"verdict": "marginal", "probability_tp1": 0.4, "evidence": {"engine_closed_60d": 9},
+              "suggestion": {"changed": True, "advice": ["Suggested change: stop 1.25 ATR away.", "Against the trend."],
+                             "stop_loss": 1.08, "take_profit": [1.1], "entry": 1.09, "expected_r_suggested": 0.3}}
+    free = ti.tier_view(result, "free")
+    assert free["suggestion"]["advice"] == ["Against the trend."] and free["suggestion"]["locked_advice"] == "premium"
+    assert "stop_loss" not in free["suggestion"] and free["evidence"] == {}
+    premium = ti.tier_view(result, "premium")
+    assert premium["suggestion"]["advice"][0].startswith("Suggested change") and "take_profit" not in premium["suggestion"]
+    assert premium["suggestion"]["locked_levels"] == "vip"
+    vip = ti.tier_view(result, "vip")
+    assert vip["suggestion"]["take_profit"] == [1.1] and vip["evidence"] == {"engine_closed_60d": 9}
+    assert "🔒" in ti.telegram_text({**free, "asset": "EURUSD", "direction": "long", "timeframe": "1h",
+                                     "breakeven_win_rate": 0.5, "risk_reward": [1.0], "historical": [],
+                                     "current_price": 1.09, "warnings": [], "notes": [], "disclaimer": "x",
+                                     "entry": 1.09, "stop_loss": 1.08, "take_profit": [1.1]})
+    assert ti.daily_limit("free") == 1 and ti.daily_limit("premium") == 10 and ti.daily_limit("vip") == 50

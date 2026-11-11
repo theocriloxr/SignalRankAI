@@ -16,8 +16,8 @@ def test_upgrade_message_escapes_markdown_pipe() -> None:
 
 def test_tiers_command_uses_live_pricing_envs() -> None:
     source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
-    assert 'os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000"))' in source
-    assert 'os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000"))' in source
+    # Prices come from one place since 11 Nov 2026 (core/plan_prices.py).
+    assert '_plan_price("PREMIUM_MONTHLY")' in source and '_plan_price("VIP_MONTHLY")' in source
 
 
 def test_buy_extra_signals_removed_from_command_access() -> None:

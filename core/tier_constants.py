@@ -177,15 +177,15 @@ TIER_FEATURES: Final[dict[str, set[str]]] = {
 }
 
 TIER_PRICES_NGN: Final[dict[str, int]] = {
-    "premium": int(_os.getenv("PREMIUM_PRICE_NGN", "24000") or 24000),
-    "vip": int(_os.getenv("VIP_PRICE_NGN", "40000") or 40000),
+    "premium": 29000,  # see core/plan_prices.py for the live price
+    "vip": 59000,  # see core/plan_prices.py for the live price
     "professional": int(_os.getenv("PROFESSIONAL_PRICE_NGN", "0") or 0),
     "institutional": int(_os.getenv("INSTITUTIONAL_PRICE_NGN", "0") or 0),
 }
 
 TIER_PRICES_USD: Final[dict[str, float]] = {
-    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "15.0") or 15.0),
-    "vip": float(_os.getenv("VIP_PRICE_USD", "30.0") or 30.0),
+    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "19.0") or 19.0),
+    "vip": float(_os.getenv("VIP_PRICE_USD", "39.0") or 39.0),
     "professional": float(_os.getenv("PROFESSIONAL_PRICE_USD", "0") or 0),
     "institutional": float(_os.getenv("INSTITUTIONAL_PRICE_USD", "0") or 0),
 }

@@ -1,6 +1,12 @@
 from core.app_url import public_app_base_url as _public_app_base_url
 from utils.timeutils import now_utc_naive
 import os
+
+
+def _plan_price(plan: str) -> int:
+	from core.plan_prices import price_ngn
+
+	return price_ngn(plan)
 import asyncio
 
 from telegram import Update
@@ -277,7 +283,7 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 
 
 def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
-	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
+	vip_price = _plan_price("VIP_MONTHLY")
 	price = f"₦{vip_price:,}"
 	if sold_out:
 		return f"💎 VIP Monthly — {price} \\| 🔴 VIP Sold Out" if MarkdownV2 else f"💎 VIP Monthly — {price} | 🔴 VIP Sold Out"
@@ -298,14 +304,14 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			rows.append([InlineKeyboardButton("💎 VIP Sold Out", callback_data="vip_sold_out")])
 			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
 		else:
-			vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
+			vip_price = _plan_price("VIP_MONTHLY")
 			vip_link = generate_paystack_link(user_id=user_id, price=vip_price, tier="VIP", duration="MONTHLY", duration_days=30)
 			if vip_link:
 				seat_label = "Open enrollment" if vip_seats_left < 0 else f"{vip_seats_left} left"
 				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦{vip_price:,} ({seat_label})", url=vip_link)])
-		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
-		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
-		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
+		prem_month_price = _plan_price("PREMIUM_MONTHLY")
+		prem_qtr_price = _plan_price("PREMIUM_QUARTERLY")
+		prem_year_price = _plan_price("PREMIUM_YEARLY")
 		prem_month = generate_paystack_link(user_id=user_id, price=prem_month_price, tier="PREMIUM", duration="MONTHLY", duration_days=30)
 		prem_qtr = generate_paystack_link(user_id=user_id, price=prem_qtr_price, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
 		prem_year = generate_paystack_link(user_id=user_id, price=prem_year_price, tier="PREMIUM", duration="YEARLY", duration_days=365)
@@ -331,9 +337,9 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
-	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
-	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
-	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
+	prem_month_price = _plan_price("PREMIUM_MONTHLY")
+	prem_qtr_price = _plan_price("PREMIUM_QUARTERLY")
+	prem_year_price = _plan_price("PREMIUM_YEARLY")
 	free_limit = get_entitlements("FREE").daily_signal_limit
 	premium_limit = get_entitlements("PREMIUM").daily_signal_limit
 	vip_limit = get_entitlements("VIP").daily_signal_limit
@@ -352,9 +358,9 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
-	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
-	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
-	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
+	prem_month_price = _plan_price("PREMIUM_MONTHLY")
+	prem_qtr_price = _plan_price("PREMIUM_QUARTERLY")
+	prem_year_price = _plan_price("PREMIUM_YEARLY")
 	msg = upgrade_message(
 		premium_month_price=prem_month_price,
 		premium_quarter_price=prem_qtr_price,
