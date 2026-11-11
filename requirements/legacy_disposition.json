@@ -13243,11 +13243,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 400,
+      "line_count": 416,
       "path": "mobile/App.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "914f729486c4220006534dccc948eebcc7b5b962b44fd55470c9264fc9567537",
-      "size_bytes": 45673
+      "sha256": "f1ae11a36cd2bcdb4e7cc9c1174de10cbb82fcc109ffe7067fa1a1169b297fcf",
+      "size_bytes": 47347
     },
     {
       "disposition": "DOCUMENTATION_ONLY",

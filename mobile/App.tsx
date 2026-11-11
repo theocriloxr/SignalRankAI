@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ActivityIndicator, Alert, AppState, FlatList, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme} from 'react-native';
+import {ActivityIndicator, Alert, AppState, FlatList, Platform, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, View, useColorScheme} from 'react-native';
 import * as Linking from 'expo-linking';
 import {StatusBar} from 'expo-status-bar';
 import {
@@ -363,6 +363,7 @@ function Account({user,setUser,onRefresh,onLogout}:any){
   const telegramLabel=telegramStatus==='merge_review'?'Verified · reconciliation pending':telegramConnected?'Linked':telegramStatus==='link_pending'?'Link pending':'Not linked';
   return <ScrollView>
     <View style={styles.card}><Text style={styles.rowTitle}>{user.display_name||user.username||'SignalRank user'}</Text><Text style={styles.muted}>{user.primary_email||'Telegram account'}</Text><Text style={styles.muted}>Email verified: {user.email_verified_at?'Yes':'No'}</Text><Text style={styles.muted}>Telegram: {telegramLabel}</Text><TextInput style={styles.input} placeholder="Display name" placeholderTextColor="#869f91" value={name} onChangeText={setName}/><TextInput style={styles.input} placeholder="Timezone" placeholderTextColor="#869f91" value={timezone} onChangeText={setTimezone}/><ToggleRow checked={marketingConsent} onPress={()=>setMarketingConsent(v=>!v)} label="Optional marketing emails. Service, security and billing messages are separate."/><Pressable style={styles.primary} onPress={save}><Text style={styles.primaryText}>Save profile</Text></Pressable></View>
+    <ReferralCard/>
     {!telegramConnected?<View style={styles.card}>
       <Text style={styles.rowTitle}>Connect Telegram</Text>
       <Text style={styles.muted}>{telegramStatus==='link_pending'?'A link code is already pending. Complete it in Telegram or create a replacement code.':'Link Telegram once to share identity and preferences across channels.'}</Text>
@@ -397,4 +398,19 @@ const lightStyles = Object.fromEntries(
   ])
 ) as typeof darkStyles;
 
+/** Invite friends (11 Nov 2026): the same referral code, rewards and links as the website and Telegram. */
+function ReferralCard(){
+  const styles=useNativeStyles();
+  const {data,loading,error,retry}=useAccountData<any>('/referrals');
+  if(loading||error||!data)return <AccountDataState loading={loading} error={error} retry={retry}/>;
+  const share=async(url:string)=>{try{await Share.share({message:`Join me on SignalRank: ${url}`})}catch{/* the user closed the share sheet */}};
+  const links=[data.web_url,data.telegram_url].filter((u:unknown)=>typeof u==='string'&&String(u).startsWith('https://')) as string[];
+  return <View style={styles.card} accessibilityLabel="Invite friends">
+    <Text style={styles.rowTitle}>Invite friends</Text>
+    <Text style={styles.muted}>Your code: {String(data.code||'')}</Text>
+    <Text style={styles.muted}>Friends who joined: {String(data.total_referrals??0)} • subscribed: {String(data.paid_referrals??0)} • free days earned: {String(data.premium_days_earned??0)}</Text>
+    <Text style={styles.muted}>{String(data.reward_days??7)} free days for every {String((data.needed_for_next??0)+(data.toward_next??0)||3)} friends who join; +{String(data.conversion_bonus_days??14)} days when a friend subscribes, and they get +{String(data.welcome_bonus_days??5)} bonus days. Up to {String(data.monthly_cap_days??28)} days a month.</Text>
+    {links.map((url,i)=><Pressable key={url} accessibilityRole="button" style={styles.primary} onPress={()=>void share(url)}><Text style={styles.primaryText}>{i===0&&url===data.web_url?'Share app/web invite':'Share Telegram invite'}</Text></Pressable>)}
+  </View>;
+}
 function useNativeStyles(){return useColorScheme()==='light'?lightStyles:darkStyles;}
