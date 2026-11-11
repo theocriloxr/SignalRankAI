@@ -1,5 +1,5 @@
 {
-  "file_count": 2781,
+  "file_count": 2783,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5632,6 +5632,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "64aca571157aaa9ce3a75c2af2be293c69b9ae183ddd88ca45f3e84e9e23c9c4",
       "size_bytes": 2308
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 89,
+      "path": "docs/ML_BOTTLENECK_CONTROLS.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "1e1b43d4893e5669de46bf26dca33e17f5b26b21aacfc7eadabd79b8bdd7345e",
+      "size_bytes": 7626
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -13011,6 +13019,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 119,
+      "path": "ml/data_audit.py",
+      "reason": "production/build source",
+      "sha256": "53cfffc2c88a56ff7bae8fbab499f9ca9c10756d8d6ba28eb6bb1663a5de3b55",
+      "size_bytes": 4949
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 146,
       "path": "ml/drift_monitor.py",
       "reason": "production/build source",
@@ -13187,11 +13203,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3387,
+      "line_count": 3411,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "25e75121935b2f82d3bb6a0663de50a49c642bcb04cd2af48f4a7f6c6b170778",
-      "size_bytes": 156913
+      "sha256": "a2cef70ea4106bb0e2fbe0394273fa8f2b0a245da2441377cd7a5fee48838788",
+      "size_bytes": 158550
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18731,11 +18747,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 277,
+      "line_count": 298,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "1c17d3f9d51797bdc86e555ac23ea7f6938eef1da7d9cfd775da32b472110d36",
-      "size_bytes": 10656
+      "sha256": "3bdeb75e6fdee0c8b283704b8cfadfc3f2c5695d782a06a59a4a282c9e00c020",
+      "size_bytes": 11984
     },
     {
       "disposition": "TEST_ONLY",
@@ -20131,11 +20147,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 169,
+      "line_count": 170,
       "path": "tests/test_production_log_fixes_20261109.py",
       "reason": "automated test evidence",
-      "sha256": "3280044d4a9bf065b7a37c2098bd018fb5e1f9986f05bdd1b60e62cf763aa09a",
-      "size_bytes": 8111
+      "sha256": "46e92b6c9b2bd098d127d990d78fa560c8813650d755e94649cca923a7f085df",
+      "size_bytes": 8234
     },
     {
       "disposition": "TEST_ONLY",
@@ -20723,11 +20739,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 248,
+      "line_count": 277,
       "path": "tests/test_segment_evidence_20261102.py",
       "reason": "automated test evidence",
-      "sha256": "063ee017fde47744c4fc2e752de53350d580b0773ae7ae606d2b3f9fe2321c7e",
-      "size_bytes": 12292
+      "sha256": "294b91fb021c7be1f8267911cb181b7ffad768b3dd225709ee299a7675460010",
+      "size_bytes": 13203
     },
     {
       "disposition": "TEST_ONLY",
@@ -22262,8 +22278,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 878,
-    "PRESERVE_BEHAVIOUR": 1411,
+    "DOCUMENTATION_ONLY": 879,
+    "PRESERVE_BEHAVIOUR": 1412,
     "TEST_ONLY": 491
   }
 }

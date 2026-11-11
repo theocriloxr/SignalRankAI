@@ -11,6 +11,35 @@ from services import segment_evidence as se
 
 
 @pytest.fixture(autouse=True)
+def _remove_rows_this_file_wrote(request):
+    """These tests write reason='ml' rows; other tests read decision_log totals (11 Nov 2026)."""
+    yield
+    if "postgres_database" not in request.fixturenames:
+        return
+    import asyncio
+    import os
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from db.session import _normalize_database_url
+
+    url = os.getenv("DATABASE_URL") or os.getenv("SIGNALRANK_TEST_PG_DSN") or ""
+    if not url:
+        return
+
+    async def cleanup():
+        engine = create_async_engine(_normalize_database_url(url, async_driver=True))
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("DELETE FROM decision_log WHERE reason = 'ml' AND meta->>'layer' = 'ml'"))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(cleanup())
+
+
+@pytest.fixture(autouse=True)
 def _fresh_engine_snapshot_cache():
     """The engine keeps the snapshot for a minute (11 Nov 2026); each test sets its own."""
     from engine import core

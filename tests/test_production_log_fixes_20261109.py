@@ -78,7 +78,8 @@ def test_signal_drought_alert_names_the_dominant_rejection(monkeypatch):
         try:
             async with engine.begin() as conn:
                 await conn.execute(text("DELETE FROM decision_log WHERE asset='DROUGHTFX'"))
-                for value in ("4.88", "4.76", "4.91"):
+                # Enough rows to dominate whatever other tests left in the shared scratch DB.
+                for value in [("4.88", "4.76", "4.91")[i % 3] for i in range(300)]:
                     await conn.execute(text(
                         "INSERT INTO decision_log(asset, timeframe, decision, reason, meta, created_at) VALUES "
                         "('DROUGHTFX','5m','skipped',:r,'{}', NOW() AT TIME ZONE 'utc')"),

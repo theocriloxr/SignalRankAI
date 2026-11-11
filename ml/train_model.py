@@ -277,6 +277,28 @@ def _champion_comparison_gate(
                                              maximum=1 if key != "expected_r" else None)
         except (TypeError, ValueError, OverflowError):
             return False, {"enabled": True, "reason": "invalid_champion_comparison_metric", "source": source, "metric": key}
+        if key == "pr_auc":
+            # PR-AUC scales with each validation window's own win rate (11 Nov 2026:
+            # 0.57 at a 19 % win rate was rejected against 0.84 measured on another
+            # window), so compare lift over the base rate; without both base rates the
+            # values are not comparable. AUC, balanced accuracy and calibration, which
+            # do not depend on the base rate, are still compared.
+            try:
+                cand_rate = float(candidate_metrics.get("positive_rate") or 0.0)
+                champ_rate = float(champion_metrics.get("positive_rate") or 0.0)
+            except (TypeError, ValueError):
+                cand_rate = champ_rate = 0.0
+            if not (math.isfinite(cand_rate) and math.isfinite(champ_rate)) or cand_rate <= 0 or champ_rate <= 0:
+                logger.info("[ml_champion_compare] pr_auc not compared: base rate missing")
+                continue
+            cand_lift = candidate / cand_rate
+            champ_lift = champion / champ_rate
+            lift_tolerance = float(os.getenv("ML_CHAMPION_MAX_PR_AUC_LIFT_REGRESSION", "0.10") or 0.10)
+            compared["pr_auc_lift"] = {"candidate": round(cand_lift, 4), "champion": round(champ_lift, 4),
+                                       "tolerance": lift_tolerance}
+            if cand_lift < champ_lift * (1.0 - lift_tolerance):
+                regressions["pr_auc_lift"] = compared["pr_auc_lift"]
+            continue
         compared[key] = {"candidate": candidate, "champion": champion, "tolerance": tolerance}
         if candidate < champion - tolerance:
             regressions[key] = compared[key]
@@ -1614,7 +1636,9 @@ async def _load_tracked_rejections(cutoff, diagnostics: dict) -> list:
     max_rows = max(1000, int(os.getenv("ML_TRAIN_SHADOW_MAX_ROWS", "40000") or 40000))
     window = max(200, min(20000, int(os.getenv("ML_TRAIN_SHADOW_CHUNK_ROWS", "2000") or 2000)))
     # The whole dataset load has ML_TRAIN_DATASET_TIMEOUT_SECONDS (120); the other reads took ~70 s.
-    budget = max(10.0, float(os.getenv("ML_TRAIN_SHADOW_BUDGET_SECONDS", "35") or 35))
+    # 11 Nov 2026: 35 s read 5 of 12 windows (1,607 rows). Rows are one per setup per
+    # bar since then, so each window is mostly distinct setups; allow the full spread.
+    budget = max(10.0, float(os.getenv("ML_TRAIN_SHADOW_BUDGET_SECONDS", "120") or 120))
     keys = ("score", "strategy_name", "regime", "strength", "rr_ratio", "rr_estimate", "rejection_type",
             "price_velocity_3", "price_velocity_5", "price_velocity_10", "price_acceleration_3_10", "atr_rel",
             "atr_regime", "relative_volume", "mtf_4h_trend", "mtf_1d_trend", "funding_rate", "open_interest_change",

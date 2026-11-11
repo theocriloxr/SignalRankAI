@@ -275,3 +275,24 @@ def test_data_audit_flags_leakage_label_noise_and_collinearity():
     noisy_report = audit(noisy, labels, ["a", "b"])
     assert noisy_report["label_conflict_share"] == 1.0
     assert any(r.startswith("label_conflict_share") for r in blocks_promotion(noisy_report))
+
+
+def test_champion_comparison_uses_pr_auc_lift_not_raw_pr_auc(tmp_path, monkeypatch):
+    """11 Nov 2026: 0.57 PR-AUC at a 19 % win rate (lift 2.95) was rejected against 0.84."""
+    from ml.train_model import EXPECTED_R_BASIS_TP1, _champion_comparison_gate
+
+    monkeypatch.setenv("ML_CHAMPION_COMPARISON_ENABLED", "true")
+    base = {"auc": 0.85, "balanced_accuracy": 0.63, "expected_r": 0.40, "expected_r_basis": EXPECTED_R_BASIS_TP1}
+    candidate = dict(base, pr_auc=0.5734, positive_rate=0.1942)
+    champion = dict(base, auc=0.834, pr_auc=0.8355, positive_rate=0.55)  # lift 1.52
+    ok, evidence = _champion_comparison_gate(candidate, tmp_path / "x.json", champion_metrics=champion)
+    assert ok, evidence
+    assert "pr_auc" not in evidence["compared"] and "pr_auc_lift" in evidence["compared"]
+
+    weaker = dict(base, pr_auc=0.25, positive_rate=0.1942)  # lift 1.29 < 1.52 * 0.9
+    ok, evidence = _champion_comparison_gate(weaker, tmp_path / "x.json", champion_metrics=champion)
+    assert not ok and "pr_auc_lift" in evidence["regressions"]
+
+    no_rate = {k: v for k, v in champion.items() if k != "positive_rate"}
+    ok, evidence = _champion_comparison_gate(candidate, tmp_path / "x.json", champion_metrics=no_rate)
+    assert "pr_auc" not in evidence["compared"] and "pr_auc_lift" not in evidence["compared"]
