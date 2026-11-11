@@ -127,3 +127,34 @@ def test_crypto_history_falls_back_to_okx_when_binance_is_unreachable(monkeypatc
     frames, source = sd.load_history("BTCUSDT", "crypto", _Client())
     assert source == "okx" and len(frames["1h"]) >= 290 and {"4h", "1d"} <= set(frames)
     assert sd.okx_inst_id("ETHUSDT") == "ETH-USDT" and sd.okx_inst_id("EURUSD") is None
+
+
+def test_router_prefers_a_passing_per_asset_model_over_its_class():
+    from ml.features import stable_category_to_int
+    from ml.specialists import Router
+
+    router = Router(None)
+    router.models = {"0": {"name": "crypto"}, f"asset:{stable_category_to_int('BTCUSDT')}": {"name": "BTCUSDT"}}
+    btc = {"asset_class_enc": 0.0, "asset_enc": float(stable_category_to_int("BTCUSDT"))}
+    eth = {"asset_class_enc": 0.0, "asset_enc": float(stable_category_to_int("ETHUSDT"))}
+    assert router.route(btc)["name"] == "BTCUSDT"
+    assert router.route(eth)["name"] == "crypto"  # no ETH model: its class model
+
+
+def test_per_asset_models_need_enough_own_rows(monkeypatch):
+    import numpy as np
+    import pandas as pd
+
+    from ml import specialists
+
+    monkeypatch.setenv("ML_ASSET_SPECIALIST_MIN_ROWS", "1500")
+    called = []
+    monkeypatch.setattr(specialists, "_train_class_specialists", lambda *a, **k: {})
+    import ml.train_model as tm
+    monkeypatch.setattr(tm, "train_model", lambda *a, **k: called.append(len(a[0])) or (_ for _ in ()).throw(ValueError("x")))
+    X = pd.DataFrame({"asset_class_enc": np.zeros(2000), "f": np.random.rand(2000)})
+    y = pd.Series(np.random.randint(0, 2, 2000))
+    assets = np.array(["BTCUSDT"] * 1600 + ["ETHUSDT"] * 400)
+    out = specialists.train_specialists(X, y, ["f"], assets=assets)
+    assert called == [1600]  # ETH (400 rows) stays pooled
+    assert list(out) == [specialists._asset_hash("BTCUSDT")]

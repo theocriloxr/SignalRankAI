@@ -166,6 +166,8 @@ def build_model_feature_values(signal, market_data=None):
         "hy_credit_spread": _safe_float(signal.get("hy_credit_spread"), alt_values.get("hy_credit_spread", 0.0)),
         "cot_net_position": _safe_float(signal.get("cot_net_position"), alt_values.get("cot_net_position", 0.0)),
         **_regime_values(signal, candles),
+        # Routing only (not a model input): selects a per-asset specialist when one passed.
+        "asset_enc": float(stable_category_to_int(str(signal.get("asset") or "").upper())),
     }
 
 

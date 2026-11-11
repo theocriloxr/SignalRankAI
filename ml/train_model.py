@@ -199,8 +199,18 @@ def _promotion_quality_gate(
     data_blocks = blocks_promotion(metrics.get("data_audit"))
     if data_blocks:
         logger.warning("[ml_quality_data] promotion blocked by data audit: %s", data_blocks)
+    # Walk-forward stability (11 Nov 2026): the folds on average, not one window.
+    wf = metrics.get("walk_forward") or {}
+    wf_ok = True
+    if len(wf.get("folds") or []) >= 2:
+        wf_ok = (float(wf.get("mean_auc") or 0) >= float(os.getenv("ML_WF_MIN_MEAN_AUC", "0.55") or 0.55)
+                 and float(wf.get("mean_expected_r") or 0) >= float(os.getenv("ML_WF_MIN_MEAN_EXPECTED_R", "0.0") or 0.0))
+        if not wf_ok:
+            logger.warning("[ml_quality_walk_forward] rejected mean_auc=%s mean_expected_r=%s",
+                           wf.get("mean_auc"), wf.get("mean_expected_r"))
     ok = (
         not data_blocks
+        and wf_ok
         and overfit_ok
         and accuracy >= min_accuracy
         and auc >= min_auc
@@ -2193,6 +2203,58 @@ def _embargoed_windows(idx_tr, idx_cal, idx_te, timestamps, embargo_hours: float
     return tr, cal, te
 
 
+def _walk_forward_metrics(X_all, y_all, ordered_idx, timestamps, weights, *, params: dict, trees: int,
+                          embargo_hours: float, folds: int = 3) -> dict[str, Any]:
+    """Purged walk-forward stability check (11 Nov 2026).
+
+    A single validation window swung AUC from 0.37 to 0.68 between runs. Each fold
+    trains on everything before a cut (minus the embargo) and tests on the next 10 %
+    of the bot's own rows; the promotion gate then needs the folds on average, not
+    one lucky window.
+    """
+    import numpy as np
+    import pandas as pd
+    import xgboost as xgb
+    from sklearn.metrics import roc_auc_score
+
+    from ml.metrics import expected_r_utility
+
+    out: dict[str, Any] = {"folds": []}
+    n = len(ordered_idx)
+    if n < 400 or timestamps is None:
+        return out
+    ts = pd.to_datetime(pd.Series(np.asarray(timestamps)), errors="coerce")
+    gap = pd.Timedelta(hours=max(0.0, float(embargo_hours)))
+    cuts = np.linspace(0.55, 0.80, folds)
+    for cut in cuts:
+        start, stop = int(n * cut), min(n, int(n * (cut + 0.10)))
+        test = ordered_idx[start:stop]
+        if len(test) < 60:
+            continue
+        test_start = ts.iloc[test].min()
+        train = ordered_idx[:start]
+        train = train[(ts.iloc[train] <= test_start - gap).to_numpy()]
+        y_tr, y_te = y_all.iloc[train], y_all.iloc[test]
+        if len(train) < 200 or len(set(y_tr.tolist())) < 2 or len(set(y_te.tolist())) < 2:
+            continue
+        model = xgb.XGBClassifier(**{**params, "n_estimators": max(10, int(trees)), "early_stopping_rounds": None})
+        model.fit(X_all.iloc[train], y_tr,
+                  sample_weight=None if weights is None else np.asarray(weights)[train])
+        proba = model.predict_proba(X_all.iloc[test])[:, 1]
+        threshold = float(np.quantile(proba, 0.7))  # the model's top 30 % of setups
+        win_r = _tp1_win_r(X_all.iloc[test])
+        er = expected_r_utility(y_te.tolist(), proba.tolist(), decision_threshold=threshold,
+                                win_r=None if win_r is None else list(win_r))["expected_r"]
+        out["folds"].append({"train": int(len(train)), "test": int(len(test)),
+                             "auc": round(float(roc_auc_score(y_te, proba)), 4), "expected_r_top30": er})
+    if out["folds"]:
+        aucs = [f["auc"] for f in out["folds"]]
+        ers = [f["expected_r_top30"] for f in out["folds"]]
+        out.update(mean_auc=round(float(np.mean(aucs)), 4), min_auc=round(float(np.min(aucs)), 4),
+                   mean_expected_r=round(float(np.mean(ers)), 4))
+    return out
+
+
 def _temporal_three_way_indices(
     row_count: int,
     *,
@@ -2567,6 +2629,18 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     else:
         model.fit(X_tr, y_tr, sample_weight=w_tr)
     best_iteration = getattr(model, "best_iteration", None)
+    try:
+        walk_forward = _walk_forward_metrics(
+            X_train, y_train, np.asarray(idx), timestamps, sample_weights,
+            params={k: v for k, v in model.get_params().items() if k not in {"n_estimators", "early_stopping_rounds"}},
+            trees=(best_iteration + 1) if best_iteration is not None else 100,
+            embargo_hours=float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24),
+            folds=max(2, int(os.getenv("ML_WALK_FORWARD_FOLDS", "3") or 3)),
+        )
+        if walk_forward.get("folds"):
+            logger.info("[ml_walk_forward] %s", walk_forward)
+    except Exception as wf_err:
+        walk_forward = {"error": type(wf_err).__name__}
 
     # Choose the classification diagnostic threshold from calibration-fit rows
     # only, then evaluate that frozen threshold on the untouched validation
@@ -2766,6 +2840,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     except Exception as audit_err:
         data_audit = {"error": type(audit_err).__name__}
     metrics = {
+        "walk_forward": walk_forward,
         "data_audit": data_audit,
         "accuracy": float(acc),
         "auc": float(auc),
@@ -3160,6 +3235,7 @@ async def _main_impl(lookback_days: int | None = None):
         specialist_results = await asyncio.to_thread(
             _specialists.train_specialists, X_train, y_train, feature_cols, sample_weights, timestamps,
             fit_only_mask, deployed_runtime=deployed_runtime,
+            assets=(df["asset"].astype(str).to_numpy() if "asset" in df.columns and len(df) == len(X_train) else None),
         )
         if isinstance(metrics, dict):
             metrics["specialists"] = _specialists.summary(specialist_results)

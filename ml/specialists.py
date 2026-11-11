@@ -50,8 +50,70 @@ def class_key(value: Any) -> Optional[str]:
         return None
 
 
+def _asset_hash(asset: Any) -> str:
+    """Router key for a per-asset model: the stable asset encoding the feature contract uses."""
+    from ml.features import stable_category_to_int
+
+    return f"asset:{int(stable_category_to_int(str(asset or '').upper()))}"
+
+
 def train_specialists(X, y, feature_cols, sample_weights=None, timestamps=None, fit_only_mask=None, *,
-                      deployed_runtime: bool = False) -> dict[str, dict[str, Any]]:
+                      deployed_runtime: bool = False, assets=None) -> dict[str, dict[str, Any]]:
+    """Train one model per asset class, and per asset, wherever the data supports it.
+
+    Hierarchy (owner request, 11 Nov 2026): a per-asset model needs
+    ``ML_ASSET_SPECIALIST_MIN_ROWS`` (1,500) of the asset's own rows and must pass the
+    full gate on its own untouched validation window; otherwise the asset uses its
+    class model, otherwise the global model. Fitting one model per asset on a few
+    hundred rows would memorise noise, so smaller assets are pooled on purpose.
+    """
+    results = _train_class_specialists(X, y, feature_cols, sample_weights, timestamps, fit_only_mask,
+                                       deployed_runtime=deployed_runtime)
+    if assets is None or not enabled():
+        return results
+    import numpy as np
+
+    from ml.train_model import _promotion_quality_gate, train_model
+
+    asset_min = max(300, _env_int("ML_ASSET_SPECIALIST_MIN_ROWS", 1500))
+    names = np.asarray([str(a or "").upper() for a in assets])
+    own = np.ones(len(X), dtype=bool) if fit_only_mask is None else ~np.asarray(fit_only_mask, dtype=bool)
+    for asset in sorted(set(names.tolist())):
+        mask = names == asset
+        own_rows = int((mask & own).sum())
+        if own_rows < asset_min:
+            continue
+        key = _asset_hash(asset)
+        idx = np.flatnonzero(mask)
+        y_sub = y.iloc[idx]
+        if len(set(y_sub.tolist())) < 2:
+            continue
+        try:
+            model, cols, cal_x, cal_y, metrics = train_model(
+                X.iloc[idx], y_sub, list(feature_cols),
+                None if sample_weights is None else sample_weights.iloc[idx],
+                None if timestamps is None else (timestamps.iloc[idx] if hasattr(timestamps, "iloc") else
+                                                 np.asarray(timestamps)[idx]),
+                None if fit_only_mask is None else np.asarray(fit_only_mask, dtype=bool)[idx],
+            )
+        except Exception as exc:
+            results[key] = {"name": asset, "rows": own_rows, "passed": False, "reason": f"train_failed:{type(exc).__name__}"}
+            continue
+        passed, _a, _b = _promotion_quality_gate(metrics, deployed_runtime=deployed_runtime)
+        calibration_ok = bool((metrics.get("calibration") or {}).get("validated", True))
+        results[key] = {
+            "name": asset, "rows": own_rows, "passed": bool(passed and calibration_ok),
+            "reason": "passed" if passed and calibration_ok else ("calibration" if passed else "quality_gate"),
+            "model": model, "feature_cols": list(cols), "calibration_x": list(cal_x or []),
+            "calibration_y": list(cal_y or []), "metrics": metrics,
+        }
+        logger.info("[ml_specialist] asset=%s rows=%s passed=%s auc=%s", asset, own_rows, results[key]["passed"],
+                    round(float(metrics.get("auc") or 0), 4))
+    return results
+
+
+def _train_class_specialists(X, y, feature_cols, sample_weights=None, timestamps=None, fit_only_mask=None, *,
+                             deployed_runtime: bool = False) -> dict[str, dict[str, Any]]:
     """Train one model per asset class with enough rows; return every result with its gate verdict."""
     import numpy as np
 
@@ -161,7 +223,15 @@ class Router:
     def route(self, features: dict[str, Any]) -> Optional[dict[str, Any]]:
         if not self.models:
             return None
-        key = class_key((features or {}).get("asset_class_enc"))
+        features = features or {}
+        if features.get("asset_enc") is not None:  # the asset's own model first, when it passed
+            try:
+                spec = self.models.get(f"asset:{int(float(features['asset_enc']))}")
+            except (TypeError, ValueError):
+                spec = None
+            if spec is not None:
+                return spec
+        key = class_key(features.get("asset_class_enc"))
         return self.models.get(key) if key is not None else None
 
     @staticmethod

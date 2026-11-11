@@ -13083,11 +13083,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 457,
+      "line_count": 459,
       "path": "ml/features.py",
       "reason": "production/build source",
-      "sha256": "d6a765a91dc1d904fd3b9b869d62fd4463fe79ab765d2ff2aa5431b9f5b19ce2",
-      "size_bytes": 19902
+      "sha256": "66b389bbe3d78d0b842ba62406662e307a1f81e708e5862eae282661bb622274",
+      "size_bytes": 20086
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13219,11 +13219,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 178,
+      "line_count": 248,
       "path": "ml/specialists.py",
       "reason": "production/build source",
-      "sha256": "6a9de1eacd36321d125ef8a01fa384100fddd7f3863623132f09fe2df2d01a76",
-      "size_bytes": 8702
+      "sha256": "ca1ffa4bda04e8142482eeee9356349a63d154e095e12d032b09b4d309f9923a",
+      "size_bytes": 12395
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13235,11 +13235,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3481,
+      "line_count": 3557,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "cbb7fd842f8c872947b561cadf7d07794da7858e2fd771bc99de217da8b7f340",
-      "size_bytes": 162620
+      "sha256": "742becf154a5561c00315f5b45fed0f7ec8be5136843e01d0554db344c37ef08",
+      "size_bytes": 166689
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18779,11 +18779,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 467,
+      "line_count": 490,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "fcef97ca7ca1ea1e12255bdb157b4efa9822e9ecea687c93d5d8327eaa4795f5",
-      "size_bytes": 20759
+      "sha256": "4a5d8d710ac8f994aeb213127792a0eb7d1986534bed2922e110e91315bce113",
+      "size_bytes": 22040
     },
     {
       "disposition": "TEST_ONLY",
@@ -19579,11 +19579,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 129,
+      "line_count": 160,
       "path": "tests/test_ml_specialists_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "138544c12bb62c6b0d7f21b72035c1ec505f7758b4d2b72e27159142e0ebc524",
-      "size_bytes": 6092
+      "sha256": "d3e7b6583a7b04ef215c0cd4138ae28f04374997098617c6ae577ff74c547855",
+      "size_bytes": 7553
     },
     {
       "disposition": "TEST_ONLY",

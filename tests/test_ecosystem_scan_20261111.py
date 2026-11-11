@@ -465,3 +465,26 @@ def test_schema_v6_adds_regime_context():
 
     assert get_feature_columns() == FEATURE_COLUMNS_V6 and FEATURE_COLUMNS_V6[: len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
     assert "timeframe_enc" in FEATURE_COLUMNS_V6 and "efficiency_ratio_20" in FEATURE_COLUMNS_V6
+
+
+def test_walk_forward_folds_are_reported_and_gate_promotion():
+    import numpy as np
+    import pandas as pd
+
+    from ml.train_model import _promotion_quality_gate, _walk_forward_metrics
+
+    rng = np.random.default_rng(3)
+    n = 1200
+    X = pd.DataFrame({"signal": rng.normal(size=n), "noise": rng.normal(size=n),
+                      "price_range": np.full(n, 0.02), "risk_amount": np.full(n, 0.01)})
+    y = pd.Series((X["signal"] + rng.normal(scale=0.8, size=n) > 0.4).astype(int))
+    ts = pd.Series(pd.date_range("2026-08-01", periods=n, freq="2h"))
+    out = _walk_forward_metrics(X, y, np.arange(n), ts, None, embargo_hours=24.0, trees=50,
+                                params={"max_depth": 3, "learning_rate": 0.1, "objective": "binary:logistic",
+                                        "eval_metric": "logloss", "random_state": 1})
+    assert len(out["folds"]) == 3 and out["mean_auc"] > 0.7
+    good = {"auc": 0.7, "accuracy": 0.7, "balanced_accuracy": 0.65, "positive_recall": 0.5, "pr_auc": 0.6,
+            "expected_r": 0.3, "positive_rate": 0.3, "walk_forward": out}
+    assert _promotion_quality_gate(good)[0]
+    bad = dict(good, walk_forward={"folds": [{}, {}], "mean_auc": 0.51, "mean_expected_r": -0.2})
+    assert not _promotion_quality_gate(bad)[0]
