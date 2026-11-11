@@ -1,5 +1,5 @@
 {
-  "file_count": 2787,
+  "file_count": 2788,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13179,6 +13179,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 141,
+      "path": "ml/regime_features.py",
+      "reason": "production/build source",
+      "sha256": "046bec7e8a6e5af455c5daae2ea349f05e67ec0fc0c1b94ab631df4be79952d3",
+      "size_bytes": 6945
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 144,
       "path": "ml/retrain.py",
       "reason": "production/build source",
@@ -18774,8 +18782,8 @@
       "line_count": 467,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "0bc0cd0721d592ea494ae658eea169010fd9481257c0d1a191f2df613de49533",
-      "size_bytes": 20687
+      "sha256": "fcef97ca7ca1ea1e12255bdb157b4efa9822e9ecea687c93d5d8327eaa4795f5",
+      "size_bytes": 20759
     },
     {
       "disposition": "TEST_ONLY",
@@ -22311,7 +22319,7 @@
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 879,
-    "PRESERVE_BEHAVIOUR": 1415,
+    "PRESERVE_BEHAVIOUR": 1416,
     "TEST_ONLY": 492
   }
 }
