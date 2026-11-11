@@ -4750,8 +4750,14 @@ def main_loop(DRY_RUN: bool = False):
                         score = 0
                         try:
                             score = float(score_signal(sig)) if score_signal else 0
-                        except Exception:
+                        except Exception as _score_err:
+                            # 11 Nov 2026: 104 candidates scored 0.0 with no reason; a scorer
+                            # exception was silently a zero. Name it and log it.
                             score = 0
+                            sig["score_rejection"] = f"scoring_error:{type(_score_err).__name__}"
+                            logger.warning("[engine] score_signal failed asset=%s strategy=%s error=%s: %s",
+                                           sig.get("asset"), sig.get("strategy_name"), type(_score_err).__name__,
+                                           str(_score_err)[:200])
                         # Approved adaptive profiles may apply only a bounded multiplier.
                         # Research/shadow profiles resolve to 1.0 and cannot affect delivery.
                         _adaptive_multiplier = _safe_float(sig.get("adaptive_score_multiplier"), 1.0)

@@ -1470,7 +1470,7 @@
         "db/migration_environment.py:9",
         "engine/admin_pulse.py:1110",
         "engine/core.py:1280",
-        "engine/core.py:6112",
+        "engine/core.py:6118",
         "payments/paystack_policy.py:45",
         "railway_main.py:1191",
         "signalrank_telegram/bot.py:1827",
@@ -1932,7 +1932,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6968",
+        "engine/core.py:6974",
         "services/automated_analyst.py:24"
       ],
       "required_by_code": true,
@@ -3285,7 +3285,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:6388"
+        "engine/core.py:6394"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4304,7 +4304,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5124"
+        "engine/core.py:5130"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4335,7 +4335,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/core.py:1959",
-        "engine/core.py:4868"
+        "engine/core.py:4874"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4396,7 +4396,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6110",
+        "engine/core.py:6116",
         "payments/paystack_policy.py:71",
         "railway_main.py:2816",
         "railway_main.py:2931",
@@ -8342,7 +8342,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5111"
+        "engine/core.py:5117"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8436,7 +8436,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5113"
+        "engine/core.py:5119"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8682,7 +8682,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5112"
+        "engine/core.py:5118"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8692,7 +8692,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5116"
+        "engine/core.py:5122"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8702,7 +8702,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5114"
+        "engine/core.py:5120"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10614,7 +10614,7 @@
       "read_locations": [
         "data/get_live_price.py:111",
         "data/get_live_price.py:647",
-        "engine/core.py:6129",
+        "engine/core.py:6135",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
         "railway_main.py:587"
@@ -16431,7 +16431,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4882"
+        "engine/core.py:4888"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16441,7 +16441,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4884"
+        "engine/core.py:4890"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16451,7 +16451,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4885"
+        "engine/core.py:4891"
       ],
       "required_by_code": true,
       "sensitive": false

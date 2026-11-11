@@ -11067,11 +11067,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7163,
+      "line_count": 7169,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "bf932612600d627f78b6a60314b271586a4e2ad9e4892090349fa762c037017a",
-      "size_bytes": 356953
+      "sha256": "86e9d92cac2826926674f1643b6c701345637a5c19979041d114a33e6254c971",
+      "size_bytes": 357529
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14254,7 +14254,7 @@
       "line_count": 16983,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "87a42effd461cf2345c4a2e090b2040c2d1e1a6b5e4f30df864a80c40f7558d4",
+      "sha256": "5a2a263fae288792f1e3a028f03e52f34105e30141d3ad4eacafedd722ada5ac",
       "size_bytes": 495734
     },
     {
