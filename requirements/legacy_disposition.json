@@ -13118,8 +13118,8 @@
       "line_count": 14,
       "path": "ml/ml_drift.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "c30fb1f66c299d0eb6829711a04bffed569c07c919139f9614023c21800a1424",
-      "size_bytes": 350
+      "sha256": "36b050716312eb8e3662acaa4ff5c1e038dd29f210389e7e6748c83c090c7430",
+      "size_bytes": 349
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13203,11 +13203,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3411,
+      "line_count": 3445,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "a2cef70ea4106bb0e2fbe0394273fa8f2b0a245da2441377cd7a5fee48838788",
-      "size_bytes": 158550
+      "sha256": "97f9ab0b3e043ccc6f978e3a4de93451b5a6194ca41c64aca7df3332b44843ba",
+      "size_bytes": 160391
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18747,11 +18747,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 298,
+      "line_count": 324,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "3bdeb75e6fdee0c8b283704b8cfadfc3f2c5695d782a06a59a4a282c9e00c020",
-      "size_bytes": 11984
+      "sha256": "3c1fade28798bd9953e672abc630f0c1f2573e31dee4f5250ea8480528300cca",
+      "size_bytes": 13248
     },
     {
       "disposition": "TEST_ONLY",

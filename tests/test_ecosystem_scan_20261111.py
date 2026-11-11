@@ -296,3 +296,29 @@ def test_champion_comparison_uses_pr_auc_lift_not_raw_pr_auc(tmp_path, monkeypat
     no_rate = {k: v for k, v in champion.items() if k != "positive_rate"}
     ok, evidence = _champion_comparison_gate(candidate, tmp_path / "x.json", champion_metrics=no_rate)
     assert "pr_auc" not in evidence["compared"] and "pr_auc_lift" not in evidence["compared"]
+
+
+def test_embargoed_windows_keep_their_size_and_never_fall_back_to_a_leaky_split():
+    import numpy as np
+    import pandas as pd
+    import pytest
+
+    from ml.train_model import _embargoed_windows
+
+    # 1,000 rows, most of them in the last two days (as production clusters).
+    old = pd.date_range("2026-08-15", periods=300, freq="6h")
+    recent = pd.date_range("2026-11-09", periods=700, freq="4min")
+    ts = pd.Series(old.append(recent))
+    idx = np.arange(len(ts))
+    tr, cal, te = _embargoed_windows(idx[:700], idx[700:850], idx[850:], ts, 24.0,
+                                     minimum_fit=50, minimum_calibration=30)
+    assert len(te) == 150 and len(cal) == 150  # sizes kept, not purged away
+    gap = pd.Timedelta(hours=24)
+    assert ts.iloc[cal].max() <= ts.iloc[te].min() - gap
+    assert ts.iloc[tr].max() <= ts.iloc[cal].min() - gap
+    assert not set(tr) & set(cal) and not set(cal) & set(te)
+
+    dense = pd.Series(pd.date_range("2026-11-10", periods=300, freq="1min"))  # five hours of rows
+    with pytest.raises(ValueError, match="insufficient_rows_after_embargo"):
+        _embargoed_windows(np.arange(200), np.arange(200, 250), np.arange(250, 300), dense, 24.0,
+                           minimum_fit=50, minimum_calibration=30)

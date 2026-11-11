@@ -2132,6 +2132,40 @@ def _fit_selected_calibration_curve(kind: str, probabilities, labels):
     )
 
 
+def _embargoed_windows(idx_tr, idx_cal, idx_te, timestamps, embargo_hours: float, *,
+                       minimum_fit: int, minimum_calibration: int):
+    """Fit / calibration / validation windows separated by ``embargo_hours`` gaps.
+
+    Validation keeps its newest rows; calibration takes the same number of rows it
+    had, from before the first gap; model fit is everything before the second gap.
+    Raises when the minimums cannot be met (never an unpurged fallback).
+    """
+    ts_all = pd.to_datetime(pd.Series(np.asarray(timestamps)), errors="coerce")
+    ts_all = ts_all.fillna(pd.Timestamp(now_utc_naive()))
+    gap = np.timedelta64(pd.Timedelta(hours=embargo_hours))
+    ordered = np.concatenate([np.asarray(idx_tr, dtype=int), np.asarray(idx_cal, dtype=int),
+                              np.asarray(idx_te, dtype=int)])
+    times = ts_all.iloc[ordered].to_numpy()
+    n_val, n_cal = len(idx_te), len(idx_cal)
+    te = ordered[-n_val:]
+    te_start = times[-n_val:].min()
+    earlier, earlier_times = ordered[:-n_val], times[:-n_val]
+    before_te = earlier[earlier_times <= te_start - gap]
+    cal = before_te[-n_cal:] if len(before_te) > n_cal else before_te
+    cal_start = ts_all.iloc[cal].to_numpy().min() if len(cal) else te_start
+    tr = before_te[:-len(cal)] if len(cal) else before_te
+    if len(tr):
+        tr = tr[ts_all.iloc[tr].to_numpy() <= cal_start - gap]
+    if len(tr) < minimum_fit or len(cal) < minimum_calibration:
+        raise ValueError(
+            f"insufficient_rows_after_embargo: fit={len(tr)} calibration={len(cal)} validation={len(te)} "
+            f"(minimums {minimum_fit}/{minimum_calibration}); refusing an unpurged split"
+        )
+    logger.info("[ml_temporal_split] embargo_hours=%s purged=%s fit=%s calibration=%s validation=%s",
+                embargo_hours, len(ordered) - len(tr) - len(cal) - len(te), len(tr), len(cal), len(te))
+    return tr, cal, te
+
+
 def _temporal_three_way_indices(
     row_count: int,
     *,
@@ -2432,18 +2466,18 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     )
     # Purge (embargo) rows just before each split boundary (10 Nov 2026): the engine re-logs the
     # same market setup across consecutive scans, so neighbours of the boundary leak across it.
+    # 11 Nov 2026: purging after a ratio split emptied the calibration window when rows cluster
+    # in recent days (279 of 437 purged; early stopping then kept one tree), and when that broke a
+    # minimum the old code silently kept the UNPURGED split (the 09:06 run's AUC 0.855 included
+    # that leak). The windows are now carved around the gaps: validation = newest rows, then a
+    # gap, calibration = the next rows, then a gap, model fit = the rest. Too few rows for that
+    # fails the run instead of training on a leaky split.
     embargo_hours = max(0.0, float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24))
     if embargo_hours > 0 and timestamps is not None and len(idx_cal) and len(idx_te):
-        ts_all = pd.to_datetime(pd.Series(np.asarray(timestamps)), errors="coerce")
-        gap = pd.Timedelta(hours=embargo_hours)
-        cal_start, te_start = ts_all.iloc[idx_cal].min(), ts_all.iloc[idx_te].min()
-        keep_tr = idx_tr[~(ts_all.iloc[idx_tr].to_numpy() > np.datetime64(cal_start - gap))]
-        keep_cal = idx_cal[~(ts_all.iloc[idx_cal].to_numpy() > np.datetime64(te_start - gap))]
-        # Never purge a window below the trainer's minimums; then keep the unpurged split.
-        if len(keep_tr) >= minimum_model_fit_rows and len(keep_cal) >= minimum_calibration_fit_rows:
-            logger.info("[ml_temporal_split] embargo_hours=%s purged_train=%s purged_calibration=%s", embargo_hours,
-                        len(idx_tr) - len(keep_tr), len(idx_cal) - len(keep_cal))
-            idx_tr, idx_cal = keep_tr, keep_cal
+        idx_tr, idx_cal, idx_te = _embargoed_windows(
+            idx_tr, idx_cal, idx_te, timestamps, embargo_hours,
+            minimum_fit=minimum_model_fit_rows, minimum_calibration=minimum_calibration_fit_rows,
+        )
     if len(fit_only_idx):
         idx_tr = np.concatenate([fit_only_idx, idx_tr])
     logger.info(
