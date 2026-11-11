@@ -13,9 +13,9 @@ import math
 import os
 from typing import Any
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 MODEL_FORMAT_VERSION = 3
-FEATURE_SCHEMA_VERSION = "feature-schema-v5"
+FEATURE_SCHEMA_VERSION = "feature-schema-v6"
 LABEL_SCHEMA_VERSION = "label-schema-v1"
 
 LEGACY_RETRAIN_FEATURE_COLUMNS = [
@@ -138,6 +138,11 @@ FEATURE_COLUMNS_V4 = [
 # (ml/alt_data.py): crypto Fear & Greed, US high-yield credit spread (FRED) and CFTC
 # speculative net positioning. Missing values are 0.0, like every other feature.
 FEATURE_COLUMNS_V5 = FEATURE_COLUMNS_V4 + ["fear_greed", "hy_credit_spread", "cot_net_position"]
+# Version 6 (11 Nov 2026): timeframe, chop/trend regime and time-of-day context
+# (ml/regime_features.py). The same setup lost on crypto 5m and won on crypto 1h,
+# and the model could not see either the timeframe or the chop measures.
+FEATURE_COLUMNS_V6 = FEATURE_COLUMNS_V5 + ["timeframe_enc", "efficiency_ratio_20", "range_to_atr_20",
+                                          "volatility_ratio_5_20", "hour_sin", "hour_cos", "is_weekend"]
 
 CRITICAL_FEATURES_V4 = frozenset(
     {
@@ -158,7 +163,7 @@ def get_current_schema_version() -> int:
 
 
 def get_feature_columns(schema_version: int | None = None) -> list[str]:
-    """Return the declared contract; new training defaults to V5.
+    """Return the declared contract; new training defaults to V6.
 
     Serving an existing V3 champion must use its original ordered features while
     the V4 challenger gathers forward evidence. Unknown hashed contracts fail
@@ -171,6 +176,8 @@ def get_feature_columns(schema_version: int | None = None) -> list[str]:
         return list(FEATURE_COLUMNS_V4)
     if version == 5:
         return list(FEATURE_COLUMNS_V5)
+    if version == 6:
+        return list(FEATURE_COLUMNS_V6)
     raise ValueError(f"unsupported_feature_schema_version:{version}")
 
 

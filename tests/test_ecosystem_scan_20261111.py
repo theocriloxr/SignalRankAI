@@ -376,7 +376,7 @@ def test_alt_data_is_point_in_time_and_maps_assets(monkeypatch):
 
 
 def test_schema_v5_adds_the_three_series():
-    from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, get_feature_columns
+    from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, get_feature_columns
 
     assert get_feature_columns() == FEATURE_COLUMNS_V5
     assert FEATURE_COLUMNS_V5[: len(FEATURE_COLUMNS_V4)] == FEATURE_COLUMNS_V4
@@ -442,3 +442,26 @@ def test_chop_veto_is_skipped_only_for_crypto_1h(monkeypatch):
     fx = {"asset": "EURUSD", "symbol": "EURUSD", "timeframe": "1h", "direction": "long"}
     _ok, reasons = suite.run_all_filters(fx, data, "NY")
     assert any("Weak trend" in r for r in reasons)
+
+
+def test_regime_features_measure_trend_and_chop():
+    from datetime import datetime, timezone
+
+    from ml.regime_features import candle_features, context_features
+
+    trend = [100 + i for i in range(40)]
+    chop = [100 + (1 if i % 2 else -1) for i in range(40)]
+    up = candle_features([c + 0.5 for c in trend], [c - 0.5 for c in trend], trend)
+    side = candle_features([c + 0.5 for c in chop], [c - 0.5 for c in chop], chop)
+    assert up["efficiency_ratio_20"] == 1.0 and side["efficiency_ratio_20"] < 0.1
+    assert up["range_to_atr_20"] > side["range_to_atr_20"]
+    ctx = context_features("1h", datetime(2026, 11, 14, 6, 0, tzinfo=timezone.utc))  # Saturday 06:00
+    assert ctx["timeframe_enc"] == 4.0 and ctx["is_weekend"] == 1.0 and abs(ctx["hour_sin"] - 1.0) < 1e-9
+    assert candle_features([1.0] * 5, [1.0] * 5, [1.0] * 5)["efficiency_ratio_20"] == 0.0  # too short
+
+
+def test_schema_v6_adds_regime_context():
+    from ml.schema_version import FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, get_feature_columns
+
+    assert get_feature_columns() == FEATURE_COLUMNS_V6 and FEATURE_COLUMNS_V6[: len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
+    assert "timeframe_enc" in FEATURE_COLUMNS_V6 and "efficiency_ratio_20" in FEATURE_COLUMNS_V6

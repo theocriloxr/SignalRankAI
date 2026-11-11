@@ -1984,6 +1984,17 @@ def engineer_features(df):
         for col in _ALT_FEATURES:
             if col not in X.columns:
                 X[col] = 0.0
+    from ml.regime_features import FEATURES as _REGIME_FEATURES, context_features as _context
+
+    if any(col in feature_cols and col not in X.columns for col in _REGIME_FEATURES):
+        # Context needs no candles; candle-based regime values stay 0 unless filled upstream.
+        stamps = pd.to_datetime(X["created_at"], errors="coerce", utc=True) if "created_at" in X.columns else None
+        rows = [_context(tf, None if stamps is None or pd.isna(ts) else ts.to_pydatetime())
+                for tf, ts in zip(X["timeframe"] if "timeframe" in X.columns else [""] * len(X),
+                                  stamps if stamps is not None else [None] * len(X))]
+        for col in _REGIME_FEATURES:
+            if col not in X.columns:
+                X[col] = [r.get(col, 0.0) for r in rows]
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
     y_train = X["target"].astype(np.int32)
@@ -3048,6 +3059,15 @@ async def _main_impl(lookback_days: int | None = None):
         if "source_type" in df.columns else None
     )
     source_counts = dict(df.attrs.get("source_counts") or source_counts)
+    try:  # schema v6 regime/context features, point in time from market_candles
+        from db.session import get_session as _regime_session
+        from ml.regime_features import fill_frame as _fill_regime
+
+        df = await _fill_regime(df, session_factory=lambda: _regime_session(
+            **_training_session_kwargs("ml_training_regime_features")))
+        logger.info("[ml_regime_features] id=%s filled rows=%s", run_id, len(df))
+    except Exception as regime_error:
+        logger.warning("[ml_regime_features] id=%s skipped error=%s", run_id, type(regime_error).__name__)
     X_train, y_train, feature_cols, sample_weights, timestamps = await asyncio.to_thread(engineer_features, df)
 
     from ml.model_registry import (

@@ -165,7 +165,18 @@ def build_model_feature_values(signal, market_data=None):
         "fear_greed": _safe_float(signal.get("fear_greed"), alt_values.get("fear_greed", 0.0)),
         "hy_credit_spread": _safe_float(signal.get("hy_credit_spread"), alt_values.get("hy_credit_spread", 0.0)),
         "cot_net_position": _safe_float(signal.get("cot_net_position"), alt_values.get("cot_net_position", 0.0)),
+        **_regime_values(signal, candles),
     }
+
+
+def _regime_values(signal, candles):
+    """Schema v6 regime/context features from the closed candles (ml/regime_features.py)."""
+    try:
+        from ml.regime_features import live_values
+
+        return live_values(signal, candles)
+    except Exception:
+        return {}
 
 
 def timeframe_to_int(tf):
