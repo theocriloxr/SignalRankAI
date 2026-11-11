@@ -484,7 +484,7 @@
   "summary": {
     "documents": 395,
     "requirements_and_source_sections": 10051,
-    "source_clauses": 60390,
+    "source_clauses": 60391,
     "interfaces": {
       "ENDPOINT": 194,
       "API": 180,
@@ -694,9 +694,9 @@
     },
     {
       "path": "CURRENT_RELEASE.md",
-      "sha256_lf": "0c8f9edb54317763b60610fd246412bf60d37f325939da7bdbbf69d90f197b61",
+      "sha256_lf": "d7d369afa72afa0ca84b79d2d31ee2b67fd63e299e38c0236b2bc4499ba2a3d5",
       "encoding": "utf-8-sig",
-      "line_count": 112,
+      "line_count": 113,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 6
     },
@@ -22019,10 +22019,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "40a413fd429c7c862653a36233a34cdd1d92fd6869b6847a2bb9e1a38d553085",
+      "source_sha256": "5a3f2780db72d7ba6d7f6b89dfd0f2f88e4b37af8adbe90762b145474c586a71",
       "line_start": 25,
-      "line_end": 71,
-      "text": "## Current release-candidate changes\n\nThe repository schema now extends the previously certified credential-retirement\nchain with:\n\n- `0046_decision_log`: unified decision/rejection evidence;\n- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;\n- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;\n- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.\n- `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.\n- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.\n\n- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.\n- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.\n\n- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.\n\n- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.\n\n- `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data).\n\n- `0057_expectancy_shadow_index`: concurrent, validated partial index for expectancy-shadow decision rows; no data change.\n- `0058_exclude_no_trade_outcomes`: data-only. Missed-entry/expired outcomes that carry an R get an audited correction (R cleared, original kept in `correction_reason`) and are excluded from performance; outcomes with |R| > 10 (degenerate stops) are excluded with a reason. Nothing is deleted; no schema change.\n- `0059_close_pending_terminal`: data-only. Closed outcomes stored with `canonical_outcome` `pending` or empty (the 4 Nov ZECUSDT stop) get the canonical result `upsert_outcome` now derives, as an audited correction (previous value named in `correction_reason`). Status, R, percent and inclusion are unchanged; nothing is deleted; no schema change.\n- `0060_notification_channels`: new table `notification_channel_deliveries` (one row per notification and external channel, email or push) so each is sent at most once. No existing data changes.\n- `0061_tracked_shadow_index`: partial index `ix_decision_log_tracked_id` on `decision_log(id)` for rows with a tracked outcome, built concurrently (no write blocking). The strategy scorecard reads only those rows. No data changes.\n- `0062_candidate_shadow_index`: partial index `ix_ml_rejected_candidate_shadow` on `ml_rejected_signals` (artifact hash, created_at) for challenger forward-proof rows, built concurrently. `/ml_candidate` and the training lease read only those rows. No data changes.\n- `0063_user_trade_ideas`: new table `user_trade_ideas` for trades users submit for analysis (Telegram `/check_trade`, website/app Analyse page, API); the idea tracker labels each one from candles after its entry is touched, the owner of the idea is notified, and resolved ideas join training as low-weight fit-only rows. Additive table and indexes only.\n\nThe current release candidate also includes:\n\n- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;\n- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;\n- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;\n- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));\n- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;\n- immediate removal of ineligible assets from pending and refill scanner queues;\n- exact-branch CI/release-manifest gating;\n- web fan-out ORM materialization before SQLAlchemy session expiry;\n- bounded adaptive-candle database transaction wall time;\n- separate Telegram queue-delay and handler-duration SLOs;\n- Redis-first event publication with durable PostgreSQL fallback and replay;\n- process-only liveness plus dependency readiness;\n- explicit build/version provenance;\n- a real Next.js SignalRankAI public/application shell instead of the default\n  Create Next App page.\n",
+      "line_end": 72,
+      "text": "## Current release-candidate changes\n\nThe repository schema now extends the previously certified credential-retirement\nchain with:\n\n- `0046_decision_log`: unified decision/rejection evidence;\n- `0047_event_outbox`: durable PostgreSQL fallback for critical events when the Redis transport is unavailable;\n- `0048_runtime_schema_bridge`: canonical Alembic bridge for runtime-critical columns that previously existed only in the retired parallel migration tree or startup auto-repair;\n- `0049_research_trial_ledger`: append-only hypothesis versions, trial definitions, terminal results and enforced lineage. Research evidence does not activate trading.\n- `0050_profile_health_index`: validated concurrent profile/signal lookup index for bounded strategy-health surveillance. Index availability does not certify trading.\n- `0051_strategy_health_baselines`: immutable, owner-approved delivery baselines and predefined decay limits, forward-evidence comparisons and append-only health receipts. Unverified baselines cannot receive runtime cache approvals.\n\n- `0052_research_dataset_snapshots`: append-only canonical outcome dataset snapshots. Adaptive research replays persisted rows after source corrections.\n- `0053_research_market_inputs`: bounded immutable normalized component inputs, deduplicated across signals from one capture. Source publication vintages, historical universe membership and calendar qualification remain unverified.\n\n- `0054_shadow_pending_index`: concurrent validated partial index for pending ML-shadow observations; no account or execution state changes.\n\n- `0055_user_renewal_default`: opt-in renewal default for future users; existing preferences and subscription records are untouched.\n\n- `0056_ai_usage_ledger`: append-only AI usage/cost ledger and budget alerts (new tables only; no change to existing data).\n\n- `0057_expectancy_shadow_index`: concurrent, validated partial index for expectancy-shadow decision rows; no data change.\n- `0058_exclude_no_trade_outcomes`: data-only. Missed-entry/expired outcomes that carry an R get an audited correction (R cleared, original kept in `correction_reason`) and are excluded from performance; outcomes with |R| > 10 (degenerate stops) are excluded with a reason. Nothing is deleted; no schema change.\n- `0059_close_pending_terminal`: data-only. Closed outcomes stored with `canonical_outcome` `pending` or empty (the 4 Nov ZECUSDT stop) get the canonical result `upsert_outcome` now derives, as an audited correction (previous value named in `correction_reason`). Status, R, percent and inclusion are unchanged; nothing is deleted; no schema change.\n- `0060_notification_channels`: new table `notification_channel_deliveries` (one row per notification and external channel, email or push) so each is sent at most once. No existing data changes.\n- `0061_tracked_shadow_index`: partial index `ix_decision_log_tracked_id` on `decision_log(id)` for rows with a tracked outcome, built concurrently (no write blocking). The strategy scorecard reads only those rows. No data changes.\n- `0062_candidate_shadow_index`: partial index `ix_ml_rejected_candidate_shadow` on `ml_rejected_signals` (artifact hash, created_at) for challenger forward-proof rows, built concurrently. `/ml_candidate` and the training lease read only those rows. No data changes.\n- `0063_user_trade_ideas`: new table `user_trade_ideas` for trades users submit for analysis (Telegram `/check_trade`, website/app Analyse page, API); the idea tracker labels each one from candles after its entry is touched, the owner of the idea is notified, and resolved ideas join training as low-weight fit-only rows. Additive table and indexes only.\n\nThe current release candidate also includes:\n\n- complete financial-switch admission and startup clamping, including prop, legacy MT5, unsupported mainnet and automatic-payout switches; paper-release approval and monitoring reject these switches without their required safety posture;\n- transactional ML promotion bound to the reviewed candidate and champion row identities, with stale reviews rejected;\n- strictly typed ML qualification, finite metrics/tolerances and required champion comparisons; market-class certification requires the canonical calendar session to be open;\n- cycle-bound background delivery and lock cleanup, shared final-opportunity prefiltering, and freshness-first resend selection ([incident details](docs/CONTINUATION_DELIVERY_20261011.md));\n- bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;\n- immediate removal of ineligible assets from pending and refill scanner queues;\n- exact-branch CI/release-manifest gating;\n- setup-evidence snapshot refreshed one hour per short session with retries (a single 30 s session timed out and the fail-closed filter blocked every candidate for 19 h, 10-11 Nov 2026), named in the drought alert; Coinbase 4h built from complete UTC hours; scorer rejections named in place of \"Score 0.0\"; background trade-idea, rank-alert and teaser reads at analytics DB priority; each ML training run also kept in `runtime_state`;\n- web fan-out ORM materialization before SQLAlchemy session expiry;\n- bounded adaptive-candle database transaction wall time;\n- separate Telegram queue-delay and handler-duration SLOs;\n- Redis-first event publication with durable PostgreSQL fallback and replay;\n- process-only liveness plus dependency readiness;\n- explicit build/version provenance;\n- a real Next.js SignalRankAI public/application shell instead of the default\n  Create Next App page.\n",
       "clauses": [
         {
           "line": 25,
@@ -22142,42 +22142,46 @@
         },
         {
           "line": 63,
-          "text": "- web fan-out ORM materialization before SQLAlchemy session expiry;"
+          "text": "- setup-evidence snapshot refreshed one hour per short session with retries (a single 30 s session timed out and the fail-closed filter blocked every candidate for 19 h, 10-11 Nov 2026), named in the drought alert; Coinbase 4h built from complete UTC hours; scorer rejections named in place of \"Score 0.0\"; background trade-idea, rank-alert and teaser reads at analytics DB priority; each ML training run also kept in `runtime_state`;"
         },
         {
           "line": 64,
-          "text": "- bounded adaptive-candle database transaction wall time;"
+          "text": "- web fan-out ORM materialization before SQLAlchemy session expiry;"
         },
         {
           "line": 65,
-          "text": "- separate Telegram queue-delay and handler-duration SLOs;"
+          "text": "- bounded adaptive-candle database transaction wall time;"
         },
         {
           "line": 66,
-          "text": "- Redis-first event publication with durable PostgreSQL fallback and replay;"
+          "text": "- separate Telegram queue-delay and handler-duration SLOs;"
         },
         {
           "line": 67,
-          "text": "- process-only liveness plus dependency readiness;"
+          "text": "- Redis-first event publication with durable PostgreSQL fallback and replay;"
         },
         {
           "line": 68,
-          "text": "- explicit build/version provenance;"
+          "text": "- process-only liveness plus dependency readiness;"
         },
         {
           "line": 69,
-          "text": "- a real Next.js SignalRankAI public/application shell instead of the default"
+          "text": "- explicit build/version provenance;"
         },
         {
           "line": 70,
+          "text": "- a real Next.js SignalRankAI public/application shell instead of the default"
+        },
+        {
+          "line": 71,
           "text": "  Create Next App page."
         }
       ]
     },
     {
-      "id": "SR-SOURCE-50a5e630c294615e",
+      "id": "SR-SOURCE-673f33d3a7258127",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:72",
+      "source": "CURRENT_RELEASE.md:73",
       "requirement": "Certification boundary",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -22188,36 +22192,36 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "b4235de443c6e19e66d503b5fcc930831c6c19b526a0a42144b530d9926619c6",
-      "line_start": 72,
-      "line_end": 78,
+      "line_start": 73,
+      "line_end": 79,
       "text": "## Certification boundary\n\nThis release candidate is **not** production/live-money certified until all\nrequired gates in `certification/release_manifest.yaml` pass for one immutable\nSHA. Required external/runtime evidence includes:\n\n1. clean-room compile/schema/targeted regression pass;",
       "clauses": [
         {
-          "line": 72,
+          "line": 73,
           "text": "## Certification boundary"
         },
         {
-          "line": 74,
+          "line": 75,
           "text": "This release candidate is **not** production/live-money certified until all"
         },
         {
-          "line": 75,
+          "line": 76,
           "text": "required gates in `certification/release_manifest.yaml` pass for one immutable"
         },
         {
-          "line": 76,
+          "line": 77,
           "text": "SHA. Required external/runtime evidence includes:"
         },
         {
-          "line": 78,
+          "line": 79,
           "text": "1. clean-room compile/schema/targeted regression pass;"
         }
       ]
     },
     {
-      "id": "SR-SOURCE-3a1a4a73f6a0ad01",
+      "id": "SR-SOURCE-5c69ef2d0dad9ae8",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:79",
+      "source": "CURRENT_RELEASE.md:80",
       "requirement": "2. GitHub/static security and frontend/mobile build gates or equivalent",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -22228,44 +22232,44 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "2e8cfdaf1cc719787fb83adf67f1c0e49dadbf6df35fb49dbabd65116ea71cf9",
-      "line_start": 79,
-      "line_end": 85,
+      "line_start": 80,
+      "line_end": 86,
       "text": "2. GitHub/static security and frontend/mobile build gates or equivalent\n   independent evidence;\n3. isolated Railway staging using separate PostgreSQL and Redis state;\n4. current-head migration and restore drill;\n5. provider freshness certification for each enabled asset class;\n6. demo broker lifecycle and reconciliation certification;\n7. database storage headroom and session-hold SLOs;",
       "clauses": [
         {
-          "line": 79,
+          "line": 80,
           "text": "2. GitHub/static security and frontend/mobile build gates or equivalent"
         },
         {
-          "line": 80,
+          "line": 81,
           "text": "   independent evidence;"
         },
         {
-          "line": 81,
+          "line": 82,
           "text": "3. isolated Railway staging using separate PostgreSQL and Redis state;"
         },
         {
-          "line": 82,
+          "line": 83,
           "text": "4. current-head migration and restore drill;"
         },
         {
-          "line": 83,
+          "line": 84,
           "text": "5. provider freshness certification for each enabled asset class;"
         },
         {
-          "line": 84,
+          "line": 85,
           "text": "6. demo broker lifecycle and reconciliation certification;"
         },
         {
-          "line": 85,
+          "line": 86,
           "text": "7. database storage headroom and session-hold SLOs;"
         }
       ]
     },
     {
-      "id": "SR-SOURCE-5fd8a7fd9e3836b4",
+      "id": "SR-SOURCE-a524966522cdb264",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:86",
+      "source": "CURRENT_RELEASE.md:87",
       "requirement": "8. Telegram/web delivery and outcome reconciliation SLOs;",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -22276,48 +22280,48 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "ea3c61d25e31d5f05b4bba3877b911a72357095db71db099bb1af92ce08dfe11",
-      "line_start": 86,
-      "line_end": 96,
+      "line_start": 87,
+      "line_end": 97,
       "text": "8. Telegram/web delivery and outcome reconciliation SLOs;\n9. 24–72 hour immutable-SHA staging soak;\n10. explicit human approval for any controlled live-money pilot.\n\nNo successful build or deployment by itself changes this boundary.\n\nThe [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0\ncorrections, local PostgreSQL evidence, the GitHub billing blocker, active\nbranch governance and remaining dependency/runtime certification gaps.\nNo local result grants exact-SHA staging or live-money certification.\n",
       "clauses": [
         {
-          "line": 86,
+          "line": 87,
           "text": "8. Telegram/web delivery and outcome reconciliation SLOs;"
         },
         {
-          "line": 87,
+          "line": 88,
           "text": "9. 24–72 hour immutable-SHA staging soak;"
         },
         {
-          "line": 88,
+          "line": 89,
           "text": "10. explicit human approval for any controlled live-money pilot."
         },
         {
-          "line": 90,
+          "line": 91,
           "text": "No successful build or deployment by itself changes this boundary."
         },
         {
-          "line": 92,
+          "line": 93,
           "text": "The [3 October master audit](docs/MASTER_AUDIT_20261003.md) records P0"
         },
         {
-          "line": 93,
+          "line": 94,
           "text": "corrections, local PostgreSQL evidence, the GitHub billing blocker, active"
         },
         {
-          "line": 94,
+          "line": 95,
           "text": "branch governance and remaining dependency/runtime certification gaps."
         },
         {
-          "line": 95,
+          "line": 96,
           "text": "No local result grants exact-SHA staging or live-money certification."
         }
       ]
     },
     {
-      "id": "SR-SOURCE-35d2006fb960ed29",
+      "id": "SR-SOURCE-db7be4fbcc308911",
       "kind": "SOURCE",
-      "source": "CURRENT_RELEASE.md:97",
+      "source": "CURRENT_RELEASE.md:98",
       "requirement": "Historical evidence retained",
       "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
       "responsible_component": "Architecture / source-specific implementation review",
@@ -22328,60 +22332,60 @@
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
       "source_sha256": "32103fc8c9313d5a5480e07c7f1e8f0ed330f535866e86a2a486a45027ab2c7c",
-      "line_start": 97,
-      "line_end": 112,
+      "line_start": 98,
+      "line_end": 113,
       "text": "## Historical evidence retained\n\nThe following remain useful historical references but apply only to the older\nrelease they document:\n\n- `FINAL_COMPLETION_REPORT_20260926.md`\n- `BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md`\n- `docs/security/THREAT_MODEL.md`\n- `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md`\n- `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`\n- `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`\n\nProduction promotion remains a separate controlled operation. Real execution,\nautomatic execution, copy trading, prop execution and real payouts must remain\ndisabled until the exact release candidate is certified and the user explicitly\nauthorizes a controlled pilot.",
       "clauses": [
         {
-          "line": 97,
+          "line": 98,
           "text": "## Historical evidence retained"
         },
         {
-          "line": 99,
+          "line": 100,
           "text": "The following remain useful historical references but apply only to the older"
         },
         {
-          "line": 100,
+          "line": 101,
           "text": "release they document:"
         },
         {
-          "line": 102,
+          "line": 103,
           "text": "- `FINAL_COMPLETION_REPORT_20260926.md`"
         },
         {
-          "line": 103,
+          "line": 104,
           "text": "- `BLOCKED_EXTERNAL_REQUIREMENTS_20260926.md`"
         },
         {
-          "line": 104,
+          "line": 105,
           "text": "- `docs/security/THREAT_MODEL.md`"
         },
         {
-          "line": 105,
+          "line": 106,
           "text": "- `docs/architecture/REQUIREMENTS_TRACEABILITY_MATRIX.md`"
         },
         {
-          "line": 106,
+          "line": 107,
           "text": "- `docs/evidence/STAGING_0045_CREDENTIAL_RETIREMENT_20260926.md`"
         },
         {
-          "line": 107,
+          "line": 108,
           "text": "- `docs/evidence/STAGING_PROVIDER_CERTIFICATION_20260926.md`"
         },
         {
-          "line": 109,
+          "line": 110,
           "text": "Production promotion remains a separate controlled operation. Real execution,"
         },
         {
-          "line": 110,
+          "line": 111,
           "text": "automatic execution, copy trading, prop execution and real payouts must remain"
         },
         {
-          "line": 111,
+          "line": 112,
           "text": "disabled until the exact release candidate is certified and the user explicitly"
         },
         {
-          "line": 112,
+          "line": 113,
           "text": "authorizes a controlled pilot."
         }
       ]

@@ -60,6 +60,7 @@ The current release candidate also includes:
 - bounded prospective engine-universe observations bound to immutable component inputs, with historical membership still unverified;
 - immediate removal of ineligible assets from pending and refill scanner queues;
 - exact-branch CI/release-manifest gating;
+- setup-evidence snapshot refreshed one hour per short session with retries (a single 30 s session timed out and the fail-closed filter blocked every candidate for 19 h, 10-11 Nov 2026), named in the drought alert; Coinbase 4h built from complete UTC hours; scorer rejections named in place of "Score 0.0"; background trade-idea, rank-alert and teaser reads at analytics DB priority; each ML training run also kept in `runtime_state`;
 - web fan-out ORM materialization before SQLAlchemy session expiry;
 - bounded adaptive-candle database transaction wall time;
 - separate Telegram queue-delay and handler-duration SLOs;

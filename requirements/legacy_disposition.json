@@ -1,5 +1,5 @@
 {
-  "file_count": 2780,
+  "file_count": 2781,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -331,11 +331,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 112,
+      "line_count": 113,
       "path": "CURRENT_RELEASE.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "0c8f9edb54317763b60610fd246412bf60d37f325939da7bdbbf69d90f197b61",
-      "size_bytes": 8272
+      "sha256": "d7d369afa72afa0ca84b79d2d31ee2b67fd63e299e38c0236b2bc4499ba2a3d5",
+      "size_bytes": 8707
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7430,7 +7430,7 @@
       "line_count": 27010,
       "path": "docs/release/CROSSCHAT_REQUIREMENTS_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "9d8216fc2d96ef3addc61893d6a57c2a4338d7b45501a772dc280d879753aec2",
+      "sha256": "0d68c294a81dab6ca430c67bc22ed7129e946e99ea1969050da09d686a748f90",
       "size_bytes": 3011499
     },
     {
@@ -7478,7 +7478,7 @@
       "line_count": 10873,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d6036e4eae9aedd17aba05aa08b4529d4bd76ce3be7ab3e3e4ca0065d9d1d1ca",
+      "sha256": "fbe73cba45441218aa97bd091a9c50a52da83de3ba4b8b592c52b8a5ea7faa45",
       "size_bytes": 4937802
     },
     {
@@ -10387,11 +10387,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 529680,
+      "line_count": 529684,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "8ab7220ce95b3ec8cfe2c8660ef6b2f8f5047ec2cdcf77a48026181901a86f4d",
-      "size_bytes": 24650571
+      "sha256": "442263b2098d1cd4bca4bf890ed0e809a023874200d5f121d59c5f09664b1f2e",
+      "size_bytes": 24651510
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10406,7 +10406,7 @@
       "line_count": null,
       "path": "docs/release/requirements_universe.jsonl",
       "reason": "documentation/specification/evidence",
-      "sha256": "728bcbb4ee45401e26966c550aa3eb9b0a154c4a0b0570de03ea7cdd62c637d2",
+      "sha256": "3255405a7045642e90c8ed2077fe3225df6e4ebd59b71e258a08fd09121f2306",
       "size_bytes": 18518109
     },
     {
@@ -10414,7 +10414,7 @@
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "860501f08e03ea8aee2be46b794ec187d78202a6d0f669bd343d9afc0e0ea7dc",
+      "sha256": "9876541618a838c7a862e99b87dc242976931e5006b822880cfdd5e10f37655b",
       "size_bytes": 2986
     },
     {
@@ -18731,6 +18731,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 140,
+      "path": "tests/test_ecosystem_scan_20261111.py",
+      "reason": "automated test evidence",
+      "sha256": "e5e80e6fdddee5ae221e21c0afdc971e15f2b15865e93d411352a5fa963bc1e5",
+      "size_bytes": 5007
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 135,
       "path": "tests/test_email_outbox_sending_lease_20261103.py",
       "reason": "automated test evidence",
@@ -22256,6 +22264,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 878,
     "PRESERVE_BEHAVIOUR": 1411,
-    "TEST_ONLY": 490
+    "TEST_ONLY": 491
   }
 }
