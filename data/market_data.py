@@ -354,6 +354,7 @@ _YFINANCE_OVERRIDES: dict[str, str] = {
     "UK100": "^FTSE",
     "FRA40": "^FCHI",
     "JP225": "^N225",
+    "US2000": "^RUT",
     "JPN225": "^N225",
     "HK50": "^HSI",
     "AUS200": "^AXJO",

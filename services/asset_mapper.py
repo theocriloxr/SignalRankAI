@@ -231,6 +231,7 @@ _INDEX_MAP: Dict[str, Dict[str, str]] = {
 _INDEX_MAP.update(
     {
         "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "N225", "mt5": "JP225"},
+        "US2000": {"yfinance": "^RUT", "polygon": None, "twelvedata": "RUT", "mt5": "US2000"},
         "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
         "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
         "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},

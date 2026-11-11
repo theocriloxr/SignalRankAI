@@ -2707,11 +2707,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 19,
+      "line_count": 68,
       "path": "configs/broker_universes.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "7599cf2a04e1cd38a7d504595203242cc817f047b96931289df68ea3463428e0",
-      "size_bytes": 996
+      "sha256": "e721da2e4ad2fe5a388a455fcbdb7594a4999c756bf24bf1cc8108145530966b",
+      "size_bytes": 1659
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3787,11 +3787,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2868,
+      "line_count": 2871,
       "path": "data/fetcher.py",
       "reason": "production/build source",
-      "sha256": "4b667e00d888af4d9587dc62ddadce7e21320155709408057c1087f463a03226",
-      "size_bytes": 109357
+      "sha256": "37f049f7dd76b3a6c267562b2ecae074a8c9492be0ae240306a834a33b6e95b3",
+      "size_bytes": 109425
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3835,11 +3835,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1561,
+      "line_count": 1562,
       "path": "data/market_data.py",
       "reason": "production/build source",
-      "sha256": "63f1e7c770f6e030d783a5da5335ae8e08a8572daabdf84522f61a0b4752644d",
-      "size_bytes": 62292
+      "sha256": "e9aaef67de0f965dcaa64f7e900151b9d16cec26d00e2bafe37280f611df3d82",
+      "size_bytes": 62314
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11067,11 +11067,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7169,
+      "line_count": 7220,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "ed9a6e8cd2e999514be914aea3beb355f2c52bbbcee31e710a0d05268562aa37",
-      "size_bytes": 357562
+      "sha256": "fc987daabcfd6a4ad92309342ee51a6d0fb3bf8260ba8c810ccb092390096560",
+      "size_bytes": 359947
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14254,7 +14254,7 @@
       "line_count": 16983,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "5a2a263fae288792f1e3a028f03e52f34105e30141d3ad4eacafedd722ada5ac",
+      "sha256": "c3d0b4b17b1e72f1797a6c44183aff2a79a7360a255da76d0d4d561536ddb1bd",
       "size_bytes": 495734
     },
     {
@@ -15667,11 +15667,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 468,
+      "line_count": 469,
       "path": "services/asset_mapper.py",
       "reason": "production/build source",
-      "sha256": "bf83eef5be825363b14a66646ce6ad2446818f9aeda8359d1ef06c21191c51d9",
-      "size_bytes": 13138
+      "sha256": "ecd473350ec1d5804abfbecf21f17eb103ee53000ebf9fd683aebe1bd9eee0ad",
+      "size_bytes": 13233
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18246,8 +18246,8 @@
       "line_count": 39,
       "path": "tests/test_broker_focus_20261109.py",
       "reason": "automated test evidence",
-      "sha256": "84c86123e251b734e3ea1466affbbee21ea31d5b75f767668059eaf7214adb4c",
-      "size_bytes": 1846
+      "sha256": "0ebd4d905f7c7884b50e09a5f3986d6eea518c3ca573d1075044b44918120134",
+      "size_bytes": 1893
     },
     {
       "disposition": "TEST_ONLY",
@@ -18747,11 +18747,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 333,
+      "line_count": 348,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "b8521cb453f5cec8f2f10fdaaa0c6ef3aa71c9713a47c8b215bc368244bfe03b",
-      "size_bytes": 13609
+      "sha256": "3c86913225985bbc81c5c8427cce8928a5de2991f1a2a7ab97ca5949e9461843",
+      "size_bytes": 14506
     },
     {
       "disposition": "TEST_ONLY",

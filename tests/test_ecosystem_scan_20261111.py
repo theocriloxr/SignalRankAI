@@ -331,3 +331,18 @@ def test_ultra_floor_is_80_by_owner_decision(monkeypatch):
     assert UltraQualityFilter().min_score == 80.0
     ok, reason, _ = UltraQualityFilter().apply_ultra_filter({"score": 79.9})
     assert not ok and reason == "Score 79.9 < 80.0"
+
+
+def test_one_diagnostic_row_per_setup_bar_and_reason(monkeypatch):
+    from engine import core
+
+    core._DECISION_BAR_SEEN.clear()
+    sig = {"asset": "EURUSD", "timeframe": "5m", "direction": "long", "strategy_name": "EMA Trend"}
+    assert core._first_decision_of_bar("skipped", sig, "quality_adx 14.2 < 22.0 (fx)", None)
+    assert not core._first_decision_of_bar("skipped", sig, "quality_adx 13.9 < 22.0 (fx)", None)  # same gate
+    assert core._first_decision_of_bar("skipped", sig, "ultra:Score 79.1 < 80.0", None)  # new gate
+    assert core._first_decision_of_bar("issued", sig, "stored_for_delivery", None)
+    assert core._first_decision_of_bar("rejected", sig, "x", {"layer": "expectancy"})
+    monkeypatch.setenv("DECISION_LOG_DEDUP_ENABLED", "false")
+    assert core._first_decision_of_bar("skipped", sig, "quality_adx 14.2 < 22.0 (fx)", None)
+    core._DECISION_BAR_SEEN.clear()

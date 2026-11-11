@@ -9,18 +9,18 @@ from core import broker_universe as bu
 def test_fundednext_assets_come_first_and_are_always_included(monkeypatch):
     monkeypatch.delenv("BROKER_UNIVERSE_ASSETS", raising=False)
     monkeypatch.setenv("BROKER_UNIVERSE_PROFILE", "fundednext")
-    ordered = bu.prioritize(["TSLA", "SOLUSDT", "XAUUSD"])
-    assert ordered[0] == "XAUUSD" and "US30" in ordered and ordered[-2:] == ["TSLA", "SOLUSDT"]
-    assert bu.is_broker_asset("BTCUSDT") and not bu.is_broker_asset("TSLA")
+    ordered = bu.prioritize(["NFLX", "SOLUSDT", "XAUUSD"])  # neither listed by FundedNext
+    assert ordered[0] == "XAUUSD" and "US30" in ordered and ordered[-2:] == ["NFLX", "SOLUSDT"]
+    assert bu.is_broker_asset("BTCUSDT") and not bu.is_broker_asset("SOLUSDT")
     monkeypatch.setenv("BROKER_UNIVERSE_STRICT", "1")
-    assert "TSLA" not in bu.prioritize(["TSLA", "XAUUSD"])
+    assert "SOLUSDT" not in bu.prioritize(["SOLUSDT", "XAUUSD"])
 
 
 def test_override_and_off(monkeypatch):
     monkeypatch.setenv("BROKER_UNIVERSE_ASSETS", "EURUSD,XAUUSD")
     assert bu.broker_assets() == ("EURUSD", "XAUUSD")
     monkeypatch.setenv("BROKER_UNIVERSE_PROFILE", "off")
-    assert bu.prioritize(["TSLA"]) == ["TSLA"] and not bu.is_broker_asset("EURUSD")
+    assert bu.prioritize(["SOLUSDT"]) == ["SOLUSDT"] and not bu.is_broker_asset("EURUSD")
 
 
 def test_engine_reserves_a_batch_share_for_broker_assets():

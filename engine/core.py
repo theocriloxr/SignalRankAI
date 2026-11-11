@@ -670,9 +670,48 @@ async def _gemini_review_signal(
     return approved, score, reason
 
 
+_DECISION_BAR_SEEN: Dict[tuple, float] = {}
+_DECISION_BAR_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+                         "4h": 14400, "1d": 86400}
+
+
+def _first_decision_of_bar(decision: str, sig: Dict[str, Any], reason: str | None, meta: Dict[str, Any] | None) -> bool:
+    """One diagnostic row per setup, bar and gate reason (11 Nov 2026).
+
+    The engine re-evaluates the same setup on every scan (about once a minute), so
+    the same rejection was written ~60 times an hour per setup, the largest write
+    load on the database. A different reason in the same bar is still logged, so
+    funnel and drought counts keep every distinct cause. Shadow layers (meta
+    ``layer``) and non-rejections are never collapsed.
+    ``DECISION_LOG_DEDUP_ENABLED=false`` restores per-scan rows.
+    """
+    if decision not in {"rejected", "skipped"} or (meta or {}).get("layer"):
+        return True
+    if not _env_bool("DECISION_LOG_DEDUP_ENABLED", True):
+        return True
+    import re as _re
+    import time as _time
+
+    tf = str(sig.get("timeframe") or "").strip().lower()
+    seconds = _DECISION_BAR_SECONDS.get(tf, 3600)
+    now = _time.time()
+    key = (decision, str(sig.get("asset") or "").upper(), tf, str(sig.get("direction") or "").lower(),
+           str(sig.get("strategy_name") or "").lower(), _re.sub(r"[-+]?\d+(\.\d+)?", "N", str(reason or "")),
+           int(now // seconds))
+    if key in _DECISION_BAR_SEEN:
+        return False
+    if len(_DECISION_BAR_SEEN) > 50000:
+        for old in [k for k, expires in _DECISION_BAR_SEEN.items() if expires < now]:
+            _DECISION_BAR_SEEN.pop(old, None)
+    _DECISION_BAR_SEEN[key] = now + seconds
+    return True
+
+
 def _log_decision(
     decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None
 ) -> None:
+    if not _first_decision_of_bar(decision, sig, reason, meta):
+        return
     try:
         _meta = dict(meta or {})
         # Persist enough signal context for downstream rejected-signal outcome tracking.
@@ -985,6 +1024,15 @@ def _risk_check_with_history(sig: Dict[str, Any], account_state: Any, asset: str
     return ok
 
 
+def _provider_errors_for(asset: str, timeframe: str) -> list[str] | None:
+    try:
+        from data.fetcher import _get_provider_errors
+
+        return [str(e)[:200] for e in _get_provider_errors(asset, timeframe)[:5]] or None
+    except Exception:
+        return None
+
+
 def _log_market_observations(
     asset: str,
     timeframes: list[str],
@@ -1033,6 +1081,9 @@ def _log_market_observations(
                     "indicators": safe_indicators,
                     "candle_count": len(tf_data.get("candles") or []) if isinstance(tf_data, dict) else 0,
                     "data_age_seconds": tf_data.get("data_age_seconds") if isinstance(tf_data, dict) else None,
+                    # 11 Nov 2026: why a timeframe had no candles was kept only in process
+                    # memory (TONUSDT had none for 36 h and nothing durable said why).
+                    "provider_errors": _provider_errors_for(asset, timeframe) if reason == "no_usable_candles" else None,
                 },
             }
         )
