@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import client from "../lib/client";
 import { display, finite, numberLabel, record, rows, timeLabel, type Row } from "../lib/presentation";
@@ -37,8 +38,8 @@ function Suggestion({ data, onUse }: { data: Row; onUse?: (levels: Levels) => vo
   return <div className="ui-card tc-suggestion" aria-label="How to improve this trade">
     <h3>How to improve this trade</h3>
     {advice.length > 0 && <ul>{advice.map((a, i) => <li key={i}>{a}</li>)}</ul>}
-    {lockedAdvice && <p className="ws-aside">A better stop and target were found for this trade. The advice is on Premium: see the <a className="ui-link" href="/pricing">plans</a>.</p>}
-    {lockedLevels && <p className="ws-aside">The exact suggested stop and targets are on VIP: see the <a className="ui-link" href="/pricing">plans</a>.</p>}
+    {lockedAdvice && <p className="ws-aside">A better stop and target were found for this trade. The advice is on Premium: see the <Link className="ui-link" href="/pricing">plans</Link>.</p>}
+    {lockedLevels && <p className="ws-aside">The exact suggested stop and targets are on VIP: see the <Link className="ui-link" href="/pricing">plans</Link>.</p>}
     {s.changed === true && entry !== null && stop !== null && tps.length > 0 && <>
       <dl className="ui-kv">
         <div className="ui-kv-row"><dt>Suggested stop</dt><dd>{numberLabel(stop, 5)}</dd></div>
