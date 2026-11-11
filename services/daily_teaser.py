@@ -96,7 +96,7 @@ async def publish_once(*, now: datetime | None = None, telegram_post=None) -> di
     if not _on("DAILY_TEASER_ENABLED") or not due(now):
         return {"status": "not_due"}
     key = day_key(now)
-    async with get_session(label="daily_teaser", timeout_seconds=20.0) as session:
+    async with get_session(priority="analytics", label="daily_teaser", timeout_seconds=20.0) as session:
         claimed = await session.execute(
             text("INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) "
                  "ON CONFLICT (key) DO NOTHING"),

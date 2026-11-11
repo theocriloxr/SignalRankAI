@@ -94,6 +94,29 @@ async def run_and_record(train_main, *args, **kwargs):
             state.set_sync(LAST_RUN_KEY, json.dumps(record, default=str), ex=60 * 86400)
         except Exception:
             logger.debug("[ml_lifecycle] last run not recorded", exc_info=True)
+        await _persist_run(record)
+
+
+DB_LAST_RUN_KEY = "ml:last_training_run"
+
+
+async def _persist_run(record: dict[str, Any]) -> None:
+    """Also keep the last run in ``runtime_state`` so a read-only SQL audit can see it
+    (11 Nov 2026: the Redis copy was the only record, unreadable from the ops queue)."""
+    try:
+        from sqlalchemy import text
+
+        from db.session import get_session
+
+        async with get_session(priority="analytics", label="ml_lifecycle.persist", timeout_seconds=20) as session:
+            await session.execute(
+                text("INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) "
+                     "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"),
+                {"k": DB_LAST_RUN_KEY, "v": json.dumps(record, default=str)},
+            )
+            await session.commit()
+    except Exception:
+        logger.debug("[ml_lifecycle] last run not persisted", exc_info=True)
 
 
 def record_champion(status: dict[str, Any]) -> None:

@@ -494,7 +494,7 @@ async def track_once(*, candle_fetch=None) -> dict[str, int]:
     from db.session import get_session
 
     expiry_bars = max(6, _env_int("IDEA_ENTRY_EXPIRY_BARS", 48))
-    async with get_session(label="trade_ideas.track", timeout_seconds=15.0) as session:
+    async with get_session(priority="analytics", label="trade_ideas.track", timeout_seconds=15.0) as session:
         rows = [dict(r) for r in (await session.execute(text(
             "SELECT id, idea_id, user_id, asset, timeframe, direction, entry, stop_loss, take_profit, price_at_submit, "
             "entry_touched_at, created_at FROM user_trade_ideas WHERE status='tracking' ORDER BY id LIMIT 200"
@@ -514,7 +514,7 @@ async def track_once(*, candle_fetch=None) -> dict[str, int]:
         except Exception:
             series[key] = []
     resolved = 0
-    async with get_session(label="trade_ideas.track_write", timeout_seconds=15.0) as session:
+    async with get_session(priority="analytics", label="trade_ideas.track_write", timeout_seconds=15.0) as session:
         for row in rows:
             candles = series.get((row["asset"], row["timeframe"])) or []
             if not candles:
@@ -553,7 +553,7 @@ async def notify_once(*, telegram_post=None) -> int:
     from db.session import get_session
 
     sent: list[tuple[Optional[int], str]] = []
-    async with get_session(label="trade_ideas.notify", timeout_seconds=15.0) as session:
+    async with get_session(priority="analytics", label="trade_ideas.notify", timeout_seconds=15.0) as session:
         rows = [dict(r) for r in (await session.execute(text(
             "SELECT i.id, i.idea_id, i.user_id, i.asset, i.timeframe, i.direction, i.outcome, i.outcome_r, "
             "i.probability, u.telegram_user_id FROM user_trade_ideas i JOIN users u ON u.id=i.user_id "

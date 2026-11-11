@@ -178,6 +178,7 @@ def score_signal(signal):
     if confluence_score is None:
         confluence_score = calculate_confluence(signal)
     if confluence_score is not None and confluence_score < confluence_min:
+        signal["score_rejection"] = f"confluence {confluence_score:.0f}% < {confluence_min:.0f}%"
         return 0.0
 
     candle_evidence = signal.get("candle_evidence") if isinstance(signal.get("candle_evidence"), dict) else {}
@@ -191,6 +192,7 @@ def score_signal(signal):
         alignment = str(signal.get("candle_evidence_alignment") or candle_evidence.get("alignment") or "")
         confirmation = str(signal.get("candle_confirmation") or candle_evidence.get("confirmation") or "")
         if alignment == "conflicting" or confirmation == "invalidated" or candle_component < candle_min:
+            signal["score_rejection"] = "candle_evidence"
             return 0.0
 
     # Target: 0..100 score
@@ -202,6 +204,9 @@ def score_signal(signal):
 
     confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
     if confidence_for_gate is not None and confidence_for_gate < confidence_min:
+        signal["score_rejection"] = (
+            f"{'confidence' if confidence is not None else 'ml_probability'} {confidence_for_gate:.2f} < {confidence_min:.2f}"
+        )
         return 0.0
 
     # Safely convert and normalize entry, stop, and target fields
@@ -269,6 +274,7 @@ def score_signal(signal):
         print(
             f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | Reason: Poor R/R ({rr:.2f} < {min_rr:.2f}) | Entry: {entry}, Stop: {stop}, Target: {target}"
         )
+        signal["score_rejection"] = f"rr {rr:.2f} < {min_rr:.2f}"
         return 0.0
 
     raw_score = float(score)

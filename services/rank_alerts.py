@@ -115,7 +115,7 @@ async def run_once(*, telegram_post=None) -> dict[str, Any]:
     window = int(_env_float("RANK_ALERT_WINDOW_MINUTES", 30))
     sent: list[tuple[int | None, str]] = []
     created = 0
-    async with get_session(label="rank_alerts", timeout_seconds=20.0) as session:
+    async with get_session(priority="analytics", label="rank_alerts", timeout_seconds=20.0) as session:
         pairs = [dict(r) for r in (await session.execute(
             text(_PAIRS_SQL), {"lookback": lookback, "window": window})).mappings().all()]
         for pair in pairs:

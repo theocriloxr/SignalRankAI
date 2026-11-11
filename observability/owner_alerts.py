@@ -268,11 +268,19 @@ async def signal_drought_finding() -> dict[str, Any] | None:
                 {"floor": max(0, int(newest_id) - window_rows)},
             )
         ).all()
+        # 11 Nov 2026: the setup-evidence snapshot was 19 h stale and the fail-closed
+        # filter blocked everything, yet the alert only named the advisory ML filter.
+        evidence_age = (
+            await session.execute(
+                text("SELECT EXTRACT(EPOCH FROM (NOW() - updated_at)) FROM runtime_state WHERE key = 'segment_evidence:v1'")
+            )
+        ).scalar()
         await session.rollback()
     return {
         "hours_since_last_signal": None if age is None else round(float(age) / 3600.0, 1),
         "limit_hours": hours,
         "top_reasons": [{"reason": str(r[0]), "count": int(r[1])} for r in rows],
+        "segment_evidence_age_hours": None if evidence_age is None else round(float(evidence_age) / 3600.0, 1),
     }
 
 
@@ -309,6 +317,11 @@ def signal_drought_alert(finding: dict[str, Any], *, post: Callable[[str, int, s
                      f"{(': ' + str(ml.get('why_not_replaced'))) if ml.get('stale') else ''}. Details: /ml_status.")
         except Exception:
             text += " The ML filter is the main blocker; see /ml_status."
+    evidence_age = finding.get("segment_evidence_age_hours")
+    if evidence_age is None or float(evidence_age) > 0.5:
+        text = (f"{text} Setup-evidence snapshot is "
+                f"{'missing' if evidence_age is None else f'{float(evidence_age):.1f} h old'}: while ML is advisory the "
+                "setup filter fails closed, so every candidate is blocked until the worker refreshes it.")
     # The dominant reason is the evidence key: a new cause alerts again at once.
     key = (finding.get("top_reasons") or [{"reason": "none"}])[0]["reason"]
     return send_owner_alert("signal_drought", {"reason": key}, text, ttl_seconds=6 * 3600, post=post)

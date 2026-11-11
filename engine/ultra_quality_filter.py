@@ -116,7 +116,9 @@ class UltraQualityFilter:
 
         # Hard gate: never pass signals below the minimum score threshold.
         if score < self.min_score:
-            return False, f"Score {score:.1f} < {self.min_score}", score
+            why = signal.get("score_rejection") if score <= 0 else None
+            # 11 Nov 2026: a scorer rejection read as "Score 0.0 < 85.0"; name the real check.
+            return False, (f"Score 0.0 ({why})" if why else f"Score {score:.1f} < {self.min_score}"), score
 
         entry = _safe_float(signal.get("entry") or signal.get("close_price"))
         stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))

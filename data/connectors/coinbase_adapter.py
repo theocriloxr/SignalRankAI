@@ -26,7 +26,39 @@ def _granularity_seconds(timeframe: str) -> int:
     }.get((timeframe or "").strip().lower(), 0)
 
 
+_FOUR_HOURS_MS = 4 * 3600 * 1000
+
+
+def _aggregate_4h(hourly: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Coinbase has no 4h granularity (60/300/900/3600/21600/86400 s). Build UTC-aligned
+    4h bars from 1h bars; only buckets with all four hours are kept, except the newest
+    (still forming, as on every venue). Production 11 Nov 2026: 4h always came back empty
+    from Coinbase, wasting one of the two crypto provider attempts."""
+    buckets: Dict[int, List[Dict[str, Any]]] = {}
+    for bar in hourly:
+        ts = int(bar["timestamp"])
+        buckets.setdefault(ts - ts % _FOUR_HOURS_MS, []).append(bar)
+    keys = sorted(buckets)
+    out: List[Dict[str, Any]] = []
+    for index, key in enumerate(keys):
+        bars = sorted(buckets[key], key=lambda b: int(b["timestamp"]))
+        if len(bars) < 4 and index != len(keys) - 1:
+            continue
+        out.append({
+            "timestamp": key,
+            "open": bars[0]["open"],
+            "high": max(b["high"] for b in bars),
+            "low": min(b["low"] for b in bars),
+            "close": bars[-1]["close"],
+            "volume": sum(float(b.get("volume") or 0.0) for b in bars),
+        })
+    return out
+
+
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: int = 10) -> List[Dict[str, Any]]:
+    if (timeframe or "").strip().lower() == "4h":
+        hourly = await _async_get_candles(symbol, "1h", limit=300, timeout=timeout)
+        return _aggregate_4h(hourly)[-int(limit or 200):]
     client = httpx_client.get_client("coinbase")
     if client is None:
         return []

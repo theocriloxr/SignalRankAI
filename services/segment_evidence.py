@@ -267,13 +267,58 @@ async def attach_records(signals: list[dict[str, Any]]) -> None:
 
 
 async def refresh_once() -> int:
-    """Worker task: recompute and store the snapshot. Returns the number of segments."""
+    """Worker task: recompute and store the snapshot. Returns the number of segments.
+
+    Production 10-11 Nov 2026: the whole 60-day scan (1,440 hourly reads) ran in one
+    session with a 30 s budget. On a busy database it timed out every time, the
+    snapshot went 19 hours stale and the fail-closed setup filter rejected every
+    candidate. Each hour window now gets its own short session and a few retries;
+    the snapshot is stored only when every window was read (no partial evidence).
+    """
+    import asyncio
+    from datetime import timedelta
+
+    from sqlalchemy import text
+
     from db.priority import DBPriority
     from db.session import get_session
+    from utils.timeutils import now_utc_naive
 
-    async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_refresh",
+    lookback = max(1.0, _env_float("SEGMENT_EVIDENCE_LOOKBACK_DAYS", 60.0))
+    end = now_utc_naive()
+    since = end - timedelta(days=lookback)
+    segments: dict[str, dict[str, int]] = {}
+    seen: set[tuple] = set()
+
+    async def _read(sql: str, params: dict, label: str):
+        for attempt in range(1, 4):
+            try:
+                async with get_session(priority=DBPriority.BACKGROUND, label=label, timeout_seconds=60.0) as session:
+                    rows = (await session.execute(text(sql), params)).all()
+                    await session.rollback()
+                    return rows
+            except Exception:
+                if attempt == 3:
+                    raise
+                await asyncio.sleep(2.0 * attempt)
+        return []
+
+    start = since
+    while start < end:  # one hour per statement: index-friendly, proven on production
+        stop = min(end, start + timedelta(hours=1))
+        for asset, timeframe, strategy, direction, bar, outcome in await _read(
+                SHADOW_WINDOW_SQL, {"start": start, "end": stop}, "segment_evidence_refresh.window"):
+            bar_key = (asset, timeframe, strategy, direction, bar)
+            if bar_key not in seen:
+                seen.add(bar_key)
+                _add(segments, strategy, timeframe, direction, 1, int(outcome in WIN_SHADOW))
+        start = stop
+    for strategy, timeframe, direction, n, wins in await _read(OUTCOME_SQL, {"since": since},
+                                                               "segment_evidence_refresh.outcomes"):
+        _add(segments, strategy, timeframe, direction, int(n or 0), int(wins or 0))
+    snapshot = {"computed_at": time.time(), "lookback_days": lookback, "segments": segments}
+    async with get_session(priority=DBPriority.BACKGROUND, label="segment_evidence_refresh.store",
                            timeout_seconds=30.0) as session:
-        snapshot = await compute_snapshot(session)
         await store_snapshot(session, snapshot)
         await session.commit()
     return len(snapshot["segments"])

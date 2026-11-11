@@ -3507,11 +3507,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 79,
+      "line_count": 111,
       "path": "data/connectors/coinbase_adapter.py",
       "reason": "production/build source",
-      "sha256": "bc98ac8c8af705849fd1638915550b65f2ec82c97d5801f9b7657bad09cef12d",
-      "size_bytes": 2628
+      "sha256": "460c7d1c574997714d7d748fd41423b00011bd58fab7e82bcc619255c4328593",
+      "size_bytes": 4014
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11475,11 +11475,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 483,
+      "line_count": 489,
       "path": "engine/scoring.py",
       "reason": "production/build source",
-      "sha256": "970df0a4eba5e8041df5667c1354165535c606fc349ff102d0e68a865a2d5df9",
-      "size_bytes": 17702
+      "sha256": "d5a53302689311758a25dfd6d6614bddf62239ef0119c04964738bfb508058f9",
+      "size_bytes": 18099
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11739,11 +11739,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 419,
+      "line_count": 421,
       "path": "engine/ultra_quality_filter.py",
       "reason": "production/build source",
-      "sha256": "912471a86663f2cbf4e87c84446559c5ccf11f1040be59e74d8ef246bee2b3bc",
-      "size_bytes": 15383
+      "sha256": "717a94def422154c98572298339dbba5b049d9751b63adf36d5ba9b1b1c2f815",
+      "size_bytes": 15585
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13075,11 +13075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 236,
+      "line_count": 259,
       "path": "ml/lifecycle_status.py",
       "reason": "production/build source",
-      "sha256": "f11403a1d49e15e0d5b04927b88e8265b9cc03c86ee47990e4196fd1814ef400",
-      "size_bytes": 9963
+      "sha256": "a4fac6747d00811d57ebf212bf96caf43201dcfc12d330f8496c530fde6b168f",
+      "size_bytes": 10971
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13419,11 +13419,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 388,
+      "line_count": 401,
       "path": "observability/owner_alerts.py",
       "reason": "production/build source",
-      "sha256": "f198d6dee789ddba19257ff9e4d7b5b947b908b6e2d2605ad86d26a83386ecc1",
-      "size_bytes": 17551
+      "sha256": "250b4ec6b93c135237bf1ec5346b54f2cf1ede7aaf31d049c16e4cc092866431",
+      "size_bytes": 18455
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -15910,8 +15910,8 @@
       "line_count": 152,
       "path": "services/daily_teaser.py",
       "reason": "production/build source",
-      "sha256": "c9fd344ae3f18f9eb664dd131b3ca95a36eb94d61fd4e6668a2696bf0348574f",
-      "size_bytes": 7144
+      "sha256": "a20ccbbc8c836e854eaae0e89f91c7270c331e6e0a979880398de6bdc0593c80",
+      "size_bytes": 7166
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16294,8 +16294,8 @@
       "line_count": 169,
       "path": "services/rank_alerts.py",
       "reason": "production/build source",
-      "sha256": "6016ae116938d56553973dddb6333e8de3ae7cfb23c8a9e335ccc4648e79332f",
-      "size_bytes": 7824
+      "sha256": "045f599d06e89c36b121c913c4eba25f83024013e088670e8f760adc68be2be3",
+      "size_bytes": 7846
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16307,11 +16307,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 279,
+      "line_count": 324,
       "path": "services/segment_evidence.py",
       "reason": "production/build source",
-      "sha256": "636b4a6325fbb8bbfecc887865518afc27ddf4405a7d272562050205ed184dd1",
-      "size_bytes": 11775
+      "sha256": "8848df29f686f21eb612cb215c0a50ea4d3a5d277500d043f82c8f75df689f3d",
+      "size_bytes": 14003
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16358,8 +16358,8 @@
       "line_count": 641,
       "path": "services/trade_ideas.py",
       "reason": "production/build source",
-      "sha256": "9132586cad24f401ecbcd62c000149f36d87ee5c41b60ac520205a55bd01662f",
-      "size_bytes": 31799
+      "sha256": "6d3281b8522b80e93d7afaa3542e40f37215400ff0e64ab346f8b3882f7ec1c0",
+      "size_bytes": 31865
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
