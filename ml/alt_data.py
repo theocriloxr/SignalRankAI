@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 FEATURES = ("fear_greed", "hy_credit_spread", "cot_net_position")
 
 FNG_URL = "https://api.alternative.me/fng/?limit=0&format=json"
-FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2"
+# From 2020 only: the full CSV (1996-) timed out at 20 s from production (11 Nov 2026).
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=BAMLH0A0HYM2&cosd=2020-01-01"
 COT_URL = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
 
 # CFTC market name prefixes (legacy futures-only report).
@@ -108,7 +109,7 @@ def _load_fear_greed() -> None:
 
 
 def _load_hy_spread() -> None:
-    text = _get(FRED_URL).text
+    text = _get(FRED_URL, timeout=60.0).text
     points = []
     for row in csv.reader(io.StringIO(text)):
         if len(row) < 2 or not row[0][:4].isdigit():

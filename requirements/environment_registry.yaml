@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1437,
+  "variable_count": 1439,
   "variables": [
     {
       "declared_defaults": {},
@@ -1212,7 +1212,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:62",
-        "data/fetcher.py:2402",
+        "data/fetcher.py:2436",
         "data/providers.py:1087",
         "data/providers.py:971",
         "data/startup_selfcheck.py:137"
@@ -2643,7 +2643,7 @@
       "name": "CANDLE_CACHE_PRUNE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:525"
+        "data/fetcher.py:559"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2653,7 +2653,7 @@
       "name": "CANDLE_FORWARD_FILL_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:532"
+        "data/fetcher.py:566"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2663,7 +2663,7 @@
       "name": "CANDLE_REQUEST_CACHE_TTL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1103"
+        "data/fetcher.py:1137"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3321,7 +3321,7 @@
         "data/connectors/cryptocompare_adapter.py:106",
         "data/connectors/cryptocompare_adapter.py:32",
         "data/cryptocompare_ws.py:69",
-        "data/fetcher.py:2178",
+        "data/fetcher.py:2212",
         "data/get_live_price.py:255",
         "data/get_live_price.py:588",
         "data/pair_discovery.py:388",
@@ -3355,7 +3355,7 @@
       "name": "CRYPTO_DATA_PROVIDER",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2272",
+        "data/fetcher.py:2306",
         "data/pair_discovery.py:1271",
         "data/pair_discovery.py:353",
         "data/pair_discovery.py:805",
@@ -4371,7 +4371,7 @@
       "name": "DEGRADED_MODE_MIN_CANDLES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:815"
+        "data/fetcher.py:849"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6880,7 +6880,7 @@
       "name": "INDEX_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1955"
+        "data/fetcher.py:1989"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6890,7 +6890,7 @@
       "name": "INDEX_DAILY_BREAK_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1975"
+        "data/fetcher.py:2009"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6920,7 +6920,7 @@
       "name": "INDEX_MARKET_MODE",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1945",
+        "data/fetcher.py:1979",
         "data/market_hours.py:266"
       ],
       "required_by_code": true,
@@ -6931,7 +6931,7 @@
       "name": "INDEX_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1954"
+        "data/fetcher.py:1988"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7496,7 +7496,7 @@
       "name": "MARKET_PROVIDER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:2797"
+        "data/fetcher.py:2832"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9468,7 +9468,7 @@
       "name": "OHLC_INFLIGHT_WAIT_TIMEOUT_SECONDS",
       "production_example_default": "25",
       "read_locations": [
-        "data/fetcher.py:487"
+        "data/fetcher.py:521"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9557,6 +9557,26 @@
       "production_example_default": "20",
       "read_locations": [],
       "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "OHLC_SYMBOL_MISS_HOLD_SECONDS",
+      "production_example_default": null,
+      "read_locations": [
+        "data/fetcher.py:342"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "OHLC_SYMBOL_MISS_LIMIT",
+      "production_example_default": null,
+      "read_locations": [
+        "data/fetcher.py:353"
+      ],
+      "required_by_code": true,
       "sensitive": false
     },
     {
@@ -12097,7 +12117,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:548"
+        "data/fetcher.py:582"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12107,7 +12127,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_OPTIONAL",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:579"
+        "data/fetcher.py:613"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12117,7 +12137,7 @@
       "name": "PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:556"
+        "data/fetcher.py:590"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12127,7 +12147,7 @@
       "name": "PROVIDER_OUTAGE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:540"
+        "data/fetcher.py:574"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12137,7 +12157,7 @@
       "name": "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:571"
+        "data/fetcher.py:605"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15081,8 +15101,8 @@
       "name": "STOCK_CLOSE_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1955",
-        "data/fetcher.py:2032"
+        "data/fetcher.py:1989",
+        "data/fetcher.py:2066"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15112,8 +15132,8 @@
       "name": "STOCK_OPEN_UTC",
       "production_example_default": null,
       "read_locations": [
-        "data/fetcher.py:1954",
-        "data/fetcher.py:2031"
+        "data/fetcher.py:1988",
+        "data/fetcher.py:2065"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15296,7 +15316,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:37",
-        "data/fetcher.py:2079",
+        "data/fetcher.py:2113",
         "engine/admin_pulse.py:802",
         "engine/admin_pulse.py:994",
         "engine/core.py:1920",

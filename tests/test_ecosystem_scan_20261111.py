@@ -396,3 +396,21 @@ def test_plan_prices_owner_schedule_and_kobo_guard(monkeypatch):
     assert price_ngn("PREMIUM_MONTHLY") == 24000 and price_ngn("VIP_MONTHLY") == 40000  # kobo read as kobo
     monkeypatch.setenv("PREMIUM_MONTHLY_PRICE_NGN", "31000")
     assert price_ngn("PREMIUM_MONTHLY") == 31000
+
+
+def test_a_provider_that_never_lists_a_symbol_is_skipped_for_it(monkeypatch):
+    from data import fetcher
+
+    fetcher._SYMBOL_MISSES.clear()
+    for _ in range(3):
+        fetcher._record_symbol_miss("okx_connector", "TONUSDT")
+    assert fetcher._provider_skips_symbol("okx_connector", "TONUSDT")
+    assert not fetcher._provider_skips_symbol("okx_connector", "BTCUSDT")
+    assert not fetcher._provider_skips_symbol("bybit_connector", "TONUSDT")
+    fetcher._clear_symbol_miss("okx_connector", "TONUSDT")
+    assert not fetcher._provider_skips_symbol("okx_connector", "TONUSDT")
+    monkeypatch.setenv("OHLC_SYMBOL_MISS_HOLD_SECONDS", "0")
+    for _ in range(3):
+        fetcher._record_symbol_miss("okx_connector", "XMRUSDT")
+    assert not fetcher._provider_skips_symbol("okx_connector", "XMRUSDT")  # hold elapsed: try again
+    fetcher._SYMBOL_MISSES.clear()

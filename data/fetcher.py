@@ -323,6 +323,40 @@ def _provider_supports_symbol(provider_name: str, asset: str) -> bool:
     return not (alias in entry and entry[alias] is None)
 
 
+_SYMBOL_MISSES: dict[tuple[str, str], tuple[int, float]] = {}
+
+
+def _symbol_miss_key(provider_name: str, asset: str) -> tuple[str, str]:
+    return (_provider_alias(provider_name) or str(provider_name), str(asset or "").upper().strip())
+
+
+def _record_symbol_miss(provider_name: str, asset: str) -> None:
+    """A provider that keeps returning no candles for a symbol does not list it.
+
+    Production, 11 Nov 2026: TONUSDT and XMRUSDT had no candles for days because both
+    per-timeframe attempts went to OKX and Coinbase, which return nothing for them,
+    while Bybit, Kraken and KuCoin list both and were never reached.
+    """
+    key = _symbol_miss_key(provider_name, asset)
+    count, _until = _SYMBOL_MISSES.get(key, (0, 0.0))
+    hold = float(os.getenv("OHLC_SYMBOL_MISS_HOLD_SECONDS", "21600") or 21600)
+    _SYMBOL_MISSES[key] = (count + 1, time.time() + hold)
+
+
+def _clear_symbol_miss(provider_name: str, asset: str) -> None:
+    _SYMBOL_MISSES.pop(_symbol_miss_key(provider_name, asset), None)
+
+
+def _provider_skips_symbol(provider_name: str, asset: str) -> bool:
+    """True after ``OHLC_SYMBOL_MISS_LIMIT`` (3) empty answers in a row, for the hold period."""
+    count, until = _SYMBOL_MISSES.get(_symbol_miss_key(provider_name, asset), (0, 0.0))
+    limit = max(1, int(os.getenv("OHLC_SYMBOL_MISS_LIMIT", "3") or 3))
+    if count >= limit and until <= time.time():
+        _SYMBOL_MISSES.pop(_symbol_miss_key(provider_name, asset), None)  # retry after the hold
+        return False
+    return count >= limit
+
+
 def _provider_cooling_down(provider_name: str) -> bool:
     """True while a provider is in a recorded rate-limit cooldown.
 
@@ -2777,6 +2811,7 @@ async def async_get_candles(asset, timeframe):
         ordered_provs = [p for p in ordered_provs if _provider_supports_symbol(p[0], asset)]
         # Nor may one that is in a recorded rate-limit cooldown (it would return nothing).
         ordered_provs = [p for p in ordered_provs if not _provider_cooling_down(p[0])] or ordered_provs
+        ordered_provs = [p for p in ordered_provs if not _provider_skips_symbol(p[0], asset)] or ordered_provs
         ordered_provs = ordered_provs[: _max_provider_attempts(asset_type)]
 
         if str(asset_type or "").lower().strip() == "crypto":
@@ -2835,11 +2870,14 @@ async def async_get_candles(asset, timeframe):
                 if not rejection_reason:
                     mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                     _set_last_provider_used(asset, timeframe, provider_name)
+                    _clear_symbol_miss(provider_name, asset)
                     logger.info(
                         f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}"
                     )
                     return candles
                 else:
+                    if not candles:
+                        _record_symbol_miss(provider_name, asset)
                     mark_provider_capability_miss(provider_name, latency_ms=_latency_ms)
                     reason = _provider_failure_reason(
                         provider_name,
