@@ -378,7 +378,7 @@ def test_alt_data_is_point_in_time_and_maps_assets(monkeypatch):
 def test_schema_v5_adds_the_three_series():
     from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, get_feature_columns
 
-    assert get_feature_columns() == FEATURE_COLUMNS_V5
+    assert get_feature_columns(5) == FEATURE_COLUMNS_V5 and FEATURE_COLUMNS_V6[:len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
     assert FEATURE_COLUMNS_V5[: len(FEATURE_COLUMNS_V4)] == FEATURE_COLUMNS_V4
     assert FEATURE_COLUMNS_V5[-3:] == ["fear_greed", "hy_credit_spread", "cot_net_position"]
 
