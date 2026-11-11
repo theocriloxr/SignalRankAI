@@ -24,7 +24,7 @@ function pct(value: unknown, digits = 0): string {
   return n === null ? "—" : `${(n * 100).toFixed(digits)}%`;
 }
 
-type Levels = { entry: number; stop_loss: number; take_profit: number[] };
+type Levels = { entry: number; stop_loss: number; take_profit: number[]; direction?: string };
 
 /** Advice that changes the trade (11 Nov 2026): better stop/target levels from recent history. */
 function Suggestion({ data, onUse }: { data: Row; onUse?: (levels: Levels) => void }) {
@@ -42,11 +42,12 @@ function Suggestion({ data, onUse }: { data: Row; onUse?: (levels: Levels) => vo
     {lockedLevels && <p className="ws-aside">The exact suggested stop and targets are on VIP: see the <Link className="ui-link" href="/pricing">plans</Link>.</p>}
     {s.changed === true && entry !== null && stop !== null && tps.length > 0 && <>
       <dl className="ui-kv">
+        {display(s.direction, "") && <div className="ui-kv-row"><dt>Suggested side</dt><dd>{display(s.direction) === "long" ? "Buy" : "Sell"}</dd></div>}
         <div className="ui-kv-row"><dt>Suggested stop</dt><dd>{numberLabel(stop, 5)}</dd></div>
         <div className="ui-kv-row"><dt>Suggested targets</dt><dd>{tps.map(t => numberLabel(t, 5)).join(" / ")}</dd></div>
         <div className="ui-kv-row"><dt>Expected per trade (cautious)</dt><dd>{numberLabel(finite(s.expected_r_suggested), 2)}R vs {numberLabel(finite(s.expected_r_now), 2)}R now</dd></div>
       </dl>
-      {onUse && <button type="button" className="ui-btn ui-btn--secondary" onClick={() => onUse({ entry, stop_loss: stop, take_profit: tps })}>Check these levels</button>}
+      {onUse && <button type="button" className="ui-btn ui-btn--secondary" onClick={() => onUse({ entry, stop_loss: stop, take_profit: tps, direction: display(s.direction, "") || undefined })}>Check these levels</button>}
     </>}
   </div>;
 }
@@ -111,7 +112,7 @@ export function TradeCheck({ data, onChanged }: { data: Row; onChanged: () => vo
   }
 
   function applyLevels(levels: Levels) {
-    const next = { ...form, entry: String(levels.entry), stop_loss: String(levels.stop_loss),
+    const next = { ...form, direction: levels.direction ?? form.direction, entry: String(levels.entry), stop_loss: String(levels.stop_loss),
       tp1: String(levels.take_profit[0] ?? ""), tp2: String(levels.take_profit[1] ?? ""), tp3: String(levels.take_profit[2] ?? "") };
     setForm(next);
     void check(next);

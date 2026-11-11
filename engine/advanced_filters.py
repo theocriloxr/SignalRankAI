@@ -470,7 +470,13 @@ class SmartFilterSuite:
             range_friendly=is_range_friendly_signal(signal),
         )
         if is_choppy:
-            rejections.append(reason)
+            from core.gate_evidence import asset_class_of, exempt
+
+            asset = str(signal.get("asset") or symbol or "")
+            if exempt("weak_trend", asset_class_of(asset), str(signal.get("timeframe") or "")):
+                signal["gate_exemption_weak_trend"] = reason  # evidence-backed (core/gate_evidence.py)
+            else:
+                rejections.append(reason)
 
         # 4. Correlation filter
         can_add, reason = self.correlation_filter.can_add_signal(symbol, direction)

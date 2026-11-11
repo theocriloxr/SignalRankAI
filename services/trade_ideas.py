@@ -267,6 +267,47 @@ def suggest_adjustments(idea: Idea, highs: list[float], lows: list[float], close
             if exp is not None and (best["exp"] is None or exp > best["exp"]):
                 best = {"exp": exp, "stop": stop_dist, "r": reward_r, "hit": hit}
 
+    # Direction check (owner, 11 Nov 2026): the same grid on the other side of the market.
+    other = "short" if long_side else "long"
+    flip: dict[str, Any] = {"exp": None}
+    for stop_dist in stops:
+        if stop_dist <= 0:
+            continue
+        for reward_r in (0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0):
+            hit = historical_hit_rate(highs, lows, closes, direction=other,
+                                      target_pct=stop_dist * reward_r / idea.entry, stop_pct=stop_dist / idea.entry,
+                                      horizon=horizon)
+            if (hit.get("samples") or 0) < min_samples:
+                continue
+            exp = _expectancy(hit, reward_r)
+            if exp is not None and (flip["exp"] is None or exp > flip["exp"]):
+                flip = {"exp": exp, "stop": stop_dist, "r": reward_r, "hit": hit}
+    same_best = best["exp"] if best["exp"] is not None else -1.0
+    with_trend_other = (trend == 1 and other == "long") or (trend == -1 and other == "short")
+    if flip["exp"] is not None and flip["exp"] > 0 and flip["exp"] >= same_best + 0.10 and trend != (1 if long_side else -1):
+        sign = 1 if other == "long" else -1
+        step = flip["stop"] * flip["r"]
+        digits = 6 if idea.entry < 10 else 5 if idea.entry < 1000 else 2
+        return {
+            "changed": True,
+            "direction_change": True,
+            "direction": other,
+            "advice": [
+                f"Consider the other direction: a {'BUY' if other == 'long' else 'SELL'} here has the better record. "
+                f"Recent history: TP1 first {(flip['hit'].get('rate') or 0) * 100:.0f}% of {flip['hit'].get('samples')} "
+                f"times, expected {flip['exp']:+.2f}R per trade (cautious) vs "
+                f"{'n/a' if best['exp'] is None else format(best['exp'], '+.2f') + 'R'} for the best "
+                f"{'BUY' if long_side else 'SELL'}" + (", and it is with the trend." if with_trend_other else "."),
+            ],
+            "entry": idea.entry,
+            "stop_loss": round(idea.entry - sign * flip["stop"], digits),
+            "take_profit": [round(idea.entry + sign * step * k, digits) for k in (1.0, 1.6, 2.5)],
+            "risk_reward_tp1": round(flip["r"], 2),
+            "probability_tp1": None if flip["hit"].get("rate") is None else round(flip["hit"]["rate"], 4),
+            "expected_r_suggested": round(flip["exp"], 3),
+            "expected_r_now": None if current_exp is None else round(current_exp, 3),
+        }
+
     advice: list[str] = []
     changed = (best["exp"] is not None and (current_exp is None or best["exp"] >= current_exp + 0.05)
                and (abs(best["stop"] - risk) > 1e-12 or abs(best["r"] - user_r) > 1e-9))
@@ -489,13 +530,15 @@ def tier_view(result: dict[str, Any], tier: str) -> dict[str, Any]:
     view = dict(result)
     suggestion = dict(view.get("suggestion") or {})
     if rank < 2:
-        for key in ("stop_loss", "take_profit", "entry", "risk_reward_tp1", "probability_tp1", "expected_r_suggested"):
+        for key in ("stop_loss", "take_profit", "entry", "risk_reward_tp1", "probability_tp1", "expected_r_suggested",
+                    "direction"):
             suggestion.pop(key, None)
         if suggestion.get("changed"):
             suggestion["locked_levels"] = "vip"
         view["evidence"] = {}
     if rank < 1:
-        suggestion["advice"] = [a for a in suggestion.get("advice") or [] if not a.startswith("Suggested change")]
+        suggestion["advice"] = [a for a in suggestion.get("advice") or []
+                                if not a.startswith(("Suggested change", "Consider the other direction"))]
         if result.get("suggestion", {}).get("changed"):
             suggestion["locked_advice"] = "premium"
     view["suggestion"] = suggestion
@@ -760,7 +803,10 @@ def telegram_text(result: dict[str, Any]) -> str:
             lines.append("🔒 A better stop/target for this trade was found; advice is on Premium. /upgrade")
         if suggestion.get("changed") and suggestion.get("take_profit"):
             tps = " / ".join(f"{t:,.6g}" for t in suggestion.get("take_profit") or [])
-            lines.append(f"Suggested levels: entry {suggestion['entry']:,.6g} • stop {suggestion['stop_loss']:,.6g} "
+            side = ""
+            if suggestion.get("direction"):
+                side = ("BUY" if suggestion["direction"] == "long" else "SELL") + " • "
+            lines.append(f"Suggested levels: {side}entry {suggestion['entry']:,.6g} • stop {suggestion['stop_loss']:,.6g} "
                          f"• TP {tps}")
             lines.append("To check them: /check_trade with these levels.")
     ev = result.get("evidence") or {}

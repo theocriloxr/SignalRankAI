@@ -11011,11 +11011,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 494,
+      "line_count": 500,
       "path": "engine/advanced_filters.py",
       "reason": "production/build source",
-      "sha256": "d42b573b65b63138c3c0a975a52197d6afbc235ab64ebcf8e26b4e2bd7d12e51",
-      "size_bytes": 17043
+      "sha256": "ae8e54859c01b9bc06c574c952c9a020d86fc0cf340f308e7aeb0dfcf76b5cc2",
+      "size_bytes": 17393
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -11075,11 +11075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 7228,
+      "line_count": 7237,
       "path": "engine/core.py",
       "reason": "production/build source",
-      "sha256": "6e5c49c385b32b300c791013f8bdbbd9df2483b6271cf5038cbd344bcf29d53b",
-      "size_bytes": 360318
+      "sha256": "2b8c4ee0db49c4709d9fd40e459cfe46167d0ce1a226c23c0e5a7e353dda0e17",
+      "size_bytes": 360772
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -12651,11 +12651,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 159,
+      "line_count": 160,
       "path": "frontend/src/components/TradeCheck.tsx",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "9b977ece5eed293506ba70fa720846fab83914dd14d8d3a644dcf8f85c26a042",
-      "size_bytes": 12077
+      "sha256": "701c75b1cc6be21b11867b25a3f67770cc4033f879660cc6529ba5761fd18c40",
+      "size_bytes": 12348
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14267,11 +14267,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16943,
+      "line_count": 16953,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "a13db07adbb98acb8a2674ba669ac0330fa770233257c473d43af63cbe30ac3d",
-      "size_bytes": 494478
+      "sha256": "df1cdde6ee09f7b4eb421314f9278cf0eba9d6c41e1916641fee4bc957f97632",
+      "size_bytes": 494741
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16387,11 +16387,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 785,
+      "line_count": 831,
       "path": "services/trade_ideas.py",
       "reason": "production/build source",
-      "sha256": "cc99599f71fbdb5ccb438b5c9f1bf03c2493eb3717a1c4e34905ee179a002e85",
-      "size_bytes": 40179
+      "sha256": "722096335101a8643ad404cc36967893a4e3e74fd90f9e8c5e8dde7449f8495d",
+      "size_bytes": 42949
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18763,11 +18763,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 416,
+      "line_count": 444,
       "path": "tests/test_ecosystem_scan_20261111.py",
       "reason": "automated test evidence",
-      "sha256": "09ab9c4b411a53fff8f3cc32c947ff7dfbbd040dc6023c86ac7ade7c0a0d8c28",
-      "size_bytes": 17863
+      "sha256": "f4f756b50f9b982cc3b8149c9548a361a0c5eeae6aadd0bf6a941827624119dd",
+      "size_bytes": 19417
     },
     {
       "disposition": "TEST_ONLY",
@@ -21315,11 +21315,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 209,
+      "line_count": 224,
       "path": "tests/test_trade_ideas_20261110.py",
       "reason": "automated test evidence",
-      "sha256": "6e6f078340a4cc433eb0702a373a5dba98efd469a44bcf257872fe175da23034",
-      "size_bytes": 12337
+      "sha256": "c42d55170dfc7681ef34708d48683d25a008693b669a2a5828a795081ef3c2a6",
+      "size_bytes": 13441
     },
     {
       "disposition": "TEST_ONLY",

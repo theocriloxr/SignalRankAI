@@ -1553,8 +1553,14 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
             return False, (f"quality_recovery_ml {recovery_raw:.3f} < {recovery_floor:.3f} ({asset_class})")
     elif ml_probability > 0 and ml_probability < min_ml:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
+    from core.gate_evidence import exempt as _gate_exempt
+
+    _tf = str(signal.get("timeframe") or "").lower()
     if confluence_pct is not None and confluence_pct < min_confluence:
-        return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
+        if _gate_exempt("quality_confluence", asset_class, _tf):
+            signal["gate_exemption_confluence"] = f"{confluence_pct:.0f}% < {min_confluence:.0f}%"
+        else:
+            return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
     if gemini_score > 0 and gemini_score < min_ai_score:
         return False, f"quality_ai {gemini_score:.1f} < {min_ai_score:.1f} ({asset_class})"
     try:
@@ -1583,7 +1589,10 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
             if adx > max_range_adx:
                 return False, (f"quality_range_adx {adx:.1f} > {max_range_adx:.1f} ({asset_class})")
         elif adx < min_adx:
-            return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
+            if _gate_exempt("quality_adx", asset_class, _tf):
+                signal["gate_exemption_adx"] = f"{adx:.1f} < {min_adx:.1f}"
+            else:
+                return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
 
     if asset_class == "fx":
         allowed_fx_tfs = {

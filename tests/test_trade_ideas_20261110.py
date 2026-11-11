@@ -207,3 +207,18 @@ def test_each_plan_sees_only_its_share_of_the_check():
                                      "current_price": 1.09, "warnings": [], "notes": [], "disclaimer": "x",
                                      "entry": 1.09, "stop_loss": 1.08, "take_profit": [1.1]})
     assert ti.daily_limit("free") == 1 and ti.daily_limit("premium") == 10 and ti.daily_limit("vip") == 50
+
+
+def test_check_recommends_the_other_direction_when_it_is_clearly_better():
+    """11 Nov 2026: the check can correct the direction, not only the levels."""
+    idea = ti.normalise({"asset": "EURUSD", "direction": "sell", "entry": 1.0900, "stop_loss": 1.0920,
+                         "take_profit": [1.0860], "timeframe": "1h"})
+    highs, lows, closes = ti._ohlc(_candles(drift=0.0004))  # strong, steady uptrend
+    out = ti.suggest_adjustments(idea, highs, lows, closes, atr_value=0.0012, price=closes[-1], horizon=48, trend=1)
+    assert out.get("direction_change") and out["direction"] == "long", out
+    assert out["stop_loss"] < idea.entry < out["take_profit"][0] < out["take_profit"][-1]
+    assert out["advice"][0].startswith("Consider the other direction")
+    premium = ti.tier_view({"suggestion": out}, "premium")["suggestion"]
+    assert "direction" not in premium and premium["advice"][0].startswith("Consider the other direction")
+    free = ti.tier_view({"suggestion": out}, "free")["suggestion"]
+    assert not any(a.startswith("Consider the other direction") for a in free["advice"])

@@ -414,3 +414,31 @@ def test_a_provider_that_never_lists_a_symbol_is_skipped_for_it(monkeypatch):
         fetcher._record_symbol_miss("okx_connector", "XMRUSDT")
     assert not fetcher._provider_skips_symbol("okx_connector", "XMRUSDT")  # hold elapsed: try again
     fetcher._SYMBOL_MISSES.clear()
+
+
+def test_gate_exemptions_cover_only_the_evidenced_cells(monkeypatch):
+    from core.gate_evidence import exempt
+
+    monkeypatch.delenv("QUALITY_GATE_EVIDENCE_EXEMPTIONS", raising=False)
+    assert exempt("weak_trend", "crypto", "1h") and exempt("quality_adx", "crypto", "1h")
+    assert exempt("quality_confluence", "crypto", "1h")
+    assert not exempt("weak_trend", "crypto", "5m") and not exempt("quality_adx", "fx", "1h")
+    assert not exempt("fx_mtf", "fx", "1h")
+    monkeypatch.setenv("QUALITY_GATE_EVIDENCE_EXEMPTIONS", "none")
+    assert not exempt("weak_trend", "crypto", "1h")
+
+
+def test_chop_veto_is_skipped_only_for_crypto_1h(monkeypatch):
+    from engine.advanced_filters import SmartFilterSuite
+
+    monkeypatch.delenv("QUALITY_GATE_EVIDENCE_EXEMPTIONS", raising=False)
+    suite = SmartFilterSuite()
+    monkeypatch.setattr(suite.chop_filter, "is_choppy", lambda *a, **k: (True, "Weak trend (ADX 12)"))
+    monkeypatch.setattr(suite.news_filter, "is_news_time", lambda *a, **k: (False, ""))
+    data = {"price": 1.0, "ema_20": 1.0, "ema_50": 1.0, "atr": 0.01, "candles": [], "adx": 12}
+    crypto = {"asset": "BTCUSDT", "symbol": "BTCUSDT", "timeframe": "1h", "direction": "long"}
+    _ok, reasons = suite.run_all_filters(crypto, data, "NY")
+    assert not any("Weak trend" in r for r in reasons) and crypto["gate_exemption_weak_trend"]
+    fx = {"asset": "EURUSD", "symbol": "EURUSD", "timeframe": "1h", "direction": "long"}
+    _ok, reasons = suite.run_all_filters(fx, data, "NY")
+    assert any("Weak trend" in r for r in reasons)
