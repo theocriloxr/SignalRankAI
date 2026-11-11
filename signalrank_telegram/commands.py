@@ -8330,7 +8330,7 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 					await session.execute(
 						select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
 							ReferralReward.referrer_user_id == int(user_row.id),
-							ReferralReward.reward_type == "premium_days",
+							ReferralReward.reward_type.in_(("premium_days", "conversion_days")),
 						)
 					)
 				).scalar()
@@ -8366,7 +8366,10 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n"
 		f"📈 Progress: <b>{toward_next}/{requirement}</b> "
 		f"(invite {needed_for_next} more)\n\n"
-		f"💡 Earn <b>+{bonus_days} free days</b> for every {requirement} valid referrals."
+		f"💡 Earn <b>+{bonus_days} free days</b> for every {requirement} valid referrals.\n"
+		f"💎 <b>+{int(os.getenv('REFERRAL_CONVERSION_BONUS_DAYS', '14') or 14)} days</b> whenever a friend you invited subscribes, "
+		f"and they get <b>+{int(os.getenv('REFERRAL_WELCOME_BONUS_DAYS', '5') or 5)} bonus days</b> on their first plan.\n"
+		f"Up to {int(os.getenv('REFERRAL_MONTHLY_CAP_DAYS', '28') or 28)} reward days a month. Rewards are plan days, never cash."
 	)
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton

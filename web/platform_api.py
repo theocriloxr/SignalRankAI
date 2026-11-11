@@ -3834,8 +3834,18 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
                 await session.execute(
                     text(
                         "SELECT COALESCE(SUM(reward_value),0) FROM referral_rewards "
-                        "WHERE referrer_user_id=:uid AND reward_type='premium_days'"
+                        "WHERE referrer_user_id=:uid AND reward_type IN ('premium_days','conversion_days')"
                     ),
+                    {"uid": int(user["id"])},
+                )
+            ).scalar()
+            or 0
+        )
+        paid = int(
+            (
+                await session.execute(
+                    text("SELECT COUNT(*) FROM referral_rewards WHERE referrer_user_id=:uid "
+                         "AND reward_type='first_purchase_conversion'"),
                     {"uid": int(user["id"])},
                 )
             ).scalar()
@@ -3859,6 +3869,11 @@ async def referrals(user: dict[str, Any] = Depends(current_user)) -> dict[str, A
         "toward_next": toward_next,
         "needed_for_next": requirement if toward_next == 0 else requirement - toward_next,
         "reward_days": max(1, int(os.getenv("REFERRAL_BONUS_DAYS", "7") or 7)),
+        # Paid referrals (11 Nov 2026): both sides are rewarded on a first payment.
+        "paid_referrals": paid,
+        "conversion_bonus_days": max(0, int(os.getenv("REFERRAL_CONVERSION_BONUS_DAYS", "14") or 14)),
+        "welcome_bonus_days": max(0, int(os.getenv("REFERRAL_WELCOME_BONUS_DAYS", "5") or 5)),
+        "monthly_cap_days": max(1, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28)),
     }
 
 

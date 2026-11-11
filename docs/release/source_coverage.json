@@ -3,7 +3,7 @@
   "release_decision": "NO-GO",
   "ingestion_is_acceptance": false,
   "source_index_sha256": "c25d86e0fa3d364cc301f49175764942cbe537334f3af9cfe167549283efa7aa",
-  "repository_inventory_sha256": "6f212568406f462d7b376faed3d80f7f1cac870373a47f326a2959529f467a9b",
+  "repository_inventory_sha256": "5088e2d3410a57fb779257a140cd4397787107a52edd86d4bcf7ddeec16e8a98",
   "sources": [
     {
       "filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.docx",

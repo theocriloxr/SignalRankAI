@@ -70,8 +70,14 @@ export function PlanAndReferrals(){
         <dl className="ui-kv">
           <div className="ui-kv-row"><dt>Your code</dt><dd><code>{display(referral.code)}</code></dd></div>
           <div className="ui-kv-row"><dt>People you&rsquo;ve invited</dt><dd>{display(referral.total_referrals,"0")}</dd></div>
+          <div className="ui-kv-row"><dt>Friends who subscribed</dt><dd>{display(referral.paid_referrals,"0")}</dd></div>
           <div className="ui-kv-row"><dt>Free days earned</dt><dd>{earned===null?"Unreported":earned}</dd></div>
         </dl>
+        <ul className="tc-notes">
+          <li>{display(referral.reward_days,"7")} free days for every {display(needed !== null && toward !== null ? (needed + toward) : "3")} friends who join.</li>
+          <li>+{display(referral.conversion_bonus_days,"14")} days whenever a friend you invited subscribes, and they get +{display(referral.welcome_bonus_days,"5")} bonus days on their first plan.</li>
+          <li>Up to {display(referral.monthly_cap_days,"28")} reward days a month.</li>
+        </ul>
         {progress!==null&&<div>
           <p>{toward} of {needed} qualifying referrals toward the next {display(referral.reward_days,"reward")} premium days.</p>
           <div className="ui-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="Towards your next reward"><span style={{width:`${progress}%`}}/></div>

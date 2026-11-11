@@ -3850,6 +3850,14 @@ async def record_referral_conversion(
     if attribution is None:
         return {"recorded": False, "reason": "not_referred"}
 
+    first_purchase = (
+        await session.execute(
+            select(ReferralReward.id).where(
+                ReferralReward.referred_user_id == int(referred_user.id),
+                ReferralReward.reward_type == "first_purchase_conversion",
+            ).limit(1)
+        )
+    ).scalar_one_or_none() is None
     attribution.is_successful = True
     attribution.successful_at = attribution.successful_at or _utcnow()
     session.add(
@@ -3863,13 +3871,82 @@ async def record_referral_conversion(
         )
     )
     await session.flush()
+    rewards: dict[str, Any] = {}
+    if first_purchase:
+        rewards = await _grant_conversion_rewards(session, attribution=attribution, referred_user=referred_user,
+                                                  reference=reference)
     logger.info(
         "[referral_conversion_recorded] referred=%s referrer_user_id=%s payment=%s",
         referred_telegram_user_id,
         attribution.referrer_user_id,
         reference,
     )
-    return {"recorded": True, "idempotent": False}
+    return {"recorded": True, "idempotent": False, **rewards}
+
+
+async def _grant_conversion_rewards(session: AsyncSession, *, attribution: Any, referred_user: User,
+                                    reference: str) -> dict[str, Any]:
+    """Reward a paying referral, once per referred account (owner request, 11 Nov 2026).
+
+    Signups alone reward the referrer every REFERRALS_PER_REWARD accounts. A first
+    *payment* is worth more to the business, so it now rewards both sides:
+
+    * referrer: REFERRAL_CONVERSION_BONUS_DAYS (14) days of their plan (Premium when
+      they are free), inside the same REFERRAL_MONTHLY_CAP_DAYS cap as signup rewards;
+    * the new customer: REFERRAL_WELCOME_BONUS_DAYS (5) days added to what they bought.
+
+    Each grant has its own idempotency reference; self-referral and duplicate accounts
+    are already refused when the referral is attributed.
+    """
+    out: dict[str, Any] = {}
+    referrer = (await session.execute(select(User).where(User.id == int(attribution.referrer_user_id)))).scalar_one_or_none()
+    if referrer is None or int(referrer.id) == int(referred_user.id):
+        return out
+    now = _utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    bonus_days = max(0, int(os.getenv("REFERRAL_CONVERSION_BONUS_DAYS", "14") or 14))
+    cap = max(bonus_days, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28))
+    used = int((await session.execute(
+        select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+            ReferralReward.referrer_user_id == int(referrer.id),
+            ReferralReward.reward_type.in_(("premium_days", "conversion_days")),
+            ReferralReward.created_at >= month_start,
+        )
+    )).scalar() or 0)
+    grant = min(bonus_days, max(0, cap - used))
+    referrer_ref = f"REFERRAL_CONVERSION_REWARD:{reference}"[:128]
+    if grant > 0:
+        tier = await _resolve_referral_reward_tier(session, referrer)
+        await activate_subscription(
+            session, telegram_user_id=getattr(referrer, "telegram_user_id", None), user_id=int(referrer.id),
+            tier=tier, duration_days=int(grant), paystack_reference=referrer_ref,
+            meta={"source": "referral_conversion", "referred_user_id": int(referred_user.id)},
+        )
+        session.add(ReferralReward(referrer_user_id=int(referrer.id), referred_user_id=int(referred_user.id),
+                                   reward_type="conversion_days", reward_value=int(grant), reference=referrer_ref,
+                                   meta={"tier_extended": tier, "payment_reference": reference}))
+        out["referrer_days"] = int(grant)
+        out["referrer_telegram_user_id"] = getattr(referrer, "telegram_user_id", None)
+        out["referrer_message"] = (
+            f"🎉 A friend you invited just subscribed. +{grant} {tier.title()} days have been added to your plan. "
+            "Thank you for spreading the word."
+        )
+    welcome_days = max(0, int(os.getenv("REFERRAL_WELCOME_BONUS_DAYS", "5") or 5))
+    if welcome_days:
+        active = (await session.execute(
+            select(Subscription).where(Subscription.user_id == int(referred_user.id), Subscription.status == "active",
+                                       Subscription.expires_at.is_not(None))
+            .order_by(Subscription.expires_at.desc()).limit(1).with_for_update()
+        )).scalar_one_or_none()
+        if active is not None:
+            active.expires_at = active.expires_at + timedelta(days=welcome_days)
+            session.add(ReferralReward(referrer_user_id=int(referrer.id), referred_user_id=int(referred_user.id),
+                                       reward_type="welcome_days", reward_value=int(welcome_days),
+                                       reference=f"REFERRAL_WELCOME:{reference}"[:128],
+                                       meta={"subscription_id": getattr(active, "id", None)}))
+            out["welcome_days"] = int(welcome_days)
+    await session.flush()
+    return out
 
 
 # === NEW: Signal Archiving & Outcome Handling ===

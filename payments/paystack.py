@@ -68,6 +68,7 @@ def handle_webhook(request):
 
 async def process_event(event):
     """Process a Paystack webhook event and activate subscription."""
+    conversion: dict = {}  # referral conversion result, used after the commit
     if not isinstance(event, dict):
         return {"processed": False, "reason": "Invalid payment event"}
     event_type = event.get("event", "")
@@ -395,7 +396,18 @@ async def process_event(event):
             f"📅 Active until: {escape_md(expiry.strftime('%Y-%m-%d'))}\n"
             "Use /signals for the latest trading ideas\\."
         )
+        if conversion.get("welcome_days"):
+            msg += f"\n🎁 \+{int(conversion['welcome_days'])} bonus days for joining with a friend's invite\."
         await bot.send_message(chat_id=int(telegram_user_id), text=msg, parse_mode="MarkdownV2")
+    except Exception:
+        pass
+    # Tell the referrer about their conversion reward (11 Nov 2026).
+    try:
+        if conversion.get("referrer_message") and conversion.get("referrer_telegram_user_id"):
+            from signalrank_telegram.bot import application
+
+            await application.bot.send_message(chat_id=int(conversion["referrer_telegram_user_id"]),
+                                               text=str(conversion["referrer_message"]))
     except Exception:
         pass
 
