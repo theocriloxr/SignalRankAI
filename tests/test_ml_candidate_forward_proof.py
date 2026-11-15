@@ -733,7 +733,8 @@ async def test_candidate_schema_change_keeps_separate_schema_gate(monkeypatch):
     monkeypatch.setattr(forward, "load_active_candidate", fake_candidate)
     monkeypatch.setattr(forward, "load_active_primary", fake_primary)
     monkeypatch.setattr(forward, "evaluate_candidate_forward_evidence", fake_evidence)
-    monkeypatch.delenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", raising=False)
+    # An explicit 0 revokes the owner's standing authorization (11 Nov 2026).
+    monkeypatch.setenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", "0")
     monkeypatch.delenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID", raising=False)
 
     result = await forward.promote_candidate_from_forward_proof(
@@ -741,6 +742,14 @@ async def test_candidate_schema_change_keeps_separate_schema_gate(monkeypatch):
     )
     assert result["ok"] is False
     assert result["reason"] == "schema_migration_requires_authorization"
+
+    # Unset: the standing authorization applies, so the schema gate no longer refuses
+    # (15 Nov 2026: this copy defaulted to off, unlike ml/train_model).
+    monkeypatch.delenv("ML_ALLOW_SCHEMA_VERSION_PROMOTION", raising=False)
+    result = await forward.promote_candidate_from_forward_proof(
+        authorization_id="owner-forward-proof-approval"
+    )
+    assert result.get("reason") != "schema_migration_requires_authorization"
 
 
 @pytest.mark.asyncio

@@ -316,14 +316,23 @@ def _asset_class(asset: str) -> str:
 
 def build_rows(pairs: Iterable[tuple[str, str]], *, before: pd.Timestamp | None, budget_rows: int,
                client: Any = None, deadline: float | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Replay rows for (asset, timeframe) pairs, spread evenly, within ``budget_rows`` and a time budget."""
+    """Replay rows for (asset, timeframe) pairs, most-traded assets first, within ``budget_rows`` and a time budget."""
     import httpx
 
-    pairs = sorted({(str(a).upper(), _normalize_tf(t)) for a, t in pairs if a and _normalize_tf(t) in _TF_SECONDS})
+    # Most-traded assets first, all timeframes of an asset together (one history download).
+    # Until 15 Nov 2026 pairs ran alphabetically under a 240 s budget: 493 of 502 were
+    # skipped, so only AAVE and ADA were ever replayed (135 rows, 15 per pair).
+    from collections import Counter
+
+    clean = [(str(a).upper(), _normalize_tf(t)) for a, t in pairs if a and _normalize_tf(t) in _TF_SECONDS]
+    asset_freq = Counter(a for a, _ in clean)
+    pair_freq = Counter(clean)
+    pairs = sorted(pair_freq, key=lambda p: (-asset_freq[p[0]], p[0], -pair_freq[p]))
     report: dict[str, Any] = {"pairs": len(pairs), "assets": {}, "skipped": []}
     if not pairs or budget_rows <= 0:
         return [], report
-    per_pair = max(1, budget_rows // len(pairs))
+    floor = int(_env_float("ML_EXTERNAL_REPLAY_MIN_PER_PAIR", 150.0, 1.0, 5000.0))
+    per_pair = max(floor, budget_rows // len(pairs))
     owns = client is None
     client = client or httpx.Client(timeout=20.0, headers={"User-Agent": "signalrank-research/1.0"})
     rows: list[dict[str, Any]] = []
@@ -333,8 +342,12 @@ def build_rows(pairs: Iterable[tuple[str, str]], *, before: pd.Timestamp | None,
             if deadline is not None and time.monotonic() > deadline:
                 report["skipped"].append(f"{asset}:{tf}:time_budget")
                 continue
+            if len(rows) >= budget_rows:
+                report["skipped"].append(f"{asset}:{tf}:row_budget")
+                continue
             try:
                 if asset not in history:
+                    history.clear()  # one asset's history in memory at a time
                     history[asset] = _cached_history(asset, _asset_class(asset), client)
                 frames = history[asset]
                 found = replay_frame(asset, _asset_class(asset), tf, frames.get(tf), frames,
@@ -380,7 +393,7 @@ def augment(df: pd.DataFrame, *, client: Any = None) -> tuple[pd.DataFrame, dict
     boundary = stamps.sort_values().iloc[int((len(stamps) - 1) * fit_ratio)] - pd.Timedelta(days=1)
     boundary = min(boundary, stamps.max() - pd.Timedelta(days=1))
     before = pd.Timestamp(boundary).tz_localize("UTC") if pd.Timestamp(boundary).tzinfo is None else pd.Timestamp(boundary)
-    deadline = time.monotonic() + _env_float("ML_EXTERNAL_REPLAY_TIMEOUT_SECONDS", 240.0, 10.0, 3600.0)
+    deadline = time.monotonic() + _env_float("ML_EXTERNAL_REPLAY_TIMEOUT_SECONDS", 900.0, 10.0, 3600.0)
     pairs = list(internal[["asset", "timeframe"]].dropna().itertuples(index=False, name=None))
     rows, report = build_rows(pairs, before=before, budget_rows=budget, client=client, deadline=deadline)
     evidence.update(report)

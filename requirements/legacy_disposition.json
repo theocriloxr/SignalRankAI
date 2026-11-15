@@ -13043,11 +13043,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 697,
+      "line_count": 701,
       "path": "ml/candidate_forward.py",
       "reason": "production/build source",
-      "sha256": "830e1bed0e2d88f104f237adc6840a994b523216fec9f5da8d51a2c8b36a0057",
-      "size_bytes": 28703
+      "sha256": "444d9d2122e9322742c7fe7e5ebac3a442fa99dfa865378d626b093440f5df89",
+      "size_bytes": 29043
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13091,11 +13091,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 409,
+      "line_count": 422,
       "path": "ml/external_replay.py",
       "reason": "production/build source",
-      "sha256": "e8a896f3e89115ef906e8da28bcffb2dc54f21e5df09df7ed81fbd53e6398f7e",
-      "size_bytes": 19954
+      "sha256": "cc9865db9aaec58257ff7b36d7dd1bcab2fbef52f084f49eea2c0f566460e16f",
+      "size_bytes": 20717
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18803,11 +18803,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 102,
+      "line_count": 123,
       "path": "tests/test_edge_model_20261115.py",
       "reason": "automated test evidence",
-      "sha256": "92b24f9b0c7ac901a7f69e7b530f82e73d768bac555220f7f9cae571089e073a",
-      "size_bytes": 5123
+      "sha256": "f1582aba797deff0cc9d081f984a3ea8681984f233de1f720439c9c9ab509766",
+      "size_bytes": 6147
     },
     {
       "disposition": "TEST_ONLY",
@@ -19499,11 +19499,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 874,
+      "line_count": 883,
       "path": "tests/test_ml_candidate_forward_proof.py",
       "reason": "automated test evidence",
-      "sha256": "1264ca8810cd68a493a824d18c426435ef4cd59e7a7f524fd872c3e4f9173bbc",
-      "size_bytes": 32891
+      "sha256": "c16ab5a037395c15a67e942904dd71d9ecb0a7a1067f8f1b9703b09b6d1133d9",
+      "size_bytes": 33397
     },
     {
       "disposition": "TEST_ONLY",

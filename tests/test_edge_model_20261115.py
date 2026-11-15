@@ -100,3 +100,24 @@ def test_edge_training_does_not_upweight_winners(monkeypatch):
     params = seen.get("first") or {}
     assert params.get("scale_pos_weight") == 1.0
     assert params.get("max_depth") == 2 and params.get("min_child_weight") == 60
+
+
+def test_replay_runs_most_traded_assets_first_with_a_real_per_pair_share(monkeypatch):
+    """15 Nov 2026: alphabetical order under a 240 s budget replayed only AAVE and ADA."""
+    from ml import external_replay as er
+
+    calls = []
+    monkeypatch.setattr(er, "_cached_history", lambda asset, cls, client: {"_": asset})
+    monkeypatch.setattr(er, "fill_macro", lambda rows, hist: 0)
+    monkeypatch.setattr(er, "macro_history", lambda client: {})
+
+    def fake_replay(asset, cls, tf, frame, frames, *, before, max_rows):
+        calls.append((asset, tf, max_rows))
+        return [{"asset": asset, "timeframe": tf}] * min(max_rows, 500)
+
+    monkeypatch.setattr(er, "replay_frame", fake_replay)
+    pairs = [("AAVEUSDT", "1h")] + [("BTCUSDT", "1h")] * 50 + [("XAUUSD", "15m")] * 20
+    rows, report = er.build_rows(pairs, before=None, budget_rows=400, client=object())
+    assert [c[0] for c in calls][:1] == ["BTCUSDT"]  # most traded first, not alphabetical
+    assert calls[0][2] >= 150
+    assert len(rows) <= 400

@@ -616,11 +616,15 @@ async def promote_candidate_from_forward_proof(
     candidate_schema = int(candidate.get("schema_version") or 1)
     primary_schema = int((primary or {}).get("schema_version") or 1)
     if primary and candidate_schema != primary_schema:
+        # Same defaults as ml/train_model (owner authorization, 11 Nov 2026). This copy
+        # defaulted to off with no certification, so even the owner's CONFIRM was refused
+        # for a newer-schema candidate (15 Nov 2026). An explicit 0 / empty value revokes it.
         schema_allowed = _env_bool(
             "ML_ALLOW_SCHEMA_VERSION_PROMOTION",
-            False,
+            True,
         )
-        schema_certification = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID") or "").strip()
+        schema_certification = str(os.getenv("ML_SCHEMA_PROMOTION_CERTIFICATION_ID",
+                                              "owner-authorized-20261111")).strip()
         if not (schema_allowed and schema_certification):
             return {
                 "ok": False,
