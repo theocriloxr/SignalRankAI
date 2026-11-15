@@ -2692,6 +2692,11 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
                 else max(30, (best_iteration + 1) if best_iteration is not None else 60),
                 blend=float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.3") or 0.3),
                 embargo_hours=float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24),
+                # Score the model as shipped: weighted, with point-in-time fit-only rows.
+                fit_only_idx=fit_only_idx if _env_bool("ML_EDGE_WF_AS_SHIPPED", True) else None,
+                sample_weights=(np.asarray(sample_weights, dtype=float)
+                                if sample_weights is not None and _env_bool("ML_EDGE_WF_AS_SHIPPED", True)
+                                else None),
             )
             logger.info("[ml_edge_walk_forward] %s", edge_walk_forward)
         except Exception as edge_err:

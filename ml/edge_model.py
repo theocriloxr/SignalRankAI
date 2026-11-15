@@ -168,8 +168,16 @@ def point_in_time_prior(frame: Any, *, fit_only: Any = None) -> tuple[list[float
 
 
 def walk_forward_edge(X: Any, y: Any, ordered_idx: Any, timestamps: Any, *, params: dict, trees: int,
-                      blend: float = 0.5, embargo_hours: float = 24.0, folds: int = 7) -> dict[str, Any]:
-    """Purged walk-forward of the edge rule; realised R per fold at each setup's own TP1."""
+                      blend: float = 0.5, embargo_hours: float = 24.0, folds: int = 7,
+                      fit_only_idx: Any = None, sample_weights: Any = None) -> dict[str, Any]:
+    """Purged walk-forward of the edge rule; realised R per fold at each setup's own TP1.
+
+    Folds are cut over ``ordered_idx`` (the bot's own rows) only, so every test window is real
+    tracked setups. 16 Nov 2026: each fold now trains the way the shipped model does: fit-only
+    rows (public-history replay, user ideas) dated before the fold's embargo line join that
+    fold's fit window, and ``sample_weights`` apply to the fit rows. Before this the gate scored
+    an own-rows, unweighted model while the shipped model was weighted and replay-augmented.
+    """
     import numpy as np
     import pandas as pd
     import xgboost as xgb
@@ -180,6 +188,10 @@ def walk_forward_edge(X: Any, y: Any, ordered_idx: Any, timestamps: Any, *, para
     if n < 600 or timestamps is None or "segment_prior" not in X.columns:
         return out
     stamp = pd.to_datetime(pd.Series(np.asarray(timestamps)), errors="coerce")
+    extra_idx = None if fit_only_idx is None else np.asarray(fit_only_idx, dtype=int)
+    weights = None if sample_weights is None else np.asarray(sample_weights, dtype=float)
+    if weights is not None and len(weights) != len(X):
+        weights = None
     for cut in np.linspace(0.50, 0.85, folds):
         a, b = int(n * cut), min(n, int(n * (cut + 0.08)))
         test = ordered_idx[a:b]
@@ -190,10 +202,14 @@ def walk_forward_edge(X: Any, y: Any, ordered_idx: Any, timestamps: Any, *, para
         if len(train) < 400:
             continue
         fit, cal = train[: int(len(train) * 0.8)], train[int(len(train) * 0.8):]
+        if extra_idx is not None and len(extra_idx):
+            fit = np.concatenate([extra_idx[(stamp.iloc[extra_idx] <= t0 - pd.Timedelta(hours=embargo_hours))
+                                            .to_numpy()], fit])
         if len(set(y.iloc[fit])) < 2:
             continue
         model = xgb.XGBClassifier(**{**params, "n_estimators": int(trees), "early_stopping_rounds": None})
-        model.fit(X.iloc[fit], y.iloc[fit])
+        fit_kwargs = {} if weights is None else {"sample_weight": weights[fit]}
+        model.fit(X.iloc[fit], y.iloc[fit], **fit_kwargs)
         p = model.predict_proba(X.iloc[test])[:, 1]
         if len(set(y.iloc[cal])) == 2:
             iso = IsotonicRegression(out_of_bounds="clip", y_min=0.01, y_max=0.99)

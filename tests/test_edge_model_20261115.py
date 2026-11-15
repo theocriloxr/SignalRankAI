@@ -121,3 +121,38 @@ def test_replay_runs_most_traded_assets_first_with_a_real_per_pair_share(monkeyp
     assert [c[0] for c in calls][:1] == ["BTCUSDT"]  # most traded first, not alphabetical
     assert calls[0][2] >= 150
     assert len(rows) <= 400
+
+
+def test_walk_forward_edge_trains_folds_as_shipped(monkeypatch):
+    """Fit-only rows join a fold only when dated before its embargo line; weights reach the fit."""
+    import xgboost as xgb
+
+    rng = np.random.default_rng(9)
+    own_n, extra_n = 1200, 400
+    n = own_n + extra_n
+    y = pd.Series((rng.random(n) < 0.4).astype(int))
+    X = pd.DataFrame({"segment_prior": np.full(n, 0.4), "noise": rng.normal(size=n),
+                      "price_range": np.full(n, 0.02), "risk_amount": np.full(n, 0.01),
+                      "risk_reward_ratio": np.full(n, 2.0)})
+    own_ts = list(pd.date_range("2026-08-01", periods=own_n, freq="2h"))
+    # Half the replay rows are old history, half are dated after the whole own window.
+    extra_ts = list(pd.date_range("2024-01-01", periods=extra_n // 2, freq="1D")) + \
+        list(pd.date_range("2027-06-01", periods=extra_n // 2, freq="1D"))
+    ts = pd.Series(own_ts + extra_ts)
+    weights = np.where(np.arange(n) >= own_n, 0.25, 1.0)
+    seen = []
+    real_fit = xgb.XGBClassifier.fit
+
+    def spy(self, Xf, yf, **kw):
+        seen.append((Xf.index.to_numpy(), kw.get("sample_weight")))
+        return real_fit(self, Xf, yf, **kw)
+
+    monkeypatch.setattr(xgb.XGBClassifier, "fit", spy)
+    em.walk_forward_edge(X, y, np.arange(own_n), ts, trees=10, fit_only_idx=np.arange(own_n, n),
+                         sample_weights=weights,
+                         params={"max_depth": 2, "objective": "binary:logistic", "eval_metric": "logloss"})
+    assert seen
+    for rows, w in seen:
+        replay = rows[rows >= own_n]
+        assert len(replay) == extra_n // 2 and (replay < own_n + extra_n // 2).all()
+        assert w is not None and np.allclose(w, weights[rows])
