@@ -13251,11 +13251,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3599,
+      "line_count": 3614,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "1398a6fa7ff8be8420982961b7138030c64b3531fc86afcccf764a0660a848e3",
-      "size_bytes": 169492
+      "sha256": "0c8f62f2141195d74b3ed541ae2e033d0c9f91536051fc5ed3f6bad40d9b38a1",
+      "size_bytes": 170659
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18803,11 +18803,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 67,
+      "line_count": 102,
       "path": "tests/test_edge_model_20261115.py",
       "reason": "automated test evidence",
-      "sha256": "bbe5e766d5ac87454698b4a78feaf6a3168c524253f716cb08177c973d4667a5",
-      "size_bytes": 3675
+      "sha256": "92b24f9b0c7ac901a7f69e7b530f82e73d768bac555220f7f9cae571089e073a",
+      "size_bytes": 5123
     },
     {
       "disposition": "TEST_ONLY",

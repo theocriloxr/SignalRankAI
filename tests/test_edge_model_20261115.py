@@ -65,3 +65,38 @@ def test_live_prior_reads_the_class_keyed_snapshot(monkeypatch):
     values = em.live_values({"strategy_name": "EMA Trend", "timeframe": "1h"},
                             {"asset_class_enc": 0.0, "price_range": 0.02, "risk_amount": 0.01})
     assert values["segment_prior"] == round(prior, 6) and values["prior_edge"] > 0
+
+
+def test_edge_training_does_not_upweight_winners(monkeypatch):
+    """The edge rule compares probabilities with break-even: class weighting inflated them
+    (production 15 Nov 2026: edge walk-forward -0.08R, ECE 0.144)."""
+    import numpy as np
+    import pandas as pd
+
+    from ml import train_model as tm
+
+    seen = {}
+    real = tm.xgb.XGBClassifier if hasattr(tm, "xgb") else None
+    import xgboost
+
+    class Spy(xgboost.XGBClassifier):
+        def __init__(self, **kw):
+            seen.setdefault("first", kw)
+            super().__init__(**kw)
+
+    monkeypatch.setattr(xgboost, "XGBClassifier", Spy)
+    if real is not None:
+        monkeypatch.setattr(tm.xgb, "XGBClassifier", Spy)
+    rng = np.random.default_rng(1)
+    n = 1500
+    X = pd.DataFrame({"segment_prior": rng.uniform(0.2, 0.6, n), "prior_edge": rng.normal(0, 0.1, n),
+                      "price_range": 0.01, "risk_amount": 0.01, "risk_reward_ratio": 1.0, "f": rng.normal(size=n)})
+    y = pd.Series((rng.uniform(size=n) < 0.26).astype(int))
+    ts = pd.Series(pd.date_range("2026-08-01", periods=n, freq="h"))
+    try:
+        tm.train_model(X, y, list(X.columns), timestamps=ts)
+    except Exception:
+        pass  # later gates may refuse a synthetic model; only the fitted parameters matter here
+    params = seen.get("first") or {}
+    assert params.get("scale_pos_weight") == 1.0
+    assert params.get("max_depth") == 2 and params.get("min_child_weight") == 60

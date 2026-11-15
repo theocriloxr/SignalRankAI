@@ -2626,14 +2626,28 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     # train AUC 0.95 vs validation 0.72). Below ML_XGB_SMALL_DATA_ROWS (4,000) the trees are
     # shallower with larger leaves and stronger penalties; explicit settings still win.
     small = len(X_tr) < int(os.getenv("ML_XGB_SMALL_DATA_ROWS", "4000") or 4000)
+    # Edge models (15 Nov 2026): the decision compares the probability with each setup's
+    # break-even rate, so the probability must be honest. Up-weighting winners
+    # (scale_pos_weight ~2.8) inflated every probability: the production run took losing
+    # trades (edge walk-forward -0.08R) and calibrated badly (ECE 0.144). The independent
+    # search's configuration, chosen on the first 85 % of history and confirmed on the
+    # untouched last 15 %, is depth 2, leaf weight 60, 150 trees, no class weighting:
+    # +0.38R mean over the gate's 7 folds (5 of 7 positive) on the same data.
+    edge_rule = "segment_prior" in feature_cols and str(os.getenv("ML_DECISION_RULE", "edge")).lower() == "edge"
+    if edge_rule:
+        class_balance_scale = 1.0
+        can_stop_early = False
     model = xgb.XGBClassifier(
-        n_estimators=int(os.getenv("ML_XGB_MAX_TREES", "400") or 400),
-        max_depth=int(os.getenv("ML_XGB_MAX_DEPTH", "3" if small else "4") or 4),
+        n_estimators=int(os.getenv("ML_EDGE_TREES", "150") or 150) if edge_rule
+        else int(os.getenv("ML_XGB_MAX_TREES", "400") or 400),
+        max_depth=int(os.getenv("ML_EDGE_MAX_DEPTH", "2") or 2) if edge_rule
+        else int(os.getenv("ML_XGB_MAX_DEPTH", "3" if small else "4") or 4),
         learning_rate=float(os.getenv("ML_XGB_LEARNING_RATE", "0.05") or 0.05),
-        min_child_weight=float(os.getenv("ML_XGB_MIN_CHILD_WEIGHT", "15" if small else "5") or 5),
-        gamma=float(os.getenv("ML_XGB_GAMMA", "1.0" if small else "0.5") or 0.5),
-        reg_lambda=float(os.getenv("ML_XGB_REG_LAMBDA", "6.0" if small else "2.0") or 2.0),
-        reg_alpha=float(os.getenv("ML_XGB_REG_ALPHA", "0.1") or 0.1),
+        min_child_weight=float(os.getenv("ML_EDGE_MIN_CHILD_WEIGHT", "60") or 60) if edge_rule
+        else float(os.getenv("ML_XGB_MIN_CHILD_WEIGHT", "15" if small else "5") or 5),
+        gamma=0.5 if edge_rule else float(os.getenv("ML_XGB_GAMMA", "1.0" if small else "0.5") or 0.5),
+        reg_lambda=4.0 if edge_rule else float(os.getenv("ML_XGB_REG_LAMBDA", "6.0" if small else "2.0") or 2.0),
+        reg_alpha=0.0 if edge_rule else float(os.getenv("ML_XGB_REG_ALPHA", "0.1") or 0.1),
         subsample=0.8,
         colsample_bytree=0.7,
         objective="binary:logistic",
@@ -2674,7 +2688,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
             edge_walk_forward = walk_forward_edge(
                 X_train, y_train, np.asarray(idx), timestamps,
                 params={k: v for k, v in model.get_params().items() if k not in {"n_estimators", "early_stopping_rounds"}},
-                trees=max(30, (best_iteration + 1) if best_iteration is not None else 60),
+                trees=int(os.getenv("ML_EDGE_TREES", "150") or 150) if edge_rule
+                else max(30, (best_iteration + 1) if best_iteration is not None else 60),
                 blend=float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.3") or 0.3),
                 embargo_hours=float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24),
             )
