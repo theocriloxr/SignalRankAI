@@ -166,9 +166,21 @@ def build_model_feature_values(signal, market_data=None):
         "hy_credit_spread": _safe_float(signal.get("hy_credit_spread"), alt_values.get("hy_credit_spread", 0.0)),
         "cot_net_position": _safe_float(signal.get("cot_net_position"), alt_values.get("cot_net_position", 0.0)),
         **_regime_values(signal, candles),
+        **_edge_values(signal, {"asset_class_enc": _safe_float(signal.get("asset_class_enc"), _asset_class_to_int(asset)),
+                                "price_range": price_range, "risk_amount": risk_amount, "risk_reward_ratio": rr}),
         # Routing only (not a model input): selects a per-asset specialist when one passed.
         "asset_enc": float(stable_category_to_int(str(signal.get("asset") or "").upper())),
     }
+
+
+def _edge_values(signal, values):
+    """Schema v7 track record from the setup-evidence snapshot (ml/edge_model.py)."""
+    try:
+        from ml.edge_model import live_values
+
+        return live_values(signal, values)
+    except Exception:
+        return {"segment_prior": 0.0, "prior_edge": 0.0}
 
 
 def _regime_values(signal, candles):

@@ -90,8 +90,9 @@ def test_a_setup_without_evidence_or_valid_levels_is_blocked():
 def test_snapshot_age_follows_the_refresh_interval(monkeypatch):
     monkeypatch.setenv("SEGMENT_EVIDENCE_REFRESH_SECONDS", "900")
     now = time.time()
-    assert se.snapshot_is_current({"computed_at": now - 1700}, now=now)
-    assert not se.snapshot_is_current({"computed_at": now - 1900}, now=now)
+    # 3x the interval since 15 Nov 2026 (a cold scan after a deploy can take ~25 minutes).
+    assert se.snapshot_is_current({"computed_at": now - 2600}, now=now)
+    assert not se.snapshot_is_current({"computed_at": now - 2800}, now=now)
     assert not se.snapshot_is_current(None)
 
 

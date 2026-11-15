@@ -208,6 +208,15 @@ def _promotion_quality_gate(
         if not wf_ok:
             logger.warning("[ml_quality_walk_forward] rejected mean_auc=%s mean_expected_r=%s",
                            wf.get("mean_auc"), wf.get("mean_expected_r"))
+    from ml.edge_model import edge_gate, is_edge_model
+
+    if is_edge_model(metrics):
+        # Edge model (15 Nov 2026): judged on realised R across purged walk-forward folds,
+        # plus the leakage/label-noise audit and the overfitting gap; not on accuracy.
+        edge_ok, edge_reason = edge_gate(metrics)
+        if not edge_ok:
+            logger.warning("[ml_quality_edge] rejected %s", edge_reason)
+        return (not data_blocks and overfit_ok and edge_ok), min_accuracy, min_auc
     ok = (
         not data_blocks
         and wf_ok
@@ -269,6 +278,12 @@ def _champion_comparison_gate(
     regressions: dict[str, dict[str, float]] = {}
     compared: dict[str, dict[str, float]] = {}
     skipped_basis: dict[str, str] | None = None
+    if str(candidate_metrics.get("decision_rule") or "") != str(champion_metrics.get("decision_rule") or ""):
+        # Different decision rules (edge vs probability threshold) are not comparable metric by
+        # metric; the forward proof compares them on the same live setups instead (15 Nov 2026).
+        return True, {"enabled": True, "reason": "decision_rule_differs", "source": source,
+                      "candidate_rule": candidate_metrics.get("decision_rule"),
+                      "champion_rule": champion_metrics.get("decision_rule")}
     for key, tolerance in tolerances.items():
         if candidate_metrics.get(key) is None or champion_metrics.get(key) is None:
             continue
@@ -1994,6 +2009,16 @@ def engineer_features(df):
         for col in _ALT_FEATURES:
             if col not in X.columns:
                 X[col] = 0.0
+    if any(col in feature_cols for col in ("segment_prior", "prior_edge")) and "target" in X.columns:
+        # Edge model track record, point in time (earlier rows only; fit-only rows never count).
+        from ml.edge_model import point_in_time_prior
+
+        fit_only_rows = (X["source_type"].astype(str).isin(["external_replay", "user_idea"]).to_numpy()
+                         if "source_type" in X.columns else None)
+        X["segment_prior"], X["prior_edge"] = point_in_time_prior(X, fit_only=fit_only_rows)
+    for col in ("segment_prior", "prior_edge"):
+        if col in feature_cols and col not in X.columns:
+            X[col] = 0.0
     from ml.regime_features import FEATURES as _REGIME_FEATURES, context_features as _context
 
     if any(col in feature_cols and col not in X.columns for col in _REGIME_FEATURES):
@@ -2641,6 +2666,21 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
             logger.info("[ml_walk_forward] %s", walk_forward)
     except Exception as wf_err:
         walk_forward = {"error": type(wf_err).__name__}
+    edge_walk_forward: dict[str, Any] = {}
+    if "segment_prior" in feature_cols and str(os.getenv("ML_DECISION_RULE", "edge")).lower() == "edge":
+        try:
+            from ml.edge_model import walk_forward_edge
+
+            edge_walk_forward = walk_forward_edge(
+                X_train, y_train, np.asarray(idx), timestamps,
+                params={k: v for k, v in model.get_params().items() if k not in {"n_estimators", "early_stopping_rounds"}},
+                trees=max(30, (best_iteration + 1) if best_iteration is not None else 60),
+                blend=float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.5") or 0.5),
+                embargo_hours=float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24),
+            )
+            logger.info("[ml_edge_walk_forward] %s", edge_walk_forward)
+        except Exception as edge_err:
+            edge_walk_forward = {"error": type(edge_err).__name__}
 
     # Choose the classification diagnostic threshold from calibration-fit rows
     # only, then evaluate that frozen threshold on the untouched validation
@@ -2840,6 +2880,8 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     except Exception as audit_err:
         data_audit = {"error": type(audit_err).__name__}
     metrics = {
+        **({"decision_rule": "edge", "prior_blend": float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.5") or 0.5),
+            "edge_min": 0.0, "edge_walk_forward": edge_walk_forward} if edge_walk_forward else {}),
         "walk_forward": walk_forward,
         "data_audit": data_audit,
         "accuracy": float(acc),

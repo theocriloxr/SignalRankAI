@@ -13,9 +13,9 @@ import math
 import os
 from typing import Any
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 MODEL_FORMAT_VERSION = 3
-FEATURE_SCHEMA_VERSION = "feature-schema-v6"
+FEATURE_SCHEMA_VERSION = "feature-schema-v7"
 LABEL_SCHEMA_VERSION = "label-schema-v1"
 
 LEGACY_RETRAIN_FEATURE_COLUMNS = [
@@ -143,6 +143,9 @@ FEATURE_COLUMNS_V5 = FEATURE_COLUMNS_V4 + ["fear_greed", "hy_credit_spread", "co
 # and the model could not see either the timeframe or the chop measures.
 FEATURE_COLUMNS_V6 = FEATURE_COLUMNS_V5 + ["timeframe_enc", "efficiency_ratio_20", "range_to_atr_20",
                                           "volatility_ratio_5_20", "hour_sin", "hour_cos", "is_weekend"]
+# Version 7 (15 Nov 2026): the edge model's track record (ml/edge_model.py). The only
+# signal that held up out of sample in purged walk-forward tests.
+FEATURE_COLUMNS_V7 = FEATURE_COLUMNS_V6 + ["segment_prior", "prior_edge"]
 
 CRITICAL_FEATURES_V4 = frozenset(
     {
@@ -163,7 +166,7 @@ def get_current_schema_version() -> int:
 
 
 def get_feature_columns(schema_version: int | None = None) -> list[str]:
-    """Return the declared contract; new training defaults to V6.
+    """Return the declared contract; new training defaults to V7.
 
     Serving an existing V3 champion must use its original ordered features while
     the V4 challenger gathers forward evidence. Unknown hashed contracts fail
@@ -178,6 +181,8 @@ def get_feature_columns(schema_version: int | None = None) -> list[str]:
         return list(FEATURE_COLUMNS_V5)
     if version == 6:
         return list(FEATURE_COLUMNS_V6)
+    if version == 7:
+        return list(FEATURE_COLUMNS_V7)
     raise ValueError(f"unsupported_feature_schema_version:{version}")
 
 

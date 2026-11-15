@@ -4492,6 +4492,12 @@ def main_loop(DRY_RUN: bool = False):
 
                     _ml_mode = _ml_gate_mode()
                     _ml_certified_by = getattr(ml_filter, "last_specialist", None) if ml_filter else None
+                    if not _ml_certified_by and ml_filter is not None:
+                        # A promoted edge model passed its own realised-R walk-forward gate (15 Nov 2026).
+                        from ml.edge_model import is_edge_model as _is_edge_model
+
+                        if _is_edge_model(getattr(ml_filter, "metrics", None)):
+                            _ml_certified_by = "edge_model"
                     _ml_advisory_here = bool(ml_filter) and (
                         _ml_mode == "advisory" or (_ml_mode == "auto" and not _ml_certified_by)
                     )

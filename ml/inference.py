@@ -371,6 +371,14 @@ class MLFilter:
                 record_live_prediction(raw_prob, prob, thresh_val)
             except Exception:
                 pass
+            from ml.edge_model import decide as _edge_decide, is_edge_model
+
+            if is_edge_model(self.metrics):
+                # Edge model: blend the track record with the calibrated estimate and take the
+                # setup only when it beats this setup's own break-even rate (15 Nov 2026).
+                verdict = _edge_decide(self.metrics, float(prob), normalized)
+                self.last_edge = verdict
+                return bool(verdict["passed"]), float(verdict["probability"])
             # Training selects the classification cutoff in raw model space.
             # Keep the accept/reject decision in that same space; calibrated
             # probability remains the confidence exposed downstream.

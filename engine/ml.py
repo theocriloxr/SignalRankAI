@@ -514,6 +514,8 @@ def _load_shadow_model(*, sync_durable: bool = True) -> None:
         _SHADOW_CACHE["schema_version"] = int(metadata.get("schema_version") or 1)
         _SHADOW_CACHE["training_run_id"] = str(metadata.get("training_run_id") or "")
         _SHADOW_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
+        _SHADOW_CACHE["calibration_x"] = list(metadata.get("calibration_x") or [])
+        _SHADOW_CACHE["calibration_y"] = list(metadata.get("calibration_y") or [])
         try:
             from ml.specialists import Router
 
@@ -596,11 +598,27 @@ def score_shadow_signal(
         probability = float(preds[0])
         if not 0.0 <= probability <= 1.0:
             raise ValueError("candidate_probability_out_of_range")
+        edge_verdict = None
+        from ml.edge_model import decide as _edge_decide, is_edge_model
+
+        if spec is None and is_edge_model(metrics):
+            # Same decision as serving would make (15 Nov 2026): calibrated, blended, on edge.
+            import numpy as _np
+            from ml.features import build_model_feature_values
+
+            cx = list(_SHADOW_CACHE.get("calibration_x") or [])
+            cy = list(_SHADOW_CACHE.get("calibration_y") or [])
+            calibrated = float(_np.interp(probability, cx, cy)) if len(cx) >= 2 and len(cx) == len(cy) else probability
+            edge_verdict = _edge_decide(metrics, calibrated,
+                                        build_model_feature_values(signal, signal.get("_market_data") or {}))
+            threshold = float(edge_verdict["threshold"])
         result = {
             "available": True,
             "probability": probability,
             "threshold": threshold,
-            "passed": probability >= threshold,
+            "passed": bool(edge_verdict["passed"]) if edge_verdict is not None else probability >= threshold,
+            "edge": None if edge_verdict is None else edge_verdict["edge"],
+            "decision_rule": "edge" if edge_verdict is not None else "probability",
             "version": _SHADOW_CACHE.get("version"),
             "artifact_hash_sha256": _SHADOW_CACHE.get("artifact_hash_sha256"),
             "feature_schema_hash_sha256": _SHADOW_CACHE.get("feature_schema_hash_sha256"),

@@ -376,7 +376,7 @@ def test_alt_data_is_point_in_time_and_maps_assets(monkeypatch):
 
 
 def test_schema_v5_adds_the_three_series():
-    from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, get_feature_columns
+    from ml.schema_version import FEATURE_COLUMNS_V4, FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, FEATURE_COLUMNS_V7, get_feature_columns
 
     assert get_feature_columns(5) == FEATURE_COLUMNS_V5 and FEATURE_COLUMNS_V6[:len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
     assert FEATURE_COLUMNS_V5[: len(FEATURE_COLUMNS_V4)] == FEATURE_COLUMNS_V4
@@ -461,9 +461,9 @@ def test_regime_features_measure_trend_and_chop():
 
 
 def test_schema_v6_adds_regime_context():
-    from ml.schema_version import FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, get_feature_columns
+    from ml.schema_version import FEATURE_COLUMNS_V5, FEATURE_COLUMNS_V6, FEATURE_COLUMNS_V7, get_feature_columns
 
-    assert get_feature_columns() == FEATURE_COLUMNS_V6 and FEATURE_COLUMNS_V6[: len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
+    assert get_feature_columns(6) == FEATURE_COLUMNS_V6 and FEATURE_COLUMNS_V6[: len(FEATURE_COLUMNS_V5)] == FEATURE_COLUMNS_V5
     assert "timeframe_enc" in FEATURE_COLUMNS_V6 and "efficiency_ratio_20" in FEATURE_COLUMNS_V6
 
 

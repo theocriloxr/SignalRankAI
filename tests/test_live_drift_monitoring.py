@@ -473,7 +473,7 @@ def test_challenger_scoring_restores_durable_candidate_without_promotion():
         source.index("def _persist_shadow_prediction")
     ]
     assert "booster.predict" in scorer
-    assert '"passed": probability >= threshold' in scorer
+    assert "probability >= threshold" in scorer  # probability rule kept; the edge rule is added (15 Nov 2026)
     assert "persist_active_model_artifact" not in scorer
 
 

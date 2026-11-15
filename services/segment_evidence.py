@@ -210,6 +210,14 @@ async def store_snapshot(session, snapshot: Mapping[str, Any]) -> None:
     )
 
 
+_LAST_SNAPSHOT: dict[str, Any] = {}
+
+
+def last_snapshot() -> dict[str, Any] | None:
+    """The newest snapshot this process loaded (engine), for the edge model's live track record."""
+    return _LAST_SNAPSHOT.get("value")
+
+
 async def load_snapshot(session) -> dict[str, Any] | None:
     from sqlalchemy import text
 
@@ -217,7 +225,10 @@ async def load_snapshot(session) -> dict[str, Any] | None:
                                    {"key": SNAPSHOT_KEY})).scalar_one_or_none()
     if isinstance(value, str):
         value = json.loads(value)
-    return dict(value) if isinstance(value, dict) else None
+    snapshot = dict(value) if isinstance(value, dict) else None
+    if snapshot is not None:
+        _LAST_SNAPSHOT["value"] = snapshot
+    return snapshot
 
 
 def snapshot_is_current(snapshot: Mapping[str, Any] | None, *, now: float | None = None) -> bool:
@@ -225,7 +236,8 @@ def snapshot_is_current(snapshot: Mapping[str, Any] | None, *, now: float | None
     if not snapshot:
         return False
     interval = max(60.0, _env_float("SEGMENT_EVIDENCE_REFRESH_SECONDS", 900.0))
-    max_age = max(interval, _env_float("SEGMENT_EVIDENCE_MAX_AGE_SECONDS", 2 * interval))
+    # 3x the interval (15 Nov 2026): a cold scan after a deploy can take ~25 minutes.
+    max_age = max(interval, _env_float("SEGMENT_EVIDENCE_MAX_AGE_SECONDS", 3 * interval))
     age = float(now if now is not None else time.time()) - float(snapshot.get("computed_at") or 0)
     return -300 <= age <= max_age  # small clock skew between containers is not staleness
 
@@ -267,7 +279,7 @@ async def attach_records(signals: list[dict[str, Any]]) -> None:
             signal["segment_evidence"] = record
 
 
-HOURS_CACHE_KEY = "segment_evidence:v1:hours"
+HOURS_CACHE_KEY = "segment_evidence:v2:hours"  # v2 adds class-keyed cells
 _BAR_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600}
 _HOURS_CACHE: dict[str, Any] = {}
 
@@ -279,17 +291,39 @@ def _hour_entry(rows) -> dict[str, Any]:
     Longer bars can span windows; their rows are kept so they still count once.
     """
     agg: dict[str, list[int]] = {}
+    cagg: dict[str, list[int]] = {}
     wide: list[list[Any]] = []
     for asset, timeframe, strategy, direction, bar, outcome in rows:
         win = int(outcome in WIN_SHADOW)
         if str(timeframe or "") in _BAR_SECONDS:
+            ccell = cagg.setdefault(_class_key(asset, strategy, timeframe), [0, 0])
+            ccell[0] += 1
+            ccell[1] += win
             key = segment_key(strategy, timeframe, direction)
             cell = agg.setdefault(key, [0, 0])
             cell[0] += 1
             cell[1] += win
         else:
             wide.append([asset, timeframe, strategy, direction, int(bar) if bar is not None else None, win])
-    return {"agg": agg, "wide": wide}
+    return {"agg": agg, "cagg": cagg, "wide": wide}
+
+
+_CLASS_CACHE: dict[str, int] = {}
+
+
+def _class_key(asset: Any, strategy: Any, timeframe: Any) -> str:
+    """strategy x asset class x timeframe, the edge model's key (ml/edge_model.py)."""
+    from ml.edge_model import segment_key as _edge_key
+
+    symbol = str(asset or "").upper()
+    if symbol not in _CLASS_CACHE:
+        try:
+            from ml.features import live_asset_class_enc
+
+            _CLASS_CACHE[symbol] = int(live_asset_class_enc(symbol))
+        except Exception:
+            _CLASS_CACHE[symbol] = -1
+    return _edge_key(strategy, _CLASS_CACHE[symbol], timeframe)
 
 
 async def refresh_once() -> int:
@@ -353,6 +387,7 @@ async def refresh_once() -> int:
             pass
 
     segments: dict[str, dict[str, int]] = {}
+    class_segments: dict[str, dict[str, int]] = {}
     seen: set[tuple] = set()
     cache_changed = False
     read_hours = 0
@@ -372,11 +407,18 @@ async def refresh_once() -> int:
             row = segments.setdefault(key, {"n": 0, "wins": 0})
             row["n"] += int(n)
             row["wins"] += int(wins)
+        for key, (n, wins) in (entry.get("cagg") or {}).items():
+            row = class_segments.setdefault(key, {"n": 0, "wins": 0})
+            row["n"] += int(n)
+            row["wins"] += int(wins)
         for asset, timeframe, strategy, direction, bar, win in entry.get("wide") or []:
             bar_key = (asset, timeframe, strategy, direction, bar)
             if bar_key not in seen:
                 seen.add(bar_key)
                 _add(segments, strategy, timeframe, direction, 1, int(win))
+                crow = class_segments.setdefault(_class_key(asset, strategy, timeframe), {"n": 0, "wins": 0})
+                crow["n"] += 1
+                crow["wins"] += int(win)
         start = stop
     for strategy, timeframe, direction, n, wins in await _rows(OUTCOME_SQL, {"since": since},
                                                                "segment_evidence_refresh.outcomes"):
@@ -386,8 +428,10 @@ async def refresh_once() -> int:
     for stale_key in [k for k in _HOURS_CACHE if k < oldest]:
         _HOURS_CACHE.pop(stale_key, None)
         cache_changed = True
+    class_totals = {"n": sum(c["n"] for c in class_segments.values()),
+                    "wins": sum(c["wins"] for c in class_segments.values())}
     snapshot = {"computed_at": time.time(), "lookback_days": lookback, "segments": segments,
-                "hours_read": read_hours}
+                "class_segments": class_segments, "class_totals": class_totals, "hours_read": read_hours}
 
     async def store(session):
         await store_snapshot(session, snapshot)
