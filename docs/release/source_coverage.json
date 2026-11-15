@@ -3,7 +3,7 @@
   "release_decision": "NO-GO",
   "ingestion_is_acceptance": false,
   "source_index_sha256": "c25d86e0fa3d364cc301f49175764942cbe537334f3af9cfe167549283efa7aa",
-  "repository_inventory_sha256": "5088e2d3410a57fb779257a140cd4397787107a52edd86d4bcf7ddeec16e8a98",
+  "repository_inventory_sha256": "31531b09ae6abfefd9a38378042d020b9f4f78c85d0a67334463060b70db18dd",
   "sources": [
     {
       "filename": "SignalRankAI_Master_Blueprint_Implementation_Directive_2026-09-30.docx",
@@ -47,18 +47,18 @@
       "reason": "Bundled documents are accessible; they do not establish access to every original discussion."
     }
   ],
-  "register_rows": 27008,
+  "register_rows": 27013,
   "status_counts": {
     "IMPLEMENTED_NEEDS_IMPROVEMENT": 13,
-    "INCOMPLETE": 26995
+    "INCOMPLETE": 27000
   },
   "reviewed_rows": 13,
-  "unclassified_applicable": 26995,
+  "unclassified_applicable": 27000,
   "unclassified_count_scope": "Conservative upper bound: includes all unresolved applicability reviews, including headings/context.",
   "applicable_reviewed": 13,
   "irrelevant_boilerplate_reviewed": 0,
   "implemented_and_verified": 0,
-  "repository_retained_child_clauses": 68100,
+  "repository_retained_child_clauses": 68134,
   "limitations": [
     "Repository rows retain their complete child clauses through the existing register; these are not yet individually dispositioned.",
     "Private original wording remains retrievable by source anchor/hash in the supplied bundle and ignored local intake.",

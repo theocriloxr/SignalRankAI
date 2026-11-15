@@ -54,6 +54,13 @@ for symbol, aliases in {
     "BNBUSDT": ("BNBUSD", "BNB-USD"),
     "SOLUSDT": ("SOLUSD", "SOL-USD"),
     "XRPUSDT": ("XRPUSD", "XRP-USD"),
+    # FundedNext MT5 names (screenshots, 15 Nov 2026): DOGUSD, LNKUSD.
+    "ADAUSDT": ("ADAUSD", "ADA-USD"),
+    "DOGEUSDT": ("DOGEUSD", "DOGUSD", "DOGE-USD"),
+    "LTCUSDT": ("LTCUSD", "LTC-USD"),
+    "LINKUSDT": ("LINKUSD", "LNKUSD", "LINK-USD"),
+    "XLMUSDT": ("XLMUSD", "XLM-USD"),
+    "XMRUSDT": ("XMRUSD", "XMR-USD"),
 }.items():
     _register(AssetSpec(symbol, "crypto", "crypto_stablecoin", "UTC", "crypto_24_7", True, aliases=aliases))
 
@@ -82,8 +89,9 @@ for symbol in (
 # Metals and energy.
 _register(AssetSpec("XAUUSD", "commodity", "metal", "UTC", "commodity_23_5", aliases=("GOLD",)))
 _register(AssetSpec("XAGUSD", "commodity", "metal", "UTC", "commodity_23_5", aliases=("SILVER",)))
-_register(AssetSpec("WTI", "commodity", "energy", "UTC", "commodity_23_5", aliases=("OIL", "USOIL")))
-_register(AssetSpec("BRENT", "commodity", "energy", "UTC", "commodity_23_5", aliases=("UKOIL",)))
+_register(AssetSpec("XPTUSD", "commodity", "metal", "UTC", "commodity_23_5", aliases=("PLATINUM",)))
+_register(AssetSpec("WTI", "commodity", "energy", "UTC", "commodity_23_5", aliases=("OIL", "USOIL", "USOUSD")))
+_register(AssetSpec("BRENT", "commodity", "energy", "UTC", "commodity_23_5", aliases=("UKOIL", "UKOUSD")))
 _register(AssetSpec("NATGAS", "commodity", "energy", "UTC", "commodity_23_5"))
 
 # US and international indices. These are mapped to explicit regional sessions,
@@ -100,21 +108,29 @@ _register(
 )
 _register(
     AssetSpec(
-        "NAS100", "index", "index_cfd", "America/New_York", "us_equity", aliases=("US100", "USTEC", "NDX", "^NDX")
+        "NAS100", "index", "index_cfd", "America/New_York", "us_equity", aliases=("US100", "USTEC", "NDX", "NDX100", "^NDX")
     )
 )
 _register(AssetSpec("US30", "index", "index_cfd", "America/New_York", "us_equity", aliases=("DJ30", "DJI", "^DJI")))
 _register(
-    AssetSpec("GER40", "index", "index_cfd", "Europe/Berlin", "europe_equity", aliases=("DE40", "DAX40", "^GDAXI"))
+    AssetSpec("GER40", "index", "index_cfd", "Europe/Berlin", "europe_equity", aliases=("DE40", "DAX40", "GER30", "^GDAXI"))
 )
 _register(AssetSpec("UK100", "index", "index_cfd", "Europe/London", "uk_equity", aliases=("FTSE", "^FTSE")))
 _register(AssetSpec("JP225", "index", "index_cfd", "Asia/Tokyo", "japan_equity", aliases=("JPN225", "NIKKEI", "^N225")))
 _register(AssetSpec("FRA40", "index", "index_cfd", "Europe/Paris", "europe_equity", aliases=("CAC40", "^FCHI")))
-_register(AssetSpec("EU50", "index", "index_cfd", "Europe/Paris", "europe_equity", aliases=("STOXX50", "^STOXX50E")))
+_register(AssetSpec("EU50", "index", "index_cfd", "Europe/Paris", "europe_equity", aliases=("STOXX50", "EUSTX50", "^STOXX50E")))
 _register(
     AssetSpec("AUS200", "index", "index_cfd", "Australia/Sydney", "australia_equity", aliases=("ASX200", "^AXJO"))
 )
 _register(AssetSpec("HK50", "index", "index_cfd", "Asia/Hong_Kong", "hong_kong_equity", aliases=("HSI", "^HSI")))
+_register(AssetSpec("US2000", "index", "index_cfd", "America/New_York", "us_equity", aliases=("RUSSELL2000", "RUT", "^RUT")))
+_register(AssetSpec("NTH25", "index", "index_cfd", "Europe/Amsterdam", "europe_equity", aliases=("NL25", "AEX", "^AEX")))
+_register(AssetSpec("SWI20", "index", "index_cfd", "Europe/Zurich", "europe_equity", aliases=("SMI20", "SMI", "^SSMI")))
+
+# European share CFDs offered by FundedNext (Xetra / Euronext Paris hours).
+for symbol, zone in (("ADS", "Europe/Berlin"), ("BAYN", "Europe/Berlin"), ("BMW", "Europe/Berlin"),
+                     ("MBG", "Europe/Berlin"), ("VOW3", "Europe/Berlin"), ("MC", "Europe/Paris")):
+    _register(AssetSpec(symbol, "stock", "eu_equity", zone, "europe_equity"))
 
 # Context-only macro instruments. A tradeable proxy must be configured before
 # they can become actionable.
@@ -153,6 +169,11 @@ _FIAT = {
     "TRY",
     "MXN",
     "BRL",
+    "HUF",
+    "CNH",
+    "DKK",
+    "PLN",
+    "CZK",
 }
 _CRYPTO_BASES = {
     "BTC",

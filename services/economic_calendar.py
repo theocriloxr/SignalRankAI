@@ -100,6 +100,7 @@ _USD_SENSITIVE_SYMBOLS = {
     "DXY",
     "US30",
     "US100",
+    "NAS100",  # canonical name of US100: it was never matched, so the Nasdaq traded through red news
     "US500",
 }
 
@@ -388,6 +389,47 @@ def calendar_status() -> dict[str, object]:
         "sources": sources,
         "fetched_at": _CACHE_FETCHED_AT.isoformat() if _CACHE_FETCHED_AT else None,
     }
+
+
+async def news_window_event(
+    symbol: str,
+    dt: Optional[datetime] = None,
+    buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
+) -> Optional[dict]:
+    """The high-impact USD event whose buffer ``symbol`` is inside, or None.
+
+    Returns ``{"title", "event_time", "minutes_from_event"}`` (negative before the release).
+    """
+    if _normalize_symbol(symbol) not in _USD_SENSITIVE_SYMBOLS:
+        return None
+    now = dt or datetime.now(tz=timezone.utc)
+    for event in await fetch_economic_events():
+        if event.get("currency") != "USD" or event.get("impact") != "high":
+            continue
+        event_time: Optional[datetime] = event.get("event_time")
+        if event_time is None:
+            continue
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        delta = (now - event_time).total_seconds()
+        if abs(delta) <= buffer_minutes * 60:
+            return {"title": str(event.get("title") or "high-impact news"), "event_time": event_time.isoformat(),
+                    "minutes_from_event": round(delta / 60.0, 1)}
+    return None
+
+
+def news_window_event_sync(
+    symbol: str,
+    dt: Optional[datetime] = None,
+    buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
+) -> Optional[dict]:
+    """Thread-safe wrapper for ``news_window_event``; None when the calendar cannot be read."""
+    try:
+        from utils.async_runner import run_sync
+
+        return run_sync(news_window_event(symbol, dt, buffer_minutes), timeout=_SYNC_GATE_TIMEOUT_SECONDS)
+    except Exception:
+        return {"title": "calendar unavailable"} if is_no_trade_zone_sync(symbol, dt, buffer_minutes) else None
 
 
 async def is_no_trade_zone(

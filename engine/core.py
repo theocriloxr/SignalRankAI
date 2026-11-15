@@ -3970,9 +3970,25 @@ def main_loop(DRY_RUN: bool = False):
                 if stale_data:
                     continue
 
-                # Economic calendar no-trade-zone gate (60-min buffer around high-impact events)
+                # Economic calendar no-trade-zone gate (60-min buffer around high-impact events).
+                # Since 15 Nov 2026 (owner: "a lot of setups were missed when there were news")
+                # the setups inside the window are still built, then refused at candidate gating
+                # with reason news_window and tracked to outcome, so the bot learns which classes
+                # and timeframes trade well around releases. Nothing in the window is delivered
+                # unless core.gate_evidence exempts that (news_window, class, timeframe) cell.
+                market_data.pop("_news_window", None)
+                if _env_bool("NEWS_WINDOW_TRACK_SETUPS", True):
+                    try:
+                        from services.economic_calendar import news_window_event_sync
+
+                        _nw = news_window_event_sync(asset, buffer_minutes=60)
+                        if _nw:
+                            market_data["_news_window"] = _nw
+                            _record_gate_failure(asset, "macro", "news_window_tracked")
+                    except Exception:
+                        logger.debug("[engine] news window lookup failed", exc_info=True)
                 try:
-                    if _is_no_trade_zone_sync(asset, buffer_minutes=60):
+                    if not _env_bool("NEWS_WINDOW_TRACK_SETUPS", True) and _is_no_trade_zone_sync(asset, buffer_minutes=60):
                         logger.info(
                             f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)"
                         )
@@ -4262,6 +4278,18 @@ def main_loop(DRY_RUN: bool = False):
                                 _increment_engine_veto("microstructure")
                                 _record_gate_failure(asset, "trend", sig["rejection_reason"])
                                 _log_decision("skipped", sig, reason=sig["rejection_reason"], meta={"confluence": conf})
+                                continue
+                        _nw = market_data.get("_news_window") if isinstance(market_data, dict) else None
+                        if _nw:
+                            from core.gate_evidence import asset_class_of as _nw_class, exempt as _nw_exempt
+
+                            sig["news_window"] = _nw
+                            if not _nw_exempt("news_window", _nw_class(asset), str(sig.get("timeframe") or "")):
+                                sig["rejection_reason"] = f"news_window {str(_nw.get('title') or '')[:60]}"
+                                _increment_engine_veto("regime")
+                                _record_gate_failure(asset, "macro", "no_trade_zone_60m")
+                                _log_decision("skipped", sig, reason=sig["rejection_reason"],
+                                              meta={"news_window": _nw, "news_window_minutes": _nw.get("minutes_from_event")})
                                 continue
                         # News confirmation gate (all supported classes: FX/crypto/commodities/stocks).
                         # Strong opposing sentiment blocks signal; aligned sentiment gets a light confidence bonus.

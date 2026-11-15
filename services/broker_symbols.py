@@ -32,9 +32,25 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "HK50": ("HK50CASH", "HSI50", "HK33", "HSI"),
     "XAUUSD": ("GOLD",),
     "XAGUSD": ("SILVER",),
-    "WTI": ("USOIL", "XTIUSD", "WTICRUDE", "CRUDEOIL", "OILCASH", "CL"),
-    "BRENT": ("UKOIL", "XBRUSD", "BRENTCRUDE", "BRENTCASH"),
+    "WTI": ("USOIL", "USOUSD", "XTIUSD", "WTICRUDE", "CRUDEOIL", "OILCASH", "CL"),
+    "BRENT": ("UKOIL", "UKOUSD", "XBRUSD", "BRENTCRUDE", "BRENTCASH"),
     "NATGAS": ("XNGUSD", "NGAS", "NATURALGAS"),
+    "XPTUSD": ("PLATINUM",),
+    "US2000": ("RUSSELL2000", "US2000CASH", "RUT", "USSC2000"),
+    "NTH25": ("NL25", "AEX25", "NETH25"),
+    "SWI20": ("SMI20", "SUI20", "SWISS20"),
+    # Crypto: brokers quote against USD, some with short names (FundedNext DOGUSD, LNKUSD).
+    "BTCUSDT": ("BTCUSD",),
+    "ETHUSDT": ("ETHUSD",),
+    "LTCUSDT": ("LTCUSD",),
+    "XRPUSDT": ("XRPUSD",),
+    "ADAUSDT": ("ADAUSD",),
+    "DOGEUSDT": ("DOGEUSD", "DOGUSD"),
+    "LINKUSDT": ("LINKUSD", "LNKUSD"),
+    "XLMUSDT": ("XLMUSD",),
+    "XMRUSDT": ("XMRUSD",),
+    "SOLUSDT": ("SOLUSD",),
+    "BNBUSDT": ("BNBUSD",),
 }
 
 _MAX_SUFFIX = 5

@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "da44815d075e90ff2447a2e9287a8e6c299776529eccda6cbd52a608b278e374"
   },
-  "variable_count": 1440,
+  "variable_count": 1441,
   "variables": [
     {
       "declared_defaults": {},
@@ -1466,11 +1466,11 @@
         "core/event_bus.py:65",
         "core/execution_claims.py:34",
         "data/fetcher_router.py:32",
-        "data/market_data.py:774",
+        "data/market_data.py:784",
         "db/migration_environment.py:9",
         "engine/admin_pulse.py:1110",
         "engine/core.py:1331",
-        "engine/core.py:6192",
+        "engine/core.py:6220",
         "payments/paystack_policy.py:45",
         "railway_main.py:1191",
         "signalrank_telegram/bot.py:1827",
@@ -1932,7 +1932,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:7048",
+        "engine/core.py:7076",
         "services/automated_analyst.py:24"
       ],
       "required_by_code": true,
@@ -2151,7 +2151,7 @@
       "name": "BINANCE_REQUIRE_IP_BINDING",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:5577"
+        "web/platform_api.py:5584"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2466,7 +2466,8 @@
       "name": "BROKER_UNIVERSE_ASSETS",
       "production_example_default": null,
       "read_locations": [
-        "core/broker_universe.py:55"
+        "core/broker_universe.py:57",
+        "core/broker_universe.py:65"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2476,7 +2477,17 @@
       "name": "BROKER_UNIVERSE_PROFILE",
       "production_example_default": null,
       "read_locations": [
-        "core/broker_universe.py:42"
+        "core/broker_universe.py:44"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {},
+      "name": "BROKER_UNIVERSE_SCAN_AVAILABLE",
+      "production_example_default": null,
+      "read_locations": [
+        "core/broker_universe.py:71"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2486,7 +2497,7 @@
       "name": "BROKER_UNIVERSE_STRICT",
       "production_example_default": null,
       "read_locations": [
-        "core/broker_universe.py:72"
+        "core/broker_universe.py:86"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2590,7 +2601,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/broker_verification.py:78",
-        "web/platform_api.py:5562"
+        "web/platform_api.py:5569"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2912,7 +2923,7 @@
       "name": "CONFLUENCE_GATE_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4258",
+        "engine/core.py:4274",
         "engine/threshold_optimizer.py:100"
       ],
       "required_by_code": true,
@@ -3285,7 +3296,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:6468"
+        "engine/core.py:6496"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4304,7 +4315,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5204"
+        "engine/core.py:5232"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4335,7 +4346,7 @@
       "production_example_default": null,
       "read_locations": [
         "engine/core.py:2019",
-        "engine/core.py:4948"
+        "engine/core.py:4976"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4396,7 +4407,7 @@
       "name": "DELIVERY_AUDIENCE_ALLOWLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:6190",
+        "engine/core.py:6218",
         "payments/paystack_policy.py:71",
         "railway_main.py:2816",
         "railway_main.py:2931",
@@ -5721,7 +5732,7 @@
         "core/env.py:173",
         "core/event_bus.py:65",
         "data/fetcher_router.py:33",
-        "data/market_data.py:775",
+        "data/market_data.py:785",
         "db/migration_environment.py:9",
         "engine/core.py:1332",
         "payments/paystack_policy.py:46",
@@ -5886,7 +5897,7 @@
       "name": "EXECUTION_TERMS_VERSION",
       "production_example_default": null,
       "read_locations": [
-        "web/platform_api.py:6779"
+        "web/platform_api.py:6786"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5958,8 +5969,8 @@
       "name": "EXPO_ACCESS_TOKEN",
       "production_example_default": null,
       "read_locations": [
-        "services/notification_channels.py:242",
-        "services/notification_channels.py:243"
+        "services/notification_channels.py:252",
+        "services/notification_channels.py:253"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -6184,7 +6195,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/connectors/finnhub_adapter.py:43",
-        "services/economic_calendar.py:188"
+        "services/economic_calendar.py:189"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -6820,7 +6831,7 @@
       "name": "IDEA_TELEGRAM_DM",
       "production_example_default": null,
       "read_locations": [
-        "services/trade_ideas.py:745"
+        "services/trade_ideas.py:748"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7433,7 +7444,7 @@
       "name": "MARKET_ENRICHMENT_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/market_data.py:1337"
+        "data/market_data.py:1347"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7508,7 +7519,7 @@
       "name": "MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "data/market_data.py:1208"
+        "data/market_data.py:1218"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7674,10 +7685,10 @@
         "railway_main.py:585",
         "railway_main.py:622",
         "services/broker_connections.py:206",
-        "web/platform_api.py:5626",
-        "web/platform_api.py:5662",
-        "web/platform_api.py:5731",
-        "web/platform_api.py:6739",
+        "web/platform_api.py:5633",
+        "web/platform_api.py:5669",
+        "web/platform_api.py:5738",
+        "web/platform_api.py:6746",
         "worker/worker.py:350"
       ],
       "required_by_code": true,
@@ -7788,10 +7799,10 @@
         "services/broker_connections.py:206",
         "signalrank_telegram/admin_commands.py:254",
         "signalrank_telegram/commands.py:2817",
-        "web/platform_api.py:5626",
-        "web/platform_api.py:5662",
-        "web/platform_api.py:5731",
-        "web/platform_api.py:6739",
+        "web/platform_api.py:5633",
+        "web/platform_api.py:5669",
+        "web/platform_api.py:5738",
+        "web/platform_api.py:6746",
         "worker/worker.py:350"
       ],
       "required_by_code": true,
@@ -8332,7 +8343,7 @@
       "name": "ML_HARD_FILTER_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4613"
+        "engine/core.py:4641"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8342,7 +8353,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5191"
+        "engine/core.py:5219"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8436,7 +8447,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5193"
+        "engine/core.py:5221"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8682,7 +8693,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5192"
+        "engine/core.py:5220"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8692,7 +8703,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5196"
+        "engine/core.py:5224"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8702,7 +8713,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:5194"
+        "engine/core.py:5222"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9291,7 +9302,7 @@
       "name": "NEWS_VOLATILITY_BUFFER_MULTIPLIER",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:116"
+        "services/economic_calendar.py:117"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9333,7 +9344,7 @@
       "name": "NO_TRADE_BUFFER_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "services/economic_calendar.py:107"
+        "services/economic_calendar.py:108"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -10634,7 +10645,7 @@
       "read_locations": [
         "data/get_live_price.py:111",
         "data/get_live_price.py:647",
-        "engine/core.py:6209",
+        "engine/core.py:6237",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
         "railway_main.py:587"
@@ -11137,7 +11148,7 @@
       "read_locations": [
         "payments/checkout.py:98",
         "payments/paystack.py:12",
-        "web/platform_api.py:7135"
+        "web/platform_api.py:7142"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -11306,7 +11317,7 @@
         "services/subscription_cancellation.py:25",
         "web/app.py:1067",
         "web/app.py:1102",
-        "web/platform_api.py:7131"
+        "web/platform_api.py:7138"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -12428,7 +12439,7 @@
         "core/env.py:149",
         "core/tier_constants.py:147",
         "data/fetcher_router.py:31",
-        "data/market_data.py:773",
+        "data/market_data.py:783",
         "data/pair_discovery.py:835",
         "engine/core.py:1330",
         "engine/core.py:2839",
@@ -12467,7 +12478,7 @@
         "core/env.py:148",
         "core/execution_claims.py:34",
         "data/fetcher_router.py:30",
-        "data/market_data.py:772",
+        "data/market_data.py:782",
         "data/pair_discovery.py:835",
         "engine/core.py:1329",
         "payments/paystack_policy.py:43",
@@ -14346,7 +14357,7 @@
       "read_locations": [
         "core/env.py:146",
         "data/fetcher_router.py:29",
-        "data/market_data.py:771"
+        "data/market_data.py:781"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14708,7 +14719,7 @@
       "production_example_default": "10",
       "read_locations": [
         "signalrank_telegram/commands.py:6839",
-        "web/platform_api.py:5191"
+        "web/platform_api.py:5198"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -14723,7 +14734,7 @@
       "production_example_default": "2000",
       "read_locations": [
         "signalrank_telegram/commands.py:6873",
-        "web/platform_api.py:5230"
+        "web/platform_api.py:5237"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16401,7 +16412,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4962"
+        "engine/core.py:4990"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16411,7 +16422,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4964"
+        "engine/core.py:4992"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16421,7 +16432,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4965"
+        "engine/core.py:4993"
       ],
       "required_by_code": true,
       "sensitive": false

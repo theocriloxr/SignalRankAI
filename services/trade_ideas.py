@@ -26,7 +26,9 @@ rate the plan needs. Nothing here is advice or a guarantee; it says so.
 Learning: each idea is stored in ``user_trade_ideas`` (0063). ``track_once``
 waits for the entry to be touched, then labels the idea bar by bar with the same
 rules as the shadow tracker (TP1 then stop to entry). The idea's owner is told
-how it ended (notification centre, email/push per preferences, Telegram).
+how it ended on every channel they have connected: notification centre, Telegram, a
+verified email and any registered app/browser device (a "transactional" event; the user
+can opt out with preferences.transactional_email / transactional_push).
 Resolved ideas feed the "ideas on this instrument" evidence shown to everyone
 and join ML training as low-weight, fit-only rows (``ml/train_model``).
 """
@@ -737,7 +739,8 @@ async def notify_once(*, telegram_post=None) -> int:
                 "created_at) VALUES (:nid,:uid,'alert',:t,:b,'info',CAST(:d AS JSONB),NOW()) "
                 "ON CONFLICT(notification_id) DO NOTHING"),
                 {"nid": row["idea_id"], "uid": int(row["user_id"]), "t": title[:200], "b": body,
-                 "d": json.dumps({"kind": "trade_idea_outcome", "idea_id": row["idea_id"], "url": "/app/analyze"})})
+                 "d": json.dumps({"kind": "trade_idea_outcome", "idea_id": row["idea_id"], "url": "/app/analyze",
+                                  "transactional": True})})
             await session.execute(text("UPDATE user_trade_ideas SET notified_at=(NOW() AT TIME ZONE 'utc') WHERE id=:id"),
                                   {"id": row["id"]})
             sent.append((row.get("telegram_user_id"), body))

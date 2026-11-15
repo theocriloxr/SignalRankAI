@@ -60,9 +60,50 @@
         "AAPL",
         "MSFT",
         "NVDA",
-        "TSLA"
+        "TSLA",
+        "AMZN",
+        "META",
+        "GOOG",
+        "AMD",
+        "NFLX"
       ],
-      "checked": "2026-11-11: FundedNext help centre crypto list (BTC, ETH, LTC, XRP, ADA, DOGE, LINK, XLM, XMR; no BCH), US2000 and JP225 indices, stock CFDs incl. AAPL/MSFT/NVDA/TSLA. Confirm against the MT5 Market Watch."
+      "checked": "2026-11-15: owner's FundedNext MT5 Market Watch screenshots. 'assets' are scanned first every cycle; 'available' are recognised as FundedNext instruments but scanned only with BROKER_UNIVERSE_SCAN_AVAILABLE=1 (exotic FX spreads, EU share hours, extra load). Broker names (DOGUSD, LNKUSD, USOUSD, UKOUSD, NDX100, SPX500, GER30, EUSTX50) resolve via services/broker_symbols.py. SPCX has no market-data mapping; VIX is analysis-only.",
+      "available": [
+        "XPTUSD",
+        "NTH25",
+        "SWI20",
+        "VIX",
+        "AUDSGD",
+        "EURHKD",
+        "EURHUF",
+        "EURNOK",
+        "EURSGD",
+        "GBPSGD",
+        "MXNJPY",
+        "NOKJPY",
+        "NZDSGD",
+        "SGDJPY",
+        "USDCNH",
+        "USDDKK",
+        "USDHKD",
+        "USDHUF",
+        "USDMXN",
+        "USDNOK",
+        "USDSEK",
+        "USDSGD",
+        "USDZAR",
+        "ZARJPY",
+        "BABA",
+        "INTC",
+        "KO",
+        "NKE",
+        "ADS",
+        "BAYN",
+        "BMW",
+        "MBG",
+        "MC",
+        "VOW3"
+      ]
     }
   }
 }

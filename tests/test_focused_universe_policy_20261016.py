@@ -43,9 +43,12 @@ def test_aliases_and_non_shortlisted_symbols_never_bypass_selection():
 
 def test_listed_but_misclassified_or_unsupported_assets_are_not_promoted():
     result = select_focused_assets(["XPTUSD", "COPPER", "RUSSELL2000", "CHINA50", "SUIUSDT"])
-    # Unverified commodity/index mappings must never fall back to US equities.
-    assert not {"XPTUSD", "COPPER", "RUSSELL2000", "CHINA50"}.intersection(result.assets)
-    assert set(result.assets).issubset({"SUIUSDT"})
+    # Unverified commodity/index mappings must never fall back to US equities. XPTUSD
+    # (PL=F) and RUSSELL2000 (canonical US2000, ^RUT) are registered as a commodity and
+    # an index since 15 Nov 2026 (FundedNext list); COPPER and CHINA50 are still unmapped.
+    assert not {"COPPER", "CHINA50", "RUSSELL2000"}.intersection(result.assets)
+    assert result.selected_per_class["equity"] == 0
+    assert set(result.assets).issubset({"SUIUSDT", "XPTUSD", "US2000"})
 
 
 def test_every_class_respects_15_cap_even_when_all_candidates_are_offered():

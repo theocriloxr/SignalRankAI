@@ -15,6 +15,10 @@ synthetic indices on 5m/15m, with MT5 position lists). The recurring setups:
    entry, the stop sits back inside the channel, targets are measured moves
    of the channel height.
 
+4. **SMC order block** (owner checklist, 15 Nov 2026): swing high/low, break of
+   structure, inducement, POI (order block), confirmation close, entry. See
+   ``smc_order_block``.
+
 Everything here is additive and does not change any existing strategy. The
 family runs in ``STRUCTURE_SETUPS_MODE=auto`` by default: every setup is
 recorded for the shadow outcome tracker (the same path as discovered
@@ -276,10 +280,80 @@ def channel_break(bars, s: int, atr: float) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
+# 4. SMC: break of structure, order block retest (owner checklist, 15 Nov 2026)
+# ---------------------------------------------------------------------------
+
+def smc_order_block(bars, s: int, atr: float) -> dict[str, Any] | None:
+    """The owner's checklist: swing high/low -> break of structure -> inducement -> POI
+    (order block) -> confirmation -> entry. Red-news checks stay with the engine's news window.
+
+    * BOS: a close beyond the latest swing high (long) or low (short), at most 40 bars ago;
+    * POI: the order block, i.e. the last opposite-colour candle before the leg that broke,
+      no wider than 3 ATR, and first touch only (not mitigated since the break);
+    * inducement: a minor swing formed after the BOS, between price and the POI, that the
+      pullback has taken out (recorded as ``inducement_swept``; not required);
+    * confirmation: the last closed bar tapped the block and closed back out of it in the
+      trade direction; entry at that close, stop beyond the block, targets at the BOS swing
+      and the swings beyond it (at least 1R to TP1).
+    """
+    lo = max(0, s - LOOKBACK)
+    highs, lows = _pivots(bars, lo, s - 2)
+    for is_long in (True, False):
+        swings = highs if is_long else lows
+        for p in reversed(swings[-5:]):
+            level = bars[p][1] if is_long else bars[p][2]
+            b = next((i for i in range(p + 1, s) if (bars[i][3] > level if is_long else bars[i][3] < level)), None)
+            if b is None or not 2 <= s - b <= 40:
+                continue
+            leg = range(p, b + 1)
+            start = min(leg, key=lambda i: bars[i][2]) if is_long else max(leg, key=lambda i: bars[i][1])
+            ob = next((i for i in range(start, max(lo, start - 6) - 1, -1)
+                       if (bars[i][3] < bars[i][0] if is_long else bars[i][3] > bars[i][0])), None)
+            if ob is None:
+                continue
+            z_lo, z_hi = bars[ob][2], bars[ob][1]
+            if not 0 < z_hi - z_lo <= 3 * atr:
+                continue
+            if abs(bars[b][3] - (z_hi if is_long else z_lo)) < 1.0 * atr:  # the break needs displacement
+                continue
+            if any((bars[i][2] <= z_hi if is_long else bars[i][1] >= z_lo) for i in range(b + 1, s)):
+                continue  # already mitigated: only the first return to the block counts
+            o, h, l, c = bars[s]
+            tapped = (l <= z_hi) if is_long else (h >= z_lo)
+            confirmed = (c > o and c > z_hi) if is_long else (c < o and c < z_lo)
+            if not (tapped and confirmed):
+                continue
+            entry = c
+            stop = (z_lo - 0.25 * atr) if is_long else (z_hi + 0.25 * atr)
+            risk = abs(entry - stop)
+            if risk < 0.3 * atr:
+                continue
+            after = range(b, s)
+            swing = max(bars[i][1] for i in after) if is_long else min(bars[i][2] for i in after)
+            beyond = [bars[i][1] for i in highs if bars[i][1] > swing] if is_long else \
+                     [bars[i][2] for i in lows if bars[i][2] < swing]
+            measured = entry + (1 if is_long else -1) * 2 * risk
+            targets = _ladder(entry, risk, [swing, *beyond, measured], is_long)
+            if not targets:
+                continue
+            minor_h, minor_l = _pivots(bars, b, s, span=2)
+            minor = minor_l if is_long else minor_h
+            induced = any((bars[i][2] > z_hi and l < bars[i][2]) if is_long else (bars[i][1] < z_lo and h > bars[i][1])
+                          for i in minor)
+            return _setup("SMC Order Block", "long" if is_long else "short", entry, stop, targets,
+                          f"Break of structure through the swing {'high' if is_long else 'low'} {level:.6g}; first "
+                          f"retest of the {'bullish' if is_long else 'bearish'} order block {z_lo:.6g}-{z_hi:.6g}"
+                          f"{' after an inducement sweep' if induced else ''}, confirmed by the close; stop beyond the "
+                          f"block, targets at the BOS swing and beyond.",
+                          zone_low=z_lo, zone_high=z_hi, bos_level=level, inducement_swept=bool(induced))
+    return None
+
+
+# ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
 
-DETECTORS = (zone_flip_retest, trendline_break_retest, channel_break)
+DETECTORS = (zone_flip_retest, trendline_break_retest, channel_break, smc_order_block)
 
 
 def detect_setups(candles: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -362,4 +436,4 @@ def structure_setup_candidates(asset: str, timeframe: str, data: Mapping[str, An
 
 
 __all__ = ["GROUP", "detect_setups", "structure_setup_candidates", "zone_flip_retest", "trendline_break_retest",
-           "channel_break", "mode"]
+           "channel_break", "smc_order_block", "mode"]

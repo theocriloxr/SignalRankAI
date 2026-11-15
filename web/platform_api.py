@@ -4043,6 +4043,13 @@ async def register_push_device(
                 "app_version": payload.app_version,
             },
         )
+        # Registering a device is the user allowing notifications on it. The web app also set
+        # push_enabled itself, the Android app did not, so its users received no pushes (15 Nov 2026).
+        await session.execute(
+            text("INSERT INTO notification_preferences(user_id, push_enabled) VALUES (:uid, TRUE) "
+                 "ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE, updated_at=NOW()"),
+            {"uid": int(user["id"])},
+        )
         await session.commit()
     return {"registered": True, "provider": payload.provider, "platform": payload.platform}
 

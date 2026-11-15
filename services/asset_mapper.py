@@ -236,12 +236,22 @@ _INDEX_MAP.update(
         "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
         "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
         "HK50": {"yfinance": "^HSI", "polygon": None, "twelvedata": "HSI", "mt5": "HK50"},
+        "NTH25": {"yfinance": "^AEX", "polygon": None, "twelvedata": "AEX", "mt5": "NTH25"},
+        "SWI20": {"yfinance": "^SSMI", "polygon": None, "twelvedata": "SMI", "mt5": "SWI20"},
+    }
+)
+_STOCK_MAP.update(
+    {
+        sym: {"yfinance": yf, "polygon": None, "twelvedata": sym, "mt5": sym}
+        for sym, yf in (("ADS", "ADS.DE"), ("BAYN", "BAYN.DE"), ("BMW", "BMW.DE"), ("MBG", "MBG.DE"),
+                        ("VOW3", "VOW3.DE"), ("MC", "MC.PA"))
     }
 )
 _COMMODITY_MAP.update(
     {
         "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
         "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "XBR/USD", "mt5": "UKOIL"},
+        "XPTUSD": {"yfinance": "PL=F", "polygon": "C:XPTUSD", "twelvedata": "XPT/USD", "mt5": "XPTUSD"},
     }
 )
 _CRYPTO_MAP.update(

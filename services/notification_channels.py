@@ -121,18 +121,28 @@ def render_event_email(title: str, body: str, link: str) -> tuple[str, str, str]
     return f"SignalRankAI: {title}"[:240], plain, wrapped
 
 
-CANDIDATES_SQL = """
+# A "transactional" event answers something the user asked for (the outcome of a trade
+# they checked): it goes to every channel they have connected, a verified email and any
+# registered device, unless they opted out of that (preferences.transactional_email /
+# transactional_push = false). Everything else follows the email/push switches.
+_EMAIL_ON = ("(np.email_enabled IS TRUE OR (ne.channel_data->>'transactional' = 'true' "
+             "AND COALESCE(np.preferences->>'transactional_email', 'true') <> 'false'))")
+_PUSH_ON = ("(np.push_enabled IS TRUE OR (ne.channel_data->>'transactional' = 'true' "
+            "AND COALESCE(np.preferences->>'transactional_push', 'true') <> 'false'))")
+
+CANDIDATES_SQL = f"""
 SELECT ne.notification_id, ne.user_id, ne.event_type, ne.title, ne.body, ne.channel_data, ne.created_at,
        u.tier, u.primary_email, u.email_verified_at,
-       np.email_enabled, np.push_enabled, np.quiet_hours_start, np.quiet_hours_end, np.timezone
+       {_EMAIL_ON} AS email_enabled, {_PUSH_ON} AS push_enabled,
+       np.quiet_hours_start, np.quiet_hours_end, np.timezone
 FROM notification_events ne
 JOIN users u ON u.id = ne.user_id
 JOIN notification_preferences np ON np.user_id = ne.user_id
 WHERE ne.created_at >= :since AND ne.event_type = ANY(:types)
   AND COALESCE(u.is_blocked, FALSE) IS FALSE
-  AND ((np.email_enabled IS TRUE AND NOT EXISTS (SELECT 1 FROM notification_channel_deliveries c
+  AND (({_EMAIL_ON} AND NOT EXISTS (SELECT 1 FROM notification_channel_deliveries c
             WHERE c.notification_id = ne.notification_id AND c.channel = 'email'))
-    OR (np.push_enabled IS TRUE AND NOT EXISTS (SELECT 1 FROM notification_channel_deliveries c
+    OR ({_PUSH_ON} AND NOT EXISTS (SELECT 1 FROM notification_channel_deliveries c
             WHERE c.notification_id = ne.notification_id AND c.channel = 'push')))
 ORDER BY ne.created_at
 LIMIT :limit

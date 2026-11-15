@@ -8,7 +8,9 @@ assets keep their place behind them unless ``BROKER_UNIVERSE_STRICT`` is on.
 It never changes execution permissions.
 
 ``BROKER_UNIVERSE_PROFILE`` selects the profile (default ``fundednext``; ``off``
-disables). ``BROKER_UNIVERSE_ASSETS`` overrides the list.
+disables). ``BROKER_UNIVERSE_ASSETS`` overrides the list. A profile's ``available`` list
+(exotic FX, EU shares, extra stocks) counts as broker instruments but is scanned only
+with ``BROKER_UNIVERSE_SCAN_AVAILABLE=1``.
 """
 from __future__ import annotations
 
@@ -57,14 +59,26 @@ def broker_assets() -> tuple[str, ...]:
     return tuple(dict.fromkeys(_canonical(s) for s in raw))
 
 
+def available_assets() -> tuple[str, ...]:
+    """Other instruments the broker offers: recognised, scanned only with BROKER_UNIVERSE_SCAN_AVAILABLE=1."""
+    name = active_profile()
+    if not name or str(os.getenv("BROKER_UNIVERSE_ASSETS") or "").strip():
+        return ()
+    return tuple(dict.fromkeys(_canonical(s) for s in (_profiles().get(name) or {}).get("available") or []))
+
+
+def _scan_available() -> bool:
+    return str(os.getenv("BROKER_UNIVERSE_SCAN_AVAILABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def is_broker_asset(symbol: str) -> bool:
-    return bool(symbol) and _canonical(symbol) in set(broker_assets())
+    return bool(symbol) and _canonical(symbol) in set(broker_assets()) | set(available_assets())
 
 
 def prioritize(assets: Iterable[str]) -> list[str]:
     """Broker instruments first (all of them), then the rest unless strict."""
     current = [str(a) for a in assets]
-    focus = broker_assets()
+    focus = broker_assets() + (available_assets() if _scan_available() else ())
     if not focus:
         return current
     present = {_canonical(a): a for a in current}

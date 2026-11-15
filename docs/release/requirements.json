@@ -482,9 +482,9 @@
   "inventory_is_verification": false,
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
-    "documents": 396,
-    "requirements_and_source_sections": 10059,
-    "source_clauses": 60456,
+    "documents": 397,
+    "requirements_and_source_sections": 10063,
+    "source_clauses": 60490,
     "interfaces": {
       "ENDPOINT": 194,
       "API": 180,
@@ -494,7 +494,7 @@
       "CALLBACK": 28,
       "PROVIDER": 37,
       "BROKER": 13,
-      "STRATEGY_CALLABLE": 73,
+      "STRATEGY_CALLABLE": 74,
       "STRATEGY": 9,
       "TIMEFRAME": 6
     }
@@ -2435,6 +2435,14 @@
       "line_count": 8,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "section_count": 1
+    },
+    {
+      "path": "docs/NEWS_HANDLING.md",
+      "sha256_lf": "8eb29aafb8d6eb895122c66bc540d72506719c26fe79a703e4bce6dac16ca9c6",
+      "encoding": "utf-8-sig",
+      "line_count": 41,
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "section_count": 4
     },
     {
       "path": "docs/NEW_ENV_VARIABLES_V151.md",
@@ -166831,6 +166839,222 @@
         {
           "line": 8,
           "text": "- `prefers-reduced-motion: reduce` and low-power devices must see complete content and usable actions. No infinite stock ticker or flashing profit figures."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-95197890844327e0",
+      "kind": "SOURCE",
+      "source": "docs/NEWS_HANDLING.md:1",
+      "requirement": "News handling (15 Nov 2026)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "916b3a3bd0a7097448de523dcbdb0c73bf6f037b38b8b0ff5d353e8a797be3db",
+      "line_start": 1,
+      "line_end": 2,
+      "text": "# News handling (15 Nov 2026)\n",
+      "clauses": [
+        {
+          "line": 1,
+          "text": "# News handling (15 Nov 2026)"
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-fecce7f327603db8",
+      "kind": "SOURCE",
+      "source": "docs/NEWS_HANDLING.md:3",
+      "requirement": "What the bot does with news",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "453ef5c666ff9ee8d4c0d4c15b56575188e85029f365efce94aadafffbe9a18c",
+      "line_start": 3,
+      "line_end": 16,
+      "text": "## What the bot does with news\n\nThe bot does **not** trade the news release itself. News is used three ways:\n\n1. **Red-news window.** For each high-impact USD release in the economic calendar\n   (Forex Factory weekly feed, Finnhub fallback; PPI, CPI, NFP, FOMC, GDP, PCE ...),\n   USD-sensitive instruments get a window of 60 minutes before and after the release.\n   USD-sensitive means the USD majors, gold, silver, BTC, ETH, US30, NAS100 and US500.\n   No signal is delivered inside that window.\n2. **Headline sentiment.** Strong sentiment against a setup's direction rejects it\n   (`news_conflict`). Sentiment that agrees with the setup adds a small confidence bonus.\n3. **ML features.** Each setup records the minutes since and until the nearest\n   high-impact release and a 0-1 news-pressure score. The model learns from these.\n",
+      "clauses": [
+        {
+          "line": 3,
+          "text": "## What the bot does with news"
+        },
+        {
+          "line": 5,
+          "text": "The bot does **not** trade the news release itself. News is used three ways:"
+        },
+        {
+          "line": 7,
+          "text": "1. **Red-news window.** For each high-impact USD release in the economic calendar"
+        },
+        {
+          "line": 8,
+          "text": "   (Forex Factory weekly feed, Finnhub fallback; PPI, CPI, NFP, FOMC, GDP, PCE ...),"
+        },
+        {
+          "line": 9,
+          "text": "   USD-sensitive instruments get a window of 60 minutes before and after the release."
+        },
+        {
+          "line": 10,
+          "text": "   USD-sensitive means the USD majors, gold, silver, BTC, ETH, US30, NAS100 and US500."
+        },
+        {
+          "line": 11,
+          "text": "   No signal is delivered inside that window."
+        },
+        {
+          "line": 12,
+          "text": "2. **Headline sentiment.** Strong sentiment against a setup's direction rejects it"
+        },
+        {
+          "line": 13,
+          "text": "   (`news_conflict`). Sentiment that agrees with the setup adds a small confidence bonus."
+        },
+        {
+          "line": 14,
+          "text": "3. **ML features.** Each setup records the minutes since and until the nearest"
+        },
+        {
+          "line": 15,
+          "text": "   high-impact release and a 0-1 news-pressure score. The model learns from these."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-16e492d15b38c7cc",
+      "kind": "SOURCE",
+      "source": "docs/NEWS_HANDLING.md:17",
+      "requirement": "Changed on 15 Nov 2026",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "c5605a5cfde232f7688a0c79fd8237ffb80bcfb92334237da03e8c584c5adcf7",
+      "line_start": 17,
+      "line_end": 35,
+      "text": "## Changed on 15 Nov 2026\n\n* **Setups in the window are now built and tracked instead of skipped.** Before, the\n  engine skipped the whole asset for two hours around every release and recorded\n  nothing, so it could never learn whether trading around news would have paid.\n  Now the strategies still run. Each setup is refused with reason\n  `news_window <event title>` and tracked to its outcome like every other rejected\n  setup, so it joins the training data and the setup-evidence tables.\n  `NEWS_WINDOW_TRACK_SETUPS=0` restores the old skip.\n* **Exemptions come from evidence.** When tracked outcomes show that setups in the\n  window made money for an asset class and timeframe, add that cell to\n  `QUALITY_GATE_EVIDENCE_EXEMPTIONS`, for example `news_window:commodity:15m`. The\n  same applies to the other gate exemptions (core/gate_evidence.py). There are no\n  `news_window` exemptions by default.\n* **Nasdaq fix.** The blackout list had `US100`, but the canonical symbol is `NAS100`,\n  so the Nasdaq was never blocked around news. It is now.\n* **Prop rules.** Funded-account news rules (`core/prop_rules.py`, for example\n  FundedNext) are separate and unchanged.\n",
+      "clauses": [
+        {
+          "line": 17,
+          "text": "## Changed on 15 Nov 2026"
+        },
+        {
+          "line": 19,
+          "text": "* **Setups in the window are now built and tracked instead of skipped.** Before, the"
+        },
+        {
+          "line": 20,
+          "text": "  engine skipped the whole asset for two hours around every release and recorded"
+        },
+        {
+          "line": 21,
+          "text": "  nothing, so it could never learn whether trading around news would have paid."
+        },
+        {
+          "line": 22,
+          "text": "  Now the strategies still run. Each setup is refused with reason"
+        },
+        {
+          "line": 23,
+          "text": "  `news_window <event title>` and tracked to its outcome like every other rejected"
+        },
+        {
+          "line": 24,
+          "text": "  setup, so it joins the training data and the setup-evidence tables."
+        },
+        {
+          "line": 25,
+          "text": "  `NEWS_WINDOW_TRACK_SETUPS=0` restores the old skip."
+        },
+        {
+          "line": 26,
+          "text": "* **Exemptions come from evidence.** When tracked outcomes show that setups in the"
+        },
+        {
+          "line": 27,
+          "text": "  window made money for an asset class and timeframe, add that cell to"
+        },
+        {
+          "line": 28,
+          "text": "  `QUALITY_GATE_EVIDENCE_EXEMPTIONS`, for example `news_window:commodity:15m`. The"
+        },
+        {
+          "line": 29,
+          "text": "  same applies to the other gate exemptions (core/gate_evidence.py). There are no"
+        },
+        {
+          "line": 30,
+          "text": "  `news_window` exemptions by default."
+        },
+        {
+          "line": 31,
+          "text": "* **Nasdaq fix.** The blackout list had `US100`, but the canonical symbol is `NAS100`,"
+        },
+        {
+          "line": 32,
+          "text": "  so the Nasdaq was never blocked around news. It is now."
+        },
+        {
+          "line": 33,
+          "text": "* **Prop rules.** Funded-account news rules (`core/prop_rules.py`, for example"
+        },
+        {
+          "line": 34,
+          "text": "  FundedNext) are separate and unchanged."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-1f08a03cd9387d42",
+      "kind": "SOURCE",
+      "source": "docs/NEWS_HANDLING.md:36",
+      "requirement": "Deciding whether to trade news",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "93e30818acac3374dc6730c03bb9b1a4d2f14191cbd08247d23b6d384151edfd",
+      "line_start": 36,
+      "line_end": 41,
+      "text": "## Deciding whether to trade news\n\nTo judge a release such as PPI, compare the tracked `news_window` setups against\nsetups outside the window. Use the same strategy, asset class and timeframe, and\ncompare the TP1 rate with the break-even rate. If a cell clears its break-even with\na large enough sample, exempt it. If not, keep the window.",
+      "clauses": [
+        {
+          "line": 36,
+          "text": "## Deciding whether to trade news"
+        },
+        {
+          "line": 38,
+          "text": "To judge a release such as PPI, compare the tracked `news_window` setups against"
+        },
+        {
+          "line": 39,
+          "text": "setups outside the window. Use the same strategy, asset class and timeframe, and"
+        },
+        {
+          "line": 40,
+          "text": "compare the TP1 rate with the break-even rate. If a cell clears its break-even with"
+        },
+        {
+          "line": 41,
+          "text": "a large enough sample, exempt it. If not, keep the window."
         }
       ]
     },
@@ -510742,7 +510966,7 @@
     {
       "id": "SR-ENDPOINT-cdda59736140d17b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4051",
+      "source": "web/platform_api.py:4058",
       "requirement": "GET /api/v1/platform/push/vapid-public-key",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::web_push_public_key",
@@ -510760,7 +510984,7 @@
     {
       "id": "SR-ENDPOINT-d2d4edff081bc48e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4063",
+      "source": "web/platform_api.py:4070",
       "requirement": "DELETE /api/v1/platform/push-devices/{push_device_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_push_device",
@@ -510778,7 +511002,7 @@
     {
       "id": "SR-ENDPOINT-cd5dab1dd55b10e1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4079",
+      "source": "web/platform_api.py:4086",
       "requirement": "GET /api/v1/platform/devices",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::devices",
@@ -510796,7 +511020,7 @@
     {
       "id": "SR-ENDPOINT-22a147ff977e1f84",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4099",
+      "source": "web/platform_api.py:4106",
       "requirement": "GET /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::get_notification_preferences",
@@ -510814,7 +511038,7 @@
     {
       "id": "SR-ENDPOINT-5c77e77f5fa8a532",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4115",
+      "source": "web/platform_api.py:4122",
       "requirement": "PUT /api/v1/platform/notifications/preferences",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_notification_preferences",
@@ -510832,7 +511056,7 @@
     {
       "id": "SR-ENDPOINT-1d09048484bf125b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4166",
+      "source": "web/platform_api.py:4173",
       "requirement": "GET /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::journal_entries",
@@ -510850,7 +511074,7 @@
     {
       "id": "SR-ENDPOINT-3b0de4f6ee646a0b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4181",
+      "source": "web/platform_api.py:4188",
       "requirement": "POST /api/v1/platform/journal",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_journal_entry",
@@ -510868,7 +511092,7 @@
     {
       "id": "SR-ENDPOINT-4f8b8ea4cc6db48a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4207",
+      "source": "web/platform_api.py:4214",
       "requirement": "DELETE /api/v1/platform/journal/{journal_entry_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_journal_entry",
@@ -510886,7 +511110,7 @@
     {
       "id": "SR-ENDPOINT-4a4f3798430cfd3c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4222",
+      "source": "web/platform_api.py:4229",
       "requirement": "GET /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_api_keys",
@@ -510904,7 +511128,7 @@
     {
       "id": "SR-ENDPOINT-44332d24ba1ce67a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4243",
+      "source": "web/platform_api.py:4250",
       "requirement": "POST /api/v1/platform/api-keys",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_api_key",
@@ -510922,7 +511146,7 @@
     {
       "id": "SR-ENDPOINT-b5379c1e047dfb41",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4284",
+      "source": "web/platform_api.py:4291",
       "requirement": "DELETE /api/v1/platform/api-keys/{key_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_api_key",
@@ -510940,7 +511164,7 @@
     {
       "id": "SR-ENDPOINT-f3447c293c3b2fee",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4301",
+      "source": "web/platform_api.py:4308",
       "requirement": "GET /api/v1/platform/professional/signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::professional_signal_feed",
@@ -510958,7 +511182,7 @@
     {
       "id": "SR-ENDPOINT-59dcdcfb549092f4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4362",
+      "source": "web/platform_api.py:4369",
       "requirement": "GET /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::execution_webhook_status",
@@ -510976,7 +511200,7 @@
     {
       "id": "SR-ENDPOINT-2289d47c0388f504",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4385",
+      "source": "web/platform_api.py:4392",
       "requirement": "PUT /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_webhook",
@@ -510994,7 +511218,7 @@
     {
       "id": "SR-ENDPOINT-9dff6d6c84b98300",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4411",
+      "source": "web/platform_api.py:4418",
       "requirement": "DELETE /api/v1/platform/execution-webhook",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::disable_execution_webhook",
@@ -511012,7 +511236,7 @@
     {
       "id": "SR-ENDPOINT-80687afced824d01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4425",
+      "source": "web/platform_api.py:4432",
       "requirement": "GET /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_webhooks",
@@ -511030,7 +511254,7 @@
     {
       "id": "SR-ENDPOINT-c78cf6b934b83579",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4446",
+      "source": "web/platform_api.py:4453",
       "requirement": "POST /api/v1/platform/webhooks",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_webhook",
@@ -511048,7 +511272,7 @@
     {
       "id": "SR-ENDPOINT-b0fb4aafd337162f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4491",
+      "source": "web/platform_api.py:4498",
       "requirement": "DELETE /api/v1/platform/webhooks/{webhook_endpoint_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_webhook",
@@ -511066,7 +511290,7 @@
     {
       "id": "SR-ENDPOINT-7ab85c187acbcd38",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4511",
+      "source": "web/platform_api.py:4518",
       "requirement": "GET /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organizations",
@@ -511084,7 +511308,7 @@
     {
       "id": "SR-ENDPOINT-2d3938ab0cfc45a1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4533",
+      "source": "web/platform_api.py:4540",
       "requirement": "POST /api/v1/platform/organizations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization",
@@ -511102,7 +511326,7 @@
     {
       "id": "SR-ENDPOINT-f4f7ac01e97aa554",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4574",
+      "source": "web/platform_api.py:4581",
       "requirement": "GET /api/v1/platform/support/tickets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_tickets",
@@ -511120,7 +511344,7 @@
     {
       "id": "SR-ENDPOINT-614e3eb664c31c1d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4599",
+      "source": "web/platform_api.py:4606",
       "requirement": "GET /api/v1/platform/account/export",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::export_account_data",
@@ -511138,7 +511362,7 @@
     {
       "id": "SR-ENDPOINT-6fbeb4b02ebb380b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4677",
+      "source": "web/platform_api.py:4684",
       "requirement": "POST /api/v1/platform/account/deletion-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::request_account_deletion",
@@ -511156,7 +511380,7 @@
     {
       "id": "SR-ENDPOINT-908f3924729f5e8f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4737",
+      "source": "web/platform_api.py:4744",
       "requirement": "POST /api/v1/platform/support/tickets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_support_ticket",
@@ -511174,7 +511398,7 @@
     {
       "id": "SR-ENDPOINT-3d22c3ae6cafb51c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4779",
+      "source": "web/platform_api.py:4786",
       "requirement": "POST /api/v1/platform/auth/mfa/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mfa_login_complete",
@@ -511190,7 +511414,7 @@
     {
       "id": "SR-ENDPOINT-b8c6319ffa679ac6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4811",
+      "source": "web/platform_api.py:4818",
       "requirement": "POST /api/v1/platform/auth/magic-link/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::magic_link_request",
@@ -511206,7 +511430,7 @@
     {
       "id": "SR-ENDPOINT-44861264be6d5472",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4823",
+      "source": "web/platform_api.py:4830",
       "requirement": "POST /api/v1/platform/auth/magic-link/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::magic_link_complete",
@@ -511222,7 +511446,7 @@
     {
       "id": "SR-ENDPOINT-7f7b9d81352e7d56",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4844",
+      "source": "web/platform_api.py:4851",
       "requirement": "POST /api/v1/platform/auth/password-reset/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::password_reset_request",
@@ -511238,7 +511462,7 @@
     {
       "id": "SR-ENDPOINT-246e2a00ab27ee48",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4855",
+      "source": "web/platform_api.py:4862",
       "requirement": "POST /api/v1/platform/auth/password-reset/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::password_reset_complete",
@@ -511254,7 +511478,7 @@
     {
       "id": "SR-ENDPOINT-375bcea1473f015b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4871",
+      "source": "web/platform_api.py:4878",
       "requirement": "POST /api/v1/platform/auth/email-verification/request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::email_verification_request",
@@ -511272,7 +511496,7 @@
     {
       "id": "SR-ENDPOINT-fd024edc3244cfac",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4889",
+      "source": "web/platform_api.py:4896",
       "requirement": "POST /api/v1/platform/auth/email-verification/complete",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::email_verification_complete",
@@ -511288,7 +511512,7 @@
     {
       "id": "SR-ENDPOINT-d6c4bfbd1bf1b4bf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4900",
+      "source": "web/platform_api.py:4907",
       "requirement": "GET /api/v1/platform/security/mfa",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::get_mfa_status",
@@ -511306,7 +511530,7 @@
     {
       "id": "SR-ENDPOINT-a3e262dba227446c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4908",
+      "source": "web/platform_api.py:4915",
       "requirement": "POST /api/v1/platform/security/mfa/setup",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::setup_mfa",
@@ -511324,7 +511548,7 @@
     {
       "id": "SR-ENDPOINT-656ef40c20d4008c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4927",
+      "source": "web/platform_api.py:4934",
       "requirement": "POST /api/v1/platform/security/mfa/enable",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_mfa",
@@ -511342,7 +511566,7 @@
     {
       "id": "SR-ENDPOINT-c9b91f3da244aa31",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4942",
+      "source": "web/platform_api.py:4949",
       "requirement": "POST /api/v1/platform/security/mfa/disable",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_mfa",
@@ -511360,7 +511584,7 @@
     {
       "id": "SR-ENDPOINT-34257204c37c6a4c",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4953",
+      "source": "web/platform_api.py:4960",
       "requirement": "PATCH /api/v1/platform/profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_profile",
@@ -511378,7 +511602,7 @@
     {
       "id": "SR-ENDPOINT-90af573d24537fca",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:4999",
+      "source": "web/platform_api.py:5006",
       "requirement": "GET /api/v1/platform/trading-profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::trading_profile",
@@ -511396,7 +511620,7 @@
     {
       "id": "SR-ENDPOINT-0c9d8f0d2d46fa3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5045",
+      "source": "web/platform_api.py:5052",
       "requirement": "PUT /api/v1/platform/trading-profile",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_trading_profile",
@@ -511414,7 +511638,7 @@
     {
       "id": "SR-ENDPOINT-fcf05c98b27af35d",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5169",
+      "source": "web/platform_api.py:5176",
       "requirement": "POST /api/v1/platform/simulation",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delivered_signal_simulation",
@@ -511432,7 +511656,7 @@
     {
       "id": "SR-ENDPOINT-3f559640b321ae3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5261",
+      "source": "web/platform_api.py:5268",
       "requirement": "GET /api/v1/platform/elite-signals",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::elite_signal_feed",
@@ -511450,7 +511674,7 @@
     {
       "id": "SR-ENDPOINT-e9ff3062c1fbcaf3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5315",
+      "source": "web/platform_api.py:5322",
       "requirement": "GET /api/v1/platform/quality",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::quality_report",
@@ -511468,7 +511692,7 @@
     {
       "id": "SR-ENDPOINT-5ca442e3fb4f82fa",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5330",
+      "source": "web/platform_api.py:5337",
       "requirement": "GET /api/v1/platform/shadow-report",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::shadow_report",
@@ -511486,7 +511710,7 @@
     {
       "id": "SR-ENDPOINT-a2940687bfffb49f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5399",
+      "source": "web/platform_api.py:5406",
       "requirement": "GET /api/v1/platform/strategy-leaderboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::strategy_leaderboard",
@@ -511504,7 +511728,7 @@
     {
       "id": "SR-ENDPOINT-6fe9e3251a965cda",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5433",
+      "source": "web/platform_api.py:5440",
       "requirement": "GET /api/v1/platform/setup-records",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::setup_records",
@@ -511522,7 +511746,7 @@
     {
       "id": "SR-ENDPOINT-86fb1194e64aadac",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5472",
+      "source": "web/platform_api.py:5479",
       "requirement": "GET /api/v1/platform/broker/risk-presets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_risk_presets",
@@ -511540,7 +511764,7 @@
     {
       "id": "SR-ENDPOINT-7c3f8903f841e031",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5493",
+      "source": "web/platform_api.py:5500",
       "requirement": "GET /api/v1/platform/broker/platforms",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_platforms",
@@ -511558,7 +511782,7 @@
     {
       "id": "SR-ENDPOINT-00ecba61c2900fa4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5509",
+      "source": "web/platform_api.py:5516",
       "requirement": "GET /api/v1/platform/broker/connections",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_connections",
@@ -511576,7 +511800,7 @@
     {
       "id": "SR-ENDPOINT-1b1f9ed743540b01",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5517",
+      "source": "web/platform_api.py:5524",
       "requirement": "POST /api/v1/platform/broker/exchange",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_exchange",
@@ -511594,7 +511818,7 @@
     {
       "id": "SR-ENDPOINT-316ecd2398684639",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5619",
+      "source": "web/platform_api.py:5626",
       "requirement": "GET /api/v1/platform/broker/metatrader/servers",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::search_broker_metatrader_servers",
@@ -511612,7 +511836,7 @@
     {
       "id": "SR-ENDPOINT-870b5c1400602f2a",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5652",
+      "source": "web/platform_api.py:5659",
       "requirement": "POST /api/v1/platform/broker/metatrader",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_metatrader",
@@ -511630,7 +511854,7 @@
     {
       "id": "SR-ENDPOINT-bee7ad83c626fdb1",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5726",
+      "source": "web/platform_api.py:5733",
       "requirement": "POST /api/v1/platform/broker/metatrader/secure-link",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_broker_metatrader_secure_link",
@@ -511648,7 +511872,7 @@
     {
       "id": "SR-ENDPOINT-ed7b6d20e66f9d26",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5791",
+      "source": "web/platform_api.py:5798",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/demo-certification/prepare",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::prepare_broker_demo_certification",
@@ -511666,7 +511890,7 @@
     {
       "id": "SR-ENDPOINT-12753304a9b67866",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5825",
+      "source": "web/platform_api.py:5832",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_policy",
@@ -511684,7 +511908,7 @@
     {
       "id": "SR-ENDPOINT-5b458fe707dc5770",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5841",
+      "source": "web/platform_api.py:5848",
       "requirement": "GET /api/v1/platform/broker/prop-presets",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_prop_presets",
@@ -511702,7 +511926,7 @@
     {
       "id": "SR-ENDPOINT-bc62521fd9ef3d7b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5862",
+      "source": "web/platform_api.py:5869",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/prop-preset",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::apply_broker_prop_preset",
@@ -511720,7 +511944,7 @@
     {
       "id": "SR-ENDPOINT-3e72a83839d89c97",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5905",
+      "source": "web/platform_api.py:5912",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/prop-dashboard",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_prop_dashboard",
@@ -511738,7 +511962,7 @@
     {
       "id": "SR-ENDPOINT-07a034d298d3b168",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5920",
+      "source": "web/platform_api.py:5927",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/prop-objectives",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_broker_prop_objectives",
@@ -511756,7 +511980,7 @@
     {
       "id": "SR-ENDPOINT-34464c56a3584c3f",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5939",
+      "source": "web/platform_api.py:5946",
       "requirement": "GET /api/v1/platform/broker/connections/{connection_id}/ledger",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_ledger",
@@ -511774,7 +511998,7 @@
     {
       "id": "SR-ENDPOINT-91c3d78111c80161",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:5968",
+      "source": "web/platform_api.py:5975",
       "requirement": "PUT /api/v1/platform/broker/connections/{connection_id}/policy",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_broker_account_policy",
@@ -511792,7 +512016,7 @@
     {
       "id": "SR-ENDPOINT-2251b79adbcd8e3e",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6037",
+      "source": "web/platform_api.py:6044",
       "requirement": "POST /api/v1/platform/admin/broker/connections/{connection_id}/prop-certification",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::certify_broker_prop_policy",
@@ -511810,7 +512034,7 @@
     {
       "id": "SR-ENDPOINT-7391679969127546",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6092",
+      "source": "web/platform_api.py:6099",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/credentials/rotate",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::rotate_broker_connection_credential_envelope",
@@ -511828,7 +512052,7 @@
     {
       "id": "SR-ENDPOINT-30618e635acdcaa3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6129",
+      "source": "web/platform_api.py:6136",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/safety-freeze",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_account_safety_freeze",
@@ -511846,7 +512070,7 @@
     {
       "id": "SR-ENDPOINT-f497cda59a2bc6eb",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6166",
+      "source": "web/platform_api.py:6173",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/verify",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::verify_broker_connection",
@@ -511864,7 +512088,7 @@
     {
       "id": "SR-ENDPOINT-f9b6866aa8bada27",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6200",
+      "source": "web/platform_api.py:6207",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/execution",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::toggle_broker_connection_execution",
@@ -511882,7 +512106,7 @@
     {
       "id": "SR-ENDPOINT-5cc5492032763510",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6242",
+      "source": "web/platform_api.py:6249",
       "requirement": "POST /api/v1/platform/broker/connections/{connection_id}/default",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::set_broker_default",
@@ -511900,7 +512124,7 @@
     {
       "id": "SR-ENDPOINT-54e067952f750dba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6260",
+      "source": "web/platform_api.py:6267",
       "requirement": "DELETE /api/v1/platform/broker/connections/{connection_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_broker_connection",
@@ -511918,7 +512142,7 @@
     {
       "id": "SR-ENDPOINT-a36fb932636dfb7b",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6277",
+      "source": "web/platform_api.py:6284",
       "requirement": "GET /api/v1/platform/broker",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::broker_status",
@@ -511936,7 +512160,7 @@
     {
       "id": "SR-ENDPOINT-f0f9fc4cf1373891",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6728",
+      "source": "web/platform_api.py:6735",
       "requirement": "POST /api/v1/platform/broker/mt5",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::link_broker_mt5",
@@ -511954,7 +512178,7 @@
     {
       "id": "SR-ENDPOINT-78aaabf4ac5be230",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6771",
+      "source": "web/platform_api.py:6778",
       "requirement": "POST /api/v1/platform/execution-terms/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_execution_terms",
@@ -511972,7 +512196,7 @@
     {
       "id": "SR-ENDPOINT-ba2d8eb55b7d6707",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6799",
+      "source": "web/platform_api.py:6806",
       "requirement": "PUT /api/v1/platform/execution-settings",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::update_execution_settings",
@@ -511990,7 +512214,7 @@
     {
       "id": "SR-ENDPOINT-79eef13a479feaa6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6924",
+      "source": "web/platform_api.py:6931",
       "requirement": "DELETE /api/v1/platform/devices/{session_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::revoke_device_session",
@@ -512008,7 +512232,7 @@
     {
       "id": "SR-ENDPOINT-698e7065d9eccb15",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6936",
+      "source": "web/platform_api.py:6943",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_watchlist",
@@ -512026,7 +512250,7 @@
     {
       "id": "SR-ENDPOINT-e25d54e640fdd265",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6948",
+      "source": "web/platform_api.py:6955",
       "requirement": "DELETE /api/v1/platform/watchlists/{watchlist_id}/items/{instrument_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::remove_watchlist_item",
@@ -512044,7 +512268,7 @@
     {
       "id": "SR-ENDPOINT-db93639fcbf12fba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:6964",
+      "source": "web/platform_api.py:6971",
       "requirement": "GET /api/v1/platform/portfolio",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::portfolio",
@@ -512062,7 +512286,7 @@
     {
       "id": "SR-ENDPOINT-4c419a10037388e5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7016",
+      "source": "web/platform_api.py:7023",
       "requirement": "GET /api/v1/platform/performance",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::performance",
@@ -512080,7 +512304,7 @@
     {
       "id": "SR-ENDPOINT-db4ff5ace2cabb37",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7029",
+      "source": "web/platform_api.py:7036",
       "requirement": "GET /api/v1/platform/billing/products",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_products",
@@ -512098,7 +512322,7 @@
     {
       "id": "SR-ENDPOINT-d35820a5dabbb8c0",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7066",
+      "source": "web/platform_api.py:7073",
       "requirement": "POST /api/v1/platform/billing/checkout",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_billing_checkout",
@@ -512116,7 +512340,7 @@
     {
       "id": "SR-ENDPOINT-b1825e067dd404ea",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7121",
+      "source": "web/platform_api.py:7128",
       "requirement": "POST /api/v1/platform/billing/confirm",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::confirm_billing_checkout",
@@ -512134,7 +512358,7 @@
     {
       "id": "SR-ENDPOINT-49df927ec6c642e3",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7191",
+      "source": "web/platform_api.py:7198",
       "requirement": "GET /api/v1/platform/billing",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing",
@@ -512152,7 +512376,7 @@
     {
       "id": "SR-ENDPOINT-5c5ca073b4d9c4e7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7243",
+      "source": "web/platform_api.py:7250",
       "requirement": "POST /api/v1/platform/billing/cancel-auto-renew",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::cancel_billing_auto_renew",
@@ -512170,7 +512394,7 @@
     {
       "id": "SR-ENDPOINT-674e316aeda299ba",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7290",
+      "source": "web/platform_api.py:7297",
       "requirement": "POST /api/v1/platform/billing/refund-request",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::billing_refund_request",
@@ -512188,7 +512412,7 @@
     {
       "id": "SR-ENDPOINT-67027cf38ee1c0e4",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7349",
+      "source": "web/platform_api.py:7356",
       "requirement": "GET /api/v1/platform/notifications",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::notification_center",
@@ -512206,7 +512430,7 @@
     {
       "id": "SR-ENDPOINT-fdefeb1022ff1bbd",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7376",
+      "source": "web/platform_api.py:7383",
       "requirement": "POST /api/v1/platform/notifications/{notification_id}/read",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::mark_notification_read",
@@ -512224,7 +512448,7 @@
     {
       "id": "SR-ENDPOINT-3c1cd32628b7b5b7",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7403",
+      "source": "web/platform_api.py:7410",
       "requirement": "GET /api/v1/platform/organizations/{organization_id}/members",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::organization_members",
@@ -512242,7 +512466,7 @@
     {
       "id": "SR-ENDPOINT-3acf1f74fa43d703",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7426",
+      "source": "web/platform_api.py:7433",
       "requirement": "POST /api/v1/platform/organizations/{organization_id}/invitations",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_organization_invitation",
@@ -512260,7 +512484,7 @@
     {
       "id": "SR-ENDPOINT-d4de9fdb8142fba5",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7483",
+      "source": "web/platform_api.py:7490",
       "requirement": "POST /api/v1/platform/organizations/invitations/accept",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::accept_organization_invitation",
@@ -512278,7 +512502,7 @@
     {
       "id": "SR-ENDPOINT-bdc42b349a9081fc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7524",
+      "source": "web/platform_api.py:7531",
       "requirement": "GET /api/v1/platform/support/tickets/{ticket_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::support_ticket_detail",
@@ -512296,7 +512520,7 @@
     {
       "id": "SR-ENDPOINT-31a500340874efdc",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7559",
+      "source": "web/platform_api.py:7566",
       "requirement": "POST /api/v1/platform/support/tickets/{ticket_id}/messages",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::add_support_message",
@@ -512314,7 +512538,7 @@
     {
       "id": "SR-ENDPOINT-520729a67d5508a6",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7596",
+      "source": "web/platform_api.py:7603",
       "requirement": "GET /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::list_alerts",
@@ -512332,7 +512556,7 @@
     {
       "id": "SR-ENDPOINT-8e1206fb0fa123cf",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7617",
+      "source": "web/platform_api.py:7624",
       "requirement": "POST /api/v1/platform/alerts",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::create_alert",
@@ -512350,7 +512574,7 @@
     {
       "id": "SR-ENDPOINT-4c034f12b196e597",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7650",
+      "source": "web/platform_api.py:7657",
       "requirement": "DELETE /api/v1/platform/alerts/{alert_id}",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::delete_alert",
@@ -512368,7 +512592,7 @@
     {
       "id": "SR-ENDPOINT-7711087f0093e257",
       "kind": "ENDPOINT",
-      "source": "web/platform_api.py:7664",
+      "source": "web/platform_api.py:7671",
       "requirement": "POST /api/v1/platform/analytics/events",
       "current_implementation": "Declared handler; runtime mounting/auth/ownership and side effects require acceptance.",
       "responsible_component": "web/platform_api.py::analytics_event",
@@ -529595,7 +529819,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-97c428a51474856a",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:47",
+      "source": "strategies/structure_setups.py:51",
       "requirement": "mode",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
@@ -529607,7 +529831,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-f1e12da41341c813",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:127",
+      "source": "strategies/structure_setups.py:131",
       "requirement": "zone_flip_retest",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
@@ -529619,7 +529843,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-e9f0a8b161356de5",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:178",
+      "source": "strategies/structure_setups.py:182",
       "requirement": "trendline_break_retest",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
@@ -529631,8 +529855,20 @@
     {
       "id": "SR-STRATEGY_CALLABLE-b3392d4b4e68931b",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:236",
+      "source": "strategies/structure_setups.py:240",
       "requirement": "channel_break",
+      "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
+      "responsible_component": "strategies/structure_setups.py",
+      "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
+      "status": "IMPLEMENTED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38"
+    },
+    {
+      "id": "SR-STRATEGY_CALLABLE-6bedeccaf2246a79",
+      "kind": "STRATEGY_CALLABLE",
+      "source": "strategies/structure_setups.py:286",
+      "requirement": "smc_order_block",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
       "verification_method": "Replay real captured inputs; geometry/causality/fees/slippage; supported asset/timeframe/regime matrix; OOS, walk-forward and forward shadow acceptance.",
@@ -529643,7 +529879,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-6159cdc3e696522e",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:285",
+      "source": "strategies/structure_setups.py:359",
       "requirement": "detect_setups",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
@@ -529655,7 +529891,7 @@
     {
       "id": "SR-STRATEGY_CALLABLE-6c2e9c098f5a4f85",
       "kind": "STRATEGY_CALLABLE",
-      "source": "strategies/structure_setups.py:339",
+      "source": "strategies/structure_setups.py:413",
       "requirement": "structure_setup_candidates",
       "current_implementation": "Declared strategy/component callable; dispatch, asset/timeframe compatibility and quantitative validity require review.",
       "responsible_component": "strategies/structure_setups.py",
