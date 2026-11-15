@@ -2675,7 +2675,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
                 X_train, y_train, np.asarray(idx), timestamps,
                 params={k: v for k, v in model.get_params().items() if k not in {"n_estimators", "early_stopping_rounds"}},
                 trees=max(30, (best_iteration + 1) if best_iteration is not None else 60),
-                blend=float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.5") or 0.5),
+                blend=float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.3") or 0.3),
                 embargo_hours=float(os.getenv("ML_SPLIT_EMBARGO_HOURS", "24") or 24),
             )
             logger.info("[ml_edge_walk_forward] %s", edge_walk_forward)
@@ -2880,7 +2880,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     except Exception as audit_err:
         data_audit = {"error": type(audit_err).__name__}
     metrics = {
-        **({"decision_rule": "edge", "prior_blend": float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.5") or 0.5),
+        **({"decision_rule": "edge", "prior_blend": float(os.getenv("ML_EDGE_PRIOR_BLEND", "0.3") or 0.3),
             "edge_min": 0.0, "edge_walk_forward": edge_walk_forward} if edge_walk_forward else {}),
         "walk_forward": walk_forward,
         "data_audit": data_audit,

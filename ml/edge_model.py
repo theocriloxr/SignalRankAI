@@ -10,6 +10,14 @@ the estimated chance of TP1 minus that setup's break-even rate 1/(1+R).
 * 50/50 blend of the track record and calibrated trees, edge > 0: +0.25R (worst -0.18R),
   the best average, and the model this module serves.
 
+Independent confirmation (15 Nov 2026, one-off container, read-only): 4,137 rows (3,998 own
+setups + public-history replays, Fear & Greed, FRED HY spread, CFTC COT, regime features).
+32 configurations were compared only on 6 walk-forward folds inside the first 85 % of time;
+the top ten all averaged +0.19R to +0.23R with 4 of 6 folds positive. The best (prior
+weight 0.3, depth 2) was then scored once on the untouched last 15 % (600 setups): taking
+every setup -0.23R, track record alone +0.08R (198 trades), this model +0.25R (83 trades).
+Hence the default prior weight is 0.3 (``ML_EDGE_PRIOR_BLEND``).
+
 Pieces:
 
 * ``segment_prior``: the strategy x asset class x timeframe TP1 rate, shrunk toward the
@@ -17,7 +25,7 @@ Pieces:
   time (earlier rows only); live scoring reads the setup-evidence snapshot's
   ``class_segments`` (services/segment_evidence.py).
 * ``prior_edge``: ``segment_prior`` minus the setup's break-even rate.
-* decision: p = blend * segment_prior + (1 - blend) * calibrated model probability;
+* decision (blend default 0.3): p = blend * segment_prior + (1 - blend) * calibrated model probability;
   take the setup when p - 1/(1 + R_tp1) > ``ML_EDGE_MIN`` (0).
 * promotion (``edge_gate``): mean walk-forward R >= ``ML_EDGE_MIN_MEAN_R`` (0.10) with at
   least ``ML_EDGE_MIN_POSITIVE_FOLD_SHARE`` (0.6) of folds positive. Accuracy is not the
@@ -113,7 +121,7 @@ def is_edge_model(metrics: dict[str, Any] | None) -> bool:
 
 
 def decide(metrics: dict[str, Any], calibrated_probability: float, values: dict[str, Any]) -> dict[str, Any]:
-    blend = min(1.0, max(0.0, float(metrics.get("prior_blend", 0.5) or 0.0)))
+    blend = min(1.0, max(0.0, float(metrics.get("prior_blend", 0.3) or 0.0)))
     prior = float(values.get("segment_prior") or 0.0)
     if prior <= 0:  # no track record available: the model's own estimate only
         blend = 0.0
