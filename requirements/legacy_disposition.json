@@ -13075,11 +13075,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 230,
+      "line_count": 246,
       "path": "ml/edge_model.py",
       "reason": "production/build source",
-      "sha256": "82b9d28255d33f61940fc5323a366332de8d4daa6918e6c3f63ba71c8432673d",
-      "size_bytes": 11197
+      "sha256": "ff1e9bdf52d74fa3be100fa54af52a01e9c021fab0d8e53ce450ee14532b2344",
+      "size_bytes": 12326
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13251,11 +13251,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3614,
+      "line_count": 3619,
       "path": "ml/train_model.py",
       "reason": "production/build source",
-      "sha256": "0c8f62f2141195d74b3ed541ae2e033d0c9f91536051fc5ed3f6bad40d9b38a1",
-      "size_bytes": 170659
+      "sha256": "349505c5ffd5473fa31703ce5f5e3aca1d92977dd8beabc690b9b76b3b22d54b",
+      "size_bytes": 171069
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -18803,11 +18803,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 123,
+      "line_count": 158,
       "path": "tests/test_edge_model_20261115.py",
       "reason": "automated test evidence",
-      "sha256": "f1582aba797deff0cc9d081f984a3ea8681984f233de1f720439c9c9ab509766",
-      "size_bytes": 6147
+      "sha256": "48cc29ca273e8cf866265c7142ecbb45df39145b3d70bd83db246542d23e7839",
+      "size_bytes": 7867
     },
     {
       "disposition": "TEST_ONLY",
