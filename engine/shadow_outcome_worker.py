@@ -293,9 +293,31 @@ class ShadowOutcomeWorker:
                     .order_by(DecisionLog.id.asc())
                     .limit(self._batch_size)
                 )
+                # Every read covers at most SHADOW_SCAN_WINDOW_IDS ids (default 20k). Unbounded keyset
+                # reads walked up to 300k mostly-resolved rows filtering JSON; under load the first pass
+                # after a restart held the session 46 s, hit its timeout, readyz reported the tracker
+                # degraded and the 15 Nov 2026 deploys were rolled back.
+                span = max(1000, int(os.getenv("SHADOW_SCAN_WINDOW_IDS", "20000") or 20000))
                 # Head: rows the scan has not reached yet.
-                rows = list((await session.execute(query.where(DecisionLog.id > self._scan_after_id))).scalars().all())
-                self._pending_scan_after_id = int(rows[-1].id) if rows else self._scan_after_id
+                head_hi = self._scan_after_id + span
+                rows = list((await session.execute(
+                    query.where(DecisionLog.id > self._scan_after_id).where(DecisionLog.id <= head_hi)
+                )).scalars().all())
+                if rows and len(rows) >= self._batch_size:
+                    self._pending_scan_after_id = int(rows[-1].id)
+                else:
+                    # The window is exhausted. Ids grow with time: when a row above the window is
+                    # already past the minimum age, every id in the window is final and was
+                    # eligible, so the cursor moves to the window's top (crossing empty or fully
+                    # resolved stretches). Otherwise it stops at the last row read.
+                    above = (await session.execute(
+                        select(DecisionLog.id, DecisionLog.created_at)
+                        .where(DecisionLog.id > head_hi).order_by(DecisionLog.id.asc()).limit(1)
+                    )).first()
+                    if above is not None and above[1] is not None and above[1] <= cutoff:
+                        self._pending_scan_after_id = head_hi
+                    else:
+                        self._pending_scan_after_id = int(rows[-1].id) if rows else self._scan_after_id
                 self._pending_revisit_after_id = self._revisit_after_id
                 spare = self._batch_size - len(rows)
                 if spare > 0 and self._scan_after_id:
@@ -312,15 +334,18 @@ class ShadowOutcomeWorker:
                     # about half the rows are unresolved, so the keyset read stops almost at once.
                     window = max(1000, int(os.getenv("SHADOW_REVISIT_WINDOW_ROWS", "300000") or 300000))
                     floor = max(0, self._scan_after_id - window)
-                    behind = query.limit(spare).where(DecisionLog.id <= self._scan_after_id)
+                    start = max(floor, self._revisit_after_id)
+                    stop = min(self._scan_after_id, start + span)
                     revisit = list(
                         (await session.execute(
-                            behind.where(DecisionLog.id > max(floor, self._revisit_after_id))
+                            query.limit(spare).where(DecisionLog.id > start).where(DecisionLog.id <= stop)
                         )).scalars().all()
                     )
-                    if not revisit and self._revisit_after_id > floor:
-                        revisit = list((await session.execute(behind.where(DecisionLog.id > floor))).scalars().all())
-                    self._pending_revisit_after_id = int(revisit[-1].id) if revisit else 0
+                    if revisit and len(revisit) >= spare:
+                        self._pending_revisit_after_id = int(revisit[-1].id)
+                    else:
+                        # Sub-window done: continue above it next pass, wrap to the floor at the head.
+                        self._pending_revisit_after_id = stop if stop < self._scan_after_id else 0
                     rows.extend(revisit)
                 # Copy only primitive values before closing the session.
                 snapshots: list[dict[str, Any]] = []

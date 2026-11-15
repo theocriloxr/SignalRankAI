@@ -236,3 +236,32 @@ async def test_revisit_stays_inside_the_recent_window(shadow_store, monkeypatch)
     monkeypatch.setattr(worker, "_evaluate_rows", unresolved)
     await worker.run_once()
     assert seen and set(seen[0]) == {5000, 5600}, seen  # id 5 is outside the window
+
+
+@pytest.mark.asyncio
+async def test_every_read_is_bounded_and_cursors_cross_sparse_gaps(shadow_store, monkeypatch):
+    """15 Nov 2026: unbounded keyset reads walked up to 300k resolved rows; the first pass after
+    a restart took 46 s, readyz failed and deploys rolled back. Each read now covers at most
+    SHADOW_SCAN_WINDOW_IDS ids, and an exhausted window moves the cursor past it."""
+    monkeypatch.setenv("SHADOW_SCAN_WINDOW_IDS", "1000")
+    monkeypatch.setenv("SHADOW_REVISIT_WINDOW_ROWS", "100000")
+    tracked = {"layer": "ml", "outcome_tracked_at": "2026-11-15T00:00:00"}
+    async with shadow_store() as session:
+        session.add_all([decision(10), decision(1500, meta=tracked), decision(2600), decision(9000)])
+        await session.commit()
+    worker = ShadowOutcomeWorker()
+    worker._batch_size = 5
+    seen = []
+
+    async def unresolved(rows):
+        seen.append(sorted(row["id"] for row in rows))
+        return []
+
+    monkeypatch.setattr(worker, "_evaluate_rows", unresolved)
+    for _ in range(12):
+        await worker.run_once()
+    head_ids = {row_id for batch in seen for row_id in batch}
+    assert {10, 2600, 9000} <= head_ids, seen  # reached across empty and resolved stretches
+    assert worker._scan_after_id == 9000
+    # Revisit walks the history in bounded sub-windows and wraps.
+    assert worker._revisit_after_id <= worker._scan_after_id
