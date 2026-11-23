@@ -46,6 +46,7 @@ COMMAND_SECTION_ALIASES = {
     "system_health": "operations", "provider_status": "operations", "queue_status": "operations",
     "engine_debug": "operations", "adaptive_status": "research", "ml_retrain": "operations",
     "check_trade": "analyze", "my_ideas": "analyze",  # 10 Nov 2026: Check a trade
+    "lessons": "journal", "why": "signals",  # 23 Nov 2026: trade reviews and lessons
 }
 
 

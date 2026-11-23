@@ -61,6 +61,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("track_record", "Every delivered signal's result, misses included", "FREE", "Analytics"),
     CommandSpec("check_trade", "Check a trade you plan to take: chance, risks, order type", "FREE", "Analytics"),
     CommandSpec("my_ideas", "Your analysed trade ideas and how they ended", "FREE", "Analytics"),
+    CommandSpec("lessons", "What the bot has learned from every resolved trade", "FREE", "Analytics"),
+    CommandSpec("why", "Why a signal worked or failed, and what to change next time", "FREE", "Analytics"),
     CommandSpec("disclaimer", "Read the financial-risk disclaimer", "FREE", "Support"),
     CommandSpec("myid", "Show your Telegram ID and tier", "FREE", "Support"),
     CommandSpec("language", "Change notification language", "FREE", "Preferences"),
@@ -175,7 +177,7 @@ OPERATOR_MENU_OMIT = frozenset({
     "start", "about", "app", "login_code", "link", "security", "privacy", "pricing", "upgrade", "tiers",
     "invite", "referral_leaderboard", "referral_rewards", "referral", "faq", "disclaimer", "language",
     "cancel", "paper_reset", "paper_close_all", "profile", "connect_broker", "mt5_link", "setlot", "early",
-    "report", "track_record", "elite", "my_ideas", "setrisk", "simulate",  # 9-10 Nov 2026: room for new owner commands; /help still lists them
+    "report", "track_record", "elite", "my_ideas", "setrisk", "simulate", "apikey", "mystats",  # 9-10 Nov 2026: room for new owner commands; /help still lists them
 })
 
 

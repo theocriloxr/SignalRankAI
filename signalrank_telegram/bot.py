@@ -6561,6 +6561,9 @@ def run_bot() -> None:
     from signalrank_telegram.platform_parity_commands import check_trade_command, my_ideas_command
     application.add_handler(CommandHandler("check_trade", _audit_handler("check_trade", check_trade_command)))
     application.add_handler(CommandHandler("my_ideas", _audit_handler("my_ideas", my_ideas_command)))
+    from signalrank_telegram.learning_commands import lessons_command, why_command
+    application.add_handler(CommandHandler("lessons", _audit_handler("lessons", lessons_command)))
+    application.add_handler(CommandHandler("why", _audit_handler("why", why_command)))
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("public_test_status", _audit_handler("public_test_status", public_test_status_command)))
@@ -8346,6 +8349,33 @@ def run_bot() -> None:
                             current_market_price,
                         )
 
+                    if notify and msg and _env_bool("OUTCOME_WHY_LINE_ENABLED", True) and (
+                        status in {"sl", "partial_win", "partial_win_be"} or tp_level_num in (1, 2, 3)
+                    ):
+                        # Why it worked or failed, from the lessons of every resolved trade (ml/trade_review.py).
+                        try:
+                            import html as _html
+
+                            from ml.trade_review import load_snapshot_sync, review_trade
+
+                            _sd = dict(signal_data or {}) if isinstance(signal_data, dict) else {}
+                            _tp = _sd.get("take_profit")
+                            if isinstance(_tp, str):
+                                _tp = _tp.replace("[", "").replace("]", "").split(",")[0]
+                            elif isinstance(_tp, (list, tuple)):
+                                _tp = _tp[0] if _tp else None
+                            _review = review_trade({**_sd, "take_profit": _tp,
+                                                    "target": 1 if tp_level_num > 0 else 0}, load_snapshot_sync())
+                            _bits = []
+                            if _review.get("why"):
+                                _bits.append(("Why it worked: " if tp_level_num > 0 else "Why it failed: ")
+                                             + "; ".join(_review["why"][:2]))
+                            if _review.get("improve") and tp_level_num == 0:
+                                _bits.append("Next time: " + _review["improve"][0])
+                            if _bits:
+                                msg += "\n\n🧠 " + _html.escape(". ".join(_bits))[:400] + f"\n/why {ref}"
+                        except Exception:
+                            pass
                     if notify and msg:
                         eligible_count += 1
                         notification_id = None

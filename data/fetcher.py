@@ -220,6 +220,11 @@ def _provider_matches_preference(provider_name: str, preferred: str) -> bool:
     return _provider_alias(provider_name) == pref or pref in _provider_key(provider_name).split("_")
 
 
+def _preferred_within_allowlist() -> bool:
+    """Whether *_PREFERRED_PROVIDER reorders an explicit *_MARKET_DATA_PROVIDERS allowlist."""
+    return str(os.getenv("OHLC_PREFERRED_WITHIN_ALLOWLIST", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _prioritize_provider_list(providers: list[tuple[str, object]], preferred: str) -> list[tuple[str, object]]:
     pref = str(preferred or "").strip().lower()
     if not pref:
@@ -1238,7 +1243,7 @@ def _fetch_registered_multi_provider(asset, timeframe, asset_kind):
     ]
     order_env = provider_order_env_name(asset_kind)
     strict_order = bool(order_env and (os.getenv(order_env) or "").strip())
-    if not strict_order:
+    if not strict_order or _preferred_within_allowlist():
         preferred_env = {
             "crypto": "CRYPTO_PREFERRED_PROVIDER", "fx": "FX_PREFERRED_PROVIDER",
             "stock": "STOCK_PREFERRED_PROVIDER", "index": "INDEX_PREFERRED_PROVIDER",
@@ -2796,7 +2801,11 @@ async def async_get_candles(asset, timeframe):
         }.get(str(asset_type or "").lower().strip())
         order_env = provider_order_env_name(asset_type)
         strict_configured_order = bool(order_env and (os.getenv(order_env) or "").strip())
-        if preferred_env and not strict_configured_order:
+        if preferred_env and (not strict_configured_order or _preferred_within_allowlist()):
+            # 23 Nov 2026: production sets both an explicit allowlist and FX/STOCK/INDEX/COMMODITY
+            # _PREFERRED_PROVIDER=yfinance; the preference was ignored under the allowlist, so every
+            # forex and stock fetch spent its attempts on quota-starved free tiers. The preferred
+            # provider now goes first *within* the allowlist (it never adds a provider).
             provs = _prioritize_provider_list(provs, os.getenv(preferred_env) or "")
         if strict_configured_order:
             ordered_provs = list(provs)

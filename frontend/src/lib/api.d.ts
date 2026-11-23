@@ -72,6 +72,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/public/track-record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Track Record
+         * @description Live record of delivered signals, misses included; no login needed (9 Nov 2026).
+         */
+        get: operations["public_track_record_api_v1_platform_public_track_record_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/trade-ideas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trade Idea History
+         * @description The user's analysed ideas, how each ended, and their hit rate.
+         */
+        get: operations["trade_idea_history_api_v1_platform_trade_ideas_get"];
+        put?: never;
+        /**
+         * Trade Idea Analyse
+         * @description Analyse a trade the user plans to take, save it and track how it ends (10 Nov 2026).
+         */
+        post: operations["trade_idea_analyse_api_v1_platform_trade_ideas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/learning/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Lessons
+         * @description What the bot has learned from every resolved trade (ml/trade_review.py).
+         */
+        get: operations["learning_lessons_api_v1_platform_learning_lessons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/signals/{signal_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signal Review
+         * @description Why this signal worked or failed, what helped, what hurt, and what to change.
+         */
+        get: operations["signal_review_api_v1_platform_signals__signal_id__review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/public/daily-top": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Daily Top
+         * @description Top three delivered signals per asset class in the last 24h, no levels (10 Nov 2026).
+         */
+        get: operations["public_daily_top_api_v1_platform_public_daily_top_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/capabilities": {
         parameters: {
             query?: never;
@@ -164,43 +268,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/platform/operator/kill-switch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Operator Kill Switch */
-        post: operations["operator_kill_switch_api_v1_platform_operator_kill_switch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/operator/kill-switch/scoped": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Operator Scoped Kill Switch
-         * @description Engage or release one strategy, instrument or asset-class execution switch.
-         */
-        post: operations["operator_scoped_kill_switch_api_v1_platform_operator_kill_switch_scoped_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/platform/operator/request-identity": {
         parameters: {
             query?: never;
@@ -238,6 +305,43 @@ export interface paths {
         get: operations["operator_ai_spend_api_v1_platform_operator_ai_spend_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/kill-switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Operator Kill Switch */
+        post: operations["operator_kill_switch_api_v1_platform_operator_kill_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/operator/kill-switch/scoped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Operator Scoped Kill Switch
+         * @description Engage or release one strategy, instrument or asset-class execution switch.
+         */
+        post: operations["operator_scoped_kill_switch_api_v1_platform_operator_kill_switch_scoped_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -722,6 +826,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/signals/{signal_id}/candles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signal Live Candles
+         * @description Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.
+         *
+         *     Owner request, 8 Nov 2026: show the candles of a signal flowing in real time.
+         *     Read only; the same delivery proof as the detail view authorizes it. The bar
+         *     still forming is included (its close moves as new prices arrive).
+         */
+        get: operations["signal_live_candles_api_v1_platform_signals__signal_id__candles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/signals/{signal_id}/execute": {
         parameters: {
             query?: never;
@@ -754,6 +882,9 @@ export interface paths {
         /**
          * Submit Signal Feedback
          * @description Persist delivery-scoped signal feedback in the canonical account ledger.
+         *
+         *     Telegram /feedback records through the same service, so both channels
+         *     accept only signals the person received and write the same event.
          */
         post: operations["submit_signal_feedback_api_v1_platform_signals__signal_id__feedback_post"];
         delete?: never;
@@ -1035,6 +1166,26 @@ export interface paths {
         put?: never;
         /** Register Push Device */
         post: operations["register_push_device_api_v1_platform_push_devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/push/vapid-public-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Web Push Public Key
+         * @description The server's Web Push (VAPID) public key, for the browser's push subscription.
+         */
+        get: operations["web_push_public_key_api_v1_platform_push_vapid_public_key_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1630,6 +1781,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/setup-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup Records
+         * @description Each setup's measured record and what it allows (owner request, 8 Nov 2026).
+         *
+         *     A setup (strategy x timeframe x direction) may signal only while the lower
+         *     bound of its TP1 rate beats the break-even of the plan it publishes,
+         *     ``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk
+         *     the record supports; a setup with no record supports none. Read only; the
+         *     same 60-day snapshot the engine uses.
+         */
+        get: operations["setup_records_api_v1_platform_setup_records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/broker/risk-presets": {
         parameters: {
             query?: never;
@@ -1789,6 +1966,46 @@ export interface paths {
         get: operations["broker_account_policy_api_v1_platform_broker_connections__connection_id__policy_get"];
         /** Update Broker Account Policy */
         put: operations["update_broker_account_policy_api_v1_platform_broker_connections__connection_id__policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/broker/prop-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Broker Prop Presets
+         * @description Published prop-firm rule presets (core/prop_rules.py) with their source and check date.
+         */
+        get: operations["broker_prop_presets_api_v1_platform_broker_prop_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/broker/connections/{connection_id}/prop-preset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Apply Broker Prop Preset
+         * @description Configure a PROP account from a firm preset. Execution stays disabled until certification.
+         */
+        put: operations["apply_broker_prop_preset_api_v1_platform_broker_connections__connection_id__prop_preset_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2923,128 +3140,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/platform/signals/{signal_id}/candles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Signal Live Candles
-         * @description Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.
-         *
-         *     Owner request, 8 Nov 2026: show the candles of a signal flowing in real time.
-         *     Read only; the same delivery proof as the detail view authorizes it. The bar
-         *     still forming is included (its close moves as new prices arrive).
-         */
-        get: operations["signal_live_candles_api_v1_platform_signals__signal_id__candles_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/setup-records": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Setup Records
-         * @description Each setup's measured record and what it allows (owner request, 8 Nov 2026).
-         *
-         *     A setup (strategy x timeframe x direction) may signal only while the lower
-         *     bound of its TP1 rate beats the break-even of the plan it publishes,
-         *     ``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk
-         *     the record supports; a setup with no record supports none. Read only; the
-         *     same 60-day snapshot the engine uses.
-         */
-        get: operations["setup_records_api_v1_platform_setup_records_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/push/vapid-public-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Web Push Public Key
-         * @description The server's Web Push (VAPID) public key, for the browser's push subscription.
-         */
-        get: operations["web_push_public_key_api_v1_platform_push_vapid_public_key_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/public/track-record": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Public live track record */
-        get: operations["public_track_record_api_v1_platform_public_track_record_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/trade-ideas": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Trade Idea History */
-        get: operations["trade_idea_history_api_v1_platform_trade_ideas_get"];
-        put?: never;
-        /** Trade Idea Analyse */
-        post: operations["trade_idea_analyse_api_v1_platform_trade_ideas_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/platform/public/daily-top": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Public daily top setups */
-        get: operations["public_daily_top_api_v1_platform_public_daily_top_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3212,29 +3307,6 @@ export interface components {
             uptime: number;
         };
         /** JournalEntryRequest */
-        /** TradeIdeaRequest */
-        TradeIdeaRequest: {
-            /** Asset */
-            asset: string;
-            /** Direction */
-            direction: string;
-            /** Entry */
-            entry: number;
-            /** Stop Loss */
-            stop_loss: number;
-            /** Take Profit */
-            take_profit: number[];
-            /**
-             * Timeframe
-             * @default 1h
-             */
-            timeframe?: string;
-            /**
-             * Notes
-             * @default
-             */
-            notes?: string;
-        };
         JournalEntryRequest: {
             /** Title */
             title?: string | null;
@@ -3684,6 +3756,45 @@ export interface components {
             /** Certification Ref */
             certification_ref: string;
         };
+        /** PropPresetRequest */
+        PropPresetRequest: {
+            /** Preset */
+            preset: string;
+            /** Initial Balance */
+            initial_balance: number | string;
+            /** Phase */
+            phase?: string | null;
+            /**
+             * Funded
+             * @default false
+             */
+            funded: boolean;
+            /**
+             * Safety Buffer Pct
+             * @default 0.005
+             */
+            safety_buffer_pct: number | string;
+            /**
+             * Max Risk Per Trade Pct
+             * @default 0.005
+             */
+            max_risk_per_trade_pct: number | string;
+            /**
+             * Max Open Positions
+             * @default 3
+             */
+            max_open_positions: number;
+            /**
+             * Reset Timezone
+             * @default UTC
+             */
+            reset_timezone: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
         /** PushDeviceRequest */
         PushDeviceRequest: {
             /**
@@ -3929,6 +4040,29 @@ export interface components {
             client_type: string;
             /** Device Id */
             device_id?: string | null;
+        };
+        /** TradeIdeaRequest */
+        TradeIdeaRequest: {
+            /** Asset */
+            asset: string;
+            /** Direction */
+            direction: string;
+            /** Entry */
+            entry: number;
+            /** Stop Loss */
+            stop_loss: number;
+            /** Take Profit */
+            take_profit: number[];
+            /**
+             * Timeframe
+             * @default 1h
+             */
+            timeframe: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
         };
         /**
          * TradingAccountPolicyUpdateRequest
@@ -4324,6 +4458,162 @@ export interface operations {
             };
         };
     };
+    public_track_record_api_v1_platform_public_track_record_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    trade_idea_history_api_v1_platform_trade_ideas_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    trade_idea_analyse_api_v1_platform_trade_ideas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TradeIdeaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_lessons_api_v1_platform_learning_lessons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    signal_review_api_v1_platform_signals__signal_id__review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                signal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_daily_top_api_v1_platform_public_daily_top_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     capabilities_api_v1_platform_capabilities_get: {
         parameters: {
             query?: never;
@@ -4434,6 +4724,61 @@ export interface operations {
             };
         };
     };
+    operator_request_identity_api_v1_platform_operator_request_identity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    operator_ai_spend_api_v1_platform_operator_ai_spend_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     operator_kill_switch_api_v1_platform_operator_kill_switch_post: {
         parameters: {
             query?: never;
@@ -4481,61 +4826,6 @@ export interface operations {
                 "application/json": components["schemas"]["OperatorScopedKillSwitchRequest"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    operator_request_identity_api_v1_platform_operator_request_identity_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    operator_ai_spend_api_v1_platform_operator_ai_spend_get: {
-        parameters: {
-            query?: {
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5433,6 +5723,41 @@ export interface operations {
             };
         };
     };
+    signal_live_candles_api_v1_platform_signals__signal_id__candles_get: {
+        parameters: {
+            query?: {
+                after_ms?: number;
+            };
+            header?: never;
+            path: {
+                signal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     execute_signal_from_platform_api_v1_platform_signals__signal_id__execute_post: {
         parameters: {
             query?: never;
@@ -6026,6 +6351,28 @@ export interface operations {
             };
         };
     };
+    web_push_public_key_api_v1_platform_push_vapid_public_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     revoke_push_device_api_v1_platform_push_devices__push_device_id__delete: {
         parameters: {
             query?: never;
@@ -6149,63 +6496,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    trade_idea_history_api_v1_platform_trade_ideas_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    trade_idea_analyse_api_v1_platform_trade_ideas_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TradeIdeaRequest"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -7355,6 +7645,28 @@ export interface operations {
             };
         };
     };
+    setup_records_api_v1_platform_setup_records_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     broker_risk_presets_api_v1_platform_broker_risk_presets_get: {
         parameters: {
             query?: never;
@@ -7642,6 +7954,65 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TradingAccountPolicyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_prop_presets_api_v1_platform_broker_prop_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apply_broker_prop_preset_api_v1_platform_broker_connections__connection_id__prop_preset_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PropPresetRequest"];
             };
         };
         responses: {
@@ -9494,143 +9865,6 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
-            };
-        };
-    };
-    signal_live_candles_api_v1_platform_signals__signal_id__candles_get: {
-        parameters: {
-            query?: {
-                after_ms?: number;
-            };
-            header?: never;
-            path: {
-                signal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    setup_records_api_v1_platform_setup_records_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    web_push_public_key_api_v1_platform_push_vapid_public_key_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    public_track_record_api_v1_platform_public_track_record_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Track record temporarily unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    public_daily_top_api_v1_platform_public_daily_top_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Daily top list temporarily unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

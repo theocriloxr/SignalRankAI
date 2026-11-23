@@ -454,6 +454,10 @@ async def run_async(stop_event: asyncio.Event | None=None) -> None:
             # Track users' submitted trade ideas and tell them how each ended (services/trade_ideas.py).
             from services.trade_ideas import trade_ideas_loop
             tasks.append(asyncio.create_task(trade_ideas_loop(stop), name="trade-ideas"))
+        if _enabled("TRADE_REVIEW_ENABLED", True):
+            # Why each resolved trade worked or failed, and the lessons across all of them (ml/trade_review.py).
+            from ml.trade_review import trade_review_loop
+            tasks.append(asyncio.create_task(trade_review_loop(stop), name="trade-review"))
         if _enabled("DAILY_TEASER_ENABLED", True):
             # Daily top-3 per asset class, no levels (services/daily_teaser.py).
             from services.daily_teaser import daily_teaser_loop

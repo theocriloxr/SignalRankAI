@@ -165,6 +165,209 @@
         ]
       }
     },
+    "/api/v1/platform/public/track-record": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Public Track Record",
+        "description": "Live record of delivered signals, misses included; no login needed (9 Nov 2026).",
+        "operationId": "public_track_record_api_v1_platform_public_track_record_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Public Track Record Api V1 Platform Public Track Record Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/trade-ideas": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Trade Idea History",
+        "description": "The user's analysed ideas, how each ended, and their hit rate.",
+        "operationId": "trade_idea_history_api_v1_platform_trade_ideas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Trade Idea History Api V1 Platform Trade Ideas Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Trade Idea Analyse",
+        "description": "Analyse a trade the user plans to take, save it and track how it ends (10 Nov 2026).",
+        "operationId": "trade_idea_analyse_api_v1_platform_trade_ideas_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeIdeaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Trade Idea Analyse Api V1 Platform Trade Ideas Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/learning/lessons": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Learning Lessons",
+        "description": "What the bot has learned from every resolved trade (ml/trade_review.py).",
+        "operationId": "learning_lessons_api_v1_platform_learning_lessons_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Learning Lessons Api V1 Platform Learning Lessons Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/signals/{signal_id}/review": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Signal Review",
+        "description": "Why this signal worked or failed, what helped, what hurt, and what to change.",
+        "operationId": "signal_review_api_v1_platform_signals__signal_id__review_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "signal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Signal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Signal Review Api V1 Platform Signals  Signal Id  Review Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/public/daily-top": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Public Daily Top",
+        "description": "Top three delivered signals per asset class in the last 24h, no levels (10 Nov 2026).",
+        "operationId": "public_daily_top_api_v1_platform_public_daily_top_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Public Daily Top Api V1 Platform Public Daily Top Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/capabilities": {
       "get": {
         "tags": [
@@ -301,6 +504,88 @@
         ]
       }
     },
+    "/api/v1/platform/operator/request-identity": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Request Identity",
+        "description": "Owner check after deployment: which client address the server derived, and from where.\n\nEchoes only the caller's own request. Open it in a browser and compare\n``client_ip`` with your public address; a forged X-Forwarded-For must not change it.",
+        "operationId": "operator_request_identity_api_v1_platform_operator_request_identity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Operator Request Identity Api V1 Platform Operator Request Identity Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/operator/ai-spend": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Operator Ai Spend",
+        "description": "Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts.",
+        "operationId": "operator_ai_spend_api_v1_platform_operator_ai_spend_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 366,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Operator Ai Spend Api V1 Platform Operator Ai Spend Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/operator/kill-switch": {
       "post": {
         "tags": [
@@ -396,88 +681,6 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/api/v1/platform/operator/request-identity": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Operator Request Identity",
-        "description": "Owner check after deployment: which client address the server derived, and from where.\n\nEchoes only the caller's own request. Open it in a browser and compare\n``client_ip`` with your public address; a forged X-Forwarded-For must not change it.",
-        "operationId": "operator_request_identity_api_v1_platform_operator_request_identity_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Operator Request Identity Api V1 Platform Operator Request Identity Get"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/platform/operator/ai-spend": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Operator Ai Spend",
-        "description": "Estimated OpenAI/Gemini spend by provider, workload, model and user, with budgets and alerts.",
-        "operationId": "operator_ai_spend_api_v1_platform_operator_ai_spend_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "days",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 366,
-              "minimum": 1,
-              "default": 30,
-              "title": "Days"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Operator Ai Spend Api V1 Platform Operator Ai Spend Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/v1/platform/operator/account-merges": {
@@ -1757,6 +1960,67 @@
         }
       }
     },
+    "/api/v1/platform/signals/{signal_id}/candles": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Signal Live Candles",
+        "description": "Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.\n\nOwner request, 8 Nov 2026: show the candles of a signal flowing in real time.\nRead only; the same delivery proof as the detail view authorizes it. The bar\nstill forming is included (its close moves as new prices arrive).",
+        "operationId": "signal_live_candles_api_v1_platform_signals__signal_id__candles_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "signal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Signal Id"
+            }
+          },
+          {
+            "name": "after_ms",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "After Ms"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Signal Live Candles Api V1 Platform Signals  Signal Id  Candles Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/platform/signals/{signal_id}/execute": {
       "post": {
         "tags": [
@@ -1823,7 +2087,7 @@
           "platform"
         ],
         "summary": "Submit Signal Feedback",
-        "description": "Persist delivery-scoped signal feedback in the canonical account ledger.",
+        "description": "Persist delivery-scoped signal feedback in the canonical account ledger.\n\nTelegram /feedback records through the same service, so both channels\naccept only signals the person received and write the same event.",
         "operationId": "submit_signal_feedback_api_v1_platform_signals__signal_id__feedback_post",
         "security": [
           {
@@ -2641,6 +2905,35 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/push/vapid-public-key": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Web Push Public Key",
+        "description": "The server's Web Push (VAPID) public key, for the browser's push subscription.",
+        "operationId": "web_push_public_key_api_v1_platform_push_vapid_public_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Web Push Public Key Api V1 Platform Push Vapid Public Key Get"
                 }
               }
             }
@@ -4392,6 +4685,35 @@
         }
       }
     },
+    "/api/v1/platform/setup-records": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Setup Records",
+        "description": "Each setup's measured record and what it allows (owner request, 8 Nov 2026).\n\nA setup (strategy x timeframe x direction) may signal only while the lower\nbound of its TP1 rate beats the break-even of the plan it publishes,\n``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk\nthe record supports; a setup with no record supports none. Read only; the\nsame 60-day snapshot the engine uses.",
+        "operationId": "setup_records_api_v1_platform_setup_records_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Setup Records Api V1 Platform Setup Records Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/platform/broker/risk-presets": {
       "get": {
         "tags": [
@@ -4834,6 +5156,95 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Update Broker Account Policy Api V1 Platform Broker Connections  Connection Id  Policy Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/broker/prop-presets": {
+      "get": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Broker Prop Presets",
+        "description": "Published prop-firm rule presets (core/prop_rules.py) with their source and check date.",
+        "operationId": "broker_prop_presets_api_v1_platform_broker_prop_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Broker Prop Presets Api V1 Platform Broker Prop Presets Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/platform/broker/connections/{connection_id}/prop-preset": {
+      "put": {
+        "tags": [
+          "platform"
+        ],
+        "summary": "Apply Broker Prop Preset",
+        "description": "Configure a PROP account from a firm preset. Execution stays disabled until certification.",
+        "operationId": "apply_broker_prop_preset_api_v1_platform_broker_connections__connection_id__prop_preset_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PropPresetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Apply Broker Prop Preset Api V1 Platform Broker Connections  Connection Id  Prop Preset Put"
                 }
               }
             }
@@ -7426,251 +7837,6 @@
           }
         ]
       }
-    },
-    "/api/v1/platform/signals/{signal_id}/candles": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Signal Live Candles",
-        "description": "Candles newer than ``after_ms`` for a delivered signal's chart, plus its live state.\n\nOwner request, 8 Nov 2026: show the candles of a signal flowing in real time.\nRead only; the same delivery proof as the detail view authorizes it. The bar\nstill forming is included (its close moves as new prices arrive).",
-        "operationId": "signal_live_candles_api_v1_platform_signals__signal_id__candles_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "signal_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Signal Id"
-            }
-          },
-          {
-            "name": "after_ms",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "After Ms"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Signal Live Candles Api V1 Platform Signals  Signal Id  Candles Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/platform/setup-records": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Setup Records",
-        "description": "Each setup's measured record and what it allows (owner request, 8 Nov 2026).\n\nA setup (strategy x timeframe x direction) may signal only while the lower\nbound of its TP1 rate beats the break-even of the plan it publishes,\n``1 / (1 + f1 x RR_TP1)``. Solving for RR gives the smallest TP1 reward/risk\nthe record supports; a setup with no record supports none. Read only; the\nsame 60-day snapshot the engine uses.",
-        "operationId": "setup_records_api_v1_platform_setup_records_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Setup Records Api V1 Platform Setup Records Get"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/platform/push/vapid-public-key": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Web Push Public Key",
-        "description": "The server's Web Push (VAPID) public key, for the browser's push subscription.",
-        "operationId": "web_push_public_key_api_v1_platform_push_vapid_public_key_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Web Push Public Key Api V1 Platform Push Vapid Public Key Get"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/platform/public/track-record": {
-      "get": {
-        "summary": "Public live track record",
-        "operationId": "public_track_record_api_v1_platform_public_track_record_get",
-        "tags": [
-          "platform"
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Track record temporarily unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/platform/public/daily-top": {
-      "get": {
-        "summary": "Public daily top setups",
-        "operationId": "public_daily_top_api_v1_platform_public_daily_top_get",
-        "tags": [
-          "platform"
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Daily top list temporarily unavailable"
-          }
-        }
-      }
-    },
-    "/api/v1/platform/trade-ideas": {
-      "get": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Trade Idea History",
-        "description": "The user's analysed ideas, how each ended, and their hit rate.",
-        "operationId": "trade_idea_history_api_v1_platform_trade_ideas_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Trade Idea History Api V1 Platform Trade Ideas Get"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "platform"
-        ],
-        "summary": "Trade Idea Analyse",
-        "description": "Analyse a trade the user plans to take, save it and track how it ends (10 Nov 2026).",
-        "operationId": "trade_idea_analyse_api_v1_platform_trade_ideas_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TradeIdeaRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Trade Idea Analyse Api V1 Platform Trade Ideas Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
     }
   },
   "components": {
@@ -8086,7 +8252,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(auto|mt4|mt5|bybit)$"
+                "pattern": "^(auto|mt4|mt5|bybit|binance)$"
               },
               {
                 "type": "null"
@@ -9175,7 +9341,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^(?i:tp1|tp2|tp3)$"
+                "pattern": "^(?i:tp1|tp2|tp3|plan)$"
               },
               {
                 "type": "null"
@@ -9464,7 +9630,8 @@
                 "exclusiveMinimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               },
               {
                 "type": "null"
@@ -9480,7 +9647,8 @@
                 "exclusiveMinimum": 0.0
               },
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
               },
               {
                 "type": "null"
@@ -9530,6 +9698,99 @@
           "certification_ref"
         ],
         "title": "PropPolicyCertificationRequest"
+      },
+      "PropPresetRequest": {
+        "properties": {
+          "preset": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Preset"
+          },
+          "initial_balance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Initial Balance"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "funded": {
+            "type": "boolean",
+            "title": "Funded",
+            "default": false
+          },
+          "safety_buffer_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 0.05,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Safety Buffer Pct",
+            "default": "0.005"
+          },
+          "max_risk_per_trade_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 0.02,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Max Risk Per Trade Pct",
+            "default": "0.005"
+          },
+          "max_open_positions": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Open Positions",
+            "default": 3
+          },
+          "reset_timezone": {
+            "type": "string",
+            "title": "Reset Timezone",
+            "default": "UTC"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset",
+          "initial_balance"
+        ],
+        "title": "PropPresetRequest"
       },
       "PushDeviceRequest": {
         "properties": {
@@ -9872,7 +10133,7 @@
           },
           "provider": {
             "type": "string",
-            "pattern": "^(mt4|mt5|bybit)$",
+            "pattern": "^(mt4|mt5|bybit|binance)$",
             "title": "Provider",
             "default": "mt5"
           },
@@ -10207,6 +10468,62 @@
           "token"
         ],
         "title": "TokenRequest"
+      },
+      "TradeIdeaRequest": {
+        "properties": {
+          "asset": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 2,
+            "title": "Asset"
+          },
+          "direction": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 3,
+            "title": "Direction"
+          },
+          "entry": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Entry"
+          },
+          "stop_loss": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Stop Loss"
+          },
+          "take_profit": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Take Profit"
+          },
+          "timeframe": {
+            "type": "string",
+            "maxLength": 4,
+            "title": "Timeframe",
+            "default": "1h"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset",
+          "direction",
+          "entry",
+          "stop_loss",
+          "take_profit"
+        ],
+        "title": "TradeIdeaRequest"
       },
       "TradingAccountPolicyUpdateRequest": {
         "properties": {
@@ -11142,62 +11459,6 @@
           "sandbox"
         ],
         "title": "ExchangeBrokerLinkRequest"
-      },
-      "TradeIdeaRequest": {
-        "properties": {
-          "asset": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 2,
-            "title": "Asset"
-          },
-          "direction": {
-            "type": "string",
-            "maxLength": 8,
-            "minLength": 3,
-            "title": "Direction"
-          },
-          "entry": {
-            "type": "number",
-            "exclusiveMinimum": 0.0,
-            "title": "Entry"
-          },
-          "stop_loss": {
-            "type": "number",
-            "exclusiveMinimum": 0.0,
-            "title": "Stop Loss"
-          },
-          "take_profit": {
-            "items": {
-              "type": "number"
-            },
-            "type": "array",
-            "maxItems": 3,
-            "minItems": 1,
-            "title": "Take Profit"
-          },
-          "timeframe": {
-            "type": "string",
-            "maxLength": 4,
-            "title": "Timeframe",
-            "default": "1h"
-          },
-          "notes": {
-            "type": "string",
-            "maxLength": 500,
-            "title": "Notes",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "required": [
-          "asset",
-          "direction",
-          "entry",
-          "stop_loss",
-          "take_profit"
-        ],
-        "title": "TradeIdeaRequest"
       }
     },
     "securitySchemes": {

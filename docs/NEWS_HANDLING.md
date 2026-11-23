@@ -39,3 +39,13 @@ To judge a release such as PPI, compare the tracked `news_window` setups against
 setups outside the window. Use the same strategy, asset class and timeframe, and
 compare the TP1 rate with the break-even rate. If a cell clears its break-even with
 a large enough sample, exempt it. If not, keep the window.
+
+## Post-release range breakout (23 Nov 2026)
+
+`strategies/news_setups.py` trades *after* a high-impact USD release, on the chart rather than on the
+number: the first 15 minutes after the release form the release range; if that range is 1–4 ATR wide
+(the market reacted, but not chaotically), the first 5m/15m close beyond it in the direction of the
+release move is the entry, the stop is the range midpoint and targets are 1.5R / 2.5R / 4R. It is
+recorded in shadow like every structure setup and goes through the same gates: inside the 60-minute
+news window it is rejected with `news_window` and tracked, so its record builds honestly before it can
+reach anyone. `NEWS_SETUPS_MODE=off|shadow|auto|live` (default `auto`).

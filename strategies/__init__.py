@@ -250,6 +250,10 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         from .structure_setups import structure_setup_candidates
 
         _run_group("structure_setups", lambda: structure_setup_candidates(asset, timeframe, data))
+        # Post-release range breakout after high-impact news (strategies/news_setups.py).
+        from .news_setups import news_setup_candidates
+
+        _run_group("news_setups", lambda: news_setup_candidates(asset, timeframe, data))
 
     # Queue canonical candle snapshots for asynchronous sequence learning.
     if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):

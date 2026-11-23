@@ -1040,6 +1040,36 @@ async def trade_idea_history(user: dict[str, Any] = Depends(current_user)) -> di
     return out
 
 
+@router.get("/learning/lessons")
+async def learning_lessons(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """What the bot has learned from every resolved trade (ml/trade_review.py)."""
+    from ml.trade_review import lessons_text, load_snapshot
+
+    snap = await load_snapshot() or {}
+    keep = ("generated_at", "resolved_trades", "overall", "by_class", "lessons", "harmful", "trends", "method")
+    return {**{k: snap.get(k) for k in keep}, "text": lessons_text(snap or None)}
+
+
+@router.get("/signals/{signal_id}/review")
+async def signal_review(signal_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """Why this signal worked or failed, what helped, what hurt, and what to change."""
+    from ml.trade_review import load_snapshot
+
+    reviews = (await load_snapshot() or {}).get("reviews") or {}
+    review = reviews.get(signal_id)
+    if review is None:
+        async with get_session(label="platform.signal_review", timeout_seconds=5.0) as session:
+            row = (await session.execute(
+                text("SELECT signal_id FROM signals WHERE display_id = :r OR signal_id = :r LIMIT 1"),
+                {"r": signal_id},
+            )).first()
+            await session.rollback()
+        review = reviews.get(str(row[0])) if row else None
+    if review is None:
+        raise HTTPException(status_code=404, detail="No review yet: reviews are written once a trade resolves.")
+    return review
+
+
 _DAILY_TOP_CACHE: dict[str, Any] = {}
 
 

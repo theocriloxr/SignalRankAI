@@ -8,6 +8,7 @@ import { AccountCreation } from "./AccountCreation";
 import { SignalChart } from "./SignalChart";
 import { SetupRecords } from "./SetupRecords";
 import { SignalEvidence } from "./SignalEvidence";
+import { LessonsPanel, SignalReview } from "./TradeLearning";
 import { SignalFeedback } from "./SignalFeedback";
 import { SetupEvidence, SetupLine, PaperOnlyTag, isPaperOnly } from "./SignalSetup";
 import { NotificationCenter } from "./NotificationCenter";
@@ -295,7 +296,7 @@ function SignalView({ data, detail = false, offset = 0, onPage }: { data: Row; d
         {isPaperOnly(candidate) && <p className="ws-aside"><PaperOnlyTag/> The model scored this one below its usual bar, so it&rsquo;s for paper trading only. Try it on the paper desk first.</p>}
         {Object.keys(record(data.rank_factors)).length > 0 && <RankFactors rank={record(data.rank_factors)}/>}
         {Object.keys(record(data.order_plan)).length > 0 && <OrderPlan plan={record(data.order_plan)}/>}
-        <SignalChart data={data} /><SignalEvidence data={data} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
+        <SignalChart data={data} /><SignalEvidence data={data} /><SignalReview signalId={display(candidate.signal_id, "")} /><SignalFeedback signalId={display(candidate.signal_id, "")} />
         <p className="ws-aside">A signal is an idea with levels, not an order. Nothing is placed with a broker unless you place it.</p>
       </> : <Empty title="We couldn't find this signal on your account.">It may belong to another account or plan.</Empty>}
     </div>;
@@ -577,7 +578,7 @@ export function WorkspaceLive({ section, signalId }: { section: Section; signalI
       section==="alerts"?<AlertRules data={state.data} onChanged={refresh}/>:
       section==="watchlists"?<div className="ws-stack"><WatchlistsView data={state.data} onChanged={refresh}/><AccountCreation kind="watchlists" onCreated={refresh}/></div>:
       section==="analyze"?<TradeCheck data={state.data} onChanged={refresh}/>:
-      section==="journal"?<div className="ws-stack"><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:
+      section==="journal"?<div className="ws-stack"><LessonsPanel/><JournalView data={state.data} onChanged={refresh}/><AccountCreation kind="journal" onCreated={refresh}/></div>:
       section==="settings"?<div className="ws-stack"><TradingPreferences data={state.data} onSaved={refresh}/><AccountSecurity onChanged={refresh}/><PlanAndReferrals/><DeveloperAccess/><PrivacyCenter onChanged={refresh}/></div>:
       section==="support"?<div className="ws-stack"><SupportCenter data={state.data} onChanged={refresh}/><AccountCreation kind="support" onCreated={refresh}/></div>:
       null

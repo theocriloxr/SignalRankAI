@@ -5080,6 +5080,34 @@ def main_loop(DRY_RUN: bool = False):
                         sig["stop_loss"] = sl
                         sig["take_profit"] = tp
 
+                        # Lessons from every resolved trade (ml/trade_review.py, 23 Nov 2026): a context
+                        # that loses money with high confidence in this asset class rejects the setup.
+                        # Tighten-only; the setup is still tracked, so the lesson drops out if it stops
+                        # being true. LESSON_GATE_ENABLED=0 turns it off.
+                        if _env_bool("LESSON_GATE_ENABLED", True):
+                            try:
+                                from ml.trade_review import harmful_lesson, load_snapshot_sync
+
+                                _tp_first = tp[0] if isinstance(tp, (list, tuple)) else tp
+                                _lesson = harmful_lesson(load_snapshot_sync(), {
+                                    **sig, "asset": asset, "entry": sig.get("entry"), "stop_loss": sl,
+                                    "take_profit": _tp_first, "created_at": now_utc_naive(),
+                                })
+                            except Exception:
+                                _lesson = None
+                            if _lesson:
+                                sig["rejection_reason"] = (
+                                    f"lesson {_lesson['factor']}={_lesson['value']} "
+                                    f"({_lesson['mean_r']:+.2f}R over {_lesson['trades']})"
+                                )[:128]
+                                _increment_engine_veto("other")
+                                _record_gate_failure(asset, "lesson", sig["rejection_reason"])
+                                _post_ml_reject(sig, "lesson", sig["rejection_reason"])
+                                _log_decision("skipped", sig, reason=sig["rejection_reason"],
+                                              meta={"lesson": {k: _lesson.get(k) for k in (
+                                                  "asset_class", "factor", "value", "trades", "mean_r", "q")}})
+                                continue
+
                         # Trader-intent profile shaping: scalp/day/swing/position
                         # signals get realistic ATR-based targets, expiry, and a
                         # time-to-target score before production quality gates run.

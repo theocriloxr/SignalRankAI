@@ -11,7 +11,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | Web section | Reads | Telegram commands |
 | --- | --- | --- |
 | `/app/overview` | `/dashboard` | `/about`, `/dashboard`, `/mission` |
-| `/app/signals` | — | `/feedback`, `/filter`, `/history`, `/outcome`, `/proof`, `/signal`, `/signals`, `/why_no_signal` |
+| `/app/signals` | — | `/feedback`, `/filter`, `/history`, `/outcome`, `/proof`, `/signal`, `/signals`, `/why`, `/why_no_signal` |
 | `/app/markets` | `/quality` | `/analyze`, `/assets`, `/liveprice`, `/market`, `/quality`, `/risk` |
 | `/app/research` | `/strategy-leaderboard` | `/adaptive_status`, `/research` |
 | `/app/watchlists` | `/watchlists` | `/watchlist` |
@@ -20,7 +20,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/app/paper` | `/paper` | `/paper_balance`, `/paper_close_all`, `/paper_history`, `/paper_performance`, `/paper_positions`, `/paper_reset`, `/paper_settings`, `/simulate` |
 | `/app/portfolio` | `/portfolio` | `/portfolio` |
 | `/app/performance` | `/performance` | `/mystats`, `/performance`, `/report`, `/stats` |
-| `/app/journal` | `/journal` | `/journal` |
+| `/app/journal` | `/journal` | `/journal`, `/lessons` |
 | `/app/analyze` | `/trade-ideas` | `/check_trade`, `/my_ideas` |
 | `/app/brokers` | `/broker/connections` | `/connect_broker`, `/execution`, `/mt5_link`, `/mt5_status`, `/setlot`, `/verifybroker` |
 | `/app/billing` | `/billing` | `/cancel`, `/early`, `/elite`, `/pricing`, `/tiers`, `/upgrade` |
@@ -70,6 +70,8 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | `/track_record` | FREE | Analytics | — (Telegram-only) |
 | `/check_trade` | FREE | Analytics | `/app/analyze` |
 | `/my_ideas` | FREE | Analytics | `/app/analyze` |
+| `/lessons` | FREE | Analytics | `/app/journal` |
+| `/why` | FREE | Analytics | `/app/signals` |
 | `/disclaimer` | FREE | Support | `/app/support` |
 | `/myid` | FREE | Support | — (Telegram-only) |
 | `/language` | FREE | Preferences | `/app/settings` |
@@ -241,6 +243,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/journal` | `/journal` |
 | POST | `/journal` | `/journal` |
 | DELETE | `/journal/{journal_entry_id}` | `/journal` |
+| GET | `/learning/lessons` | `/lessons` |
 | GET | `/live-price` | `/liveprice` |
 | GET | `/me` | — |
 | GET | `/notifications` | — |
@@ -303,6 +306,7 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | GET | `/signals/{signal_id}/candles` | `/signals`, `/signal` |
 | POST | `/signals/{signal_id}/execute` | `/signals`, `/signal` |
 | POST | `/signals/{signal_id}/feedback` | `/signals`, `/signal`, `/feedback` |
+| GET | `/signals/{signal_id}/review` | `/signals`, `/signal` |
 | POST | `/simulation` | — |
 | GET | `/strategy-leaderboard` | — |
 | GET | `/support/tickets` | `/support` |
@@ -322,4 +326,4 @@ they need explicit confirmation and a recent sign-in that a chat message cannot 
 | POST | `/webhooks` | — |
 | DELETE | `/webhooks/{webhook_endpoint_id}` | — |
 
-Summary: 131 commands (51 without a web section), 17 web sections, 153 routes (96 without a name-matched command).
+Summary: 133 commands (51 without a web section), 17 web sections, 155 routes (96 without a name-matched command).
