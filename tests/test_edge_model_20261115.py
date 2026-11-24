@@ -118,7 +118,11 @@ def test_replay_runs_most_traded_assets_first_with_a_real_per_pair_share(monkeyp
     monkeypatch.setattr(er, "replay_frame", fake_replay)
     pairs = [("AAVEUSDT", "1h")] + [("BTCUSDT", "1h")] * 50 + [("XAUUSD", "15m")] * 20
     rows, report = er.build_rows(pairs, before=None, budget_rows=400, client=object())
-    assert [c[0] for c in calls][:1] == ["BTCUSDT"]  # most traded first, not alphabetical
+    order = [c[0] for c in calls]
+    # 23 Nov 2026: classes interleave (crypto no longer starves forex/metals); inside a class the
+    # most-traded asset still goes first, not alphabetical.
+    assert set(order[:2]) == {"BTCUSDT", "XAUUSD"}
+    assert order.index("BTCUSDT") < order.index("AAVEUSDT")
     assert calls[0][2] >= 150
     assert len(rows) <= 400
 
@@ -156,3 +160,14 @@ def test_walk_forward_edge_trains_folds_as_shipped(monkeypatch):
         replay = rows[rows >= own_n]
         assert len(replay) == extra_n // 2 and (replay < own_n + extra_n // 2).all()
         assert w is not None and np.allclose(w, weights[rows])
+
+
+def test_replay_includes_the_broker_universe(monkeypatch):
+    from ml import external_replay as er
+
+    monkeypatch.delenv("ML_EXTERNAL_REPLAY_UNIVERSE", raising=False)
+    pairs = er.universe_pairs()
+    assets = {a for a, _ in pairs}
+    assert {"EURUSD", "XAUUSD", "US30"} <= assets and {tf for _, tf in pairs} == {"15m", "1h", "4h"}
+    monkeypatch.setenv("ML_EXTERNAL_REPLAY_UNIVERSE", "0")
+    assert er.universe_pairs() == []

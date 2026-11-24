@@ -4,6 +4,8 @@
 to everything the bot has." The bot's own outcomes stay the anchor; this adds
 labelled setups replayed on years of public candles:
 
+* Instruments: the bot's own traded pairs plus the whole broker universe
+  (``universe_pairs``), replayed round-robin across asset classes (23 Nov 2026).
 * Source: the same public feeds strategy discovery already uses
   (Binance public market data for crypto, Yahoo chart history otherwise) via
   ``ml.strategy_discovery.load_history``. No keys, no broker calls.
@@ -314,6 +316,22 @@ def _asset_class(asset: str) -> str:
     return asset_class(asset)
 
 
+def universe_pairs() -> list[tuple[str, str]]:
+    """The owner's broker instruments (FX, metals, oil, indices, stocks, crypto), even ones the bot
+    has not traded yet, on ``ML_EXTERNAL_REPLAY_UNIVERSE_TIMEFRAMES`` (default 15m,1h,4h)."""
+    if str(os.getenv("ML_EXTERNAL_REPLAY_UNIVERSE", "1")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return []
+    try:
+        from core.broker_universe import broker_assets
+
+        assets = list(broker_assets())
+    except Exception:
+        return []
+    tfs = [t.strip() for t in str(os.getenv("ML_EXTERNAL_REPLAY_UNIVERSE_TIMEFRAMES", "15m,1h,4h")).split(",")
+           if _normalize_tf(t.strip()) in _TF_SECONDS]
+    return [(a, tf) for a in assets for tf in tfs]
+
+
 def build_rows(pairs: Iterable[tuple[str, str]], *, before: pd.Timestamp | None, budget_rows: int,
                client: Any = None, deadline: float | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Replay rows for (asset, timeframe) pairs, most-traded assets first, within ``budget_rows`` and a time budget."""
@@ -327,7 +345,23 @@ def build_rows(pairs: Iterable[tuple[str, str]], *, before: pd.Timestamp | None,
     clean = [(str(a).upper(), _normalize_tf(t)) for a, t in pairs if a and _normalize_tf(t) in _TF_SECONDS]
     asset_freq = Counter(a for a, _ in clean)
     pair_freq = Counter(clean)
-    pairs = sorted(pair_freq, key=lambda p: (-asset_freq[p[0]], p[0], -pair_freq[p]))
+    ordered = sorted(pair_freq, key=lambda p: (-asset_freq[p[0]], p[0], -pair_freq[p]))
+    # 23 Nov 2026: round-robin across asset classes (an asset's timeframes stay together).
+    # Most-traded-first let crypto, ~95 % of the bot's own rows, use the whole row and time
+    # budget, so forex, metals, indices and stocks were almost never replayed.
+    by_class: dict[str, list[str]] = {}
+    for asset, _tf in ordered:
+        names = by_class.setdefault(_asset_class(asset), [])
+        if asset not in names:
+            names.append(asset)
+    assets_rr: list[str] = []
+    queues = [list(v) for _k, v in sorted(by_class.items())]
+    while any(queues):
+        for q in queues:
+            if q:
+                assets_rr.append(q.pop(0))
+    rank = {a: i for i, a in enumerate(assets_rr)}
+    pairs = sorted(ordered, key=lambda p: (rank[p[0]], -pair_freq[p]))
     report: dict[str, Any] = {"pairs": len(pairs), "assets": {}, "skipped": []}
     if not pairs or budget_rows <= 0:
         return [], report
@@ -395,6 +429,7 @@ def augment(df: pd.DataFrame, *, client: Any = None) -> tuple[pd.DataFrame, dict
     before = pd.Timestamp(boundary).tz_localize("UTC") if pd.Timestamp(boundary).tzinfo is None else pd.Timestamp(boundary)
     deadline = time.monotonic() + _env_float("ML_EXTERNAL_REPLAY_TIMEOUT_SECONDS", 900.0, 10.0, 3600.0)
     pairs = list(internal[["asset", "timeframe"]].dropna().itertuples(index=False, name=None))
+    pairs += universe_pairs()
     rows, report = build_rows(pairs, before=before, budget_rows=budget, client=client, deadline=deadline)
     evidence.update(report)
     if not rows:

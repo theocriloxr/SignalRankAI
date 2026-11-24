@@ -1,5 +1,5 @@
 {
-  "file_count": 2793,
+  "file_count": 2801,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6224,6 +6224,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "a2bddd2c72956b27a2affc6a5bd18d02ee3a9b9bcad36d508a937b25e6ceaa67",
       "size_bytes": 68346
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 17,
+      "path": "docs/TRADE_REVIEW.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "7bca615f7567d15a31c5c4752e9841c608e6d0faa33105e8654f8d8ff603cdf0",
+      "size_bytes": 1382
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -12675,6 +12683,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 59,
+      "path": "frontend/src/components/TradeLearning.tsx",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "32ff6e669491028c3330e4be3f8dcafcb1fd3c4c8b8203f2e82606608ec66239",
+      "size_bytes": 2909
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 124,
       "path": "frontend/src/components/TradingPreferences.tsx",
       "reason": "configuration, data, or product asset retained",
@@ -13091,11 +13107,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 422,
+      "line_count": 457,
       "path": "ml/external_replay.py",
       "reason": "production/build source",
-      "sha256": "cc9865db9aaec58257ff7b36d7dd1bcab2fbef52f084f49eea2c0f566460e16f",
-      "size_bytes": 20717
+      "sha256": "d2df5488e2e5bfc11915c6c91781862ccb5075236d552d217abccbcdb577d2ea",
+      "size_bytes": 22413
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -13248,6 +13264,14 @@
       "reason": "production/build source",
       "sha256": "6fea13f611c1f6647c49f0fb1fcc63fb94936e858d342cadf05a77a50c7ba483",
       "size_bytes": 32223
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 503,
+      "path": "ml/trade_review.py",
+      "reason": "production/build source",
+      "sha256": "272882820e9fdc658b946643012ba4559fe7ed05fca101e76da25e539735cedb",
+      "size_bytes": 23672
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16715,6 +16739,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 63,
+      "path": "signalrank_telegram/learning_commands.py",
+      "reason": "production/build source",
+      "sha256": "9091fbff6d06ef96e40952e15d73da533d62fb9ebb7da47cc9144d6e2571fce3",
+      "size_bytes": 2520
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 59,
       "path": "signalrank_telegram/message_style.py",
       "reason": "production/build source",
@@ -17891,6 +17923,14 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 161,
+      "path": "strategies/news_setups.py",
+      "reason": "production/build source",
+      "sha256": "94c083c809362cdabfb8d876a5e9e25d1590d36402eab6fc8064a58dba6cab12",
+      "size_bytes": 7418
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 54,
       "path": "strategies/stock.py",
       "reason": "production/build source",
@@ -18803,11 +18843,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 158,
+      "line_count": 173,
       "path": "tests/test_edge_model_20261115.py",
       "reason": "automated test evidence",
-      "sha256": "48cc29ca273e8cf866265c7142ecbb45df39145b3d70bd83db246542d23e7839",
-      "size_bytes": 7867
+      "sha256": "fd66e607d16d5dc9ac458f9cfd28a621781362418eaf047afb1c336b8d133f7e",
+      "size_bytes": 8515
     },
     {
       "disposition": "TEST_ONLY",
@@ -19747,6 +19787,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 64,
+      "path": "tests/test_news_setups_20261123.py",
+      "reason": "automated test evidence",
+      "sha256": "8c96b71a735bcd343156bdcbef7eba46598706874d6cc5b94ef30fa1d5f59bfd",
+      "size_bytes": 2766
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 84,
       "path": "tests/test_news_x_sentiment.py",
       "reason": "automated test evidence",
@@ -20128,6 +20176,14 @@
       "reason": "automated test evidence",
       "sha256": "723aa92b6317d7744a709446d951ca4372de9e11f0edf3486f50385b5c3221bf",
       "size_bytes": 9832
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 54,
+      "path": "tests/test_preferred_provider_allowlist_20261123.py",
+      "reason": "automated test evidence",
+      "sha256": "cf025562c0db1b11e139f3b229a57bf995a2cbdc829e038b783bb5d6a6a9d24b",
+      "size_bytes": 2047
     },
     {
       "disposition": "TEST_ONLY",
@@ -21387,6 +21443,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 97,
+      "path": "tests/test_trade_review_20261123.py",
+      "reason": "automated test evidence",
+      "sha256": "7cd73297f11060b095ddee2854c57315ada98952e22c178f7219c89a31abac4a",
+      "size_bytes": 4733
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 78,
       "path": "tests/test_trade_status_and_money_plan_20261108.py",
       "reason": "automated test evidence",
@@ -22358,8 +22422,8 @@
   },
   "summary": {
     "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 880,
-    "PRESERVE_BEHAVIOUR": 1417,
-    "TEST_ONLY": 495
+    "DOCUMENTATION_ONLY": 881,
+    "PRESERVE_BEHAVIOUR": 1421,
+    "TEST_ONLY": 498
   }
 }
