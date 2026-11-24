@@ -75,6 +75,15 @@ def asset_class(asset: str) -> str:
         return "crypto" if str(asset or "").upper().endswith("USDT") else "other"
 
 
+def excluded_sources() -> set[str]:
+    """Sources left out of lessons (24 Nov 2026): ``archive_legacy`` is old signal history with no
+    delivery proof and was ~70 % of a 365-day review, so it drove lessons and the gate."""
+    import os
+
+    raw = os.getenv("TRADE_REVIEW_EXCLUDED_SOURCES", "archive_legacy")
+    return {s.strip() for s in raw.split(",") if s.strip()}
+
+
 def realised_r(row: dict[str, Any]) -> float | None:
     """TP1 outcome in R: +reward on a win, -1 on a loss, None when unresolved."""
     target = row.get("target")
@@ -115,6 +124,8 @@ def factors(row: dict[str, Any]) -> dict[str, str]:
     sign = 1.0 if direction in {"long", "buy"} else -1.0 if direction in {"short", "sell"} else 0.0
     for key in ("strategy_name", "timeframe", "regime"):
         value = str(row.get(key) or "").strip()
+        if key != "strategy_name":
+            value = value.lower()  # 24 Nov 2026: "TRENDING" and "trending" were split into two factors
         if value and value.lower() not in {"unknown", "rejected", "nan", "none"}:
             out["strategy" if key == "strategy_name" else key] = value
     if sign:
@@ -420,6 +431,7 @@ async def refresh(lookback_days: int = 365) -> dict[str, Any]:
 
     df = await load_training_data(lookback_days)
     rows = [] if df is None or len(df) == 0 else df.to_dict("records")
+    rows = [r for r in rows if str(r.get("source_type") or "") not in excluded_sources()]
     snapshot = json.loads(json.dumps(build_snapshot(rows), default=str))
     from db.models import RuntimeState
     from db.session import get_session

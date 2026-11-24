@@ -95,3 +95,11 @@ def test_engine_and_bot_are_wired():
     bot = Path("signalrank_telegram/bot.py").read_text()
     assert 'CommandHandler("lessons"' in bot and 'CommandHandler("why"' in bot and "OUTCOME_WHY_LINE_ENABLED" in bot
     assert "trade_review_loop" in Path("runtime/analytics.py").read_text()
+
+
+def test_regime_case_is_one_factor_and_legacy_is_excluded(monkeypatch):
+    a = tr.factors({**_row(0, win=True, trend=1.0), "regime": "TRENDING"})
+    b = tr.factors({**_row(1, win=True, trend=1.0), "regime": "trending"})
+    assert a["regime"] == b["regime"] == "trending"
+    monkeypatch.delenv("TRADE_REVIEW_EXCLUDED_SOURCES", raising=False)
+    assert tr.excluded_sources() == {"archive_legacy"}
