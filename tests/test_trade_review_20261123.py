@@ -103,3 +103,12 @@ def test_regime_case_is_one_factor_and_legacy_is_excluded(monkeypatch):
     assert a["regime"] == b["regime"] == "trending"
     monkeypatch.delenv("TRADE_REVIEW_EXCLUDED_SOURCES", raising=False)
     assert tr.excluded_sources() == {"archive_legacy"}
+
+
+def test_gate_ignores_contexts_learned_only_from_rejected_setups():
+    """24 Nov 2026: lessons from already-rejected setups must not block setups that passed the gates."""
+    rows = [{**r, "source_type": "shadow_rejected"} for r in _history()]
+    snap = tr.build_snapshot(rows, now=datetime(2026, 11, 23, tzinfo=timezone.utc))
+    assert any(t["factor"] == "trend_4h" for t in snap["lessons"])  # still described as a lesson
+    assert snap["harmful"] == []  # but never gated
+    assert "reward" not in tr.GATE_FACTORS

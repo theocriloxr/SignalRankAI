@@ -36,7 +36,13 @@ LESSON_Q = 0.10
 GATE_Q = 0.05
 
 # Factors a gate may act on: context (when/where), never a whole asset, class or strategy.
-GATE_FACTORS = {"session", "trend_4h", "trend_1d", "trend_strength", "volume", "volatility", "news", "reward"}
+GATE_FACTORS = {"session", "trend_4h", "trend_1d", "trend_strength", "volume", "volatility", "news"}
+# 24 Nov 2026: the gate learns only from trades that passed the system's own gates (delivered and paper
+# trades), the population it acts on. Learning it from all tracked setups, mostly setups the engine had
+# already rejected (overall -0.14R), flagged ordinary contexts (crypto in three of four sessions, the
+# standard 1.5-2.5R target) and rejected 3,605 setups that had passed the ML filter in a day.
+GATE_SOURCES = {"live_delivery", "paper_execution", "archive_proof"}
+GATE_MIN_EDGE_R = 0.25
 
 _ADVICE = {
     ("trend_4h", "against"): "take it only in the direction of the 4h trend",
@@ -271,7 +277,8 @@ def build_snapshot(rows: list[dict[str, Any]], *, now: datetime | None = None) -
     resolved = [r for r in rows if realised_r(r) is not None]
     table = factor_table(resolved)
     lessons = [t for t in table if t["q"] <= LESSON_Q]
-    harmful = [t for t in table if is_harmful(t)]
+    gate_rows = [r for r in resolved if str(r.get("source_type") or "") in GATE_SOURCES]
+    harmful = [t for t in factor_table(gate_rows) if is_harmful(t)]
     rs = [realised_r(r) for r in resolved]
     trends = _trend(resolved, now=now)
     return {
@@ -326,7 +333,7 @@ def _class_summary(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 def is_harmful(entry: dict[str, Any]) -> bool:
     return (entry.get("asset_class") != "all" and entry.get("factor") in GATE_FACTORS
             and float(entry.get("q", 1)) <= GATE_Q and int(entry.get("trades", 0)) >= GATE_MIN_TRADES
-            and float(entry.get("mean_r_upper95", 0)) < 0 and float(entry.get("edge_r", 0)) < 0)
+            and float(entry.get("mean_r_upper95", 0)) < 0 and float(entry.get("edge_r", 0)) <= -GATE_MIN_EDGE_R)
 
 
 def harmful_lesson(snapshot: dict[str, Any] | None, setup: dict[str, Any]) -> dict[str, Any] | None:
