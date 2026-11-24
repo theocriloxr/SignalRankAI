@@ -13059,11 +13059,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 701,
+      "line_count": 728,
       "path": "ml/candidate_forward.py",
       "reason": "production/build source",
-      "sha256": "444d9d2122e9322742c7fe7e5ebac3a442fa99dfa865378d626b093440f5df89",
-      "size_bytes": 29043
+      "sha256": "46f7df252d909a0b1f72f86243a4ea83633005c3d3fcf86958d4a8a0cc87273d",
+      "size_bytes": 30849
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -19539,11 +19539,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 883,
+      "line_count": 910,
       "path": "tests/test_ml_candidate_forward_proof.py",
       "reason": "automated test evidence",
-      "sha256": "c16ab5a037395c15a67e942904dd71d9ecb0a7a1067f8f1b9703b09b6d1133d9",
-      "size_bytes": 33397
+      "sha256": "f9fb95537c364b0eff696f317db4900221171660e59ab58928de3a359726dcea",
+      "size_bytes": 34780
     },
     {
       "disposition": "TEST_ONLY",

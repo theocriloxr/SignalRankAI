@@ -118,7 +118,13 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
     gross_loss = abs(sum(value for value in usable if value < 0.0))
     expectancy = (sum(usable) / len(usable)) if usable else 0.0
     profit_factor = gross_profit / gross_loss if gross_loss > 0.0 else None
+    if len(usable) > 1:
+        variance = sum((value - expectancy) ** 2 for value in usable) / (len(usable) - 1)
+        lower95 = expectancy - 1.96 * (variance / len(usable)) ** 0.5
+    else:
+        lower95 = None
     return {
+        "expected_r_lower95": lower95,
         "resolved": resolved,
         "wins": wins,
         "losses": losses,
@@ -127,6 +133,15 @@ def _decision_stats(rows: list[tuple[Any, dict[str, Any], str]], key: str) -> di
         "profit_factor": profit_factor,
         "invalid_geometry": len(selected) - len(valid),
     }
+
+
+def high_pass_rate_proven(stats: dict[str, Any], *, min_resolved: int, min_lower_r: float,
+                          min_profit_factor: float) -> bool:
+    """Proof that a candidate passing most setups still makes money on the ones it passes."""
+    lower = stats.get("expected_r_lower95")
+    pf = stats.get("profit_factor")
+    return (int(stats.get("resolved") or 0) >= min_resolved and lower is not None and float(lower) > min_lower_r
+            and pf is not None and float(pf) >= min_profit_factor)
 
 
 async def load_active_candidate() -> dict[str, Any] | None:
@@ -366,7 +381,16 @@ async def evaluate_candidate_forward_evidence(
         reasons.append("candidate_geometry_invalid")
     if candidate_pass_rate < min_pass_rate:
         reasons.append("candidate_pass_rate_too_low")
-    if candidate_pass_rate > max_pass_rate:
+    # 24 Nov 2026 (owner decision): passing more than ML_CANDIDATE_FORWARD_MAX_PASS_RATE of setups
+    # is allowed only with proof that the passed setups make money: at least
+    # ML_CANDIDATE_FORWARD_HIGH_PASS_MIN_RESOLVED resolved forward trades, the lower 95 % bound of
+    # their R per trade above ML_CANDIDATE_FORWARD_HIGH_PASS_MIN_LOWER_R and profit factor at least
+    # min_profit_factor. Every other check below still applies.
+    high_pass_min_resolved = max(50, _env_int("ML_CANDIDATE_FORWARD_HIGH_PASS_MIN_RESOLVED", 500))
+    high_pass_min_lower_r = _env_float("ML_CANDIDATE_FORWARD_HIGH_PASS_MIN_LOWER_R", 0.05)
+    high_pass_proven = high_pass_rate_proven(candidate_stats, min_resolved=high_pass_min_resolved,
+                                             min_lower_r=high_pass_min_lower_r, min_profit_factor=min_profit_factor)
+    if candidate_pass_rate > max_pass_rate and not high_pass_proven:
         reasons.append("candidate_pass_rate_too_high")
     if candidate_stats["resolved"] >= min_passed_resolved:
         if float(candidate_stats["expected_r"]) < min_expected_r:
@@ -434,6 +458,9 @@ async def evaluate_candidate_forward_evidence(
             "min_asset_classes": min_asset_classes,
             "min_pass_rate": min_pass_rate,
             "max_pass_rate": max_pass_rate,
+            "high_pass_min_resolved": high_pass_min_resolved,
+            "high_pass_min_lower_r": high_pass_min_lower_r,
+            "high_pass_proven": high_pass_proven,
             "min_expected_r": min_expected_r,
             "min_profit_factor": min_profit_factor,
             "champion_compare_min": champion_min_compare,

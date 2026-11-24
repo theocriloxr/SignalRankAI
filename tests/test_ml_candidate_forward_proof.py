@@ -881,3 +881,30 @@ def test_candidate_forward_outcomes_do_not_pollute_rejection_false_negative_metr
     assert '"CANDIDATE_FORWARD"' in worker
     assert 'candidate_forward:counts:{bucket}' in worker
     assert 'if is_candidate_forward:' in worker
+
+
+def test_high_pass_rate_needs_proof_not_a_hard_cap():
+    """24 Nov 2026 (owner decision): >50 % pass rate allowed only with 500+ resolved trades whose
+    95 % lower bound is above +0.05R and profit factor >= 1.10."""
+    import ml.candidate_forward as forward
+
+    strong = {"resolved": 4544, "expected_r_lower95": 0.50, "profit_factor": 1.91}
+    assert forward.high_pass_rate_proven(strong, min_resolved=500, min_lower_r=0.05, min_profit_factor=1.10)
+    for weak in ({**strong, "resolved": 499}, {**strong, "expected_r_lower95": 0.04},
+                 {**strong, "profit_factor": 1.05}, {**strong, "expected_r_lower95": None},
+                 {**strong, "profit_factor": None}):
+        assert not forward.high_pass_rate_proven(weak, min_resolved=500, min_lower_r=0.05, min_profit_factor=1.10)
+
+
+def test_decision_stats_report_a_lower_bound():
+    import ml.candidate_forward as forward
+    from types import SimpleNamespace
+
+    rows = []
+    for i in range(40):
+        win = i % 2 == 0
+        row = SimpleNamespace(entry=100.0, stop_loss=99.0, direction="long", take_profit=102.0, id=i)
+        rows.append((row, {"candidate_passed": True}, "win" if win else "loss"))
+    stats = forward._decision_stats(rows, "candidate_passed")
+    assert stats["resolved"] == 40 and stats["expected_r_lower95"] is not None
+    assert stats["expected_r_lower95"] < stats["expected_r"]
