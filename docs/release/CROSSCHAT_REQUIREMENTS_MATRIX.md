@@ -4,7 +4,7 @@ NO-GO. Source ingestion is not implementation or verification.
 
 Private source wording is deliberately omitted. Use each source anchor/hash with the local bundle; repository details remain in requirements.json.
 
-Rows: 27025. Reviewed dispositions: 13. Unresolved applicability/acceptance: 27012.
+Rows: 27026. Reviewed dispositions: 13. Unresolved applicability/acceptance: 27013.
 
 | Requirement | Source anchor | Status |
 | --- | --- | --- |
@@ -19948,6 +19948,7 @@ Rows: 27025. Reviewed dispositions: 13. Unresolved applicability/acceptance: 270
 | SR-SOURCE-16e492d15b38c7cc | docs/NEWS_HANDLING.md:17  | INCOMPLETE |
 | SR-SOURCE-1f08a03cd9387d42 | docs/NEWS_HANDLING.md:36  | INCOMPLETE |
 | SR-SOURCE-fcc33c03df7143ee | docs/NEWS_HANDLING.md:43  | INCOMPLETE |
+| SR-SOURCE-23be4a095abc128a | docs/NEWS_HANDLING.md:53  | INCOMPLETE |
 | SR-SOURCE-9318bbd67783f493 | docs/NEW_ENV_VARIABLES_V151.md:1  | INCOMPLETE |
 | SR-SOURCE-d6f8a244d55479fd | docs/NEW_ENV_VARIABLES_V151.md:7  | INCOMPLETE |
 | SR-SOURCE-5af0c14c039b3ead | docs/NEW_ENV_VARIABLES_V151.md:20  | INCOMPLETE |

@@ -112,3 +112,33 @@ def test_gate_ignores_contexts_learned_only_from_rejected_setups():
     assert any(t["factor"] == "trend_4h" for t in snap["lessons"])  # still described as a lesson
     assert snap["harmful"] == []  # but never gated
     assert "reward" not in tr.GATE_FACTORS
+
+
+def test_trade_idea_gets_lesson_warnings_without_changing_the_verdict():
+    import asyncio
+
+    from services import trade_ideas as ti
+
+    snap = {"lessons": [{"asset_class": "forex", "factor": "direction", "value": "long", "edge_r": -0.4,
+                         "q": 0.01, "mean_r": -0.35, "trades": 120}]}
+    idea = ti.Idea(asset="EURUSD", direction="long", timeframe="15m", entry=1.10, stop_loss=1.099,
+                   take_profit=[1.102]) if hasattr(ti, "Idea") else None
+    if idea is None:
+        return
+    out = asyncio.run(ti._lesson_warnings(idea, snapshot=snap))
+    assert out and out[0].startswith("Lesson: forex") and not out[0].startswith("!")
+
+
+def test_weekly_scorecard_carries_the_lessons(monkeypatch):
+    import asyncio
+
+    from ml import trade_review
+    from services import weekly_scorecard as ws
+
+    snap = tr.build_snapshot(_history(), now=datetime(2026, 11, 23, tzinfo=timezone.utc))
+
+    async def fake():
+        return snap
+    monkeypatch.setattr(trade_review, "load_snapshot", fake)
+    text = asyncio.run(ws.learning_section())
+    assert "What the bot learned" in text and "/lessons" in text

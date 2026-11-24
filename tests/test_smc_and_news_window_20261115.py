@@ -133,3 +133,18 @@ def test_trade_check_outcome_reaches_email_even_with_alerts_off(monkeypatch):
             await dispose_engine_for_event_loop()
 
     asyncio.run(scenario())
+
+
+def test_news_window_follows_each_instruments_own_currencies(monkeypatch):
+    from services import economic_calendar as ec
+
+    monkeypatch.delenv("NEWS_WINDOW_ALL_CURRENCIES", raising=False)
+    assert ec.event_currencies("EURGBP") == {"EUR", "GBP"}
+    assert ec.event_currencies("AUDCAD") == {"AUD", "CAD"}
+    assert ec.event_currencies("EURUSD") == {"EUR", "USD"}
+    assert ec.event_currencies("GER40") == {"EUR"} and ec.event_currencies("JP225") == {"JPY"}
+    assert "USD" in ec.event_currencies("US2000") and "USD" in ec.event_currencies("XAUUSD")
+    monkeypatch.setenv("NEWS_WINDOW_ALL_CURRENCIES", "0")
+    assert ec.event_currencies("EURGBP") == set() and ec.event_currencies("EURUSD") == {"USD"}
+    assert ec._surprise({"actual": "0.4%", "forecast": "0.2%"}) == "above"
+    assert ec._surprise({"actual": None, "forecast": "0.2%"}) is None

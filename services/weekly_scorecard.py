@@ -65,7 +65,7 @@ async def publish_once(*, now: datetime | None = None, telegram_post=None) -> di
             await session.rollback()
             return {"status": "already_published", "week": key}
         record = await build_track_record(session)
-        body = weekly_scorecard_text(record)
+        body = weekly_scorecard_text(record) + await learning_section()
         users = (await session.execute(text(
             "SELECT id, telegram_user_id FROM users "
             "WHERE COALESCE(account_status, 'active') = 'active'"))).all()
@@ -95,6 +95,32 @@ async def publish_once(*, now: datetime | None = None, telegram_post=None) -> di
         await asyncio.sleep(0.05)  # stay well under Telegram's broadcast limits
     logger.info("[weekly_scorecard] week=%s users=%s telegram_sent=%s", key, len(users), sent)
     return {"status": "published", "week": key, "users": len(users), "telegram_sent": sent}
+
+
+async def learning_section() -> str:
+    """What the bot learned this week (ml/trade_review.py), appended to the scorecard (24 Nov 2026)."""
+    if not _on("WEEKLY_SCORECARD_LESSONS"):
+        return ""
+    try:
+        from ml.trade_review import load_snapshot
+
+        snap = await load_snapshot() or {}
+    except Exception:
+        return ""
+    lessons = [t for t in snap.get("lessons") or [] if t.get("asset_class") != "all"][:3]
+    moving = [t for t in snap.get("trends") or [] if t.get("direction") in {"improving", "worsening"}][:2]
+    avoided = list(snap.get("harmful") or [])[:3]
+    if not (lessons or moving or avoided):
+        return ""
+    lines = ["", f"🧠 What the bot learned (from {snap.get('resolved_trades', 0)} resolved trades):"]
+    lines += [f"• {t['text']}" for t in lessons]
+    lines += [f"• {t['asset_class']} {t['strategy']} {t['timeframe']} is {t['direction']} "
+              f"({t['before_mean_r']:+.2f}R → {t['recent_mean_r']:+.2f}R)" for t in moving]
+    if avoided:
+        lines.append("Now avoided automatically: " + "; ".join(
+            f"{t['asset_class']} {t['factor']} {str(t['value']).replace('_', ' ')}" for t in avoided) + ".")
+    lines.append("Send /lessons for the full list, /why <signal> for any trade.")
+    return "\n".join(lines)
 
 
 async def _telegram_post(chat: int | str, message: str) -> bool:

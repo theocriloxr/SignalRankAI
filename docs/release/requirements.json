@@ -483,8 +483,8 @@
   "source_policy": "Historical statements and examples are context, not new permission or independently validated obligations. Specific current requirements supersede conflicting old architecture claims; no source text is discarded.",
   "summary": {
     "documents": 398,
-    "requirements_and_source_sections": 10065,
-    "source_clauses": 60513,
+    "requirements_and_source_sections": 10066,
+    "source_clauses": 60521,
     "interfaces": {
       "ENDPOINT": 196,
       "API": 184,
@@ -2438,11 +2438,11 @@
     },
     {
       "path": "docs/NEWS_HANDLING.md",
-      "sha256_lf": "82b48ff33dc255249a965cd49f1f5e797f8b1c874cf64fde8664b2c177384dcb",
+      "sha256_lf": "ad9175a67350a1c3d7a423ead797783e494cfc73444637669cbc3dcd91441a7a",
       "encoding": "utf-8-sig",
-      "line_count": 51,
+      "line_count": 61,
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
-      "section_count": 5
+      "section_count": 6
     },
     {
       "path": "docs/NEW_ENV_VARIABLES_V151.md",
@@ -167079,10 +167079,10 @@
       "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
       "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
       "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
-      "source_sha256": "c75b89e124db2adab72d3db38a11d7fb612ad2f6b3dcb48acc1ef0aa299c645a",
+      "source_sha256": "3bdb46b9436fa998ab55267a4aa49943e0edf9b307bbbf14961a82911b84986a",
       "line_start": 43,
-      "line_end": 51,
-      "text": "## Post-release range breakout (23 Nov 2026)\n\n`strategies/news_setups.py` trades *after* a high-impact USD release, on the chart rather than on the\nnumber: the first 15 minutes after the release form the release range; if that range is 1–4 ATR wide\n(the market reacted, but not chaotically), the first 5m/15m close beyond it in the direction of the\nrelease move is the entry, the stop is the range midpoint and targets are 1.5R / 2.5R / 4R. It is\nrecorded in shadow like every structure setup and goes through the same gates: inside the 60-minute\nnews window it is rejected with `news_window` and tracked, so its record builds honestly before it can\nreach anyone. `NEWS_SETUPS_MODE=off|shadow|auto|live` (default `auto`).",
+      "line_end": 52,
+      "text": "## Post-release range breakout (23 Nov 2026)\n\n`strategies/news_setups.py` trades *after* a high-impact USD release, on the chart rather than on the\nnumber: the first 15 minutes after the release form the release range; if that range is 1–4 ATR wide\n(the market reacted, but not chaotically), the first 5m/15m close beyond it in the direction of the\nrelease move is the entry, the stop is the range midpoint and targets are 1.5R / 2.5R / 4R. It is\nrecorded in shadow like every structure setup and goes through the same gates: inside the 60-minute\nnews window it is rejected with `news_window` and tracked, so its record builds honestly before it can\nreach anyone. `NEWS_SETUPS_MODE=off|shadow|auto|live` (default `auto`).\n",
       "clauses": [
         {
           "line": 43,
@@ -167115,6 +167115,58 @@
         {
           "line": 51,
           "text": "reach anyone. `NEWS_SETUPS_MODE=off|shadow|auto|live` (default `auto`)."
+        }
+      ]
+    },
+    {
+      "id": "SR-SOURCE-23be4a095abc128a",
+      "kind": "SOURCE",
+      "source": "docs/NEWS_HANDLING.md:53",
+      "requirement": "Every instrument's own currencies (24 Nov 2026)",
+      "current_implementation": "Original source retained in full. Clause-level implementation and acceptance are not established by this index.",
+      "responsible_component": "Architecture / source-specific implementation review",
+      "verification_method": "Review every retained clause against active call paths, then attach behavioral evidence to its ID.",
+      "status": "FAILED",
+      "test_evidence": [],
+      "associated_commit": "c411ebbb67d35fdad91d1281b667a7ee8272dd38",
+      "classification": "HISTORICAL_CONTEXT_REQUIRES_RECONCILIATION",
+      "failure_reason": "CLAUSE_ACCEPTANCE_NOT_ESTABLISHED",
+      "source_sha256": "286c96eb2ef6f5dbbcce374342eceba23674bea76cb66a3364e170dbbbc7673f",
+      "line_start": 53,
+      "line_end": 61,
+      "text": "## Every instrument's own currencies (24 Nov 2026)\n\nOnly USD releases used to open a news window. Now each instrument follows the currencies that move\nit (`services/economic_calendar.event_currencies`): FX pairs both legs (EURGBP → EUR and GBP),\nindices their home currency (GER40/EU50/FRA40 → EUR, UK100 → GBP, JP225 → JPY, AUS200 → AUD,\nHK50 → CNY, US indices → USD), metals and USD-quoted crypto USD. The skip-and-track window and the\npost-release breakout both use this. When the feed carries both actual and forecast, the window\nalso records the surprise (`above`/`below`/`inline`). `NEWS_WINDOW_ALL_CURRENCIES=0` restores the\nUSD-only rule.",
+      "clauses": [
+        {
+          "line": 53,
+          "text": "## Every instrument's own currencies (24 Nov 2026)"
+        },
+        {
+          "line": 55,
+          "text": "Only USD releases used to open a news window. Now each instrument follows the currencies that move"
+        },
+        {
+          "line": 56,
+          "text": "it (`services/economic_calendar.event_currencies`): FX pairs both legs (EURGBP → EUR and GBP),"
+        },
+        {
+          "line": 57,
+          "text": "indices their home currency (GER40/EU50/FRA40 → EUR, UK100 → GBP, JP225 → JPY, AUS200 → AUD,"
+        },
+        {
+          "line": 58,
+          "text": "HK50 → CNY, US indices → USD), metals and USD-quoted crypto USD. The skip-and-track window and the"
+        },
+        {
+          "line": 59,
+          "text": "post-release breakout both use this. When the feed carries both actual and forecast, the window"
+        },
+        {
+          "line": 60,
+          "text": "also records the surprise (`above`/`below`/`inline`). `NEWS_WINDOW_ALL_CURRENCIES=0` restores the"
+        },
+        {
+          "line": 61,
+          "text": "USD-only rule."
         }
       ]
     },

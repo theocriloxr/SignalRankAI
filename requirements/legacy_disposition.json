@@ -5675,11 +5675,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 51,
+      "line_count": 61,
       "path": "docs/NEWS_HANDLING.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "82b48ff33dc255249a965cd49f1f5e797f8b1c874cf64fde8664b2c177384dcb",
-      "size_bytes": 3099
+      "sha256": "ad9175a67350a1c3d7a423ead797783e494cfc73444637669cbc3dcd91441a7a",
+      "size_bytes": 3761
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7467,11 +7467,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 27035,
+      "line_count": 27036,
       "path": "docs/release/CROSSCHAT_REQUIREMENTS_MATRIX.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "d76735c4e668c8a71678a113ab92117949d4215aabac52223c60bd11026e25c3",
-      "size_bytes": 3013588
+      "sha256": "46653c820c7ffd1c6e0f12dbbf433bc6a2f769ca7076a279ea38a85da53bc3ec",
+      "size_bytes": 3013660
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -7515,11 +7515,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 10898,
+      "line_count": 10899,
       "path": "docs/release/REQUIREMENTS_TRACEABILITY.md",
       "reason": "documentation/specification/evidence",
-      "sha256": "351ce032cbbdc0d5b5abf2a31ecb7ea80409ecd152dba9cd13ac28c5e1ce4b90",
-      "size_bytes": 4948656
+      "sha256": "258835201bb5fc314c0e41c4f97d18857e934cd806c043bd8d70375d445feae8",
+      "size_bytes": 4949101
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10427,11 +10427,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 530790,
+      "line_count": 530842,
       "path": "docs/release/requirements.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "33888047aa0c6e8263841d5bc0d5d79456fe61e46196bf5e81a638f5df8fd4e7",
-      "size_bytes": 24711448
+      "sha256": "29362bf5632f13dcdf75f72c9a76217d078e9bb71675488e3df6927ef9a75536",
+      "size_bytes": 24714278
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -10446,15 +10446,15 @@
       "line_count": null,
       "path": "docs/release/requirements_universe.jsonl",
       "reason": "documentation/specification/evidence",
-      "sha256": "74a8926e8119f6f4f5ab16508b603543cb318ebcfef8392db65c7dbf0b7af975",
-      "size_bytes": 18535957
+      "sha256": "6b8c25dd91778f0edb865973b6efa08267b8890d0cf3ee8797281b92058d663e",
+      "size_bytes": 18536662
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
       "line_count": 67,
       "path": "docs/release/source_coverage.json",
       "reason": "documentation/specification/evidence",
-      "sha256": "ce8f7067fe148da20a9d1e676ad672896404b85d24e1d01e2fbfdce2b883d036",
+      "sha256": "91d5054ad10e87a9c9177ec1c7a4a2ccbc2fb2ab14cd06ab0ba97a8547993040",
       "size_bytes": 2986
     },
     {
@@ -14323,11 +14323,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16984,
+      "line_count": 16994,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "19f625f4643c6624653c92d78236dae203911144f2fc7832287fda1a3fce3c06",
-      "size_bytes": 495563
+      "sha256": "2f74cdfe6c2cf46aeaf50177b590db412a54b9b7d3f6adcb08fb04fb6fbc2ba7",
+      "size_bytes": 495829
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -16059,11 +16059,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 601,
+      "line_count": 644,
       "path": "services/economic_calendar.py",
       "reason": "production/build source",
-      "sha256": "65be00d9d4f9635059169836aaac3fd1203936ca8114c66345664e6085cf909e",
-      "size_bytes": 24406
+      "sha256": "c07679ba8da7827238180e31b4c4accb929a4592b20b9fc029104d13e1d818f5",
+      "size_bytes": 26608
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16443,11 +16443,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 834,
+      "line_count": 861,
       "path": "services/trade_ideas.py",
       "reason": "production/build source",
-      "sha256": "d5f68884c40e7ecc022d27465dc45f073677a7ef0be7a03ea46b5089741574aa",
-      "size_bytes": 43176
+      "sha256": "7eeabde9a178ec895d894927829313336ead6d52d5212b75bc60f3766552f9f0",
+      "size_bytes": 44705
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16539,11 +16539,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 121,
+      "line_count": 147,
       "path": "services/weekly_scorecard.py",
       "reason": "production/build source",
-      "sha256": "81aa1a367e901d2a506aa7ae13c944544469bbb479e8a85052fa566735d19c43",
-      "size_bytes": 5140
+      "sha256": "fffd36837d584d5bd2798f2b5137a765fb24890e6c9c7a50080d352a6d8443cc",
+      "size_bytes": 6465
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -21083,11 +21083,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 135,
+      "line_count": 150,
       "path": "tests/test_smc_and_news_window_20261115.py",
       "reason": "automated test evidence",
-      "sha256": "e321043f29cae40a4bc3f6b4e378488851aedc79d9fa90e9982a8083eafed46b",
-      "size_bytes": 6550
+      "sha256": "1261d1cf9908c215930c310ab6148e992c1753af723ee729ee72d8e4154abfcb",
+      "size_bytes": 7408
     },
     {
       "disposition": "TEST_ONLY",
@@ -21443,11 +21443,11 @@
     },
     {
       "disposition": "TEST_ONLY",
-      "line_count": 114,
+      "line_count": 144,
       "path": "tests/test_trade_review_20261123.py",
       "reason": "automated test evidence",
-      "sha256": "7780b7412e06409a3c256bb0f2a6110dcca131d335e59ff7c4b4756e0dca6cdb",
-      "size_bytes": 5660
+      "sha256": "bfee1b94179e0fff7520b44482bfb19549d11af98a42b08673739f0647d702d2",
+      "size_bytes": 6799
     },
     {
       "disposition": "TEST_ONLY",

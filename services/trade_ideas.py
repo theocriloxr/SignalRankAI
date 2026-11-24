@@ -373,6 +373,32 @@ def _verdict(prob_lower: Optional[float], breakeven: float, warnings: list[str])
     return "unfavourable"
 
 
+async def _lesson_warnings(idea: Idea, *, snapshot: Optional[dict[str, Any]] = None) -> list[str]:
+    """Lessons from every resolved trade that this idea runs into (ml/trade_review.py, 24 Nov 2026)."""
+    try:
+        from ml.trade_review import LESSON_Q, _LABELS, _ADVICE, asset_class, factors, load_snapshot
+
+        snap = snapshot if snapshot is not None else (await load_snapshot() or {})
+        present = factors({"asset": idea.asset, "direction": idea.direction, "timeframe": idea.timeframe,
+                           "entry": idea.entry, "stop_loss": idea.stop_loss, "take_profit": idea.take_profit[0],
+                           "created_at": datetime.now(timezone.utc)})
+        cls = asset_class(idea.asset)
+        out = []
+        for t in snap.get("lessons") or []:
+            if t.get("asset_class") != cls or float(t.get("edge_r", 0)) >= 0 or float(t.get("q", 1)) > LESSON_Q:
+                continue
+            if present.get(t.get("factor")) != t.get("value"):
+                continue
+            label = _LABELS.get(t["factor"], t["factor"])
+            text = (f"Lesson: {cls} trades with {label} {str(t['value']).replace('_', ' ')} averaged "
+                    f"{float(t['mean_r']):+.2f}R over {t['trades']} trades")
+            advice = _ADVICE.get((t["factor"], t["value"]))
+            out.append(text + (f"; {advice}." if advice else "."))
+        return out[:3]
+    except Exception:
+        return []
+
+
 async def analyse(idea: Idea, *, candles: Optional[list[Any]] = None, session: Any = None) -> dict[str, Any]:
     """Everything the user is shown. ``candles`` may be injected (tests)."""
     from engine.order_plan import build_order_plan
@@ -447,6 +473,7 @@ async def analyse(idea: Idea, *, candles: Optional[list[Any]] = None, session: A
         n = tp1["samples"]
         prior_n = 20.0  # shrink toward 50 % when the sample is small
         probability = (tp1["wins"] + 0.5 * prior_n) / (n + prior_n)
+    warnings.extend(await _lesson_warnings(idea))  # advisory: never changes the verdict
     verdict = _verdict(tp1["lower_95"], breakeven, warnings)
 
     evidence: dict[str, Any] = {}

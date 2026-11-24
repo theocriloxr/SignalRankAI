@@ -49,3 +49,13 @@ release move is the entry, the stop is the range midpoint and targets are 1.5R /
 recorded in shadow like every structure setup and goes through the same gates: inside the 60-minute
 news window it is rejected with `news_window` and tracked, so its record builds honestly before it can
 reach anyone. `NEWS_SETUPS_MODE=off|shadow|auto|live` (default `auto`).
+
+## Every instrument's own currencies (24 Nov 2026)
+
+Only USD releases used to open a news window. Now each instrument follows the currencies that move
+it (`services/economic_calendar.event_currencies`): FX pairs both legs (EURGBP → EUR and GBP),
+indices their home currency (GER40/EU50/FRA40 → EUR, UK100 → GBP, JP225 → JPY, AUS200 → AUD,
+HK50 → CNY, US indices → USD), metals and USD-quoted crypto USD. The skip-and-track window and the
+post-release breakout both use this. When the feed carries both actual and forecast, the window
+also records the surprise (`above`/`below`/`inline`). `NEWS_WINDOW_ALL_CURRENCIES=0` restores the
+USD-only rule.

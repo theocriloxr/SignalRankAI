@@ -391,20 +391,61 @@ def calendar_status() -> dict[str, object]:
     }
 
 
+_FIAT = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "NZD", "CAD", "CNY", "CNH", "SEK", "NOK", "HUF", "PLN", "CZK",
+         "DKK", "MXN", "ZAR", "SGD", "HKD", "TRY"}
+_INDEX_CURRENCY = {"GER40": "EUR", "GER30": "EUR", "EU50": "EUR", "FRA40": "EUR", "NTH25": "EUR", "UK100": "GBP",
+                   "JP225": "JPY", "AUS200": "AUD", "HK50": "CNY", "SWI20": "CHF"}
+
+
+def event_currencies(symbol: str) -> set[str]:
+    """Currencies whose high-impact releases move ``symbol`` (24 Nov 2026).
+
+    Until now only USD events counted, so EURGBP, AUDCAD, GER40 or JP225 traded straight through
+    their own central-bank decisions and data. FX pairs follow both legs, indices their home
+    currency (US indices USD), metals and USD-quoted crypto USD. ``NEWS_WINDOW_ALL_CURRENCIES=0``
+    restores the USD-only rule.
+    """
+    sym = _normalize_symbol(symbol)
+    if str(os.getenv("NEWS_WINDOW_ALL_CURRENCIES", "1")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return {"USD"} if sym in _USD_SENSITIVE_SYMBOLS else set()
+    out: set[str] = {"USD"} if sym in _USD_SENSITIVE_SYMBOLS else set()
+    if len(sym) == 6 and sym[:3] in _FIAT | {"XAU", "XAG", "XPT"} and sym[3:] in _FIAT:
+        out |= {c for c in (sym[:3], sym[3:]) if c in _FIAT}
+    if sym in _INDEX_CURRENCY:
+        out.add(_INDEX_CURRENCY[sym])
+    if sym.startswith("US") and sym[2:].isdigit():
+        out.add("USD")
+    return out
+
+
+def _surprise(event: dict) -> Optional[str]:
+    """``above``/``below``/``inline`` when the feed carries both actual and forecast."""
+    def num(v):
+        try:
+            return float(re.sub(r"[^0-9.\-]", "", str(v))) if v not in (None, "") else None
+        except ValueError:
+            return None
+    actual, forecast = num(event.get("actual")), num(event.get("forecast"))
+    if actual is None or forecast is None:
+        return None
+    return "above" if actual > forecast else "below" if actual < forecast else "inline"
+
+
 async def news_window_event(
     symbol: str,
     dt: Optional[datetime] = None,
     buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
 ) -> Optional[dict]:
-    """The high-impact USD event whose buffer ``symbol`` is inside, or None.
+    """The high-impact event (in a currency that moves ``symbol``) whose buffer it is inside, or None.
 
-    Returns ``{"title", "event_time", "minutes_from_event"}`` (negative before the release).
+    Returns ``{"title", "currency", "event_time", "minutes_from_event", ...}`` (negative before the release).
     """
-    if _normalize_symbol(symbol) not in _USD_SENSITIVE_SYMBOLS:
+    currencies = event_currencies(symbol)
+    if not currencies:
         return None
     now = dt or datetime.now(tz=timezone.utc)
     for event in await fetch_economic_events():
-        if event.get("currency") != "USD" or event.get("impact") != "high":
+        if event.get("currency") not in currencies or event.get("impact") != "high":
             continue
         event_time: Optional[datetime] = event.get("event_time")
         if event_time is None:
@@ -414,7 +455,9 @@ async def news_window_event(
         delta = (now - event_time).total_seconds()
         if abs(delta) <= buffer_minutes * 60:
             return {"title": str(event.get("title") or "high-impact news"), "event_time": event_time.isoformat(),
-                    "minutes_from_event": round(delta / 60.0, 1)}
+                    "currency": event.get("currency"), "minutes_from_event": round(delta / 60.0, 1),
+                    "forecast": event.get("forecast"), "previous": event.get("previous"),
+                    "actual": event.get("actual"), "surprise": _surprise(event)}
     return None
 
 
