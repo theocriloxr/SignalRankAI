@@ -122,6 +122,34 @@ async def stale_tick_relabel_preview_once() -> dict:
     return await run_stale_tick_relabel(apply=False)
 
 
+EMAIL_DEFAULT_ON_SQL = (
+    "UPDATE notification_preferences np SET email_enabled = TRUE, "
+    "preferences = np.preferences || jsonb_build_object('email_default_on', '2026-11-25'), updated_at = NOW() "
+    "FROM users u WHERE u.id = np.user_id AND u.email_verified_at IS NOT NULL AND np.email_enabled IS FALSE "
+    "AND NOT (np.preferences ? 'email_choice') AND NOT (np.preferences ? 'email_default_on')"
+)
+
+
+async def enable_email_for_undecided_users() -> int:
+    """25 Nov 2026: email notifications were off for every user, never by choice.
+
+    Rows were created with ``email_enabled = FALSE`` (the column default); no user had ever edited
+    their notification settings, so no signal, outcome or alert email was ever queued. Verified
+    users who never made an explicit email choice are switched on once (marked ``email_default_on``);
+    an explicit choice (``email_choice``, recorded from now on) is never overridden.
+    """
+    from sqlalchemy import text
+
+    from db.session import get_session
+
+    async with get_session(label="email_default_on", timeout_seconds=20.0) as session:
+        result = await session.execute(text(EMAIL_DEFAULT_ON_SQL))
+        await session.commit()
+    count = int(getattr(result, "rowcount", 0) or 0)
+    logger.info("[post_deploy] email notifications switched on for %s undecided verified users", count)
+    return count
+
+
 async def post_deploy_maintenance(stop: asyncio.Event) -> None:
     """Run once per analytics start; never raises into the service.
 
@@ -142,6 +170,11 @@ async def _run_maintenance(stop: asyncio.Event) -> None:
         return
     except asyncio.TimeoutError:
         pass
+    if _enabled("POST_DEPLOY_EMAIL_DEFAULT_ON", True):
+        try:
+            await enable_email_for_undecided_users()
+        except Exception as exc:
+            logger.warning("[post_deploy] email default-on unavailable: %s", type(exc).__name__)
     if _enabled("POST_DEPLOY_LEDGER_REFRESH", True):
         try:
             await refresh_ledgers_for_corrected_outcomes()

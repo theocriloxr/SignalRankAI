@@ -4076,7 +4076,7 @@ async def register_push_device(
         # Registering a device is the user allowing notifications on it. The web app also set
         # push_enabled itself, the Android app did not, so its users received no pushes (15 Nov 2026).
         await session.execute(
-            text("INSERT INTO notification_preferences(user_id, push_enabled) VALUES (:uid, TRUE) "
+            text("INSERT INTO notification_preferences(user_id, push_enabled, email_enabled) VALUES (:uid, TRUE, TRUE) "
                  "ON CONFLICT (user_id) DO UPDATE SET push_enabled=TRUE, updated_at=NOW()"),
             {"uid": int(user["id"])},
         )
@@ -4177,7 +4177,7 @@ async def update_notification_preferences(
 
     async with get_session() as session:
         await session.execute(
-            text("INSERT INTO notification_preferences(user_id) VALUES(:uid) ON CONFLICT(user_id) DO NOTHING"),
+            text("INSERT INTO notification_preferences(user_id, email_enabled) VALUES(:uid, TRUE) ON CONFLICT(user_id) DO NOTHING"),
             {"uid": int(user["id"])},
         )
         await session.execute(
@@ -4191,6 +4191,9 @@ async def update_notification_preferences(
                 "quiet_hours_start=CASE WHEN :has_quiet_hours_start THEN :quiet_hours_start ELSE quiet_hours_start END,"
                 "quiet_hours_end=CASE WHEN :has_quiet_hours_end THEN :quiet_hours_end ELSE quiet_hours_end END,"
                 "timezone=CASE WHEN :has_timezone THEN COALESCE(:timezone,timezone) ELSE timezone END,"
+                # 25 Nov 2026: remember an explicit email choice, so the default-on backfill never overrides it.
+                "preferences=CASE WHEN :has_email_enabled THEN preferences || jsonb_build_object('email_choice', "
+                "CASE WHEN :email_enabled THEN 'on' ELSE 'off' END) ELSE preferences END,"
                 "updated_at=NOW() WHERE user_id=:uid"
             ),
             params,

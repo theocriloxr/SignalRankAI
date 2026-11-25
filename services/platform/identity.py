@@ -360,7 +360,7 @@ async def create_email_account(session: Any, *, email: str, password: str, displ
     )
     await session.execute(
         text(
-            "INSERT INTO notification_preferences(user_id,telegram_enabled,email_enabled) VALUES(:uid,FALSE,FALSE) ON CONFLICT(user_id) DO NOTHING"
+            "INSERT INTO notification_preferences(user_id,telegram_enabled,email_enabled) VALUES(:uid,FALSE,TRUE) ON CONFLICT(user_id) DO NOTHING"
         ),
         {"uid": user_id},
     )
@@ -933,7 +933,7 @@ async def complete_telegram_link_request(
     )
     await session.execute(
         text(
-            "INSERT INTO notification_preferences(user_id,telegram_enabled) VALUES(:uid,TRUE) "
+            "INSERT INTO notification_preferences(user_id,telegram_enabled,email_enabled) VALUES(:uid,TRUE,TRUE) "
             "ON CONFLICT(user_id) DO UPDATE SET telegram_enabled=TRUE,updated_at=NOW()"
         ),
         {"uid": int(target_user_id)},
