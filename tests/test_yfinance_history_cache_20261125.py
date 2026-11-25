@@ -53,7 +53,9 @@ def test_yahoo_quote_uses_the_yfinance_client_with_the_bars_own_time(monkeypatch
     idx = pd.date_range(end=now, periods=5, freq="1min", tz="UTC")
     frame = pd.DataFrame({"Open": 10433.0, "High": 10440.0, "Low": 10430.0, "Close": 10435.5, "Volume": 1.0},
                          index=idx)
-    monkeypatch.setattr(ya, "_history", lambda sym, interval, period: frame)
+    tick = now.timestamp() + 30
+    monkeypatch.setattr(ya, "_history_with_meta", lambda sym, interval, period: (
+        frame, {"regularMarketPrice": 10435.5, "regularMarketTime": pd.Timestamp(tick, unit="s", tz="UTC")}))
     monkeypatch.setenv("YAHOO_QUOTE_VIA_YFINANCE", "1")
 
     def no_http(*a, **k):  # the throttled raw endpoint must not be needed
@@ -63,5 +65,8 @@ def test_yahoo_quote_uses_the_yfinance_client_with_the_bars_own_time(monkeypatch
     monkeypatch.setattr(requests, "get", no_http)
     quote = asyncio.run(glp._fetch_yahoo_quote("UK100"))
     assert isinstance(quote, LivePriceQuote) and abs(float(quote.mid) - 10435.5) < 1e-9
-    assert abs(float(quote.source_timestamp) - now.timestamp()) < 1 if getattr(quote, "source_timestamp", None) else True
+    src = getattr(quote, "source_timestamp", None) or getattr(quote, "source_time", None)
+    if src is not None:
+        stamp = src.timestamp() if hasattr(src, "timestamp") else float(src)
+        assert abs(stamp - tick) < 1  # the exact tick time, not the bar start
     assert _time.time() - now.timestamp() < 600

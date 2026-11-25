@@ -2868,8 +2868,8 @@
       "name": "COINBASE_QUOTE_TRANSPORT",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1177",
-        "data/get_live_price.py:1191"
+        "data/get_live_price.py:1178",
+        "data/get_live_price.py:1192"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6213,7 +6213,7 @@
         "data/connectors/fmp_adapter.py:146",
         "data/connectors/fmp_adapter.py:64",
         "data/get_live_price.py:135",
-        "data/get_live_price.py:915"
+        "data/get_live_price.py:916"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -9365,7 +9365,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:73",
-        "data/get_live_price.py:1084",
+        "data/get_live_price.py:1085",
         "data/get_live_price.py:126",
         "data/providers.py:764"
       ],
@@ -9382,7 +9382,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:72",
-        "data/get_live_price.py:1083",
+        "data/get_live_price.py:1084",
         "data/get_live_price.py:125",
         "data/providers.py:763"
       ],
@@ -9407,7 +9407,7 @@
       "name": "OANDA_PRACTICE",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1091",
+        "data/get_live_price.py:1092",
         "data/providers.py:765"
       ],
       "required_by_code": true,
@@ -9418,7 +9418,7 @@
       "name": "OANDA_TOKEN",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1083",
+        "data/get_live_price.py:1084",
         "data/get_live_price.py:125"
       ],
       "required_by_code": true,
@@ -11676,7 +11676,7 @@
         "config.py:70",
         "data/connectors/polygon_adapter.py:27",
         "data/get_live_price.py:131",
-        "data/get_live_price.py:1330",
+        "data/get_live_price.py:1331",
         "data/get_live_price.py:340",
         "data/pair_discovery.py:1100",
         "data/providers.py:469"
@@ -16233,7 +16233,7 @@
         "config.py:71",
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
-        "data/get_live_price.py:976",
+        "data/get_live_price.py:977",
         "data/pair_discovery.py:611",
         "data/providers.py:551"
       ],
@@ -16271,7 +16271,7 @@
       "read_locations": [
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
-        "data/get_live_price.py:976",
+        "data/get_live_price.py:977",
         "data/pair_discovery.py:611",
         "data/providers.py:551"
       ],
@@ -16938,7 +16938,7 @@
       "name": "YAHOO_QUOTE_VIA_YFINANCE",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:833"
+        "data/get_live_price.py:834"
       ],
       "required_by_code": true,
       "sensitive": false

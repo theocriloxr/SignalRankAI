@@ -94,7 +94,7 @@ import time
 
 _HISTORY_CACHE: dict[tuple[str, str, str], tuple[float, Any]] = {}
 _HISTORY_LOCK = threading.Lock()
-_TTL_SECONDS = {"1m": 20, "5m": 60, "15m": 150, "30m": 300, "1h": 600, "1d": 3600}
+_TTL_SECONDS = {"1m": 4, "5m": 60, "15m": 150, "30m": 300, "1h": 600, "1d": 3600}
 
 
 def _ttl(interval: str) -> float:
@@ -103,20 +103,30 @@ def _ttl(interval: str) -> float:
 
 
 def _history(symbol_norm: str, interval: str, period: str):
+    return _history_with_meta(symbol_norm, interval, period)[0]
+
+
+def _history_with_meta(symbol_norm: str, interval: str, period: str):
+    """(DataFrame, Yahoo chart metadata such as regularMarketPrice/regularMarketTime)."""
     key = (symbol_norm, interval, period)
     now = time.monotonic()
     with _HISTORY_LOCK:
         hit = _HISTORY_CACHE.get(key)
         if hit and now - hit[0] < _ttl(interval):
-            return hit[1]
-    df = yf.Ticker(symbol_norm).history(period=period, interval=interval)
+            return hit[1], (hit[2] if len(hit) > 2 else {})
+    ticker = yf.Ticker(symbol_norm)
+    df = ticker.history(period=period, interval=interval)
+    try:
+        meta = dict(getattr(ticker, "history_metadata", None) or {})
+    except Exception:
+        meta = {}
     if df is not None and not df.empty:
         with _HISTORY_LOCK:
-            _HISTORY_CACHE[key] = (time.monotonic(), df)
+            _HISTORY_CACHE[key] = (time.monotonic(), df, meta)
             if len(_HISTORY_CACHE) > 2048:
                 for stale in sorted(_HISTORY_CACHE, key=lambda k: _HISTORY_CACHE[k][0])[:512]:
                     _HISTORY_CACHE.pop(stale, None)
-    return df
+    return df, meta
 
 
 def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
