@@ -83,6 +83,42 @@ def _normalize_symbol(symbol: str) -> str:
     return s
 
 
+# 25 Nov 2026: every scan downloaded 5m, 15m, 1h, 4h (the same 60 days of 1h again) and 1d for
+# ~60 assets with no cache, and Yahoo answered HTTP 429 to both candles and the live quotes the
+# delivery check needs, so index/FX/metal signals were blocked with quote_unavailable. Downloads
+# are now cached per (symbol, interval, period) for a fraction of the bar length, far inside each
+# timeframe's freshness limit (2x the bar), and 4h reuses the 1h download.
+import os
+import threading
+import time
+
+_HISTORY_CACHE: dict[tuple[str, str, str], tuple[float, Any]] = {}
+_HISTORY_LOCK = threading.Lock()
+_TTL_SECONDS = {"1m": 20, "5m": 60, "15m": 150, "30m": 300, "1h": 600, "1d": 3600}
+
+
+def _ttl(interval: str) -> float:
+    scale = float(os.getenv("YFINANCE_HISTORY_CACHE_SCALE", "1") or 1)
+    return max(0.0, _TTL_SECONDS.get(interval, 60) * scale)
+
+
+def _history(symbol_norm: str, interval: str, period: str):
+    key = (symbol_norm, interval, period)
+    now = time.monotonic()
+    with _HISTORY_LOCK:
+        hit = _HISTORY_CACHE.get(key)
+        if hit and now - hit[0] < _ttl(interval):
+            return hit[1]
+    df = yf.Ticker(symbol_norm).history(period=period, interval=interval)
+    if df is not None and not df.empty:
+        with _HISTORY_LOCK:
+            _HISTORY_CACHE[key] = (time.monotonic(), df)
+            if len(_HISTORY_CACHE) > 2048:
+                for stale in sorted(_HISTORY_CACHE, key=lambda k: _HISTORY_CACHE[k][0])[:512]:
+                    _HISTORY_CACHE.pop(stale, None)
+    return df
+
+
 def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
     """Original synchronous implementation kept as helper for thread execution."""
     if yf is None:
@@ -95,8 +131,7 @@ def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> Lis
     period = "60d" if "d" in timeframe or "h" in timeframe else "7d"
 
     try:
-        t = yf.Ticker(symbol_norm)
-        df = t.history(period=period, interval=interval)
+        df = _history(symbol_norm, interval, period)
         if df is None or df.empty:
             provider_diagnostics.note("yfinance", f"empty_response:{symbol_norm}")
             return []

@@ -1,5 +1,5 @@
 {
-  "file_count": 2801,
+  "file_count": 2802,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3771,11 +3771,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 138,
+      "line_count": 173,
       "path": "data/connectors/yfinance_adapter.py",
       "reason": "production/build source",
-      "sha256": "985f432d49de5dbcf651050facc81edcb5ce23b078fbd387db16fd041680140b",
-      "size_bytes": 4943
+      "sha256": "2e6b45eaa672ca0fa3330d98e0f6c5c81b22e27fb985d36a6d2f49dfcb130d50",
+      "size_bytes": 6429
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14323,11 +14323,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 16994,
+      "line_count": 17004,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e612f885a238b438d43d50ebfa12b58dcf42d1e25f1ef630fb5a4073fbf7efdb",
-      "size_bytes": 495829
+      "sha256": "76ede3b654d10817261d6b09a31bfbd6bde83f4eb695677890ef7925b6f8850b",
+      "size_bytes": 496103
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -18851,6 +18851,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 60,
+      "path": "tests/test_email_default_on_20261125.py",
+      "reason": "automated test evidence",
+      "sha256": "091d989747bf0e9dc228406b182890c7090efdde24f006559b98d4a8d760609c",
+      "size_bytes": 2878
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 135,
       "path": "tests/test_email_outbox_sending_lease_20261103.py",
       "reason": "automated test evidence",
@@ -22424,6 +22432,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 881,
     "PRESERVE_BEHAVIOUR": 1421,
-    "TEST_ONLY": 498
+    "TEST_ONLY": 499
   }
 }
