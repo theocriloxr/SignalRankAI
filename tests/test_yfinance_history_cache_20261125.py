@@ -40,3 +40,28 @@ def test_cache_expires_inside_the_freshness_limit(monkeypatch):
     for tf, ttl in ya._TTL_SECONDS.items():
         bar = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1d": 86400}[tf]
         assert ttl < bar  # always well inside the 2x-bar freshness limit
+
+
+def test_yahoo_quote_uses_the_yfinance_client_with_the_bars_own_time(monkeypatch):
+    import asyncio
+    import time as _time
+
+    from data import get_live_price as glp
+    from data.provider_types import LivePriceQuote
+
+    now = pd.Timestamp.now(tz="UTC").floor("min")
+    idx = pd.date_range(end=now, periods=5, freq="1min", tz="UTC")
+    frame = pd.DataFrame({"Open": 10433.0, "High": 10440.0, "Low": 10430.0, "Close": 10435.5, "Volume": 1.0},
+                         index=idx)
+    monkeypatch.setattr(ya, "_history", lambda sym, interval, period: frame)
+    monkeypatch.setenv("YAHOO_QUOTE_VIA_YFINANCE", "1")
+
+    def no_http(*a, **k):  # the throttled raw endpoint must not be needed
+        raise AssertionError("raw Yahoo HTTP used")
+
+    import requests
+    monkeypatch.setattr(requests, "get", no_http)
+    quote = asyncio.run(glp._fetch_yahoo_quote("UK100"))
+    assert isinstance(quote, LivePriceQuote) and abs(float(quote.mid) - 10435.5) < 1e-9
+    assert abs(float(quote.source_timestamp) - now.timestamp()) < 1 if getattr(quote, "source_timestamp", None) else True
+    assert _time.time() - now.timestamp() < 600

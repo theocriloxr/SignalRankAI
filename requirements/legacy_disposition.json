@@ -1,5 +1,5 @@
 {
-  "file_count": 2802,
+  "file_count": 2803,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3819,11 +3819,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1605,
+      "line_count": 1646,
       "path": "data/get_live_price.py",
       "reason": "production/build source",
-      "sha256": "e031d1bc664ee310d9b12681f3d5109aafaf6f138a44b2fdce1e398ac4ebb63b",
-      "size_bytes": 61726
+      "sha256": "07d90d11cacee27ed5b1e6937ad4331b660cb0bdc32a5aedd63ffcbe3e23d8ec",
+      "size_bytes": 63769
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14323,11 +14323,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 17004,
+      "line_count": 17014,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "76ede3b654d10817261d6b09a31bfbd6bde83f4eb695677890ef7925b6f8850b",
-      "size_bytes": 496103
+      "sha256": "a38d893052d576e1c545f07f2d112f0b09b6c27ef3ad0aab483b7bc352cc7b8f",
+      "size_bytes": 496360
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -21971,6 +21971,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 67,
+      "path": "tests/test_yfinance_history_cache_20261125.py",
+      "reason": "automated test evidence",
+      "sha256": "3914880fbc70dae340ac3427e31b861be3e904cc6435b5dc2a2bf348b7a9952d",
+      "size_bytes": 2780
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 31,
       "path": "tests/test_yfinance_index_symbols_20261104.py",
       "reason": "automated test evidence",
@@ -22432,6 +22440,6 @@
     "DELETE_GENERATED_ONLY": 1,
     "DOCUMENTATION_ONLY": 881,
     "PRESERVE_BEHAVIOUR": 1421,
-    "TEST_ONLY": 499
+    "TEST_ONLY": 500
   }
 }

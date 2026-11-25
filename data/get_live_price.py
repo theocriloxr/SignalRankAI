@@ -795,14 +795,55 @@ async def _fetch_fcs_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+def _yfinance_last_bar(provider_symbol: str) -> tuple[float, float] | None:
+    """Last 1-minute close and its bar time via the yfinance client (shared, cached ~20 s).
+
+    25 Nov 2026: the plain ``requests`` call below is answered HTTP 429 by Yahoo from the server,
+    while the yfinance client (same host, browser-like session) keeps working for candles; every
+    index, FX-cross and metal delivery was blocked with quote_unavailable. The bar's own start time
+    is the quote timestamp, so freshness is still proven, never assumed.
+    """
+    try:
+        from data.connectors.yfinance_adapter import _history
+
+        df = _history(provider_symbol, "1m", "1d")
+    except Exception:
+        return None
+    if df is None or getattr(df, "empty", True):
+        return None
+    try:
+        last_index = df.index[-1]
+        close = float(df["Close"].iloc[-1])
+        ts = float(last_index.timestamp())
+    except Exception:
+        return None
+    return (close, ts) if close > 0 and ts > 0 else None
+
+
 async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     import requests
 
     provider = "yahoo"
     breaker = _get_breaker(provider)
+    started = time.perf_counter()
+    try:
+        _, provider_symbol, _ = _provider_identity(symbol, provider)
+        if not provider_symbol:
+            return _typed_failure(symbol, provider, "unsupported_symbol", retryable=False)
+        if str(os.getenv("YAHOO_QUOTE_VIA_YFINANCE", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            bar = await asyncio.to_thread(_yfinance_last_bar, provider_symbol)
+            if bar is not None:
+                quote = _typed_quote(symbol=symbol, provider=provider, price=bar[0], source_timestamp=bar[1],
+                                     started=started, received_at=time.time(),
+                                     quote_kind=QuoteKind.TICKER.value, market_status="unknown",
+                                     confidence_reasons=("yfinance_last_1m_bar",))
+                if isinstance(quote, LivePriceQuote):
+                    breaker.record_success()
+                    return quote
+    except Exception as exc:
+        logger.debug("[price] Yahoo (yfinance) quote error for %s: %s", symbol, exc)
     if not breaker.allow():
         return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
-    started = time.perf_counter()
     try:
         _, provider_symbol, _ = _provider_identity(symbol, provider)
         if not provider_symbol:
