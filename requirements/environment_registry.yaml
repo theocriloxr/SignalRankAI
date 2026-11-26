@@ -1213,8 +1213,8 @@
       "read_locations": [
         "config.py:62",
         "data/fetcher.py:2441",
-        "data/providers.py:1087",
-        "data/providers.py:971",
+        "data/providers.py:1098",
+        "data/providers.py:982",
         "data/startup_selfcheck.py:137"
       ],
       "required_by_code": true,
@@ -1225,7 +1225,7 @@
       "name": "ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:984"
+        "data/providers.py:995"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1615,7 +1615,7 @@
       "name": "ASK",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:608"
+        "data/get_live_price.py:611"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2075,7 +2075,7 @@
       "name": "BID",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:607"
+        "data/get_live_price.py:610"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2868,8 +2868,8 @@
       "name": "COINBASE_QUOTE_TRANSPORT",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1178",
-        "data/get_live_price.py:1192"
+        "data/get_live_price.py:1181",
+        "data/get_live_price.py:1195"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2881,7 +2881,7 @@
       "name": "COINGECKO_API_KEY",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:894"
+        "data/providers.py:905"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -3333,8 +3333,8 @@
         "data/connectors/cryptocompare_adapter.py:32",
         "data/cryptocompare_ws.py:69",
         "data/fetcher.py:2217",
-        "data/get_live_price.py:255",
-        "data/get_live_price.py:588",
+        "data/get_live_price.py:258",
+        "data/get_live_price.py:591",
         "data/pair_discovery.py:388",
         "engine/price_fetcher.py:303"
       ],
@@ -5984,7 +5984,7 @@
       "read_locations": [
         "data/connectors/fcs_adapter.py:53",
         "data/get_live_price.py:133",
-        "data/get_live_price.py:689"
+        "data/get_live_price.py:692"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -5996,7 +5996,7 @@
       "read_locations": [
         "data/connectors/fcs_adapter.py:53",
         "data/get_live_price.py:133",
-        "data/get_live_price.py:689"
+        "data/get_live_price.py:692"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -6213,7 +6213,7 @@
         "data/connectors/fmp_adapter.py:146",
         "data/connectors/fmp_adapter.py:64",
         "data/get_live_price.py:135",
-        "data/get_live_price.py:916"
+        "data/get_live_price.py:919"
       ],
       "required_by_code": true,
       "sensitive": true
@@ -7092,7 +7092,7 @@
       "read_locations": [
         "data/cryptocompare_ws.py:115",
         "data/cryptocompare_ws.py:143",
-        "data/get_live_price.py:609"
+        "data/get_live_price.py:612"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7655,7 +7655,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:119",
-        "data/get_live_price.py:632",
+        "data/get_live_price.py:635",
         "data/pair_discovery.py:579"
       ],
       "required_by_code": true,
@@ -7700,7 +7700,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:118",
-        "data/get_live_price.py:631",
+        "data/get_live_price.py:634",
         "data/pair_discovery.py:578",
         "signalrank_telegram/admin_commands.py:255",
         "signalrank_telegram/commands.py:2818"
@@ -7747,7 +7747,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:117",
-        "data/get_live_price.py:630",
+        "data/get_live_price.py:633",
         "data/pair_discovery.py:577"
       ],
       "required_by_code": true,
@@ -9365,7 +9365,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:73",
-        "data/get_live_price.py:1085",
+        "data/get_live_price.py:1088",
         "data/get_live_price.py:126",
         "data/providers.py:764"
       ],
@@ -9382,7 +9382,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:72",
-        "data/get_live_price.py:1084",
+        "data/get_live_price.py:1087",
         "data/get_live_price.py:125",
         "data/providers.py:763"
       ],
@@ -9407,7 +9407,7 @@
       "name": "OANDA_PRACTICE",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1092",
+        "data/get_live_price.py:1095",
         "data/providers.py:765"
       ],
       "required_by_code": true,
@@ -9418,7 +9418,7 @@
       "name": "OANDA_TOKEN",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:1084",
+        "data/get_live_price.py:1087",
         "data/get_live_price.py:125"
       ],
       "required_by_code": true,
@@ -10641,7 +10641,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:112",
-        "data/get_live_price.py:647",
+        "data/get_live_price.py:650",
         "railway_main.py:2890",
         "railway_main.py:587",
         "signalrank_telegram/admin_commands.py:257",
@@ -10664,7 +10664,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:111",
-        "data/get_live_price.py:647",
+        "data/get_live_price.py:650",
         "engine/core.py:6265",
         "payments/paystack_policy.py:72",
         "railway_main.py:2892",
@@ -11676,8 +11676,8 @@
         "config.py:70",
         "data/connectors/polygon_adapter.py:27",
         "data/get_live_price.py:131",
-        "data/get_live_price.py:1331",
-        "data/get_live_price.py:340",
+        "data/get_live_price.py:1334",
+        "data/get_live_price.py:343",
         "data/pair_discovery.py:1100",
         "data/providers.py:469"
       ],
@@ -11902,7 +11902,7 @@
       "read_locations": [
         "data/cryptocompare_ws.py:111",
         "data/cryptocompare_ws.py:130",
-        "data/get_live_price.py:606"
+        "data/get_live_price.py:609"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -12616,7 +12616,7 @@
       "name": "RAW",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:599"
+        "data/get_live_price.py:602"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -15483,7 +15483,7 @@
       "production_example_default": null,
       "read_locations": [
         "data/get_live_price.py:110",
-        "data/get_live_price.py:647",
+        "data/get_live_price.py:650",
         "payments/paystack_policy.py:73",
         "railway_main.py:2893",
         "railway_main.py:587",
@@ -16078,7 +16078,7 @@
       "name": "TRADINGVIEW_OHLCV_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "data/providers.py:858"
+        "data/providers.py:869"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -16233,7 +16233,7 @@
         "config.py:71",
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
-        "data/get_live_price.py:977",
+        "data/get_live_price.py:980",
         "data/pair_discovery.py:611",
         "data/providers.py:551"
       ],
@@ -16271,7 +16271,7 @@
       "read_locations": [
         "data/connectors/twelvedata_adapter.py:27",
         "data/get_live_price.py:129",
-        "data/get_live_price.py:977",
+        "data/get_live_price.py:980",
         "data/pair_discovery.py:611",
         "data/providers.py:551"
       ],
@@ -16938,7 +16938,7 @@
       "name": "YAHOO_QUOTE_VIA_YFINANCE",
       "production_example_default": null,
       "read_locations": [
-        "data/get_live_price.py:834"
+        "data/get_live_price.py:837"
       ],
       "required_by_code": true,
       "sensitive": false

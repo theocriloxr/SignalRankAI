@@ -324,6 +324,20 @@ def classify_asset(symbol: str) -> str:
     return resolve_asset_spec(symbol).asset_class
 
 
+# 26 Nov 2026: OANDA v20 CFD instruments (free practice API, real-time with tick times). Free
+# Yahoo index data is delayed 15 min and CME futures 10 min, so the 15-30 s final-send age
+# limit refused every index, oil and gold quote.
+_OANDA_CFD = {
+    "GER40": "DE30_EUR", "GER30": "DE30_EUR", "UK100": "UK100_GBP", "US30": "US30_USD",
+    "US500": "SPX500_USD", "NAS100": "NAS100_USD", "US100": "NAS100_USD", "US2000": "US2000_USD",
+    "JP225": "JP225_USD", "HK50": "HK33_HKD", "EU50": "EU50_EUR", "FRA40": "FR40_EUR",
+    "AUS200": "AU200_AUD", "NTH25": "NL25_EUR", "SWI20": "CH20_CHF",
+    "WTI": "WTICO_USD", "USOUSD": "WTICO_USD", "USOIL": "WTICO_USD", "BRENT": "BCO_USD", "UKOUSD": "BCO_USD",
+    "NATGAS": "NATGAS_USD", "XAUUSD": "XAU_USD", "XAGUSD": "XAG_USD", "XPTUSD": "XPT_USD",
+    "COPPER": "XCU_USD",
+}
+
+
 def map_symbol(symbol: str, provider: str) -> Optional[str]:
     """Map a canonical symbol to the provider-specific format.
 
@@ -368,9 +382,11 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
         return s
     if p == "oanda":
         cls = classify_asset(s)
-        if cls == "forex" and len(s) == 6:
+        if s in _OANDA_CFD:
+            return _OANDA_CFD[s]
+        if cls in {"forex", "commodity"} and len(s) == 6:
             return f"{s[:3]}_{s[3:]}"
-        return s
+        return None if cls in {"index", "stock"} else s
     if p == "fmp":
         cls = classify_asset(s)
         if cls == "forex":

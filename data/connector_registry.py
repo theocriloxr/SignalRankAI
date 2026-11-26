@@ -237,6 +237,7 @@ def _default_provider_order(kind: str, c, *, async_mode: bool = False) -> List[T
         ]
     if kind == "index":
         return [
+            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
             ("ibkr_connector", getattr(c, "ibkr_get_candles", None)),
             ("fcs_connector", getattr(c, "fcs_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),

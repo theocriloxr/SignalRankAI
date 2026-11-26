@@ -37,7 +37,7 @@ _CLASS_SQL = f"""
       AND o.r_multiple IS NOT NULL
       AND COALESCE(o.performance_inclusion_status, 'eligible') = 'eligible'
       AND EXISTS (SELECT 1 FROM signal_deliveries d WHERE d.signal_id = s.signal_id
-                  AND (d.delivery_confirmed_at IS NOT NULL OR d.delivered_at IS NOT NULL))
+                  AND (d.delivery_confirmed_at IS NOT NULL OR d.sent_ok IS TRUE))
     GROUP BY 1 ORDER BY 2 DESC
 """
 
@@ -50,7 +50,7 @@ _RECENT_SQL = f"""
     WHERE o.closed_at IS NOT NULL AND o.r_multiple IS NOT NULL
       AND COALESCE(o.performance_inclusion_status, 'eligible') = 'eligible'
       AND EXISTS (SELECT 1 FROM signal_deliveries d WHERE d.signal_id = s.signal_id
-                  AND (d.delivery_confirmed_at IS NOT NULL OR d.delivered_at IS NOT NULL))
+                  AND (d.delivery_confirmed_at IS NOT NULL OR d.sent_ok IS TRUE))
     ORDER BY o.closed_at DESC
     LIMIT :limit
 """

@@ -3459,11 +3459,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 380,
+      "line_count": 381,
       "path": "data/connector_registry.py",
       "reason": "production/build source",
-      "sha256": "3e67d1c7a1887e1b824ca77f171a4351c624f73777677188f7e83e67917f8a13",
-      "size_bytes": 17573
+      "sha256": "a8410ef6aade05d102d7547538c5cc9bd3d286c7cc642318c3548e466ae776d7",
+      "size_bytes": 17645
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3819,11 +3819,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1647,
+      "line_count": 1650,
       "path": "data/get_live_price.py",
       "reason": "production/build source",
-      "sha256": "520de9777bbe9c4258507a521f835b8f65be993c9879c268b4528885d2a399bc",
-      "size_bytes": 64112
+      "sha256": "20371a9dbb5e2072b752ad2063f372b4b619c7172c9dcd5f822dabe11a7a1c7c",
+      "size_bytes": 64300
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3931,11 +3931,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 1143,
+      "line_count": 1154,
       "path": "data/providers.py",
       "reason": "production/build source",
-      "sha256": "8d61820546223c6d75c240cbcdbd455872773942c4ff9f7615e68a927d21130d",
-      "size_bytes": 40318
+      "sha256": "87a3c02d47299baf44433f3d67111dfa02b411f25d34b51aeb6fd59c02b80fe4",
+      "size_bytes": 40649
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -14326,7 +14326,7 @@
       "line_count": 17014,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "1768e5730f6f17dafca5e431dbd7c5c4ce4af901b0f6bde91367c59b2d91b55f",
+      "sha256": "03261f171a59416a85a4cb2054055bae3198b69a75525bb8ed921949ef083c40",
       "size_bytes": 496360
     },
     {
@@ -15739,11 +15739,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 479,
+      "line_count": 495,
       "path": "services/asset_mapper.py",
       "reason": "production/build source",
-      "sha256": "e885910614ea0b074ec9f9afa0c61a12eef97b2e6f5f996ded5dde4740bf0963",
-      "size_bytes": 13800
+      "sha256": "4ba998bd50d9d33211322f5c363de460f46547a35727fada8ad859cff270a265",
+      "size_bytes": 14736
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -16374,8 +16374,8 @@
       "line_count": 129,
       "path": "services/public_track_record.py",
       "reason": "production/build source",
-      "sha256": "8ca853cf3130f98246dfa7b2c3e05f608b1f170cf9c4be929512cf487f2178ef",
-      "size_bytes": 5846
+      "sha256": "1b33ec88da114b2b8a5ea8b57817cc4d8d25075464000efc4b10b408074248ea",
+      "size_bytes": 5828
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",

@@ -767,9 +767,20 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
     if not api_key or _is_cooldown_active("oanda"):
         return []
 
-    # Convert symbol format: EURUSD -> EUR_USD
-    if "_" not in instrument and len(instrument) == 6:
-        instrument = f"{instrument[:3]}_{instrument[3:]}"
+    # Canonical symbol -> OANDA instrument (EURUSD -> EUR_USD, GER40 -> DE30_EUR, WTI -> WTICO_USD).
+    if "_" not in instrument:
+        try:
+            from services.asset_mapper import map_symbol
+
+            mapped = map_symbol(instrument, "oanda")
+        except Exception:
+            mapped = None
+        if mapped:
+            instrument = mapped
+        elif len(instrument) == 6:
+            instrument = f"{instrument[:3]}_{instrument[3:]}"
+        else:
+            return []
 
     # Map timeframe to OANDA granularity
     tf_map = {

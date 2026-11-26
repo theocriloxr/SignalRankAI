@@ -153,6 +153,9 @@ def _get_providers_for_asset(asset: str) -> List[str]:
         providers = ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
     elif cls in {"forex", "commodity"}:
         providers = ["metaapi", "oanda", "fmp", "twelvedata", "fcs", "yahoo"]
+    elif cls == "index":
+        # 26 Nov 2026: OANDA (free practice API) quotes index CFDs in real time.
+        providers = ["metaapi", "oanda", "fmp", "twelvedata", "polygon", "yahoo"]
     else:
         providers = ["fmp", "twelvedata", "polygon", "yahoo"]
     return [provider for provider in providers if _provider_is_configured(provider)]
